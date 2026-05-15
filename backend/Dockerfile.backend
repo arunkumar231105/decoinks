@@ -1,0 +1,14 @@
+# backend/Dockerfile.backend
+FROM node:20-alpine AS base
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+
+FROM base AS dev
+RUN npm install
+COPY . .
+CMD ["node", "--watch", "server.js"]
+
+FROM base AS prod
+COPY . .
+CMD ["node", "server.js"]

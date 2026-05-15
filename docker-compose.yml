@@ -1,0 +1,84 @@
+services:
+  # ── PostgreSQL Database ──────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: decoinks_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-decoinks_pass}
+      POSTGRES_DB:       ${POSTGRES_DB:-decoinks_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - decoinks_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Cache ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: decoinks_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - decoinks_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Node.js Backend ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+      target: dev
+    container_name: decoinks_backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV:     development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-decoinks_pass}@postgres:5432/${POSTGRES_DB:-decoinks_db}
+      REDIS_URL:    redis://redis:6379
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - decoinks_net
+
+  # ── React Frontend (Nginx) ───────────────────────────────────────
+  frontend:
+    build:
+      context: ./decoinks-frontend
+      dockerfile: Dockerfile.frontend
+    container_name: decoinks_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - decoinks_net
+
+volumes:
+  postgres_data:
+
+networks:
+  decoinks_net:
+    driver: bridge
