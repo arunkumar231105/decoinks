@@ -1,6 +1,8 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
 const { cacheDel } = require('../../config/redis')
+const { logPipelineEvent } = require('../../utils/pipelineEvents')
+const { validateTransition } = require('../../utils/stateMachine')
 
 function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct) {
   let itemsTotal = 0
@@ -60,14 +62,15 @@ async function getItemsForOrder(orderId, orderType) {
   return rows
 }
 
-async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '' }) {
+async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', supplier_id = '', date_from = '', date_to = '' }) {
   const offset = (page - 1) * limit
   const conditions = ['o.deleted_at IS NULL']
   const params = []
 
   if (status) { params.push(status); conditions.push(`o.status = $${params.length}`) }
   if (order_type) { params.push(order_type); conditions.push(`o.order_type = $${params.length}`) }
-  if (customer_id) { params.push(customer_id); conditions.push(`o.customer_id = $${params.length}`) }
+  const sid = supplier_id || customer_id
+  if (sid) { params.push(sid); conditions.push(`o.supplier_id = $${params.length}`) }
   if (date_from) { params.push(date_from); conditions.push(`o.order_date >= $${params.length}`) }
   if (date_to) { params.push(date_to); conditions.push(`o.order_date <= $${params.length}`) }
 
@@ -77,9 +80,9 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT o.*, c.name AS customer_name, u.name AS agent_name
+    `SELECT o.*, c.name AS supplier_name, u.name AS agent_name
      FROM orders o
-     LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN suppliers c ON c.id = o.supplier_id
      LEFT JOIN users u ON u.id = o.assigned_to
      ${where}
      ORDER BY o.order_date DESC, o.created_at DESC
@@ -91,10 +94,11 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT o.*, c.name AS customer_name, u.name AS agent_name
+    `SELECT o.*, c.name AS supplier_name, u.name AS agent_name, i.invoice_number
      FROM orders o
-     LEFT JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN users u ON u.id = o.assigned_to
+     LEFT JOIN suppliers c  ON c.id = o.supplier_id
+     LEFT JOIN users u      ON u.id = o.assigned_to
+     LEFT JOIN invoices i   ON i.id = o.invoice_id
      WHERE o.id = $1 AND o.deleted_at IS NULL`,
     [id]
   )
@@ -105,7 +109,7 @@ async function getById(id) {
 
 async function create(data) {
   const {
-    customer_id, customer_name_text, quotation_id, order_type, order_date, due_date,
+    supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     rush_services = 0, shipping_charges = 0,
     discount_pct = 0, tax_pct = 7,
@@ -116,30 +120,49 @@ async function create(data) {
   } = data
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
-  const totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
+  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
+  let resolvedSupplierId = supplier_id || null
+
+  // Pull totals from invoice when converting invoice → order
+  if (invoice_id && items.length === 0) {
+    const { rows: invRows } = await query(
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id FROM invoices WHERE id = $1`,
+      [invoice_id]
+    )
+    if (!invRows[0]) throw Object.assign(new Error('Linked invoice not found'), { statusCode: 404 })
+    const inv = invRows[0]
+    totals = {
+      subtotal:     Number(inv.subtotal),
+      discount_amt: Number(inv.discount_amt),
+      tax_amt:      Number(inv.tax_amt),
+      total:        Number(inv.total),
+      items_total:  Number(inv.subtotal),
+    }
+    if (!resolvedSupplierId) resolvedSupplierId = inv.supplier_id
+  }
 
   const client = await getClient()
   try {
     await client.query('BEGIN')
     const { rows } = await client.query(
       `INSERT INTO orders (
-         order_number, quotation_id, customer_id, order_type, order_date, due_date,
+         order_number, quotation_id, invoice_id, supplier_id, order_type, order_date, due_date,
          payment_terms, payment_method, payment_status, currency,
          rush_services, shipping_charges, subtotal, discount_pct, discount_amt,
          tax_pct, tax_amt, total, notes,
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
        RETURNING *`,
       [
-        order_number, quotation_id || null, customer_id || null, order_type,
+        order_number, quotation_id || null, invoice_id || null, resolvedSupplierId, order_type,
         order_date || new Date().toISOString().split('T')[0], due_date || null,
         payment_terms || 'Due on Receipt', payment_method || null, payment_status, currency,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
-        contact_name || customer_name_text || null, contact_email || null, contact_phone || null,
-        shipping_name || customer_name_text || null, shipping_address || null,
+        contact_name || supplier_name_text || null, contact_email || null, contact_phone || null,
+        shipping_name  || supplier_name_text || null, shipping_address || null,
         assigned_to || null, created_by,
       ]
     )
@@ -151,6 +174,18 @@ async function create(data) {
       [created_by, order.id, `Order ${order_number} created (${order_type}, ${items.length} item${items.length !== 1 ? 's' : ''})`]
     )
     await client.query('COMMIT')
+
+    if (invoice_id) {
+      await logPipelineEvent({
+        event_type: 'order_created_from_invoice',
+        source_table: 'invoices',
+        source_id: invoice_id,
+        target_table: 'orders',
+        target_id: order.id,
+        triggered_by: created_by,
+      })
+    }
+
     await cacheDel('dashboard:stats', 'dashboard:orders-by-status')
     return getById(order.id)
   } catch (err) {
@@ -230,7 +265,16 @@ async function update(id, data, actorId) {
   }
 }
 
-async function updateStatus(id, status, actorId) {
+async function updateStatus(id, status, actor) {
+  const actorId   = typeof actor === 'string' ? actor : actor.id
+  const actorUser = typeof actor === 'string' ? null   : actor
+
+  const { rows: cur } = await query(
+    `SELECT status FROM orders WHERE id = $1 AND deleted_at IS NULL`, [id]
+  )
+  if (!cur[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+  if (actorUser) validateTransition('order', cur[0].status, status, actorUser)
+
   const { rows } = await query(
     `UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL RETURNING *`,
     [status, id]
@@ -249,12 +293,11 @@ async function updateStatus(id, status, actorId) {
 
 async function getInvoice(orderId) {
   const { rows } = await query(
-    `SELECT i.*, c.name AS customer_name
-     FROM invoices i
-     LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.order_id = $1
-     ORDER BY i.created_at DESC
-     LIMIT 1`,
+    `SELECT i.*, c.name AS supplier_name
+     FROM orders o
+     JOIN invoices i ON i.id = o.invoice_id
+     LEFT JOIN suppliers c ON c.id = i.supplier_id
+     WHERE o.id = $1 AND o.deleted_at IS NULL`,
     [orderId]
   )
   if (!rows[0]) throw Object.assign(new Error('No invoice found for this order'), { statusCode: 404 })
@@ -273,9 +316,9 @@ const BOARD_STATUSES = ['Confirmed', 'In Production', 'Ready to Ship', 'Shipped'
 async function getBoard() {
   const { rows } = await query(
     `SELECT o.id, o.order_number, o.status, o.order_type, o.due_date, o.total, o.created_at,
-            c.name AS customer_name
+            c.name AS supplier_name
      FROM orders o
-     LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN suppliers c ON c.id = o.supplier_id
      WHERE o.deleted_at IS NULL AND o.status = ANY($1::text[])
      ORDER BY o.due_date ASC NULLS LAST, o.created_at DESC`,
     [BOARD_STATUSES]

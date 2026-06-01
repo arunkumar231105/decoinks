@@ -6,7 +6,7 @@ const { pool } = require('../../src/config/db')
 const { runMigrations, seedAdmin, truncateTestTables, truncateUsers } = require('./helpers')
 
 let token
-let createdCustomerId
+let createdSupplierId
 
 beforeAll(async () => {
   await runMigrations()
@@ -22,9 +22,9 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await pool.query(`
-    DELETE FROM customers WHERE email = 'jane@example.com'
+    DELETE FROM suppliers WHERE email = 'jane@example.com'
   `)
-  createdCustomerId = null
+  createdSupplierId = null
 })
 
 afterAll(async () => {
@@ -32,10 +32,10 @@ afterAll(async () => {
   await truncateUsers()
 })
 
-describe('GET /api/customers', () => {
+describe('GET /api/suppliers', () => {
   test('returns 200 with a paginated list', async () => {
     const res = await request(app)
-      .get('/api/customers')
+      .get('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
 
     expect(res.status).toBe(200)
@@ -46,10 +46,10 @@ describe('GET /api/customers', () => {
   })
 })
 
-describe('POST /api/customers', () => {
-  test('creates a customer and returns 201', async () => {
+describe('POST /api/suppliers', () => {
+  test('creates a supplier and returns 201', async () => {
     const res = await request(app)
-      .post('/api/customers')
+      .post('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Jane Doe', email: 'jane@example.com', phone: '555-1234' })
 
@@ -58,42 +58,42 @@ describe('POST /api/customers', () => {
     expect(res.body.data).toHaveProperty('id')
     expect(res.body.data.name).toBe('Jane Doe')
 
-    createdCustomerId = res.body.data.id
+    createdSupplierId = res.body.data.id
   })
 })
 
-describe('GET /api/customers/:id', () => {
+describe('GET /api/suppliers/:id', () => {
   beforeEach(async () => {
     const res = await request(app)
-      .post('/api/customers')
+      .post('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Jane Doe', email: 'jane@example.com' })
-    createdCustomerId = res.body.data.id
+    createdSupplierId = res.body.data.id
   })
 
-  test('returns the customer by id', async () => {
+  test('returns the supplier by id', async () => {
     const res = await request(app)
-      .get(`/api/customers/${createdCustomerId}`)
+      .get(`/api/suppliers/${createdSupplierId}`)
       .set('Authorization', `Bearer ${token}`)
 
     expect(res.status).toBe(200)
-    expect(res.body.data.id).toBe(createdCustomerId)
+    expect(res.body.data.id).toBe(createdSupplierId)
     expect(res.body.data.name).toBe('Jane Doe')
   })
 })
 
-describe('PUT /api/customers/:id', () => {
+describe('PUT /api/suppliers/:id', () => {
   beforeEach(async () => {
     const res = await request(app)
-      .post('/api/customers')
+      .post('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Jane Doe', email: 'jane@example.com' })
-    createdCustomerId = res.body.data.id
+    createdSupplierId = res.body.data.id
   })
 
-  test('updates the customer and returns updated fields', async () => {
+  test('updates the supplier and returns updated fields', async () => {
     const res = await request(app)
-      .put(`/api/customers/${createdCustomerId}`)
+      .put(`/api/suppliers/${createdSupplierId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Jane Updated' })
 
@@ -102,27 +102,27 @@ describe('PUT /api/customers/:id', () => {
   })
 })
 
-describe('DELETE /api/customers/:id', () => {
+describe('DELETE /api/suppliers/:id', () => {
   beforeEach(async () => {
     const res = await request(app)
-      .post('/api/customers')
+      .post('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Jane Doe', email: 'jane@example.com' })
-    createdCustomerId = res.body.data.id
+    createdSupplierId = res.body.data.id
   })
 
-  test('soft-deletes customer and it no longer appears in the list', async () => {
+  test('soft-deletes supplier and it no longer appears in the list', async () => {
     const delRes = await request(app)
-      .delete(`/api/customers/${createdCustomerId}`)
+      .delete(`/api/suppliers/${createdSupplierId}`)
       .set('Authorization', `Bearer ${token}`)
 
     expect(delRes.status).toBe(200)
 
     const listRes = await request(app)
-      .get('/api/customers')
+      .get('/api/suppliers')
       .set('Authorization', `Bearer ${token}`)
 
     const ids = listRes.body.data.rows.map(c => c.id)
-    expect(ids).not.toContain(createdCustomerId)
+    expect(ids).not.toContain(createdSupplierId)
   })
 })

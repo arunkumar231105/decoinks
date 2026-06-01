@@ -4,7 +4,7 @@ const { uploadToDrive } = require('../../config/googleDrive')
 const path = require('path')
 const fs = require('fs')
 
-async function list({ page = 1, limit = 10, search = '', status = '', customer_id = '' }) {
+async function list({ page = 1, limit = 10, search = '', status = '', supplier_id = '' }) {
   const offset = (page - 1) * limit
   const conditions = []
   const params = []
@@ -14,7 +14,7 @@ async function list({ page = 1, limit = 10, search = '', status = '', customer_i
     conditions.push(`(a.name ILIKE $${params.length} OR a.artwork_no ILIKE $${params.length})`)
   }
   if (status) { params.push(status); conditions.push(`a.status = $${params.length}`) }
-  if (customer_id) { params.push(customer_id); conditions.push(`a.customer_id = $${params.length}`) }
+  if (supplier_id) { params.push(supplier_id); conditions.push(`a.supplier_id = $${params.length}`) }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const countRes = await query(`SELECT COUNT(*) FROM artworks a ${where}`, params)
@@ -22,8 +22,8 @@ async function list({ page = 1, limit = 10, search = '', status = '', customer_i
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT a.*, c.name AS customer_name, u.name AS uploader_name FROM artworks a
-     LEFT JOIN customers c ON c.id = a.customer_id
+    `SELECT a.*, c.name AS supplier_name, u.name AS uploader_name FROM artworks a
+     LEFT JOIN suppliers c ON c.id = a.supplier_id
      LEFT JOIN users u ON u.id = a.uploaded_by
      ${where} ORDER BY a.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -34,8 +34,8 @@ async function list({ page = 1, limit = 10, search = '', status = '', customer_i
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT a.*, c.name AS customer_name, u.name AS uploader_name FROM artworks a
-     LEFT JOIN customers c ON c.id = a.customer_id
+    `SELECT a.*, c.name AS supplier_name, u.name AS uploader_name FROM artworks a
+     LEFT JOIN suppliers c ON c.id = a.supplier_id
      LEFT JOIN users u ON u.id = a.uploaded_by WHERE a.id = $1`,
     [id]
   )
@@ -43,7 +43,7 @@ async function getById(id) {
   return rows[0]
 }
 
-async function create({ artwork_no: providedNo, name, customer_id, order_id, status = 'Draft', tags, notes, uploaded_by, file }) {
+async function create({ artwork_no: providedNo, name, supplier_id, order_id, status = 'Draft', tags, notes, uploaded_by, file }) {
   if (!file) throw Object.assign(new Error('Artwork file is required'), { statusCode: 400 })
 
   // Use caller-provided artwork_no if given, otherwise auto-generate (AW-YYYY-NNNN)
@@ -70,9 +70,9 @@ async function create({ artwork_no: providedNo, name, customer_id, order_id, sta
     : []
 
   const { rows } = await query(
-    `INSERT INTO artworks (artwork_no, name, customer_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
+    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [artwork_no, name, customer_id || null, order_id || null, status,
+    [artwork_no, name, supplier_id || null, order_id || null, status,
      file_url, file_type, tagsArr, notes || null, uploaded_by]
   )
   return rows[0]
@@ -99,9 +99,9 @@ const DESIGN_STATUSES = ['Draft', 'Pending Approval', 'Changes Requested', 'Appr
 async function getBoard() {
   const { rows } = await query(
     `SELECT a.id, a.artwork_no, a.name, a.status, a.file_url, a.file_type, a.tags, a.created_at,
-            c.name AS customer_name
+            c.name AS supplier_name
      FROM artworks a
-     LEFT JOIN customers c ON c.id = a.customer_id
+     LEFT JOIN suppliers c ON c.id = a.supplier_id
      ORDER BY a.created_at DESC`
   )
   const grouped = {}
@@ -112,15 +112,15 @@ async function getBoard() {
   return DESIGN_STATUSES.map(status => ({ status, tasks: grouped[status] }))
 }
 
-async function createTask({ name, customer_id, order_id, notes, tags, uploaded_by }) {
+async function createTask({ name, supplier_id, order_id, notes, tags, uploaded_by }) {
   const artwork_no = await getNextNumber('AW', 'artworks', 'artwork_no')
   const tagsArr = tags
     ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean))
     : []
   const { rows } = await query(
-    `INSERT INTO artworks (artwork_no, name, customer_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
+    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
      VALUES ($1,$2,$3,$4,'Pending Review',NULL,NULL,$5,$6,$7) RETURNING *`,
-    [artwork_no, name, customer_id || null, order_id || null, tagsArr, notes || null, uploaded_by || null]
+    [artwork_no, name, supplier_id || null, order_id || null, tagsArr, notes || null, uploaded_by || null]
   )
   return rows[0]
 }

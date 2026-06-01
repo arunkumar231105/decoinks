@@ -32,7 +32,7 @@ async function update(req, res, next) {
 
 async function updateStatus(req, res, next) {
   try {
-    const q = await service.updateStatus(req.params.id, req.body.status, req.user.id)
+    const q = await service.updateStatus(req.params.id, req.body.status, req.user)
     return success(res, q, 'Status updated')
   } catch (err) { next(err) }
 }

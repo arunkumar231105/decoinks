@@ -1,5 +1,11 @@
-const { Pool } = require('pg')
+const { Pool, types } = require('pg')
 const logger = require('../utils/logger')
+
+// Parse NUMERIC (OID 1700) as JavaScript float instead of string
+types.setTypeParser(1700, v => parseFloat(v))
+// Return DATE (OID 1082) as a plain string (e.g. "2025-09-30") to avoid
+// timezone-induced date shifting when the server is not UTC.
+types.setTypeParser(1082, v => v)
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

@@ -11,7 +11,7 @@ const STATUSES = ['Pending', 'Label Created', 'Picked Up', 'In Transit', 'Delive
 
 const bodyFields = {
   order_id:           z.string().uuid().optional().nullable(),
-  customer_id:        z.string().uuid().optional().nullable(),
+  supplier_id:        z.string().uuid().optional().nullable(),
   carrier:            z.string().optional().nullable(),
   tracking_number:    z.string().optional().nullable(),
   ship_date:          z.string().optional().nullable(),
@@ -25,7 +25,7 @@ const bodyFields = {
 
 const createSchema = z.object({
   ...bodyFields,
-  customer_name_text: z.string().optional().nullable(),
+  supplier_name_text: z.string().optional().nullable(),
   agent_name:         z.string().optional().nullable(),
   status:             z.enum(STATUSES).optional(),
 })

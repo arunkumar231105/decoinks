@@ -30,13 +30,14 @@ async function update(req, res, next) {
 
 async function updateStatus(req, res, next) {
   try {
-    return success(res, await service.updateStatus(req.params.id, req.body.status, req.user.id), 'Status updated')
+    return success(res, await service.updateStatus(req.params.id, req.body.status, req.user), 'Status updated')
   } catch (err) { next(err) }
 }
 
 async function recordPayment(req, res, next) {
   try {
-    return success(res, await service.recordPayment(req.params.id, req.body.amount_paid, req.user.id), 'Payment recorded')
+    const { amount, payment_method, reference_no, notes } = req.body
+    return success(res, await service.recordPayment(req.params.id, { amount, payment_method, reference_no, notes }, req.user.id), 'Payment recorded')
   } catch (err) { next(err) }
 }
 

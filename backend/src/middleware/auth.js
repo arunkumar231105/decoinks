@@ -28,4 +28,11 @@ function requireRole(...roles) {
   }
 }
 
-module.exports = { verifyToken, requireRole }
+function requireSupplier(req, res, next) {
+  if (req.user?.role !== 'supplier') {
+    return res.status(403).json({ error: 'Supplier access only' })
+  }
+  next()
+}
+
+module.exports = { verifyToken, requireRole, requireSupplier }

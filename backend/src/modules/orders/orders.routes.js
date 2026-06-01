@@ -2,7 +2,11 @@ const { Router } = require('express')
 const { z } = require('zod')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
+const { uploadArtwork } = require('../../middleware/upload')
 const controller = require('./orders.controller')
+const portalSvc = require('../supplier-portal/portal.service')
+const gangsheetSvc = require('../artworks/gangsheet.service')
+const artworksSvc  = require('../artworks/artworks.service')
 
 const router = Router()
 router.use(verifyToken)
@@ -40,9 +44,10 @@ const ITEM_SCHEMAS = { apparel: apparelItemSchema, gangsheet: gangsheetItemSchem
 
 // ── Shared header fields ──────────────────────────────────────────────────────
 const headerFields = {
-  customer_id:      z.string().uuid().optional().nullable(),
-  customer_name_text: z.string().optional().nullable(),
-  quotation_id:     z.string().uuid().optional().nullable(),
+  supplier_id:        z.string().uuid().optional().nullable(),
+  supplier_name_text: z.string().optional().nullable(),
+  quotation_id:       z.string().uuid().optional().nullable(),
+  invoice_id:         z.string().uuid().optional().nullable(),
   order_date:       z.string().optional().nullable(),
   due_date:         z.string().optional().nullable(),
   payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60']).optional(),
@@ -103,5 +108,120 @@ router.post('/',             validate(createSchema), controller.create)
 router.put('/:id',           validate(updateSchema), controller.update)
 router.patch('/:id/status',  validate(statusSchema), controller.updateStatus)
 router.delete('/:id',        controller.remove)
+
+// ── Customer Portal Integration ───────────────────────────────────────────────
+router.post('/:id/send-to-portal', async (req, res) => {
+  try {
+    const result = await portalSvc.sendOrderToPortal(req.params.id, req.user?.id)
+    res.json(result)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+router.get('/:id/portal-status', async (req, res) => {
+  try {
+    const db = require('../../config/db')
+    const { rows } = await db.query(
+      'SELECT sent_at, is_visible FROM portal_order_visibility WHERE order_id = $1',
+      [req.params.id]
+    )
+    res.json({ sentToPortal: rows.length > 0 && rows[0].is_visible, sentAt: rows[0]?.sent_at ?? null })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ── Order-scoped artworks ─────────────────────────────────────────────────────
+
+const artworkUploadSchema = z.object({
+  name:             z.string().min(1, 'Name is required'),
+  location_on_product: z.string().optional().nullable(),
+  width_inches:     z.string().optional().nullable(),   // sent as string from multipart
+  height_inches:    z.string().optional().nullable(),
+  notes:            z.string().optional().nullable(),
+})
+
+router.get('/:id/artworks', async (req, res) => {
+  try {
+    const { rows } = await require('../../config/db').query(
+      `SELECT id, artwork_no, name, file_url, file_type, status,
+              width_inches, height_inches, location_on_product, created_at
+       FROM artworks WHERE order_id = $1 ORDER BY created_at`,
+      [req.params.id]
+    )
+    res.json({ artworks: rows })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+router.post('/:id/artworks', uploadArtwork, validate(artworkUploadSchema), async (req, res) => {
+  try {
+    const { name, location_on_product, width_inches, height_inches, notes } = req.body
+    const artwork = await artworksSvc.create({
+      name,
+      order_id:    req.params.id,
+      supplier_id: null,
+      status:      'Pending Review',
+      notes,
+      uploaded_by: req.user.id,
+      file:        req.file,
+    })
+
+    // Patch in the extra columns not handled by the base create()
+    if (location_on_product || width_inches || height_inches) {
+      await require('../../config/db').query(
+        `UPDATE artworks SET
+           location_on_product = COALESCE($1, location_on_product),
+           width_inches  = COALESCE($2::numeric, width_inches),
+           height_inches = COALESCE($3::numeric, height_inches)
+         WHERE id = $4`,
+        [
+          location_on_product || null,
+          width_inches  ? parseFloat(width_inches)  : null,
+          height_inches ? parseFloat(height_inches) : null,
+          artwork.id,
+        ]
+      )
+      artwork.location_on_product = location_on_product || null
+      artwork.width_inches  = width_inches  ? parseFloat(width_inches)  : null
+      artwork.height_inches = height_inches ? parseFloat(height_inches) : null
+    }
+
+    res.status(201).json({ artwork })
+  } catch (e) {
+    res.status(e.statusCode ?? 400).json({ error: e.message })
+  }
+})
+
+router.delete('/:id/artworks/:artworkId', async (req, res) => {
+  try {
+    await artworksSvc.remove(req.params.artworkId)
+    res.json({ success: true })
+  } catch (e) {
+    res.status(e.statusCode ?? 400).json({ error: e.message })
+  }
+})
+
+// ── Gangsheet generation ──────────────────────────────────────────────────────
+
+router.post('/:id/gangsheet', async (req, res) => {
+  try {
+    const result = await gangsheetSvc.generateGangsheet(req.params.id, req.user?.id)
+    res.status(202).json(result)
+  } catch (e) {
+    res.status(e.statusCode ?? 500).json({ error: e.message })
+  }
+})
+
+router.get('/:id/gangsheet/status', async (req, res) => {
+  try {
+    const status = await gangsheetSvc.getGangsheetStatus(req.params.id)
+    res.json(status)
+  } catch (e) {
+    res.status(e.statusCode ?? 500).json({ error: e.message })
+  }
+})
 
 module.exports = router

@@ -13,9 +13,9 @@ async function list({ page = 1, limit = 10, status = '' }) {
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT s.*, c.name AS customer_name, o.order_number
+    `SELECT s.*, c.name AS supplier_name, o.order_number
      FROM shipments s
-     LEFT JOIN customers c ON c.id = s.customer_id
+     LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
      ${where}
      ORDER BY s.created_at DESC
@@ -27,9 +27,9 @@ async function list({ page = 1, limit = 10, status = '' }) {
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT s.*, c.name AS customer_name, o.order_number
+    `SELECT s.*, c.name AS supplier_name, o.order_number
      FROM shipments s
-     LEFT JOIN customers c ON c.id = s.customer_id
+     LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
      WHERE s.id = $1`,
     [id]
@@ -38,18 +38,18 @@ async function getById(id) {
   return rows[0]
 }
 
-async function create({ order_id, customer_id, customer_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by }) {
+async function create({ order_id, supplier_id, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by }) {
   const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
   // Use free-text customer name as recipient_name if no explicit recipient_name given
-  const resolvedRecipient = recipient_name || customer_name_text || null
+  const resolvedRecipient = recipient_name || supplier_name_text || null
   // Append agent_name to notes if provided
   const resolvedNotes = agent_name
     ? [notes, `Agent: ${agent_name}`].filter(Boolean).join(' | ')
     : (notes || null)
   const { rows } = await query(
-    `INSERT INTO shipments (shipment_number, order_id, customer_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by)
+    `INSERT INTO shipments (shipment_number, order_id, supplier_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-    [shipment_number, order_id || null, customer_id || null, carrier || null, tracking_number || null,
+    [shipment_number, order_id || null, supplier_id || null, carrier || null, tracking_number || null,
      ship_date || null, estimated_delivery || null, weight_lbs || null, shipping_cost || null,
      resolvedRecipient, address || null, resolvedNotes, created_by]
   )

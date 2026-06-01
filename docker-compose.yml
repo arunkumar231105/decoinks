@@ -1,5 +1,6 @@
 services:
-  # ── PostgreSQL Database ──────────────────────────────────────────
+
+  # ── PostgreSQL ───────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
     container_name: decoinks_postgres
@@ -10,33 +11,33 @@ services:
       POSTGRES_DB:       ${POSTGRES_DB:-decoinks_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./db/portal_migration.sql:/docker-entrypoint-initdb.d/02_portal.sql:ro
+      - ./db/002_supplier_rename.sql:/docker-entrypoint-initdb.d/03_supplier_rename.sql:ro
     ports:
-      - "5432:5432"
-    networks:
-      - decoinks_net
+      - '5433:5432'
+    networks: [decoinks_net]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL','pg_isready -U postgres']
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ── Redis Cache ─────────────────────────────────────────────────
+  # ── Redis ────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: decoinks_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    networks:
-      - decoinks_net
+      - '6379:6379'
+    networks: [decoinks_net]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
-  # ── Node.js Backend ─────────────────────────────────────────────
+  # ── Node.js Backend ──────────────────────────────────────────
   backend:
     build:
       context: ./backend
@@ -53,16 +54,15 @@ services:
       - ./backend:/app
       - /app/node_modules
     ports:
-      - "8000:8000"
+      - '8001:8000'
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - decoinks_net
+    networks: [decoinks_net]
 
-  # ── React Frontend (Nginx) ───────────────────────────────────────
+  # ── Admin POS Frontend ───────────────────────────────────────
   frontend:
     build:
       context: ./decoinks-frontend
@@ -70,11 +70,21 @@ services:
     container_name: decoinks_frontend
     restart: unless-stopped
     ports:
-      - "80:80"
-    depends_on:
-      - backend
-    networks:
-      - decoinks_net
+      - '80:80'
+    depends_on: [backend]
+    networks: [decoinks_net]
+
+  # ── Customer Portal ──────────────────────────────────────────
+  customer_portal:
+    build:
+      context: ./customer-portal
+      dockerfile: Dockerfile.portal
+    container_name: decoinks_customer_portal
+    restart: unless-stopped
+    ports:
+      - '3001:80'
+    depends_on: [backend]
+    networks: [decoinks_net]
 
 volumes:
   postgres_data:
@@ -82,3 +92,4 @@ volumes:
 networks:
   decoinks_net:
     driver: bridge
+

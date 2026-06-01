@@ -40,7 +40,24 @@
       "Bash(curl -s -X POST http://localhost/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"info@technocas.com\",\"password\":\"Admin@2024\"}')",
       "Bash(Get-ChildItem -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "PowerShell(head -30)"
+      "PowerShell(head -30)",
+      "Bash(python -c \"import docx; print\\('python-docx available'\\)\")",
+      "Bash(python generate_customer_portal_guide.py)",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\customer-portal\\\\src\\\\assets\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\customer-portal\\\\src\\\\assets\")",
+      "Bash(docker-compose down *)",
+      "Bash(docker rm *)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(docker-compose restart *)",
+      "Bash(grep \"^\\\\-\\\\-$\\\\|info-bar\\\\|\\\\.no-\\\\|\\\\.ni-\\\\|\\\\.ns-\\\\|\\\\.al-panel\\\\|\\\\.cust\")",
+      "Bash(sed -n '9868,9880p' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\index.css\")",
+      "Bash(sed -n '11190,11205p' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\index.css\")",
+      "Bash(awk '/^\\\\./ { class=$0; getline; while \\(/^[[:space:]]/\\) { if \\(/overflow:\\\\s*hidden/\\) { print class; exit } getline } }' index.css)",
+      "Bash(xargs grep -l \"portalSvc\\\\|sendOrderToPortal\\\\|portal_order_visibility\")",
+      "PowerShell(cd \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\"; docker compose exec backend wget -qO- http://localhost:8000/api/auth/status 2>&1; echo \"EXIT: $LASTEXITCODE\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\")",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\" -Directory)"
     ]
   }
 }

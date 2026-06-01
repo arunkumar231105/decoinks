@@ -1,6 +1,8 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
 const { cacheDel } = require('../../config/redis')
+const { logPipelineEvent } = require('../../utils/pipelineEvents')
+const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -18,13 +20,14 @@ async function logActivity(actorId, invoiceId, action, description) {
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-async function list({ page = 1, limit = 10, status = '', customer_id = '' }) {
+async function list({ page = 1, limit = 10, status = '', customer_id = '', supplier_id = '' }) {
   const offset = (page - 1) * limit
   const conditions = []
   const params = []
 
-  if (status)      { params.push(status);      conditions.push(`i.status = $${params.length}`) }
-  if (customer_id) { params.push(customer_id); conditions.push(`i.customer_id = $${params.length}`) }
+  const supplierId = customer_id || supplier_id
+  if (status)     { params.push(status);     conditions.push(`i.status = $${params.length}`) }
+  if (supplierId) { params.push(supplierId); conditions.push(`i.supplier_id = $${params.length}`) }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const countRes = await query(`SELECT COUNT(*) FROM invoices i ${where}`, params)
@@ -32,10 +35,11 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '' }) {
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT i.*, c.name AS customer_name, o.order_number
+    `SELECT i.*, c.name AS supplier_name, o.order_number, q.quote_number
      FROM invoices i
-     LEFT JOIN customers c ON c.id = i.customer_id
-     LEFT JOIN orders o    ON o.id = i.order_id
+     LEFT JOIN suppliers c  ON c.id = i.supplier_id
+     LEFT JOIN orders o     ON o.id = i.order_id
+     LEFT JOIN quotations q ON q.id = i.quote_id
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -46,31 +50,48 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '' }) {
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT i.*, c.name AS customer_name, o.order_number
+    `SELECT i.*, c.name AS supplier_name, o.order_number, q.quote_number
      FROM invoices i
-     LEFT JOIN customers c ON c.id = i.customer_id
-     LEFT JOIN orders o    ON o.id = i.order_id
+     LEFT JOIN suppliers c  ON c.id = i.supplier_id
+     LEFT JOIN orders o     ON o.id = i.order_id
+     LEFT JOIN quotations q ON q.id = i.quote_id
      WHERE i.id = $1`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-  return rows[0]
+
+  const payments = await query(
+    `SELECT * FROM payments WHERE invoice_id = $1 ORDER BY paid_at ASC`,
+    [id]
+  )
+  return { ...rows[0], payments: payments.rows }
 }
 
-async function create({ order_id, customer_id, issue_date, due_date,
+async function create({ quote_id, order_id, supplier_id, issue_date, due_date,
                         subtotal = 0, discount_amt = 0, tax_amt = 0,
                         notes, created_by }) {
   const invoice_number = await getNextNumber('INV', 'invoices', 'invoice_number')
 
-  // When linking to an order, override totals with the order's values
   let resolvedSubtotal    = Number(subtotal)
   let resolvedDiscountAmt = Number(discount_amt)
   let resolvedTaxAmt      = Number(tax_amt)
-  let resolvedCustomerId  = customer_id || null
+  let resolvedSupplierId  = supplier_id || null
 
-  if (order_id) {
+  // Pull totals from quotation when converting quote → invoice
+  if (quote_id) {
+    const { rows: qRows } = await query(
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id FROM quotations WHERE id = $1`,
+      [quote_id]
+    )
+    if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
+    const q = qRows[0]
+    resolvedSubtotal    = Number(q.subtotal)
+    resolvedDiscountAmt = Number(q.discount_amt)
+    resolvedTaxAmt      = Number(q.tax_amt)
+    if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
+  } else if (order_id) {
     const { rows: orderRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, customer_id
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id
        FROM orders WHERE id = $1 AND deleted_at IS NULL`,
       [order_id]
     )
@@ -79,22 +100,22 @@ async function create({ order_id, customer_id, issue_date, due_date,
     resolvedSubtotal    = Number(o.subtotal)
     resolvedDiscountAmt = Number(o.discount_amt)
     resolvedTaxAmt      = Number(o.tax_amt)
-    if (!resolvedCustomerId) resolvedCustomerId = o.customer_id
+    if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
   }
 
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
-  const balance_due = total   // no payment recorded yet
+  const balance_due = total
 
   const { rows } = await query(
     `INSERT INTO invoices
-       (invoice_number, order_id, customer_id, issue_date, due_date,
+       (invoice_number, quote_id, order_id, supplier_id, issue_date, due_date,
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
         notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING *`,
     [
       invoice_number,
-      order_id || null, resolvedCustomerId,
+      quote_id || null, order_id || null, resolvedSupplierId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
       resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt,
@@ -102,12 +123,24 @@ async function create({ order_id, customer_id, issue_date, due_date,
       notes || null, created_by,
     ]
   )
+
+  if (quote_id) {
+    await logPipelineEvent({
+      event_type: 'invoice_created_from_quote',
+      source_table: 'quotations',
+      source_id: quote_id,
+      target_table: 'invoices',
+      target_id: rows[0].id,
+      triggered_by: created_by,
+    })
+  }
+
   await cacheDel('dashboard:stats')
   return rows[0]
 }
 
 async function update(id, fields) {
-  const allowed = ['customer_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'quote_id']
   const sets = []
   const params = []
 
@@ -119,15 +152,14 @@ async function update(id, fields) {
   }
   if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
-  // Recalculate total and balance_due if any financial field changed
   const financialFields = ['subtotal', 'discount_amt', 'tax_amt']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
-    const newSubtotal     = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
-    const newDiscountAmt  = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
-    const newTaxAmt       = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
-    const newTotal        = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
-    const newBalanceDue   = +(Math.max(0, newTotal - Number(existing.amount_paid))).toFixed(2)
+    const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
+    const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
+    const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
+    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
+    const newBalanceDue  = +(Math.max(0, newTotal - Number(existing.amount_paid))).toFixed(2)
 
     params.push(newTotal);     sets.push(`total = $${params.length}`)
     params.push(newBalanceDue);sets.push(`balance_due = $${params.length}`)
@@ -144,35 +176,182 @@ async function update(id, fields) {
   return rows[0]
 }
 
-async function updateStatus(id, status, actorId) {
-  const { rows } = await query(
-    `UPDATE invoices SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-    [status, id]
+async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
+  // Resolve order_type from the linked quotation (if any)
+  const q = clientArg || { query: (...a) => query(...a) }
+  const { rows: qtRows } = await q.query(
+    `SELECT q.order_type, q.id AS quote_id
+     FROM invoices i
+     LEFT JOIN quotations q ON q.id = i.quote_id
+     WHERE i.id = $1`,
+    [invoiceId]
   )
-  if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-  await logActivity(actorId, id, 'status_changed',
-    `Invoice ${rows[0].invoice_number} status changed to ${status}`)
-  return rows[0]
+  const orderType = qtRows[0]?.order_type
+  if (!orderType) return null  // no order_type available — skip auto-creation
+
+  // Idempotency: don't create a second order for the same invoice
+  const { rows: existing } = await q.query(
+    `SELECT id FROM orders WHERE invoice_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [invoiceId]
+  )
+  if (existing[0]) return existing[0].id
+
+  const ordNumber = await getNextNumber('ORD', 'orders', 'order_number')
+  const total = +Number(invoice.total).toFixed(2)
+
+  const { rows: ordRows } = await q.query(
+    `INSERT INTO orders
+       (order_number, invoice_id, supplier_id, order_type, order_date,
+        subtotal, discount_amt, tax_amt, total, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     RETURNING id`,
+    [
+      ordNumber, invoiceId, invoice.supplier_id, orderType,
+      new Date().toISOString().split('T')[0],
+      invoice.subtotal, invoice.discount_amt, invoice.tax_amt, total,
+      actorId,
+    ]
+  )
+  const orderId = ordRows[0].id
+
+  await q.query(
+    `INSERT INTO pipeline_events
+       (event_type, source_table, source_id, target_table, target_id, triggered_by, metadata)
+     VALUES ('order_created_from_invoice','invoices',$1,'orders',$2,$3,$4)`,
+    [invoiceId, orderId, actorId, JSON.stringify({ invoice_number: invoice.invoice_number, order_number: ordNumber })]
+  )
+
+  return orderId
 }
 
-async function recordPayment(id, amount_paid, actorId) {
-  const inv = await getById(id)
+async function updateStatus(id, status, actor) {
+  const actorId   = typeof actor === 'string' ? actor : actor.id
+  const actorUser = typeof actor === 'string' ? null   : actor
 
-  // Prevent payment on voided invoices
-  if (inv.status === 'Void') {
-    throw Object.assign(new Error('Cannot record payment on a voided invoice'), { statusCode: 409 })
-  }
+  const { rows: cur } = await query(`SELECT status FROM invoices WHERE id = $1`, [id])
+  if (!cur[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+  if (actorUser) validateTransition('invoice', cur[0].status, status, actorUser)
 
-  const total_paid  = +Number(amount_paid).toFixed(2)
-  const balance_due = +(Math.max(0, Number(inv.total) - total_paid)).toFixed(2)
-  const newStatus   = balance_due <= 0 ? 'Paid' : (inv.status === 'Draft' ? 'Sent' : inv.status)
+  const ordNumber = status === 'Paid' ? await getNextNumber('ORD', 'orders', 'order_number') : null
 
   const client = await getClient()
   try {
     await client.query('BEGIN')
+
+    const paidAt = status === 'Paid' ? ', paid_at = COALESCE(paid_at, NOW())' : ''
+    const { rows } = await client.query(
+      `UPDATE invoices SET status = $1, updated_at = NOW()${paidAt} WHERE id = $2 RETURNING *`,
+      [status, id]
+    )
+    if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+    const invoice = rows[0]
+
+    await client.query(
+      `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
+       VALUES ($1, 'invoice', $2, 'status_changed', $3)`,
+      [actorId || null, id, `Invoice ${invoice.invoice_number} status changed to ${status}`]
+    ).catch(() => {})
+
+    let autoOrderId = null
+    if (status === 'Paid') {
+      // Resolve order_type from linked quotation
+      const { rows: qtRows } = await client.query(
+        `SELECT q.order_type FROM invoices i LEFT JOIN quotations q ON q.id = i.quote_id WHERE i.id = $1`,
+        [id]
+      )
+      const orderType = qtRows[0]?.order_type
+
+      if (orderType) {
+        // Idempotency
+        const { rows: existing } = await client.query(
+          `SELECT id FROM orders WHERE invoice_id = $1 AND deleted_at IS NULL LIMIT 1`, [id]
+        )
+
+        if (!existing[0]) {
+          const total = +Number(invoice.total).toFixed(2)
+          const { rows: ordRows } = await client.query(
+            `INSERT INTO orders
+               (order_number, invoice_id, supplier_id, order_type, order_date,
+                subtotal, discount_amt, tax_amt, total, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+             RETURNING id`,
+            [
+              ordNumber, id, invoice.supplier_id, orderType,
+              new Date().toISOString().split('T')[0],
+              invoice.subtotal, invoice.discount_amt, invoice.tax_amt, total,
+              actorId,
+            ]
+          )
+          autoOrderId = ordRows[0].id
+
+          await client.query(
+            `INSERT INTO pipeline_events
+               (event_type, source_table, source_id, target_table, target_id, triggered_by, metadata)
+             VALUES ('order_created_from_invoice','invoices',$1,'orders',$2,$3,$4)`,
+            [id, autoOrderId, actorId, JSON.stringify({ invoice_number: invoice.invoice_number, order_number: ordNumber })]
+          )
+        } else {
+          autoOrderId = existing[0].id
+        }
+      }
+
+      await client.query(
+        `INSERT INTO pipeline_events
+           (event_type, source_table, source_id, triggered_by)
+         VALUES ('invoice_paid','invoices',$1,$2)`,
+        [id, actorId]
+      )
+    }
+
+    await client.query('COMMIT')
+    return { ...invoice, status, auto_order_id: autoOrderId }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+async function recordPayment(id, { amount, payment_method, reference_no = null, notes = null }, actorId) {
+  const inv = await getById(id)
+
+  if (inv.status === 'Void') {
+    throw Object.assign(new Error('Cannot record payment on a voided invoice'), { statusCode: 409 })
+  }
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+
+    await client.query(
+      `INSERT INTO payments (invoice_id, amount, payment_method, reference_no, notes, recorded_by)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, amount, payment_method, reference_no, notes, actorId || null]
+    )
+
+    // Recalculate total paid from the payments table (source of truth)
+    const { rows: sumRows } = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE invoice_id = $1`,
+      [id]
+    )
+    const total_paid  = +Number(sumRows[0].total_paid).toFixed(2)
+    const balance_due = +(Math.max(0, Number(inv.total) - total_paid)).toFixed(2)
+
+    let newStatus
+    if (balance_due <= 0) {
+      newStatus = 'Paid'
+    } else if (total_paid > 0) {
+      newStatus = 'Partially Paid'
+    } else {
+      newStatus = inv.status === 'Draft' ? 'Sent' : inv.status
+    }
+
     const { rows } = await client.query(
       `UPDATE invoices
-       SET amount_paid = $1, balance_due = $2, status = $3, updated_at = NOW()
+       SET amount_paid = $1, balance_due = $2, status = $3,
+           paid_at = CASE WHEN $3 = 'Paid' AND paid_at IS NULL THEN NOW() ELSE paid_at END,
+           updated_at = NOW()
        WHERE id = $4
        RETURNING *`,
       [total_paid, balance_due, newStatus, id]
@@ -183,13 +362,34 @@ async function recordPayment(id, amount_paid, actorId) {
        VALUES ($1, 'invoice', $2, 'payment_recorded', $3, $4)`,
       [
         actorId || null, id,
-        `Payment of $${total_paid.toFixed(2)} recorded on invoice ${inv.invoice_number}` +
+        `Payment of $${Number(amount).toFixed(2)} recorded on invoice ${inv.invoice_number} via ${payment_method}` +
           (balance_due > 0 ? ` — $${balance_due.toFixed(2)} still outstanding` : ' — fully paid'),
-        JSON.stringify({ amount_paid: total_paid, balance_due, previous_status: inv.status, new_status: newStatus }),
+        JSON.stringify({ amount, payment_method, reference_no, total_paid, balance_due, new_status: newStatus }),
       ]
     )
 
     await client.query('COMMIT')
+
+    if (newStatus === 'Paid') {
+      await logPipelineEvent({
+        event_type: 'invoice_paid',
+        source_table: 'invoices',
+        source_id: id,
+        triggered_by: actorId,
+        metadata: { total_paid, payment_method },
+      })
+      // Best-effort auto-order creation (outside the payment transaction — payment must not fail due to order creation)
+      autoCreateOrder(id, rows[0], actorId, null).catch(() => {})
+    } else if (newStatus === 'Partially Paid') {
+      await logPipelineEvent({
+        event_type: 'invoice_partially_paid',
+        source_table: 'invoices',
+        source_id: id,
+        triggered_by: actorId,
+        metadata: { amount, total_paid, balance_due, payment_method },
+      })
+    }
+
     await cacheDel('dashboard:stats')
     return rows[0]
   } catch (err) {
@@ -200,7 +400,6 @@ async function recordPayment(id, amount_paid, actorId) {
   }
 }
 
-// Invoices have no deleted_at column — voiding is the soft-delete pattern for financial records
 async function remove(id, actorId) {
   const { rows } = await query(
     `UPDATE invoices SET status = 'Void', updated_at = NOW()
@@ -209,7 +408,6 @@ async function remove(id, actorId) {
     [id]
   )
   if (!rows[0]) {
-    // Check if it exists at all vs already voided
     const { rows: exists } = await query(`SELECT id, status FROM invoices WHERE id = $1`, [id])
     if (!exists[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
     throw Object.assign(new Error('Invoice is already voided'), { statusCode: 409 })

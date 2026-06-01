@@ -5,11 +5,25 @@ const path    = require('path')
 const bcrypt  = require('bcryptjs')
 const { pool } = require('../../src/config/db')
 
-const MIGRATION_FILE = path.join(__dirname, '../../migrations/001_setup.sql')
+const MIGRATIONS_DIR = path.join(__dirname, '../../migrations')
+
+// Ordered list of migration files to apply in tests (all idempotent via IF NOT EXISTS / DO blocks)
+const MIGRATION_FILES = [
+  '001_setup.sql',
+  '010_create_payments_table.sql',
+  '011_create_pipeline_events_table.sql',
+  '016_custom_fields.sql',
+  '017_po_tracking.sql',
+  '018_gangsheet.sql',
+  '019_custom_field_values.sql',
+  '020_lead_quote_intake.sql',
+]
 
 async function runMigrations() {
-  const sql = fs.readFileSync(MIGRATION_FILE, 'utf8')
-  await pool.query(sql)
+  for (const file of MIGRATION_FILES) {
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+    await pool.query(sql)
+  }
 }
 
 async function seedAdmin() {
@@ -24,15 +38,20 @@ async function seedAdmin() {
 async function truncateTestTables() {
   await pool.query(`
     TRUNCATE TABLE
+      custom_field_values,
+      custom_fields,
       activity_logs,
+      pipeline_events,
+      payments,
       order_items_apparel,
       order_items_gangsheet,
       order_items_dtf,
       orders,
       lead_comments,
       lead_attachments,
+      lead_product_interest,
       leads,
-      customers,
+      suppliers,
       quotations,
       invoices,
       purchase_orders,
@@ -44,7 +63,7 @@ async function truncateTestTables() {
 }
 
 async function truncateUsers() {
-  await pool.query(`DELETE FROM users`)
+  await pool.query(`TRUNCATE TABLE users CASCADE`)
 }
 
 module.exports = { runMigrations, seedAdmin, truncateTestTables, truncateUsers }

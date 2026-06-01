@@ -1,11 +1,28 @@
 const authService = require('./auth.service')
-const { success, error } = require('../../utils/response')
+const { success } = require('../../utils/response')
+
+const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+function setRefreshCookie(res, token) {
+  res.cookie(authService.COOKIE_NAME, token, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge:   COOKIE_MAX_AGE_MS,
+    path:     '/api/auth',  // only sent to auth endpoints
+  })
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(authService.COOKIE_NAME, { path: '/api/auth' })
+}
 
 async function login(req, res, next) {
   try {
     const { email, password } = req.body
-    const result = await authService.login(email, password)
-    return success(res, result, 'Login successful')
+    const result = await authService.login(email, password, req.ip, req.headers['user-agent'])
+    setRefreshCookie(res, result.refreshToken)
+    return success(res, { token: result.accessToken, user: result.user }, 'Login successful')
   } catch (err) {
     next(err)
   }
@@ -22,15 +39,36 @@ async function getMe(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const result = await authService.refresh(req.body.token)
-    return success(res, result, 'Token refreshed')
+    const rawToken = req.cookies?.[authService.COOKIE_NAME]
+    const result = await authService.refresh(rawToken, req.ip, req.headers['user-agent'])
+    setRefreshCookie(res, result.refreshToken)
+    return success(res, { token: result.accessToken }, 'Token refreshed')
+  } catch (err) {
+    // Clear cookie on any refresh failure so the client stops retrying with a bad token
+    clearRefreshCookie(res)
+    next(err)
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    const rawToken = req.cookies?.[authService.COOKIE_NAME]
+    await authService.logout(rawToken)
+    clearRefreshCookie(res)
+    return success(res, null, 'Logged out successfully')
   } catch (err) {
     next(err)
   }
 }
 
-async function logout(req, res) {
-  return success(res, null, 'Logged out successfully')
+async function logoutEverywhere(req, res, next) {
+  try {
+    await authService.revokeAll(req.user.id)
+    clearRefreshCookie(res)
+    return success(res, null, 'Logged out from all devices')
+  } catch (err) {
+    next(err)
+  }
 }
 
 async function setupStatus(req, res, next) {
@@ -45,7 +83,8 @@ async function setupStatus(req, res, next) {
 async function setup(req, res, next) {
   try {
     const result = await authService.setup(req.body)
-    return success(res, result, 'Admin account created', 201)
+    setRefreshCookie(res, result.refreshToken)
+    return success(res, { token: result.accessToken, user: result.user }, 'Admin account created', 201)
   } catch (err) {
     next(err)
   }
@@ -55,10 +94,13 @@ async function changePassword(req, res, next) {
   try {
     const { current_password, new_password } = req.body
     await authService.changePassword(req.user.id, current_password, new_password)
-    return success(res, null, 'Password changed successfully')
+    // Revoke all refresh tokens on password change — force re-login everywhere
+    await authService.revokeAll(req.user.id)
+    clearRefreshCookie(res)
+    return success(res, null, 'Password changed successfully. Please log in again.')
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { login, refresh, getMe, logout, setupStatus, setup, changePassword }
+module.exports = { login, refresh, logout, logoutEverywhere, getMe, setupStatus, setup, changePassword }

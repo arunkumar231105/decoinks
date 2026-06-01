@@ -6,7 +6,7 @@ const { pool } = require('../../src/config/db')
 const { runMigrations, seedAdmin, truncateTestTables, truncateUsers } = require('./helpers')
 
 let token
-let customerId
+let supplierId
 let orderId
 
 beforeAll(async () => {
@@ -20,20 +20,20 @@ beforeAll(async () => {
     .send({ email: 'admin@test.com', password: 'adminpass123' })
   token = loginRes.body.data.token
 
-  const custRes = await request(app)
-    .post('/api/customers')
+  const supRes = await request(app)
+    .post('/api/suppliers')
     .set('Authorization', `Bearer ${token}`)
-    .send({ name: 'Order Test Customer', email: 'ordertest@example.com' })
-  customerId = custRes.body.data.id
+    .send({ name: 'Order Test Supplier', email: 'ordertest@example.com' })
+  supplierId = supRes.body.data.id
 })
 
 beforeEach(async () => {
   await pool.query(`
     DELETE FROM order_items_apparel WHERE order_id IN (
-      SELECT id FROM orders WHERE customer_id = $1
+      SELECT id FROM orders WHERE supplier_id = $1
     )
-  `, [customerId])
-  await pool.query(`DELETE FROM orders WHERE customer_id = $1`, [customerId])
+  `, [supplierId])
+  await pool.query(`DELETE FROM orders WHERE supplier_id = $1`, [supplierId])
   orderId = null
 })
 
@@ -49,7 +49,7 @@ describe('POST /api/orders', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         order_type:  'apparel',
-        customer_id: customerId,
+        supplier_id: supplierId,
         items: [
           { item: 'T-Shirt', qty: 10, unit_price: 15.00 },
         ],
@@ -71,7 +71,7 @@ describe('GET /api/orders/:id', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         order_type:  'apparel',
-        customer_id: customerId,
+        supplier_id: supplierId,
         items: [{ item: 'Hoodie', qty: 5, unit_price: 30.00 }],
       })
     orderId = res.body.data.id
@@ -96,7 +96,7 @@ describe('PATCH /api/orders/:id/status', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         order_type:  'apparel',
-        customer_id: customerId,
+        supplier_id: supplierId,
         items: [{ item: 'Cap', qty: 20, unit_price: 8.00 }],
       })
     orderId = res.body.data.id

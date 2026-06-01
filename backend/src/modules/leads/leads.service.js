@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { validateTransition } = require('../../utils/stateMachine')
 
 const STAGES = ['initiated', 'quotation', 'artwork', 'gangsheet', 'payment', 'confirmed']
 const STAGE_META = {
@@ -42,7 +43,7 @@ async function list({ page = 1, limit = 10, search = '', stage = '', status = ''
 
   if (search) {
     params.push(`%${search}%`)
-    conditions.push(`(l.lead_number ILIKE $${params.length} OR l.customer_name ILIKE $${params.length} OR l.description ILIKE $${params.length})`)
+    conditions.push(`(l.lead_number ILIKE $${params.length} OR l.supplier_name ILIKE $${params.length} OR l.description ILIKE $${params.length})`)
   }
   if (stage) { params.push(stage); conditions.push(`l.stage = $${params.length}`) }
   if (status) { params.push(status); conditions.push(`l.status = $${params.length}`) }
@@ -77,10 +78,11 @@ async function getById(id) {
   )
   if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
 
-  const [comments, attachments, activity] = await Promise.all([
+  const [comments, attachments, activity, productInterest] = await Promise.all([
     query(`SELECT lc.*, u.name AS user_name FROM lead_comments lc LEFT JOIN users u ON u.id = lc.user_id WHERE lc.lead_id = $1 ORDER BY lc.created_at`, [id]),
     query(`SELECT la.*, u.name AS uploaded_by_name FROM lead_attachments la LEFT JOIN users u ON u.id = la.uploaded_by WHERE la.lead_id = $1 ORDER BY la.created_at`, [id]),
     query(`SELECT al.*, u.name AS user_name FROM activity_logs al LEFT JOIN users u ON u.id = al.user_id WHERE al.entity_type = 'lead' AND al.entity_id = $1 ORDER BY al.created_at DESC LIMIT 20`, [id]),
+    query(`SELECT * FROM lead_product_interest WHERE lead_id = $1 ORDER BY sort_order, created_at`, [id]),
   ])
 
   return {
@@ -88,44 +90,128 @@ async function getById(id) {
     comments: comments.rows,
     attachments: attachments.rows,
     activity: activity.rows,
+    productInterest: productInterest.rows,
   }
 }
 
-async function create({ customer_name, customer_id, source, description, assigned_to, created_by }) {
+async function insertProductInterest(client, leadId, items) {
+  for (let i = 0; i < items.length; i++) {
+    const pi = items[i]
+    await client.query(
+      `INSERT INTO lead_product_interest
+         (lead_id, product_type, qty, sizes, colors, artwork_count, notes, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        leadId,
+        pi.product_type  || null,
+        pi.qty           ?? null,
+        pi.sizes         || null,
+        pi.colors        || null,
+        pi.artwork_count ?? 0,
+        pi.notes         || null,
+        pi.sort_order    ?? i,
+      ]
+    )
+  }
+}
+
+async function create({
+  supplier_name, supplier_id, source, description, assigned_to, created_by,
+  company_name, email, phone, whatsapp, wechat,
+  country, state, city, zip, shipping_address, billing_address,
+  buyer_type, delivery_date, internal_notes,
+  productInterest = [],
+}) {
   const lead_number = await getNextNumber('LEAD', 'leads', 'lead_number')
-  const { rows } = await query(
-    `INSERT INTO leads (lead_number, customer_id, customer_name, source, description, assigned_to)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING *`,
-    [lead_number, customer_id || null, customer_name, source, description || null, assigned_to || null]
-  )
-  await logActivity(created_by, 'lead', rows[0].id, 'created', `Lead ${lead_number} created`)
-  return rows[0]
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(
+      `INSERT INTO leads
+         (lead_number, supplier_id, supplier_name, source, description, assigned_to,
+          company_name, email, phone, whatsapp, wechat,
+          country, state, city, zip, shipping_address, billing_address,
+          buyer_type, delivery_date, internal_notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       RETURNING *`,
+      [
+        lead_number, supplier_id || null, supplier_name, source, description || null, assigned_to || null,
+        company_name || null, email || null, phone || null, whatsapp || null, wechat || null,
+        country || null, state || null, city || null, zip || null,
+        shipping_address || null, billing_address || null,
+        buyer_type || null, delivery_date || null, internal_notes || null,
+      ]
+    )
+    const lead = rows[0]
+    await insertProductInterest(client, lead.id, productInterest)
+    await client.query('COMMIT')
+    await logActivity(created_by, 'lead', lead.id, 'created', `Lead ${lead_number} created`)
+    return getById(lead.id)
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function update(id, fields, actorId) {
-  const allowed = ['customer_name','customer_id','source','description','assigned_to','status','has_artwork']
+  const SCALAR_FIELDS = [
+    'supplier_name', 'supplier_id', 'source', 'description', 'assigned_to', 'status', 'has_artwork',
+    'company_name', 'email', 'phone', 'whatsapp', 'wechat',
+    'country', 'state', 'city', 'zip', 'shipping_address', 'billing_address',
+    'buyer_type', 'delivery_date', 'internal_notes',
+  ]
   const sets = []
   const params = []
-  for (const key of allowed) {
+  for (const key of SCALAR_FIELDS) {
     if (fields[key] !== undefined) {
       params.push(fields[key])
       sets.push(`${key} = $${params.length}`)
     }
   }
-  if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
-  params.push(id)
-  const { rows } = await query(
-    `UPDATE leads SET ${sets.join(', ')}, updated_at = NOW()
-     WHERE id = $${params.length} AND deleted_at IS NULL RETURNING *`,
-    params
-  )
-  if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
-
-  if (fields.status !== undefined) {
-    await logActivity(actorId, 'lead', id, 'status_changed', `Status changed to ${fields.status}`)
+  const hasProductInterest = Array.isArray(fields.productInterest)
+  if (!sets.length && !hasProductInterest) {
+    throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
   }
-  return rows[0]
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+
+    if (sets.length) {
+      params.push(id)
+      const { rows } = await client.query(
+        `UPDATE leads SET ${sets.join(', ')}, updated_at = NOW()
+         WHERE id = $${params.length} AND deleted_at IS NULL RETURNING id`,
+        params
+      )
+      if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+    } else {
+      const { rows } = await client.query(
+        `SELECT id FROM leads WHERE id = $1 AND deleted_at IS NULL`, [id]
+      )
+      if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+    }
+
+    if (hasProductInterest) {
+      await client.query(`DELETE FROM lead_product_interest WHERE lead_id = $1`, [id])
+      await insertProductInterest(client, id, fields.productInterest)
+    }
+
+    await client.query('COMMIT')
+
+    if (fields.status !== undefined) {
+      await logActivity(actorId, 'lead', id, 'status_changed', `Status changed to ${fields.status}`)
+    }
+    return getById(id)
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function move(id, { stage, position = 0, user_id }) {
@@ -263,7 +349,7 @@ function formatLead(r) {
   return {
     id: r.id,
     leadId: r.lead_number,
-    customerName: r.customer_name,
+    supplierName: r.supplier_name,
     source: r.source,
     description: r.description,
     timestamp: formatTimestamp(r.created_at),
@@ -289,7 +375,80 @@ function formatTimestamp(date) {
   return new Date(date).toLocaleDateString()
 }
 
+async function convertToQuote(leadId, createdBy) {
+  const lead = await getById(leadId)
+
+  const quotationsSvc = require('../quotations/quotations.service')
+
+  const items = (lead.productInterest || []).map((pi, i) => ({
+    description:   pi.product_type || 'Item',
+    qty:           pi.qty          || 1,
+    unit_price:    0,
+    sizes:         pi.sizes        || null,
+    colors:        pi.colors       || null,
+    artwork_count: pi.artwork_count ?? 0,
+    sort_order:    pi.sort_order   ?? i,
+  }))
+
+  const quotation = await quotationsSvc.create({
+    lead_id:                      leadId,
+    supplier_id:                  lead.supplier_id            || null,
+    order_type:                   null,
+    discount_pct:                 0,
+    tax_pct:                      0,
+    notes:                        null,
+    items,
+    created_by:                   createdBy,
+    company_name:                 lead.company_name           || null,
+    customer_name:                lead.supplier_name          || null,
+    billing_email:                lead.email                  || null,
+    contact_number:               lead.phone                  || null,
+    whatsapp:                     lead.whatsapp               || null,
+    wechat:                       lead.wechat                 || null,
+    customer_category:            lead.buyer_type             || null,
+    customer_source:              lead.source                 || null,
+    shipping_country:             lead.country                || null,
+    shipping_state:               lead.state                  || null,
+    shipping_city:                lead.city                   || null,
+    zip_code:                     lead.zip                    || null,
+    shipping_address:             lead.shipping_address       || null,
+    billing_address:              lead.billing_address        || null,
+    due_date:                     lead.delivery_date          || null,
+    sales_agent_id:               lead.assigned_to            || null,
+    internal_notes:               lead.internal_notes         || null,
+    customer_requirement_summary: lead.last_message           || null,
+    quote_estimate:               null,
+  })
+
+  await query(
+    `UPDATE leads SET status = 'Quotation Generated', updated_at = NOW() WHERE id = $1`,
+    [leadId]
+  )
+  await logActivity(createdBy, 'lead', leadId, 'converted', `Lead converted to quotation ${quotation.quote_number}`)
+
+  return quotation
+}
+
+async function updateStatus(id, status, actor) {
+  const actorId   = typeof actor === 'string' ? actor : actor.id
+  const actorUser = typeof actor === 'string' ? null   : actor
+
+  const { rows: cur } = await query(
+    `SELECT status FROM leads WHERE id = $1 AND deleted_at IS NULL`, [id]
+  )
+  if (!cur[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+  if (actorUser) validateTransition('lead', cur[0].status, status, actorUser)
+
+  const { rows } = await query(
+    `UPDATE leads SET status=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL RETURNING *`,
+    [status, id]
+  )
+  if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+  await logActivity(actorId, 'lead', id, 'status_changed', `Status changed to ${status}`)
+  return rows[0]
+}
+
 module.exports = {
-  getKanban, list, getById, create, update, move, remove,
+  getKanban, list, getById, create, update, updateStatus, convertToQuote, move, remove,
   getComments, addComment, deleteComment, addAttachment, deleteAttachment,
 }

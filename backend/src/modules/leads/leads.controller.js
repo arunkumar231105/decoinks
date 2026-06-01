@@ -93,4 +93,18 @@ async function deleteAttachment(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { getKanban, list, getOne, create, update, move, remove, getComments, addComment, deleteComment, addAttachment, deleteAttachment }
+async function updateStatus(req, res, next) {
+  try {
+    const lead = await service.updateStatus(req.params.id, req.body.status, req.user)
+    return success(res, lead, 'Status updated')
+  } catch (err) { next(err) }
+}
+
+async function convertToQuote(req, res, next) {
+  try {
+    const quotation = await service.convertToQuote(req.params.id, req.user.id)
+    return created(res, quotation, 'Lead converted to quotation')
+  } catch (err) { next(err) }
+}
+
+module.exports = { getKanban, list, getOne, create, update, updateStatus, convertToQuote, move, remove, getComments, addComment, deleteComment, addAttachment, deleteAttachment }

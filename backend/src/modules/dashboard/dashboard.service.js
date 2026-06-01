@@ -82,21 +82,21 @@ async function getOrdersByStatus() {
   return result
 }
 
-async function getTopCustomers() {
-  const cacheKey = 'dashboard:top-customers'
+async function getTopSuppliers() {
+  const cacheKey = 'dashboard:top-suppliers'
   const cached = await cacheGet(cacheKey)
   if (cached) return cached
 
   const { rows } = await query(
-    `SELECT c.id, c.name AS customer, COALESCE(SUM(o.total), 0) AS revenue
-     FROM customers c
-     LEFT JOIN orders o ON o.customer_id = c.id AND o.deleted_at IS NULL
-     WHERE c.deleted_at IS NULL
-     GROUP BY c.id, c.name
+    `SELECT s.id, s.name AS supplier, COALESCE(SUM(o.total), 0) AS revenue
+     FROM suppliers s
+     LEFT JOIN orders o ON o.supplier_id = s.id AND o.deleted_at IS NULL
+     WHERE s.deleted_at IS NULL
+     GROUP BY s.id, s.name
      ORDER BY revenue DESC
      LIMIT 5`
   )
-  const result = rows.map((r) => ({ customer: r.customer, revenue: parseFloat(r.revenue) }))
+  const result = rows.map((r) => ({ supplier: r.supplier, revenue: parseFloat(r.revenue) }))
   await cacheSet(cacheKey, result, TTL)
   return result
 }
@@ -116,4 +116,4 @@ async function getRecentActivity() {
   return rows
 }
 
-module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopCustomers, getRecentActivity }
+module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopSuppliers, getRecentActivity }

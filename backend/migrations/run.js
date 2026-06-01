@@ -8,7 +8,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 async function runMigrations() {
   const migrationsDir = path.join(__dirname)
   const files = fs.readdirSync(migrationsDir)
-    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => f.endsWith('.sql') && !f.includes('_down'))
     .sort()
 
   if (!files.length) {

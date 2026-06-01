@@ -1,14 +1,27 @@
 # backend/Dockerfile.backend
 FROM node:20-alpine AS base
 WORKDIR /app
-COPY package*.json ./
+# Copy only package.json (not the lock file) so npm resolves the correct
+# platform-specific sharp binary (@img/sharp-linux-musl-x64) for Alpine/musl.
+# A lock file generated on Windows/macOS locks the wrong platform binary and
+# forces a source build that fails without native toolchains.
+COPY package.json ./
 RUN npm install --omit=dev
+# Copy entrypoint so it's available even without the dev volume mount.
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 FROM base AS dev
+# Install dev dependencies on top of the prod install done in base.
+# Copy package.json only (same reason: avoid platform-locked lockfile).
+COPY package.json ./
 RUN npm install
 COPY . .
+# Run migrations then hand off to CMD (node --watch server.js).
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
 CMD ["node", "--watch", "server.js"]
 
 FROM base AS prod
 COPY . .
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

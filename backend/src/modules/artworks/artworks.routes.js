@@ -13,7 +13,7 @@ router.use(verifyToken)
 const createSchema = z.object({
   name:        z.string().min(1, 'Name is required'),
   artwork_no:  z.string().optional(),
-  customer_id: z.string().uuid().optional().nullable(),
+  supplier_id: z.string().uuid().optional().nullable(),
   order_id:    z.string().uuid().optional().nullable(),
   status:      z.enum(['Draft', 'Pending Approval', 'Changes Requested', 'Approved', 'Archived']).optional(),
   tags:        z.string().optional(),   // comma-separated, parsed in service
@@ -26,7 +26,7 @@ const statusSchema = z.object({
 
 const taskSchema = z.object({
   name:        z.string().min(1, 'Name is required'),
-  customer_id: z.string().uuid().optional().nullable(),
+  supplier_id: z.string().uuid().optional().nullable(),
   order_id:    z.string().uuid().optional().nullable(),
   notes:       z.string().optional().nullable(),
   tags:        z.string().optional(),
