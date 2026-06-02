@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS MVP\\\\decoinks\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(python -c \"import docx; print\\('python-docx available'\\)\")",
+      "Bash(python -c \"import os; size = os.path.getsize\\(r'C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS MVP\\\\Decoinks_Backend_Implementation_Guide.docx'\\); print\\(f'File size: {size/1024:.1f} KB'\\)\")"
+    ]
+  }
+}

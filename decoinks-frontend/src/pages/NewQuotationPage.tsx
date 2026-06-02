@@ -1,0 +1,880 @@
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Menu, MenuItem } from '@mui/material'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from '../utils/toast'
+import {
+  Bot,
+  ChevronDown,
+  Copy,
+  Edit3,
+  ExternalLink,
+  MessageCircle,
+  MessageSquare,
+  Package,
+  Plus,
+  Save,
+  Send,
+  Shirt,
+  Trash2,
+  User2,
+  X,
+} from 'lucide-react'
+import { cn } from '../utils/cn'
+import { api } from '../services/api'
+import { useAuthStore } from '../store/authStore'
+import { copyText, printPanel } from '../utils/actions'
+
+type QuoteStatus = 'Draft' | 'Sent' | 'Pending Approval' | 'Approved' | 'Converted'
+
+interface ApparelItem {
+  id: string
+  name: string
+  description: string
+  brand: string
+  model: string
+  variant: string
+  qty: number
+  printDetails: { location: string; size: string }[]
+  stdCost: number
+  quotedCost: number
+}
+
+interface GangsheetRow {
+  id: string
+  size: string
+  noArtworks: number
+  qtySheets: number
+  stdCost: number
+  quotedCost: number
+}
+
+interface TransferRow {
+  id: string
+  transferSize: string
+  qty: number
+  stdCost: number
+  quotedCost: number
+}
+
+interface OtherCharge {
+  key: 'artwork' | 'packaging' | 'shipping' | 'discount' | 'tax'
+  label: string
+  description: string
+  enabled: boolean
+  stdCost: number
+  quotedCost: number
+}
+
+interface LeadItem {
+  id: string
+  description: string
+  qty: number
+  sizes: string
+  colors: string
+  artwork_count: number
+  unit_price: number
+  sort_order: number
+}
+
+interface ProductTotals {
+  apparel: number
+  gangsheet: number
+  transfers: number
+  leadItems: number
+}
+
+const uid = () => Math.random().toString(36).slice(2, 8)
+const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const today = () => {
+  const d = new Date()
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
+const PRINT_LOCATIONS = ['Front Print', 'Back Print', 'Left Chest', 'Right Sleeve', 'Back Neck']
+const PRINT_SIZES = ['12x16', '10x12', '8x10', '4x4', '3x3']
+const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
+const TRANSFER_SIZES = ['12" x 12"', '12" x 16"', '10" x 12"', '8" x 10"', '4" x 4"']
+
+const initialApparelItems: ApparelItem[] = []
+const initialGangsheetRows: GangsheetRow[] = []
+const initialTransferRows: TransferRow[] = []
+
+const initialOtherCharges: OtherCharge[] = [
+  { key: 'artwork', label: 'Artwork Services', description: 'Artwork setup & editing', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'packaging', label: 'Packaging', description: 'Poly mailer + label', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'shipping', label: 'Estimated Shipping', description: 'Shipping & handling', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'discount', label: 'Discount', description: 'Special discount', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'tax', label: 'Tax', description: 'Tax is calculated from taxable amount', enabled: false, stdCost: 0, quotedCost: 0 },
+]
+
+function calculateQuotationTotals({
+  productTotals,
+  otherCharges,
+  taxRate,
+}: {
+  productTotals: ProductTotals
+  otherCharges: OtherCharge[]
+  taxRate: number
+}) {
+  const itemsTotal = productTotals.apparel + productTotals.gangsheet + productTotals.transfers + productTotals.leadItems
+  const enabled = otherCharges.filter(charge => charge.enabled)
+  const shipping = enabled.find(charge => charge.key === 'shipping')?.quotedCost ?? 0
+  const nonTaxCharges = enabled
+    .filter(charge => !['shipping', 'discount', 'tax'].includes(charge.key))
+    .reduce((sum, charge) => sum + charge.quotedCost, 0)
+  const discount = enabled.find(charge => charge.key === 'discount')?.quotedCost ?? 0
+  const subtotal = itemsTotal + shipping + nonTaxCharges
+  const taxableAmount = Math.max(subtotal + discount, 0)
+  const tax = enabled.some(charge => charge.key === 'tax') ? +(taxableAmount * taxRate).toFixed(2) : 0
+  const finalTotal = +(taxableAmount + tax).toFixed(2)
+
+  return { itemsTotal, shipping, subtotal, discount, tax, finalTotal }
+}
+
+function SupplierCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const { data } = useQuery({
+    queryKey: ['suppliers-suggest', value],
+    queryFn: () => api.get(`/suppliers?limit=20&search=${encodeURIComponent(value)}`).then(r => r.data.data?.rows ?? []),
+    enabled: value.length > 0,
+  })
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="nq-select"
+        placeholder="Type supplier name..."
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && data && data.length > 0 && (
+        <div className="nq-dropdown" style={{ position: 'absolute', zIndex: 50, width: '100%', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          {data.map((c: { id: string; name: string; email?: string }) => (
+            <button key={c.id} className="nq-dropdown-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }}
+              onMouseDown={() => { onChange(c.name, c.id); setOpen(false) }}>
+              <div style={{ fontWeight: 500 }}>{c.name}</div>
+              {c.email && <div style={{ fontSize: 11, color: '#64748b' }}>{c.email}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuoteHeader({
+  status,
+  quoteDate,
+  validUntil,
+  agent,
+  setAgent,
+}: {
+  status: QuoteStatus
+  quoteDate: string
+  validUntil: string
+  agent: string
+  setAgent: (agent: string) => void
+}) {
+  return (
+    <section className="nq-info-bar">
+      <div className="nq-info-field">
+        <label>Quote #</label>
+        <div className="nq-quote-num">
+          <input className="nq-input nq-input-readonly" value="AUTO-GENERATED" readOnly />
+          <span className="nq-badge nq-badge-draft">{status}</span>
+        </div>
+      </div>
+      <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" value={quoteDate} readOnly /></div>
+      <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" value={validUntil} readOnly /><span className="nq-validity-hint">7 days validity</span></div>
+      <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
+      <div className="nq-info-field">
+        <label>Sales Agent</label>
+        <input className="nq-input" placeholder="Agent name" value={agent} onChange={e => setAgent(e.target.value)} />
+      </div>
+    </section>
+  )
+}
+
+function SupplierSection({
+  supplierText,
+  setSupplierText,
+  setSupplierId,
+  billingAddress,
+  setBillingAddress,
+  shippingAddress,
+  setShippingAddress,
+  sameAsBilling,
+  setSameAsBilling,
+}: {
+  supplierText: string
+  setSupplierText: (v: string) => void
+  setSupplierId: (id: string) => void
+  billingAddress: string
+  setBillingAddress: (v: string) => void
+  shippingAddress: string
+  setShippingAddress: (v: string) => void
+  sameAsBilling: boolean
+  setSameAsBilling: (same: boolean) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Supplier Information</h3></div>
+      <div className="nq-customer-grid">
+        <div className="nq-customer-select-col">
+          <label className="nq-field-label">Supplier <span className="nq-req">*</span></label>
+          <SupplierCombobox value={supplierText} onChange={(text, id) => { setSupplierText(text); if (id) setSupplierId(id) }} />
+        </div>
+        <div className="nq-address-block">
+          <div className="nq-address-header"><span className="nq-field-label">Billing Address</span></div>
+          <textarea className="nq-textarea" rows={3} placeholder="Billing address..." value={billingAddress} onChange={e => setBillingAddress(e.target.value)} />
+        </div>
+        <div className="nq-address-block">
+          <div className="nq-address-header">
+            <span className="nq-field-label">Shipping Address</span>
+            <label className="nq-same-billing"><input type="checkbox" checked={sameAsBilling} onChange={e => setSameAsBilling(e.target.checked)} /> Same as billing</label>
+          </div>
+          <textarea className="nq-textarea" rows={3} placeholder="Shipping address..." value={sameAsBilling ? billingAddress : shippingAddress} onChange={e => { if (!sameAsBilling) setShippingAddress(e.target.value) }} readOnly={sameAsBilling} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ProductSection({
+  title,
+  sectionNumber,
+  enabled,
+  onToggle,
+  total,
+  children,
+}: {
+  title: string
+  sectionNumber: number
+  enabled: boolean
+  onToggle: () => void
+  total: number
+  children: React.ReactNode
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-section-header">
+        <label className="nq-section-checkbox"><input type="checkbox" checked={enabled} onChange={onToggle} /></label>
+        <span className="nq-section-num">{sectionNumber}</span>
+        <h3>{title}</h3>
+        {enabled && <span className="nq-badge nq-badge-active">Active</span>}
+        <strong className="nq-section-total">Section Total: ${fmt(total)}</strong>
+      </div>
+      {enabled && children}
+    </section>
+  )
+}
+
+function OtherChargesSection({
+  charges,
+  toggleCharge,
+  updateCharge,
+}: {
+  charges: OtherCharge[]
+  toggleCharge: (key: OtherCharge['key']) => void
+  updateCharge: (key: OtherCharge['key'], patch: Partial<OtherCharge>) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-other-header"><input type="checkbox" checked readOnly /><span className="nq-other-title">Other Charges</span><span className="nq-other-hint">(independent from product rows)</span></div>
+      <div className="nq-other-grid">
+        {charges.map(item => (
+          <div key={item.key} className={cn('nq-other-item', item.enabled && 'nq-other-item-active')}>
+            <label className="nq-other-item-check">
+              <input type="checkbox" checked={item.enabled} onChange={() => toggleCharge(item.key)} />
+              <div><strong className={cn(item.key === 'discount' && 'nq-discount-label')}>{item.label}{item.key === 'discount' && <Edit3 size={11} style={{ marginLeft: 4 }} />}</strong><span>{item.description}</span></div>
+            </label>
+            <div className="nq-other-costs">
+              <div className="nq-other-cost-col"><span>STD Cost</span><div className="nq-money-input nq-money-sm"><span>$</span><input type="number" step={0.01} value={Math.abs(item.stdCost)} onChange={e => updateCharge(item.key, { stdCost: item.stdCost < 0 ? -Math.abs(+e.target.value) : +e.target.value })} /></div></div>
+              <div className="nq-other-cost-col"><span>Quoted</span><div className={cn('nq-money-input nq-money-sm', item.key === 'discount' && 'nq-money-discount')}><span>{item.quotedCost < 0 ? '-$' : '$'}</span><input type="number" step={0.01} value={Math.abs(item.quotedCost)} onChange={e => updateCharge(item.key, { quotedCost: item.quotedCost < 0 ? -Math.abs(+e.target.value) : +e.target.value })} /></div></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function NotesSection({ customerNotes, internalNotes, setCustomerNotes, setInternalNotes }: {
+  customerNotes: string
+  internalNotes: string
+  setCustomerNotes: (value: string) => void
+  setInternalNotes: (value: string) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading"><Package size={14} /><h3>Notes</h3></div>
+      <div className="nq-notes-grid">
+        <div className="nq-notes-col"><label>Customer Notes <small>(visible to customer)</small></label><textarea className="nq-textarea" rows={4} value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} /></div>
+        <div className="nq-notes-col"><label>Internal Notes <small>(visible to team only)</small></label><textarea className="nq-textarea" rows={4} value={internalNotes} onChange={e => setInternalNotes(e.target.value)} /></div>
+      </div>
+    </section>
+  )
+}
+
+function AISection() {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><Bot size={14} className="nq-ai-icon" /><span>AI Extracted from Chat</span><span className="nq-badge nq-badge-ai">Auto-Filled</span></div>
+      <ul className="nq-ai-list">{[['Product', 'Hoodie'], ['Quantity', '50'], ['Print Type', 'DTF'], ['Locations', 'Front, Back'], ['Size', '12x16'], ['Urgency', 'Yes']].map(([label, value]) => <li key={label} className="nq-ai-item"><span className="nq-ai-check">âœ“</span><span className="nq-ai-label">{label}:</span><span className="nq-ai-value">{value}</span></li>)}</ul>
+      <button className="nq-link-btn nq-ai-edit">Edit Extracted Data</button>
+    </div>
+  )
+}
+
+function PreviousQuotesSection() {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><span>Previous / Revised Quotations</span><button className="nq-link-btn">View All</button></div>
+      <div className="nq-prev-quotes">{[
+        { id: 'QT-2026-0001 (Rev. 2)', status: 'Sent', date: 'May 1, 2026', amount: '$1,250.00' },
+        { id: 'QT-2026-0001 (Rev. 1)', status: 'Sent', date: 'Apr 30, 2026', amount: '$1,180.00' },
+        { id: 'QT-2026-0001 (Original)', status: 'Sent', date: 'Apr 28, 2026', amount: '$1,120.00' },
+      ].map(q => <div key={q.id} className="nq-prev-quote-row"><div className="nq-prev-quote-id"><button className="nq-link-btn nq-qt-link">{q.id}</button><span className="nq-badge nq-badge-sent">{q.status}</span></div><div className="nq-prev-quote-meta"><span>{q.date}</span><span className="nq-prev-amount">{q.amount}</span></div></div>)}</div>
+    </div>
+  )
+}
+
+function PricingSummary({ totals }: { totals: ReturnType<typeof calculateQuotationTotals> }) {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><span>Pricing Summary</span></div>
+      <table className="nq-pricing-table">
+        <tbody>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Items Total</label></td><td>${fmt(totals.itemsTotal)}</td></tr>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Shipping</label></td><td>${fmt(totals.shipping)}</td></tr>
+          <tr className="nq-pricing-subtotal"><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Subtotal</label></td><td>${fmt(totals.subtotal)}</td></tr>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Discount</label></td><td className="nq-pricing-discount">${fmt(totals.discount)}</td></tr>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Tax</label></td><td>${fmt(totals.tax)}</td></tr>
+        </tbody>
+        <tfoot><tr className="nq-pricing-total-row"><td>Total</td><td><strong className="nq-total-quoted">${fmt(totals.finalTotal)}</strong></td></tr></tfoot>
+      </table>
+    </div>
+  )
+}
+
+function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, setPaymentTerms, setProductionTime, setDeliveryMethod, setCurrency }: {
+  paymentTerms: string
+  productionTime: string
+  deliveryMethod: string
+  currency: string
+  setPaymentTerms: (value: string) => void
+  setProductionTime: (value: string) => void
+  setDeliveryMethod: (value: string) => void
+  setCurrency: (value: string) => void
+}) {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><span>Terms &amp; Conditions</span></div>
+      <div className="nq-terms-grid">
+        <div className="nq-terms-field"><label>Payment Terms</label><select className="nq-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}><option>Net 15</option><option>Net 30</option><option>Due on Receipt</option></select></div>
+        <div className="nq-terms-field"><label>Production Time</label><select className="nq-select" value={productionTime} onChange={e => setProductionTime(e.target.value)}><option>2 - 3 Business Days</option><option>3 - 5 Business Days</option><option>5 - 7 Business Days</option></select></div>
+        <div className="nq-terms-field"><label>Delivery Method</label><select className="nq-select" value={deliveryMethod} onChange={e => setDeliveryMethod(e.target.value)}><option>Standard Shipping</option><option>Express Shipping</option><option>Local Pickup</option></select></div>
+        <div className="nq-terms-field"><label>Currency</label><select className="nq-select" value={currency} onChange={e => setCurrency(e.target.value)}><option>USD - US Dollar</option><option>CAD - Canadian Dollar</option><option>GBP - Pound Sterling</option></select></div>
+      </div>
+    </div>
+  )
+}
+
+function ActionBar({ status, setStatus, onSave, onConvert, onPreview }: { status: QuoteStatus; setStatus: (status: QuoteStatus) => void; onSave: () => void; onConvert: () => void; onPreview: () => void }) {
+  const [bottomSendOpen, setBottomSendOpen] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
+  return (
+    <div className="nq-bottom-bar">
+      <div className="nq-bottom-left"><button className="lb-action-btn" onClick={onSave}><Save size={13} /> Save Draft</button><button className="lb-action-btn" onClick={onPreview}>Preview Quote</button></div>
+      <div className="nq-bottom-center">
+        <div style={{ position: 'relative' }}>
+          <div className="nq-send-group nq-send-group-bottom"><button className="lb-action-btn lb-action-primary nq-send-bottom-btn" onClick={() => { setStatus('Sent'); toast.success('Quote marked as sent') }}><Send size={13} /> Send to Customer</button><button className="lb-action-btn lb-action-primary nq-send-caret-btn" onClick={() => setBottomSendOpen(v => !v)}><ChevronDown size={13} /></button></div>
+          {bottomSendOpen && <div className="nq-send-dropdown"><button className="nq-send-dropdown-item" onClick={() => { setStatus('Sent'); toast.success('Quote queued for Messenger'); setBottomSendOpen(false) }}><MessageCircle size={13} /> Send to Facebook Messenger</button><button className="nq-send-dropdown-item" onClick={() => { setStatus('Sent'); toast.success('Quote queued for email'); setBottomSendOpen(false) }}><Send size={13} /> Send via Email</button></div>}
+        </div>
+      </div>
+      <div className="nq-bottom-right">
+        <button className="lb-action-btn" onClick={() => { setStatus('Pending Approval'); toast.success('Approval requested') }}>Request Approval</button>
+        <button className="lb-action-btn nq-convert-btn" onClick={() => { setStatus('Converted'); onConvert() }}>Convert to Invoice</button>
+        <button className="lb-action-btn" onClick={e => setMoreAnchor(e.currentTarget)}>More Actions <ChevronDown size={13} /></button>
+        <span className="nq-badge nq-badge-draft">{status}</span>
+      </div>
+      <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+        <MenuItem onClick={() => { copyText(window.location.href, 'Quote link copied'); setMoreAnchor(null) }}><Copy size={14} style={{ marginRight: 8 }} /> Duplicate Quote</MenuItem>
+        <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}><ExternalLink size={14} style={{ marginRight: 8 }} /> Export PDF</MenuItem>
+        <MenuItem onClick={() => { toast.success('Quote deleted'); setMoreAnchor(null) }} style={{ color: '#ef4444' }}><Trash2 size={14} style={{ marginRight: 8 }} /> Delete</MenuItem>
+      </Menu>
+    </div>
+  )
+}
+
+// ── Customer info section (auto-filled from lead) ──────────────────────────
+function CustomerInfoSection({
+  leadId, leadNumber, customerSource,
+  customerName, setCustomerName,
+  companyName, setCompanyName,
+  billingEmail, setBillingEmail,
+  contactNumber, setContactNumber,
+  whatsapp, setWhatsapp,
+  wechat, setWechat,
+  customerCategory, setCustomerCategory,
+  shippingCountry, setShippingCountry,
+  shippingState, setShippingState,
+  shippingCity, setShippingCity,
+  zipCode, setZipCode,
+  dueDate, setDueDate,
+  customerReqSummary, setCustomerReqSummary,
+  quoteEstimate, setQuoteEstimate,
+}: {
+  leadId: string | null; leadNumber: string; customerSource: string
+  customerName: string; setCustomerName: (v: string) => void
+  companyName: string; setCompanyName: (v: string) => void
+  billingEmail: string; setBillingEmail: (v: string) => void
+  contactNumber: string; setContactNumber: (v: string) => void
+  whatsapp: string; setWhatsapp: (v: string) => void
+  wechat: string; setWechat: (v: string) => void
+  customerCategory: string; setCustomerCategory: (v: string) => void
+  shippingCountry: string; setShippingCountry: (v: string) => void
+  shippingState: string; setShippingState: (v: string) => void
+  shippingCity: string; setShippingCity: (v: string) => void
+  zipCode: string; setZipCode: (v: string) => void
+  dueDate: string; setDueDate: (v: string) => void
+  customerReqSummary: string; setCustomerReqSummary: (v: string) => void
+  quoteEstimate: string; setQuoteEstimate: (v: string) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading">
+        <div className="nq-section-num-icon"><User2 size={14} /></div>
+        <h3>Customer Information</h3>
+        {leadId && <span className="nq-badge nq-badge-ai" style={{ marginLeft: 8 }}>Auto-Filled from Lead</span>}
+      </div>
+
+      {leadId && (
+        <div className="nq-locked-fields-row">
+          <div className="nq-locked-field">
+            <label>Reference Lead ID</label>
+            <input className="nq-input nq-input-readonly" value={leadNumber || leadId} readOnly />
+            <span className="nq-from-lead-hint">locked · from lead</span>
+          </div>
+          {customerSource && (
+            <div className="nq-locked-field">
+              <label>Customer Source</label>
+              <input className="nq-input nq-input-readonly" value={customerSource} readOnly />
+              <span className="nq-from-lead-hint">locked · from lead</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="nq-cinfo-grid">
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Customer Name</label>
+          <input className="nq-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Contact person..." />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Company Name</label>
+          <input className="nq-input" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company..." />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Billing Email</label>
+          <input className="nq-input" type="email" value={billingEmail} onChange={e => setBillingEmail(e.target.value)} placeholder="billing@example.com" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Contact Number</label>
+          <input className="nq-input" value={contactNumber} onChange={e => setContactNumber(e.target.value)} placeholder="+1-555-0000" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">WhatsApp</label>
+          <input className="nq-input" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="+1-555-0000" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">WeChat</label>
+          <input className="nq-input" value={wechat} onChange={e => setWechat(e.target.value)} placeholder="WeChat ID" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Customer Category</label>
+          <select className="nq-select" value={customerCategory} onChange={e => setCustomerCategory(e.target.value)}>
+            <option value="">— Select —</option>
+            {['Wholesale', 'Retail', 'Reseller', 'Other'].map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Due Date</label>
+          <input className="nq-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Shipping Country</label>
+          <input className="nq-input" value={shippingCountry} onChange={e => setShippingCountry(e.target.value)} placeholder="USA" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Shipping State</label>
+          <input className="nq-input" value={shippingState} onChange={e => setShippingState(e.target.value)} placeholder="TX" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Shipping City</label>
+          <input className="nq-input" value={shippingCity} onChange={e => setShippingCity(e.target.value)} placeholder="Dallas" />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">ZIP Code</label>
+          <input className="nq-input" value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="75201" />
+        </div>
+        <div className="nq-cinfo-field nq-cinfo-field-wide">
+          <label className="nq-field-label">Customer Requirement Summary</label>
+          <textarea className="nq-textarea" rows={2} value={customerReqSummary} onChange={e => setCustomerReqSummary(e.target.value)} placeholder="Customer's requirements from lead conversation..." />
+        </div>
+        <div className="nq-cinfo-field">
+          <label className="nq-field-label">Quote Estimate ($)</label>
+          <div className="nq-money-input"><span>$</span><input type="number" min={0} step={0.01} value={quoteEstimate} onChange={e => setQuoteEstimate(e.target.value)} /></div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Lead product interest items grid ──────────────────────────────────────
+function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (items: LeadItem[]) => void }) {
+  const updateItem = (id: string, patch: Partial<LeadItem>) =>
+    setItems(items.map(item => (item.id === id ? { ...item, ...patch } : item)))
+  const removeItem = (id: string) =>
+    setItems(items.filter(item => item.id !== id))
+  const addItem = () =>
+    setItems([...items, { id: uid(), description: '', qty: 1, sizes: '', colors: '', artwork_count: 0, unit_price: 0, sort_order: items.length }])
+
+  return (
+    <section className="nq-card">
+      <div className="nq-section-header">
+        <span className="nq-section-num">★</span>
+        <h3>Product Interest Items</h3>
+        <span className="nq-badge nq-badge-ai">Auto-Filled from Lead</span>
+        <strong className="nq-section-total">Section Total: ${fmt(items.reduce((s, r) => s + r.qty * r.unit_price, 0))}</strong>
+      </div>
+      <div className="nq-table-wrap">
+        <table className="nq-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item / Description</th>
+              <th>Qty</th>
+              <th>Sizes</th>
+              <th>Colors</th>
+              <th>Artwork #</th>
+              <th>Unit Price</th>
+              <th>Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={item.id}>
+                <td className="nq-td-num">{idx + 1}</td>
+                <td><input className="nq-table-input" value={item.description} onChange={e => updateItem(item.id, { description: e.target.value })} placeholder="Item name..." /></td>
+                <td><input className="nq-table-input" type="number" min={0} value={item.qty} onChange={e => updateItem(item.id, { qty: +e.target.value })} /></td>
+                <td><input className="nq-table-input" value={item.sizes} onChange={e => updateItem(item.id, { sizes: e.target.value })} placeholder="S,M,L" /></td>
+                <td><input className="nq-table-input" value={item.colors} onChange={e => updateItem(item.id, { colors: e.target.value })} placeholder="Black" /></td>
+                <td><input className="nq-table-input" type="number" min={0} value={item.artwork_count} onChange={e => updateItem(item.id, { artwork_count: +e.target.value })} /></td>
+                <td>
+                  <div className="nq-money-input nq-money-quoted">
+                    <span>$</span>
+                    <input type="number" min={0} step={0.01} value={item.unit_price} onChange={e => updateItem(item.id, { unit_price: +e.target.value })} />
+                  </div>
+                </td>
+                <td className="nq-td-total">${fmt(item.qty * item.unit_price)}</td>
+                <td><button className="nq-icon-btn nq-delete-btn" onClick={() => removeItem(item.id)}><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '14px 0' }}>No items yet — click &ldquo;Add Item&rdquo; below.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <button className="nq-add-row-btn" onClick={addItem}><Plus size={12} /> Add Item</button>
+    </section>
+  )
+}
+
+// ── CRM context snapshot (sidebar panel) ──────────────────────────────────
+function CRMSnapshotPanel({ lead }: { lead: Record<string, unknown> | null }) {
+  if (!lead) return null
+  const fields: { label: string; value: string | null }[] = [
+    { label: 'Last Customer Message',  value: (lead.last_message as string) || null },
+    { label: 'Communication Channel',  value: (lead.communication_channel as string) || null },
+    { label: 'Number of Messages',     value: lead.message_count != null ? String(lead.message_count) : null },
+    { label: 'Attachments Count',      value: lead.attachment_count != null ? String(lead.attachment_count) : null },
+    { label: 'Customer Intent',        value: (lead.customer_intent as string) || null },
+    { label: 'Pending Questions',      value: (lead.pending_questions as string) || null },
+  ].filter(f => f.value && f.value !== '0')
+
+  if (fields.length === 0) return null
+
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header">
+        <MessageSquare size={13} style={{ color: '#7c3aed' }} />
+        <span>CRM Context Snapshot</span>
+        <span className="nq-badge nq-badge-ai">From Lead</span>
+      </div>
+      <ul className="nq-crm-list">
+        {fields.map(f => (
+          <li key={f.label} className="nq-crm-item">
+            <span className="nq-crm-label">{f.label}</span>
+            <span className="nq-crm-value">{f.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+export function NewQuotationPage() {
+  const navigate     = useNavigate()
+  const queryClient  = useQueryClient()
+  const { id: quoteId } = useParams<{ id?: string }>()
+  const { user } = useAuthStore()
+
+  // ── Base form state ──
+  const [status, setStatus] = useState<QuoteStatus>('Draft')
+  const [quoteDate] = useState(today())
+  const [validUntil] = useState('')
+  const [agent, setAgent] = useState(user?.name ?? '')
+  const [supplierText, setSupplierText] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [billingAddress, setBillingAddress] = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
+  const [sameAsBilling, setSameAsBilling] = useState(false)
+  const [apparelEnabled, setApparelEnabled] = useState(true)
+  const [gangsheetEnabled, setGangsheetEnabled] = useState(true)
+  const [transfersEnabled, setTransfersEnabled] = useState(true)
+  const [apparelItems, setApparelItems] = useState<ApparelItem[]>(initialApparelItems)
+  const [gangsheetRows, setGangsheetRows] = useState<GangsheetRow[]>(initialGangsheetRows)
+  const [transferRows, setTransferRows] = useState<TransferRow[]>(initialTransferRows)
+  const [otherCharges, setOtherCharges] = useState<OtherCharge[]>(initialOtherCharges)
+  const [supplierNotes, setSupplierNotes] = useState('')
+  const [internalNotes, setInternalNotes] = useState('')
+  const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
+  const [productionTime, setProductionTime] = useState('2 - 3 Business Days')
+  const [deliveryMethod, setDeliveryMethod] = useState('Standard Shipping')
+  const [currency, setCurrency] = useState('USD - US Dollar')
+
+  // ── Lead intake / auto-fill state ──
+  const [formInitialized, setFormInitialized] = useState(false)
+  const [leadId,           setLeadId]           = useState<string | null>(null)
+  const [leadNumber,       setLeadNumber]       = useState('')
+  const [customerSource,   setCustomerSource]   = useState('')
+  const [customerName,     setCustomerName]     = useState('')
+  const [companyName,      setCompanyName]      = useState('')
+  const [billingEmail,     setBillingEmail]     = useState('')
+  const [contactNumber,    setContactNumber]    = useState('')
+  const [whatsapp,         setWhatsapp]         = useState('')
+  const [wechat,           setWechat]           = useState('')
+  const [customerCategory, setCustomerCategory] = useState('')
+  const [shippingCountry,  setShippingCountry]  = useState('')
+  const [shippingState,    setShippingState]    = useState('')
+  const [shippingCity,     setShippingCity]     = useState('')
+  const [zipCode,          setZipCode]          = useState('')
+  const [dueDate,          setDueDate]          = useState('')
+  const [customerReqSummary, setCustomerReqSummary] = useState('')
+  const [quoteEstimate,    setQuoteEstimate]    = useState('')
+  const [leadItems,        setLeadItems]        = useState<LeadItem[]>([])
+
+  // ── Remote data ──
+  const { data: quotationData } = useQuery<Record<string, unknown>>({
+    queryKey: ['quotation', quoteId],
+    queryFn:  () => api.get(`/quotations/${quoteId}`).then(r => r.data.data),
+    enabled:  !!quoteId,
+  })
+
+  const { data: leadData } = useQuery<Record<string, unknown>>({
+    queryKey: ['lead', leadId],
+    queryFn:  () => api.get(`/leads/${leadId}`).then(r => r.data.data),
+    enabled:  !!leadId,
+  })
+
+  // ── Initialize form from quotation once loaded ──
+  useEffect(() => {
+    if (!quotationData || formInitialized) return
+    const q = quotationData as Record<string, any>
+    setLeadId(q.lead_id ?? null)
+    setCustomerSource(q.customer_source ?? '')
+    setCustomerName(q.customer_name ?? '')
+    setCompanyName(q.company_name ?? '')
+    setBillingEmail(q.billing_email ?? '')
+    setContactNumber(q.contact_number ?? '')
+    setWhatsapp(q.whatsapp ?? '')
+    setWechat(q.wechat ?? '')
+    setCustomerCategory(q.customer_category ?? '')
+    setShippingCountry(q.shipping_country ?? '')
+    setShippingState(q.shipping_state ?? '')
+    setShippingCity(q.shipping_city ?? '')
+    setZipCode(q.zip_code ?? '')
+    setDueDate(q.due_date ?? '')
+    setCustomerReqSummary(q.customer_requirement_summary ?? '')
+    setQuoteEstimate(q.quote_estimate != null ? String(q.quote_estimate) : '')
+    setBillingAddress(q.billing_address ?? '')
+    setShippingAddress(q.shipping_address ?? '')
+    if (q.internal_notes) setInternalNotes(q.internal_notes)
+    if (Array.isArray(q.items) && q.items.length > 0) {
+      setLeadItems(q.items.map((item: Record<string, any>) => ({
+        id:            item.id ?? uid(),
+        description:   item.description ?? '',
+        qty:           item.qty ?? 1,
+        sizes:         item.sizes ?? '',
+        colors:        item.colors ?? '',
+        artwork_count: item.artwork_count ?? 0,
+        unit_price:    item.unit_price ?? 0,
+        sort_order:    item.sort_order ?? 0,
+      })))
+    }
+    if (q.status) setStatus(q.status as QuoteStatus)
+    setFormInitialized(true)
+  }, [quotationData, formInitialized])
+
+  // ── Fetch lead_number once leadId is known ──
+  useEffect(() => {
+    if (leadData) {
+      const l = leadData as Record<string, any>
+      setLeadNumber(l.lead_number ?? '')
+    }
+  }, [leadData])
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      quoteId ? api.put(`/quotations/${quoteId}`, data) : api.post('/quotations', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      if (quoteId) queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
+      navigate('/quotes')
+    },
+  })
+
+  const apparelTotal    = useMemo(() => apparelEnabled  ? apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0) : 0, [apparelEnabled, apparelItems])
+  const gangsheetTotal  = useMemo(() => gangsheetEnabled ? gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0) : 0, [gangsheetEnabled, gangsheetRows])
+  const transfersTotal  = useMemo(() => transfersEnabled ? transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0) : 0, [transfersEnabled, transferRows])
+  const leadItemsTotal  = useMemo(() => leadItems.reduce((sum, item) => sum + item.qty * item.unit_price, 0), [leadItems])
+  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: apparelTotal, gangsheet: gangsheetTotal, transfers: transfersTotal, leadItems: leadItemsTotal }, otherCharges, taxRate: 0.07 }), [apparelTotal, gangsheetTotal, transfersTotal, leadItemsTotal, otherCharges])
+
+  const updateApparelItem = (id: string, patch: Partial<ApparelItem>) => setApparelItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item))
+  const updateGangsheetRow = (id: string, patch: Partial<GangsheetRow>) => setGangsheetRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const updateTransferRow = (id: string, patch: Partial<TransferRow>) => setTransferRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const toggleCharge = (key: OtherCharge['key']) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, enabled: !charge.enabled } : charge))
+  const updateCharge = (key: OtherCharge['key'], patch: Partial<OtherCharge>) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, ...patch } : charge))
+
+  const handleSave = () => {
+    // Build items array from lead items (for backend quotation_items table)
+    const allItems = leadItems.map((item, i) => ({
+      description:   item.description || 'Item',
+      qty:           item.qty,
+      unit_price:    item.unit_price,
+      sizes:         item.sizes || undefined,
+      colors:        item.colors || undefined,
+      artwork_count: item.artwork_count,
+      sort_order:    i,
+    }))
+
+    saveMutation.mutate({
+      lead_id:                      leadId    || undefined,
+      supplier_id:                  supplierId || undefined,
+      billing_address:              billingAddress || undefined,
+      shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
+      internal_notes:               internalNotes || undefined,
+      items:                        allItems.length ? allItems : undefined,
+      // 020 intake fields
+      company_name:                 companyName     || undefined,
+      customer_name:                customerName    || undefined,
+      billing_email:                billingEmail    || undefined,
+      contact_number:               contactNumber   || undefined,
+      whatsapp:                     whatsapp        || undefined,
+      wechat:                       wechat          || undefined,
+      customer_category:            customerCategory || undefined,
+      customer_source:              customerSource  || undefined,
+      shipping_country:             shippingCountry || undefined,
+      shipping_state:               shippingState   || undefined,
+      shipping_city:                shippingCity    || undefined,
+      zip_code:                     zipCode         || undefined,
+      due_date:                     dueDate         || undefined,
+      customer_requirement_summary: customerReqSummary || undefined,
+      quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
+    })
+  }
+
+  return (
+    <div className="nq-page">
+      <header className="nq-header">
+        <div className="nq-header-left">
+          <nav className="nq-breadcrumb">
+            <button className="nq-breadcrumb-link" onClick={() => navigate('/quotes')}>Quotes</button>
+            <span className="nq-breadcrumb-sep">›</span>
+            <span className="nq-breadcrumb-current">{quoteId ? 'Edit Quotation' : 'New Quotation'}</span>
+          </nav>
+          <h1 className="nq-title">{quoteId ? 'Edit Quotation' : 'New Quotation'}</h1>
+          <p className="nq-subtitle">
+            {leadId ? `Auto-filled from lead ${leadNumber || leadId}` : 'Create, review and send quotation to customer'}
+          </p>
+        </div>
+      </header>
+
+      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} agent={agent} setAgent={setAgent} />
+
+      <div className="nq-body">
+        <main className="nq-main">
+          <SupplierSection supplierText={supplierText} setSupplierText={setSupplierText} setSupplierId={setSupplierId} billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
+
+          <CustomerInfoSection
+            leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}
+            customerName={customerName} setCustomerName={setCustomerName}
+            companyName={companyName} setCompanyName={setCompanyName}
+            billingEmail={billingEmail} setBillingEmail={setBillingEmail}
+            contactNumber={contactNumber} setContactNumber={setContactNumber}
+            whatsapp={whatsapp} setWhatsapp={setWhatsapp}
+            wechat={wechat} setWechat={setWechat}
+            customerCategory={customerCategory} setCustomerCategory={setCustomerCategory}
+            shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
+            shippingState={shippingState} setShippingState={setShippingState}
+            shippingCity={shippingCity} setShippingCity={setShippingCity}
+            zipCode={zipCode} setZipCode={setZipCode}
+            dueDate={dueDate} setDueDate={setDueDate}
+            customerReqSummary={customerReqSummary} setCustomerReqSummary={setCustomerReqSummary}
+            quoteEstimate={quoteEstimate} setQuoteEstimate={setQuoteEstimate}
+          />
+
+          {(leadId || leadItems.length > 0) && (
+            <LeadItemsSection items={leadItems} setItems={setLeadItems} />
+          )}
+
+          <ProductSection title="Custom Printed Apparel" sectionNumber={1} enabled={apparelEnabled} onToggle={() => setApparelEnabled(v => !v)} total={apparelTotal}>
+            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Variant</th><th>Qty</th><th>Print Details</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{apparelItems.map((item, idx) => <tr key={item.id}><td className="nq-td-num">{idx + 1}</td><td><div className="nq-item-desc"><div className="nq-item-thumb"><Shirt size={18} /></div><div><strong>{item.name}</strong><span>{item.description}</span><span className="nq-item-meta">Brand: {item.brand} | Model: {item.model}</span></div></div></td><td><select className="nq-table-select" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })}>{VARIANTS.map(v => <option key={v}>{v}</option>)}</select></td><td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td><td><div className="nq-print-details"><span className="nq-print-method-badge">DTF Transfer</span>{item.printDetails.map((pd, pi) => <div key={pi} className="nq-print-location-row"><span className="nq-print-dot" /><select className="nq-print-loc-select" value={pd.location} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, location: e.target.value } : row) })}>{PRINT_LOCATIONS.map(l => <option key={l}>{l}</option>)}</select><select className="nq-print-size-select" value={pd.size} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, size: e.target.value } : row) })}>{PRINT_SIZES.map(s => <option key={s}>{s}</option>)}</select><button className="nq-icon-btn" onClick={() => updateApparelItem(item.id, { printDetails: item.printDetails.filter((_, i) => i !== pi) })}><X size={10} /></button></div>)}<button className="nq-add-location-btn" onClick={() => updateApparelItem(item.id, { printDetails: [...item.printDetails, { location: 'Front Print', size: '12x16' }] })}><Plus size={11} /> Add Location</button></div></td><td><div className="nq-money-input"><span>$</span><input type="number" value={item.stdCost} onChange={e => updateApparelItem(item.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(row => row.id !== item.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), name: '', description: '', brand: '', model: '', variant: '', qty: 1, printDetails: [], stdCost: 0, quotedCost: 0 }])}><Plus size={12} /> Add Apparel Row</button>
+          </ProductSection>
+
+          <ProductSection title="Gangsheet" sectionNumber={2} enabled={gangsheetEnabled} onToggle={() => setGangsheetEnabled(v => !v)} total={gangsheetTotal}>
+            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{gangsheetRows.map((row, idx) => <tr key={row.id}><td className="nq-td-num">{idx + 1}</td><td><select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })}>{GANGSHEET_SIZES.map(s => <option key={s}>{s}</option>)}</select></td><td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td><td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td><td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateGangsheetRow(row.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(item => item.id !== row.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, stdCost: 25, quotedCost: 30 }])}><Plus size={12} /> Add Gangsheet Row</button>
+          </ProductSection>
+
+          <ProductSection title="DTF Transfers" sectionNumber={3} enabled={transfersEnabled} onToggle={() => setTransfersEnabled(v => !v)} total={transfersTotal}>
+            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Transfer Size</th><th>Qty</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{transferRows.map((row, idx) => <tr key={row.id}><td className="nq-td-num">{idx + 1}</td><td><select className="nq-table-select" value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })}>{TRANSFER_SIZES.map(size => <option key={size}>{size}</option>)}</select></td><td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td><td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(item => item.id !== row.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), transferSize: '12" x 12"', qty: 1, stdCost: 1.5, quotedCost: 2 }])}><Plus size={12} /> Add Transfer Row</button>
+          </ProductSection>
+
+          <OtherChargesSection charges={otherCharges} toggleCharge={toggleCharge} updateCharge={updateCharge} />
+          <NotesSection customerNotes={supplierNotes} internalNotes={internalNotes} setCustomerNotes={setSupplierNotes} setInternalNotes={setInternalNotes} />
+          <AISection />
+        </main>
+
+        <aside className="nq-sidebar">
+          <CRMSnapshotPanel lead={leadData ?? null} />
+          <PreviousQuotesSection />
+          <PricingSummary totals={totals} />
+          <TermsSection paymentTerms={paymentTerms} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
+        </aside>
+      </div>
+
+      <ActionBar status={status} setStatus={setStatus} onSave={handleSave} onConvert={() => navigate('/invoices/new')} onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)} />
+    </div>
+  )
+}
