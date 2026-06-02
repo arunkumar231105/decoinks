@@ -401,18 +401,57 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
 }
 
 async function remove(id, actorId) {
-  const { rows } = await query(
-    `UPDATE invoices SET status = 'Void', updated_at = NOW()
-     WHERE id = $1 AND status <> 'Void'
-     RETURNING *`,
-    [id]
+  // Block if any order is linked to this invoice (ON DELETE RESTRICT on orders.invoice_id)
+  const { rows: linkedOrders } = await query(
+    `SELECT order_number FROM orders WHERE invoice_id = $1 LIMIT 1`, [id]
   )
-  if (!rows[0]) {
-    const { rows: exists } = await query(`SELECT id, status FROM invoices WHERE id = $1`, [id])
-    if (!exists[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-    throw Object.assign(new Error('Invoice is already voided'), { statusCode: 409 })
+  if (linkedOrders[0]) {
+    throw Object.assign(
+      new Error(`This invoice is linked to order ${linkedOrders[0].order_number} and cannot be deleted. Unlink the order first.`),
+      { statusCode: 409 }
+    )
   }
-  await logActivity(actorId, id, 'voided', `Invoice ${rows[0].invoice_number} voided`)
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: inv } = await client.query(
+      `SELECT id, invoice_number FROM invoices WHERE id = $1`, [id]
+    )
+    if (!inv[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+    // payments table has ON DELETE CASCADE so no manual cleanup needed
+    await client.query(`DELETE FROM invoices WHERE id = $1`, [id])
+    await client.query('COMMIT')
+    await logActivity(actorId, id, 'deleted', `Invoice ${inv[0].invoice_number} permanently deleted`).catch(() => {})
+    return { id }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
-module.exports = { list, getById, create, update, updateStatus, recordPayment, remove }
+async function convertToOrder(invoiceId, actorId, orderType) {
+  if (!orderType) throw Object.assign(new Error('order_type is required (apparel, gangsheet, or dtf)'), { statusCode: 422 })
+
+  // Idempotency: return existing order if already created from this invoice
+  const { rows: existing } = await query(
+    `SELECT o.*, s.name AS supplier_name FROM orders o
+     LEFT JOIN suppliers s ON s.id = o.supplier_id
+     WHERE o.invoice_id = $1 ORDER BY o.created_at LIMIT 1`,
+    [invoiceId]
+  )
+  if (existing[0]) return { order: existing[0], alreadyExisted: true }
+
+  const orderSvc = require('../orders/orders.service')
+  const order = await orderSvc.create({
+    invoice_id:  invoiceId,
+    order_type:  orderType,
+    items:       [],
+    created_by:  actorId,
+  })
+  return { order, alreadyExisted: false }
+}
+
+module.exports = { list, getById, create, update, updateStatus, recordPayment, remove, convertToOrder }

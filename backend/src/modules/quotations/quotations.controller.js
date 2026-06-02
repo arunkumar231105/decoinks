@@ -44,4 +44,41 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, remove }
+async function convertToInvoice(req, res, next) {
+  try {
+    const { invoice, alreadyExisted } = await service.convertToInvoice(req.params.id, req.user.id)
+    const message = alreadyExisted
+      ? `Invoice ${invoice.invoice_number} already exists for this quote`
+      : `Invoice ${invoice.invoice_number} created`
+    return alreadyExisted
+      ? success(res, invoice, message)
+      : created(res, invoice, message)
+  } catch (err) { next(err) }
+}
+
+async function bulkUpload(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No CSV file uploaded' })
+    }
+    const dryRun = req.query.preview === 'true'
+    const fs = require('fs')
+    const buffer = fs.readFileSync(req.file.path)
+    // Clean up temp file
+    fs.unlink(req.file.path, () => {})
+    const result = await service.bulkParseAndProcess(buffer, {
+      dryRun,
+      createdBy: req.user.id,
+    })
+    return success(res, result, dryRun ? 'Preview ready' : `Import complete`)
+  } catch (err) { next(err) }
+}
+
+async function csvTemplate(_req, res) {
+  const csv = service.getCsvTemplate()
+  res.setHeader('Content-Type', 'text/csv')
+  res.setHeader('Content-Disposition', 'attachment; filename="quotations_template.csv"')
+  res.send(csv)
+}
+
+module.exports = { list, getOne, create, update, updateStatus, remove, convertToInvoice, bulkUpload, csvTemplate }

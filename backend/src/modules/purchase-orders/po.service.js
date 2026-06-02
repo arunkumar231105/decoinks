@@ -289,11 +289,23 @@ async function updateStatus(id, status, actor, comment) {
 // ── Soft delete ───────────────────────────────────────────────────────────────
 
 async function remove(id) {
-  const { rows } = await query(
-    `UPDATE purchase_orders SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
-    [id]
-  )
-  if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: po } = await client.query(
+      `SELECT id FROM purchase_orders WHERE id = $1`, [id]
+    )
+    if (!po[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
+    // purchase_order_items, po_attachments, po_status_history, portal_po_visibility all ON DELETE CASCADE
+    await client.query(`DELETE FROM purchase_orders WHERE id = $1`, [id])
+    await client.query('COMMIT')
+    return { id }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 // ── Attachments ───────────────────────────────────────────────────────────────

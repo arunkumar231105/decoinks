@@ -1,8 +1,25 @@
 const { Router } = require('express')
 const { z } = require('zod')
+const multer = require('multer')
+const os = require('os')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const controller = require('./quotations.controller')
+
+// CSV upload: store to OS temp dir, max 5 MB, .csv only
+const uploadCsv = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => cb(null, `csv_${Date.now()}_${file.originalname}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === 'text/csv' ||
+                file.mimetype === 'application/vnd.ms-excel' ||
+                file.originalname.toLowerCase().endsWith('.csv')
+    ok ? cb(null, true) : cb(new Error('Only .csv files are allowed'), false)
+  },
+}).single('file')
 
 const router = Router()
 router.use(verifyToken)
@@ -68,11 +85,14 @@ const statusSchema = z.object({
   status: z.enum(['Draft', 'Sent', 'Approved', 'Rejected', 'Expired']),
 })
 
-router.get('/',              controller.list)
-router.get('/:id',           controller.getOne)
-router.post('/',             validate(createSchema),  controller.create)
-router.put('/:id',           validate(updateSchema),  controller.update)
-router.patch('/:id/status',  validate(statusSchema),  controller.updateStatus)
-router.delete('/:id',        controller.remove)
+router.get('/',                       controller.list)
+router.get('/csv-template',           controller.csvTemplate)
+router.get('/:id',                    controller.getOne)
+router.post('/',                      validate(createSchema),  controller.create)
+router.post('/bulk-upload',           uploadCsv, controller.bulkUpload)
+router.post('/:id/convert-to-invoice',             controller.convertToInvoice)
+router.put('/:id',                    validate(updateSchema),  controller.update)
+router.patch('/:id/status',           validate(statusSchema),  controller.updateStatus)
+router.delete('/:id',                 controller.remove)
 
 module.exports = router

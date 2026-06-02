@@ -305,10 +305,34 @@ async function getInvoice(orderId) {
 }
 
 async function remove(id) {
-  const { rows } = await query(
-    `UPDATE orders SET deleted_at=NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [id]
+  // Block if any purchase order is linked (ON DELETE RESTRICT on purchase_orders.order_id)
+  const { rows: linkedPOs } = await query(
+    `SELECT po_number FROM purchase_orders WHERE order_id = $1 LIMIT 1`, [id]
   )
-  if (!rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+  if (linkedPOs[0]) {
+    throw Object.assign(
+      new Error(`This order has a linked purchase order (${linkedPOs[0].po_number}) and cannot be deleted. Delete the purchase order first.`),
+      { statusCode: 409 }
+    )
+  }
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: ord } = await client.query(
+      `SELECT id FROM orders WHERE id = $1`, [id]
+    )
+    if (!ord[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+    // order_items_apparel/gangsheet/dtf, portal_order_visibility, portal_status_updates all CASCADE
+    await client.query(`DELETE FROM orders WHERE id = $1`, [id])
+    await client.query('COMMIT')
+    return { id }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 const BOARD_STATUSES = ['Confirmed', 'In Production', 'Ready to Ship', 'Shipped', 'Delivered']
@@ -329,4 +353,24 @@ async function getBoard() {
   return BOARD_STATUSES.map(status => ({ status, orders: grouped[status] }))
 }
 
-module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove }
+async function convertToPO(orderId, actorId) {
+  // Multiple POs per order are allowed (e.g. different suppliers)
+  const { rows: orderRows } = await query(
+    `SELECT id, order_number, supplier_id, shipping_address FROM orders WHERE id = $1`,
+    [orderId]
+  )
+  if (!orderRows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+  const order = orderRows[0]
+
+  const poSvc = require('../purchase-orders/po.service')
+  const po = await poSvc.create({
+    order_id:        orderId,
+    supplier_id:     order.supplier_id || null,
+    shipping_address: order.shipping_address || null,
+    items:           [],
+    created_by:      actorId,
+  })
+  return { po }
+}
+
+module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO }

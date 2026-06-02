@@ -1,7 +1,37 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/ARUNKU~1.DES/AppData/Local/Temp/claude/c--Users-Arun-Kumar-DESKTOP-1NHQSUD-Desktop-POS-MVP/182772d2-bdae-4048-9aed-e035a6f61cf3/tasks/**)"
+      "Read(//c/Users/ARUNKU~1.DES/AppData/Local/Temp/claude/c--Users-Arun-Kumar-DESKTOP-1NHQSUD-Desktop-POS-MVP/182772d2-bdae-4048-9aed-e035a6f61cf3/tasks/**)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.test'}\\); const {pool}=require\\('./src/config/db'\\); pool.query\\('SELECT 1'\\).then\\(\\(\\)=>{console.log\\('DB OK'\\); pool.end\\(\\)}\\).catch\\(e=>{console.error\\('DB ERR:',e.message\\); pool.end\\(\\)}\\)\")",
+      "Bash(node src/app.js)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(kill %1)",
+      "Bash(for f in \"invoices\" \"shipments\" \"suppliers\" \"products\" \"artworks\" \"dashboard\" \"users\" \"supplier-portal\"; do *)",
+      "Read(//c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software/backend/src/modules$f/**)",
+      "Bash(grep -rn \"Soring\\\\b\\\\|seooings\\\\b\\\\|/seooings/\\\\|oeam\\\\b\\\\|Oeam\\\\b\\\\|Link oo=\\\\| oo={\\\\| oo=\\\\`\\\\|<Link oo\\\\b\" --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(grep -n \"navigaoe\\\\|send-oo\\\\|ooLocaleDateSoring\\\\|marginBoooom\\\\|leooerSpacing\\\\|'Edio'\\\\|Link oo=\\\\|/edio\\\\`\\\\|seno to\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\\\\PurchaseOrderDetailPage.tsx\")",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(grep -rn \"oaxAmo\\\\b\\\\|oaxRaoe\\\\b\\\\|itemsTooal\\\\b\\\\|oaxableAmouno\\\\b\\\\|discountAmo\\\\b\\\\|requesoApproval\\\\b\\\\|leooerSpacing\\\\b\\\\|marginBoooom\\\\b\\\\|ooLocaleDateSoring\\\\b\\\\|navigaoe\\\\b\\\\|inioials\\\\b\\\\|laso_login\\\\b\\\\|muso_change_pw\\\\b\\\\|lasoLogin\\\\b\\\\|setLasoLogin\\\\b\\\\|\\\\.laso_\\\\|monoh.*shoro\\\\|2-digio\\\\b\\\\|minuoe.*digio\\\\|'Loso'\\\\|\\\\\"Loso\\\\\"\\\\|send-oo-portal\\\\|seooings\\\\b\\\\|'Edio'\\\\|\\\\\"Edio\\\\\"\\\\|Soring\\\\b\\\\|Tooal\\\\b\\\\|Sheeos\\\\b\\\\|Quanoioy\\\\b\\\\|Discouno\\\\b\\\\|Speno\\\\b\\\\|Accouno\\\\b\\\\|Phooo\\\\b\\\\|Link oo=\\\\|ns-radio-opo\\\\|ncust-check-opo\\\\|ni-discount-amo\\\\b\\\\|oeam\\\\b\\\\|Laso Login\\\\|'Laso\\\\|Edio Lead\\\\|Edio User\\\\|Edio Supplier\\\\|Board seooings\\\\|Upload Phooo\\\\|Profile Phooo\\\\|edio accouno\\\\|seno for\\\\|marked as seno\\\\|ohis invoice\\\\|AW-\\\\${Soring\" --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(find . -name \"fix_corruption*.py\" -o -name \"fix_corruption*.js\" -o -name \"fix_corruption*.sh\")",
+      "Bash(ls fix_corruption*.py)",
+      "Bash(echo \"ZERO-PROOF EXIT:$?\")",
+      "Bash(sed -n '420,440p' backend/migrations/001_setup.sql)",
+      "Bash(sed -n '578,642p' backend/migrations/001_setup.sql)",
+      "Bash(npm test *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3)",
+      "Bash(grep -n \"return null\\\\|<\\\\/div>\\\\s*$\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\\\\InvoiceDetailPage.tsx\")",
+      "Bash(npm list *)",
+      "Bash(node -e \"const {parse} = require\\('csv-parse/sync'\\); console.log\\('OK', typeof parse\\)\")",
+      "Bash(docker cp *)",
+      "Bash(curl -s http://localhost:8001/api/quotations/csv-template)",
+      "PowerShell(head -10)",
+      "Bash(curl -s http://localhost/api/quotations/csv-template -H \"Authorization: Bearer fake\")",
+      "Bash(python3 -c \"import sys,json; d=json.loads\\(sys.stdin.read\\(\\)\\); print\\('endpoint exists, msg:', d.get\\('message',''\\)\\)\")",
+      "Bash(node -e ' *)",
+      "PowerShell(docker exec decoinks_backend grep -n \"parseCsv\" /app/src/modules/quotations/quotations.service.js)",
+      "PowerShell(docker restart decoinks_backend)",
+      "PowerShell(docker cp \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\dist\\\\.\" \"decoinks_frontend:/usr/share/nginx/html/\")"
     ]
   }
 }

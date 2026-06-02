@@ -226,11 +226,32 @@ async function move(id, { stage, position = 0, user_id }) {
 }
 
 async function remove(id) {
-  const { rows } = await query(
-    `UPDATE leads SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
-    [id]
+  // Block if the lead has any linked quotation (pipeline in progress)
+  const { rows: linked } = await query(
+    `SELECT id FROM quotations WHERE lead_id = $1 LIMIT 1`, [id]
   )
-  if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+  if (linked[0]) {
+    throw Object.assign(
+      new Error('This lead has a linked quotation and cannot be deleted. Delete the quotation first.'),
+      { statusCode: 409 }
+    )
+  }
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    // lead_comments, lead_attachments, lead_product_interest all ON DELETE CASCADE
+    const { rows } = await client.query(
+      `DELETE FROM leads WHERE id = $1 RETURNING id`, [id]
+    )
+    if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function getComments(leadId) {

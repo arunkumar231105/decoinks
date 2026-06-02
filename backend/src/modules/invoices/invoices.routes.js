@@ -46,6 +46,9 @@ const paymentSchema = z.object({
 router.get('/',                 controller.list)
 router.get('/:id',              controller.getOne)
 router.post('/',                validate(createSchema),  controller.create)
+router.post('/:id/convert-to-order',
+  validate(z.object({ order_type: z.enum(['apparel','gangsheet','dtf']) })),
+  controller.convertToOrder)
 router.put('/:id',              validate(updateSchema),  controller.update)
 router.patch('/:id/status',     validate(statusSchema),  controller.updateStatus)
 router.patch('/:id/payment',    validate(paymentSchema), controller.recordPayment)

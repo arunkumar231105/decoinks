@@ -48,4 +48,15 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, recordPayment, remove }
+async function convertToOrder(req, res, next) {
+  try {
+    const { order_type } = req.body
+    const { order, alreadyExisted } = await service.convertToOrder(req.params.id, req.user.id, order_type)
+    const message = alreadyExisted
+      ? `Order ${order.order_number} already exists for this invoice`
+      : `Order ${order.order_number} created`
+    return alreadyExisted ? success(res, order, message) : created(res, order, message)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, getOne, create, update, updateStatus, recordPayment, remove, convertToOrder }

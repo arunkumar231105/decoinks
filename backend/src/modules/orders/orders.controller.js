@@ -57,4 +57,11 @@ async function getBoard(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove }
+async function convertToPO(req, res, next) {
+  try {
+    const { po } = await service.convertToPO(req.params.id, req.user.id)
+    return created(res, po, `Purchase Order ${po.po_number} created`)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO }
