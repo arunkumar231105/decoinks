@@ -8,10 +8,12 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Upload,
 } from 'lucide-react'
 import toast from '../utils/toast'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import { BulkUploadOrdersModal } from '../components/BulkUploadOrdersModal'
 
 type WorkflowKind = 'invoices' | 'orders' | 'purchase-orders'
 
@@ -145,6 +147,7 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
   const [allStatuses, setAllStatuses] = useState<string[]>(['All'])
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; primaryId: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [bulkOrderModal, setBulkOrderModal] = useState(false)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -214,6 +217,11 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
             {statusFilter === 'All' ? 'Filter' : statusFilter}
             <ChevronRight size={12} className="cust-filter-chevron" />
           </button>
+          {kind === 'orders' && (
+            <button className="lb-action-btn" onClick={() => setBulkOrderModal(true)} style={{ gap: 6 }}>
+              <Upload size={13} /> Bulk Upload (CSV)
+            </button>
+          )}
           <button className="lb-action-btn lb-action-primary" onClick={() => navigate(config.newPath)}>
             <Plus size={14} /> {config.newLabel}
           </button>
@@ -317,6 +325,8 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
           Delete
         </MenuItem>
       </Menu>
+
+      {bulkOrderModal && <BulkUploadOrdersModal onClose={() => { setBulkOrderModal(false); fetchRecords() }} />}
 
       <Dialog open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}>
         <DialogTitle>Delete {config.title.slice(0, -1)}</DialogTitle>

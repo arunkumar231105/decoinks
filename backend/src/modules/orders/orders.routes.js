@@ -1,9 +1,23 @@
 const { Router } = require('express')
 const { z } = require('zod')
+const multer = require('multer')
+const os = require('os')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const { uploadArtwork } = require('../../middleware/upload')
 const controller = require('./orders.controller')
+
+const uploadCsv = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => cb(null, `orders_csv_${Date.now()}_${file.originalname}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.toLowerCase().endsWith('.csv')
+    ok ? cb(null, true) : cb(new Error('Only .csv files are allowed'), false)
+  },
+}).single('file')
 const portalSvc = require('../supplier-portal/portal.service')
 const gangsheetSvc = require('../artworks/gangsheet.service')
 const artworksSvc  = require('../artworks/artworks.service')
@@ -102,6 +116,8 @@ const statusSchema = z.object({
 
 router.get('/',              controller.list)
 router.get('/board',         controller.getBoard)
+router.get('/csv-template',  controller.orderCsvTemplate)
+router.post('/bulk-upload',  uploadCsv, controller.bulkUpload)
 router.get('/:id',           controller.getOne)
 router.get('/:id/invoice',   controller.getInvoice)
 router.post('/',             validate(createSchema), controller.create)

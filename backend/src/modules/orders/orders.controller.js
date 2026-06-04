@@ -64,4 +64,23 @@ async function convertToPO(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO }
+async function bulkUpload(req, res, next) {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No CSV file uploaded' })
+    const dryRun = req.query.preview === 'true'
+    const fs = require('fs')
+    const buffer = fs.readFileSync(req.file.path)
+    fs.unlink(req.file.path, () => {})
+    const result = await service.bulkCreateOrdersFromCsv(buffer, { dryRun, createdBy: req.user.id })
+    return success(res, result, dryRun ? 'Preview ready' : 'Import complete')
+  } catch (err) { next(err) }
+}
+
+async function orderCsvTemplate(_req, res) {
+  const csv = service.getOrderCsvTemplate()
+  res.setHeader('Content-Type', 'text/csv')
+  res.setHeader('Content-Disposition', 'attachment; filename="orders_template.csv"')
+  res.send(csv)
+}
+
+module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkUpload, orderCsvTemplate }

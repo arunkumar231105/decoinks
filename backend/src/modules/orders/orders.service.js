@@ -373,4 +373,162 @@ async function convertToPO(orderId, actorId) {
   return { po }
 }
 
-module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO }
+// ── CSV Bulk Upload ───────────────────────────────────────────────────────────
+
+function parseCsvOrders(buffer) {
+  let text = buffer.toString('utf8')
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1)
+  const lines = text.split(/\r?\n/)
+  if (lines.length < 2) return []
+  function parseLine(line) {
+    const fields = []; let i = 0
+    while (i < line.length) {
+      if (line[i] === '"') {
+        let val = ''; i++
+        while (i < line.length) {
+          if (line[i] === '"' && line[i+1] === '"') { val += '"'; i += 2 }
+          else if (line[i] === '"') { i++; break }
+          else val += line[i++]
+        }
+        fields.push(val.trim()); if (line[i] === ',') i++
+      } else {
+        const end = line.indexOf(',', i)
+        if (end === -1) { fields.push(line.slice(i).trim()); break }
+        fields.push(line.slice(i, end).trim()); i = end + 1
+      }
+    }
+    return fields
+  }
+  const headers = parseLine(lines[0])
+  const result = []
+  for (let r = 1; r < lines.length; r++) {
+    const line = lines[r].trim()
+    if (!line) continue
+    const values = parseLine(line)
+    const obj = {}
+    headers.forEach((h, idx) => { obj[h] = values[idx] ?? '' })
+    result.push(obj)
+  }
+  return result
+}
+
+function normH(h) { return h.toLowerCase().replace(/[\s_\-]+/g, '') }
+
+const ORDER_HEADER_MAP = {
+  ordertype: 'order_type', type: 'order_type',
+  suppliername: 'supplier_name', supplier: 'supplier_name', vendor: 'supplier_name',
+  orderdate: 'order_date', date: 'order_date',
+  duedate: 'due_date', deliverydate: 'due_date',
+  paymentterms: 'payment_terms', terms: 'payment_terms',
+  paymentstatus: 'payment_status',
+  notes: 'notes', internalnotes: 'notes',
+  contactname: 'contact_name', contact: 'contact_name',
+  contactemail: 'contact_email', email: 'contact_email',
+  contactphone: 'contact_phone', phone: 'contact_phone',
+  shippingaddress: 'shipping_address', address: 'shipping_address',
+  // item fields (prefix li_)
+  item: 'li_item', product: 'li_item', artworkname: 'li_item',
+  color: 'li_color', colour: 'li_color',
+  size: 'li_size', artworksize: 'li_size',
+  qty: 'li_qty', quantity: 'li_qty',
+  unitprice: 'li_unit_price', price: 'li_unit_price', rate: 'li_unit_price',
+  pricepersheet: 'li_price_per_sheet', sheetprice: 'li_price_per_sheet',
+  noartworks: 'li_no_artworks', artworks: 'li_no_artworks',
+}
+
+const VALID_ORDER_TYPES = ['apparel', 'gangsheet', 'dtf']
+
+async function bulkCreateOrdersFromCsv(csvBuffer, { dryRun = false, createdBy = null } = {}) {
+  let rawRows
+  try { rawRows = parseCsvOrders(Buffer.isBuffer(csvBuffer) ? csvBuffer : Buffer.from(csvBuffer)) }
+  catch (e) { throw Object.assign(new Error(`CSV parse error: ${e.message}`), { statusCode: 422 }) }
+  if (!rawRows || rawRows.length === 0) throw Object.assign(new Error('CSV has no data rows'), { statusCode: 422 })
+
+  const rawHeaders = Object.keys(rawRows[0])
+  const colToField = {}
+  for (const h of rawHeaders) {
+    const norm = normH(h)
+    if (ORDER_HEADER_MAP[norm]) colToField[h] = ORDER_HEADER_MAP[norm]
+  }
+
+  const processed = []
+  for (let i = 0; i < rawRows.length; i++) {
+    const row = rawRows[i]; const rowNumber = i + 2; const errors = []
+    const mapped = {}; const li = {}
+    for (const [col, field] of Object.entries(colToField)) {
+      const val = row[col] ?? ''
+      if (field.startsWith('li_')) li[field.slice(3)] = val
+      else mapped[field] = val
+    }
+    // order_type validation
+    const ot = (mapped.order_type || '').toLowerCase().trim()
+    if (!ot) errors.push('order_type is required (apparel / gangsheet / dtf)')
+    else if (!VALID_ORDER_TYPES.includes(ot)) errors.push(`order_type "${ot}" invalid — must be apparel, gangsheet, or dtf`)
+    else mapped.order_type = ot
+
+    // numeric fields
+    for (const k of ['li_qty','li_no_artworks']) {
+      const key = k.replace('li_','')
+      if (li[key] !== undefined && li[key] !== '') {
+        const n = Number(li[key]); if (isNaN(n)) errors.push(`${key}: "${li[key]}" is not a number`); else li[key] = n
+      } else li[key] = key === 'qty' ? 1 : (key === 'no_artworks' ? 1 : undefined)
+    }
+    for (const k of ['li_unit_price','li_price_per_sheet']) {
+      const key = k.replace('li_','')
+      if (li[key] !== undefined && li[key] !== '') {
+        const n = Number(li[key]); if (isNaN(n)) errors.push(`${key}: "${li[key]}" is not a number`); else li[key] = n
+      } else li[key] = 0
+    }
+
+    // Nullify empty strings
+    for (const k of Object.keys(mapped)) if (mapped[k] === '') mapped[k] = null
+
+    // Build item based on order type
+    let item = null
+    const hasItem = li.item || li.size || (li.qty && Number(li.qty) > 0)
+    if (hasItem && mapped.order_type) {
+      if (mapped.order_type === 'apparel') {
+        item = { item: li.item || 'Item', color: li.color || 'Black', size: li.size || 'M', qty: Number(li.qty||1), artwork_size: li.size||null, unit_price: Number(li.unit_price||0) }
+      } else if (mapped.order_type === 'gangsheet') {
+        item = { size: li.size || '22" x 60"', no_artworks: Number(li.no_artworks||1), qty: Number(li.qty||1), price_per_sheet: Number(li.price_per_sheet||0) }
+      } else if (mapped.order_type === 'dtf') {
+        item = { artwork_name: li.item || 'Artwork', size: li.size || '', qty: Number(li.qty||1), unit_price: Number(li.unit_price||0) }
+      }
+    }
+    processed.push({ rowNumber, mapped, item, errors })
+  }
+
+  const validRows = processed.filter(r => r.errors.length === 0)
+  const skippedRows = processed.filter(r => r.errors.length > 0)
+
+  if (dryRun) {
+    return {
+      totalRows: rawRows.length, validRows: validRows.length, skippedRows: skippedRows.length,
+      headersDetected: rawHeaders, recognisedColumns: Object.keys(colToField),
+      rows: processed.map(({ rowNumber, mapped, item, errors }) => ({ rowNumber, mapped, item, errors })),
+    }
+  }
+
+  const created = []; const skipped = []
+  for (const { rowNumber, mapped, item, errors } of processed) {
+    if (errors.length > 0) { skipped.push({ rowNumber, errors }); continue }
+    try {
+      const items = item ? [item] : []
+      const order = await create({ ...mapped, items, created_by: createdBy })
+      created.push({ rowNumber, order_number: order.order_number, id: order.id })
+    } catch (err) {
+      skipped.push({ rowNumber, errors: [`DB error: ${err.message}`] })
+    }
+  }
+  return { created: created.length, skipped: skipped.length, createdOrders: created, skippedRows: skipped }
+}
+
+function getOrderCsvTemplate() {
+  const headers = ['order_type','supplier_name','order_date','due_date','payment_terms','notes','contact_name','contact_email','contact_phone','shipping_address','item','color','size','qty','unit_price']
+  const ex1 = ['apparel','ABC Supplier','2026-06-10','2026-06-20','Net 30','Rush order','John Smith','john@abc.com','+1-555-1234','123 Main St, Dallas TX','T-Shirt Premium','Black','XL','50','5.00']
+  const ex2 = ['dtf','XYZ Vendor','2026-06-10','2026-06-18','Due on Receipt','','','','','','Custom Transfer','','10x12 in','100','1.50']
+  const ex3 = ['gangsheet','Print Co','2026-06-10','2026-06-25','Net 15','Gangsheet job','','','','','','','22" x 60"','5','18.00']
+  return [headers, ex1, ex2, ex3].map(r => r.join(',')).join('\n') + '\n'
+}
+
+module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate }
