@@ -50,9 +50,9 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
   Refunded: { bg: '#f5f3ff', color: '#7c3aed' },
 }
 
-const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premium)', color: 'White', size: 'M', qty: 1, artworkNo: '', artworkSize: '4 x 4 in', unitPrice: 0 }]
-const initGangsheet= (): GangsheetItem[] => [{ id: uid(), size: '22" x 60"', noArtworks: 1, qty: 1, pricePerSheet: 0 }]
-const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '4 x 4 in', qty: 1, unitPrice: 0 }]
+const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premium)', color: 'White', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }]
+const initGangsheet= (): GangsheetItem[] => [{ id: uid(), size: '', noArtworks: 1, qty: 1, pricePerSheet: 0 }]
+const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ArtworkThumb
@@ -183,7 +183,7 @@ export function NewOrderPage() {
   // â”€â”€ Table helpers â”€â”€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeApparel  = (id: string) => setApparel(prev => prev.filter(r => r.id !== id))
-  const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '12 x 16 in', unitPrice: 0 }])
+  const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }])
 
   const updateGangsheet= (id: string, p: Partial<GangsheetItem>) => setGangsheet(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeGangsheet= (id: string) => setGangsheet(prev => prev.filter(r => r.id !== id))
@@ -478,9 +478,13 @@ export function NewOrderPage() {
                             />
                           </td>
                           <td>
-                            <select className="no-table-select no-size-select" value={row.artworkSize} onChange={e => updateApparel(row.id, { artworkSize: e.target.value })}>
-                              {DTF_SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                              className="no-table-input"
+                              placeholder="e.g. 12x16 in"
+                              value={row.artworkSize}
+                              onChange={e => updateApparel(row.id, { artworkSize: e.target.value })}
+                              style={{ width: '110px' }}
+                            />
                           </td>
                           <td>
                             <div className="no-price-input">
@@ -525,9 +529,13 @@ export function NewOrderPage() {
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
                           <td>
-                            <select className="no-table-select" value={row.size} onChange={e => updateGangsheet(row.id, { size: e.target.value })}>
-                              {GS_SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                              className="no-table-input"
+                              placeholder='e.g. 22" x 60"'
+                              value={row.size}
+                              onChange={e => updateGangsheet(row.id, { size: e.target.value })}
+                              style={{ width: '110px' }}
+                            />
                           </td>
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.noArtworks} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { noArtworks: Math.max(1, +e.target.value) })} />
@@ -583,9 +591,13 @@ export function NewOrderPage() {
                             <input type="text" className="no-table-input no-table-input-wide" placeholder="Artwork name" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
                           <td>
-                            <select className="no-table-select no-size-select" value={row.size} onChange={e => updateDtf(row.id, { size: e.target.value })}>
-                              {DTF_SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                              className="no-table-input"
+                              placeholder="e.g. 10x12 in"
+                              value={row.size}
+                              onChange={e => updateDtf(row.id, { size: e.target.value })}
+                              style={{ width: '110px' }}
+                            />
                           </td>
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateDtf(row.id, { qty: Math.max(1, +e.target.value) })} />
