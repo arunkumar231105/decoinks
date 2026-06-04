@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+﻿import { useRef, useState } from 'react'
 import { Building2, Clock, Globe, Settings2, Upload } from 'lucide-react'
 import toast from '../utils/toast'
 
@@ -295,7 +295,7 @@ export function SettingsGeneralPage() {
         </div>
         <div className="al-bottom-center" />
         <div className="al-bottom-right">
-          <button className="lb-action-btn lb-action-primary ns-save-btn" onClick={() => toast.success('Settings saved')}>Save Changes</button>
+          <button className="lb-action-btn lb-action-primary ns-save-btn" onClick={() => toast.info('Settings are saved automatically')}>Save Changes</button>
         </div>
       </div>
 

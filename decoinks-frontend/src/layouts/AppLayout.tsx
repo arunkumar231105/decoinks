@@ -277,17 +277,12 @@ export function AppLayout() {
               <input placeholder="Search jobs, customers, products" />
               <kbd>Ctrl+K</kbd>
             </div>
-            <Tooltip title="Notifications">
-              <IconButton onClick={() => notReady('Notifications')}>
-                <Badge badgeContent={3} color="error">
+            <Tooltip title="Notifications (Coming Soon)">
+              <span>
+                <IconButton disabled sx={{ opacity: 0.4 }}>
                   <Bell size={21} />
-                </Badge>
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Help">
-              <IconButton onClick={() => notReady('Help center')}>
-                <CircleHelp size={21} />
-              </IconButton>
+                </IconButton>
+              </span>
             </Tooltip>
             <button className="topbar-user" onClick={(event) => setUserAnchor(event.currentTarget)}>
               <Avatar className="topbar-avatar">

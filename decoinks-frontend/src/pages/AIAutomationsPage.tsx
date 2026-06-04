@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import {
   Bot,
   CheckCircle2,
@@ -102,7 +102,7 @@ export function AIAutomationsPage() {
             connecting backend services.
           </p>
         </div>
-        <button className="lb-action-btn lb-action-primary" onClick={() => toast.success('New automation draft created')}>
+        <button className="lb-action-btn lb-action-primary" style={{ opacity: 0.5, cursor: "not-allowed" }} title="AI Automations coming soon">
           <Plus size={14} /> New Automation
         </button>
       </div>
@@ -133,7 +133,7 @@ export function AIAutomationsPage() {
               <h3>Automation Rules</h3>
               <p>Business-safe rules that map common printshop events to AI actions.</p>
             </div>
-            <button className="lb-action-btn" onClick={() => toast.success('AI automation test run completed')}><Play size={14} /> Test Run</button>
+            <button className="lb-action-btn" style={{ opacity: 0.5, cursor: "not-allowed" }} title="Coming soon"><Play size={14} /> Test Run</button>
           </div>
           <div className="settings-rule-list">
             {rules.map((rule, index) => (

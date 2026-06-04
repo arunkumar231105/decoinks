@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Avatar } from '@mui/material'
@@ -116,7 +116,7 @@ export function ArtworkFormPage() {
               <ArrowLeft size={14} />
               Back to Quote
             </button>
-            <button className="lb-action-btn lb-action-primary" onClick={() => toast.success('Upload version flow opened')}>
+            <button className="lb-action-btn lb-action-primary" onClick={() => toast.info('Use the Upload button at the top to add artwork files')}>
               <Plus size={14} />
               Upload New Version
             </button>
@@ -178,7 +178,7 @@ export function ArtworkFormPage() {
             ))}
           </div>
 
-          <button className="af-upload-version" onClick={() => toast.success('Upload version flow opened')}>
+          <button className="af-upload-version" onClick={() => toast.info('Use the Upload button at the top to add artwork files')}>
             <Plus size={14} />
             Upload New Version
           </button>
@@ -282,11 +282,11 @@ export function ArtworkFormPage() {
 
           <section className="af-panel af-actions-panel">
             <h3>Actions</h3>
-            <button className="af-action-button" onClick={() => toast.success('Designer opened')}>
+            <button className="af-action-button" onClick={() => toast.info('Designer integration coming soon')}>
               <Pencil size={15} />
               Edit in Designer
             </button>
-            <button className="af-action-button af-action-primary" onClick={() => toast.success('Artwork sent for approval')}>
+            <button className="af-action-button af-action-primary" onClick={() => toast.info('Change artwork status to Awaiting Approval from the status dropdown')}>
               <Send size={15} />
               Send for Approval
             </button>
@@ -294,11 +294,11 @@ export function ArtworkFormPage() {
               <MessageCircle size={15} />
               View in Chat (Messenger)
             </button>
-            <button className="af-action-button" onClick={() => toast.success('Artwork download started')}>
+            <button className="af-action-button" onClick={() => toast.info('Download: right-click on the artwork preview and Save Image')}>
               <Download size={15} />
               Download Artwork
             </button>
-            <button className="af-action-button af-action-danger" onClick={() => toast.success('Version deleted')}>
+            <button className="af-action-button af-action-danger" onClick={() => toast.info('Delete version coming soon')}>
               <Trash2 size={15} />
               Delete Version
             </button>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import { Avatar, Divider as MuiDivider, Menu, MenuItem } from '@mui/material'
@@ -346,7 +346,7 @@ export function LeadBoardPage() {
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <button className="lb-action-btn" onClick={() => toast.success('Board settings saved')}><Settings2 size={14} /> Board Settings</button>
+          <button className="lb-action-btn" title="Coming soon" style={{ opacity: 0.5, cursor: 'not-allowed' }}><Settings2 size={14} /> Board Settings</button>
         </div>
       </div>
 
@@ -508,7 +508,7 @@ export function LeadBoardPage() {
           <Plus size={14} style={{ marginRight: 8 }} /> Add Card
         </MenuItem>
         <MuiDivider />
-        <MenuItem onClick={() => { toast.success('Column clear requesoed'); setColMenuAnchor(null) }} sx={{ color: '#DC2626' }}>Clear Column</MenuItem>
+        <MenuItem onClick={() => { toast.success("Clear column coming soon - use Delete to remove leads"); setColMenuAnchor(null) }} sx={{ color: '#DC2626' }}>Clear Column</MenuItem>
       </Menu>
 
       {/* Card context menu */}

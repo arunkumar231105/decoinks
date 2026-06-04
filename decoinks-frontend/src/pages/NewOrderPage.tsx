@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, Edit3, ExternalLink, Plus, Send, Trash2, X, Check } from 'lucide-react'
 import { Menu, MenuItem, Tooltip } from '@mui/material'
@@ -314,8 +314,8 @@ export function NewOrderPage() {
           </button>
         </div>
         <Menu anchorEl={sendAnchor} open={Boolean(sendAnchor)} onClose={() => setSendAnchor(null)}>
-          <MenuItem onClick={() => { toast.success('Order send queued for email'); setSendAnchor(null) }}>Send via Email</MenuItem>
-          <MenuItem onClick={() => { toast.success('Order send queued for WhatsApp'); setSendAnchor(null) }}>Send via WhatsApp</MenuItem>
+          <MenuItem onClick={() => { toast.info('Email integration coming soon - share order link manually'); setSendAnchor(null) }}>Send via Email</MenuItem>
+          <MenuItem onClick={() => { toast.info('WhatsApp integration coming soon'); setSendAnchor(null) }}>Send via WhatsApp</MenuItem>
           <MenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Order link copied'); setSendAnchor(null) }}>Copy Link</MenuItem>
         </Menu>
         <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending}>

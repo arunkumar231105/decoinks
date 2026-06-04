@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -164,7 +164,7 @@ export function FulfillmentBoardPage() {
             <ChevronDown size={13} />
           </button>
 
-          <button className="lb-action-btn" onClick={() => toast.success('Fulfillment board settings saved')}>
+          <button className="lb-action-btn" style={{ opacity: 0.5, cursor: "not-allowed" }} title="Coming soon">
             <Settings2 size={14} />
             Board Settings
           </button>

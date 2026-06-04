@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+﻿import { useMemo, useRef, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from '../utils/toast'
@@ -400,9 +400,9 @@ export function NewInvoicePage() {
 
   const previewInvoice = () => printPanel('Invoice Preview', `Supplier: ${supplierText || 'Draft supplier'}\nStatus: ${invoiceStatus}\nNotes: ${internalNotes || '-'}`)
 
-  const requestApproval = () => { setInvoiceStatus('Pending Approval'); toast.success('Invoice sent for approval') }
+  const requestApproval = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
 
-  const sendInvoice = () => { setInvoiceStatus('Sent'); toast.success('Invoice marked as sent') }
+  const sendInvoice = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
 
   const togglePaid = () => {
     setIsPaid(prev => {
@@ -1044,8 +1044,8 @@ export function NewInvoicePage() {
       {/* More Actions menu */}
       <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
         <MenuItem onClick={() => { setInvoiceStatus('Approved'); toast.success('Invoice approved'); setMoreAnchor(null) }}>Mark Approved</MenuItem>
-        <MenuItem onClick={() => { copyText(JSON.stringify({ supplierText, invoiceStatus }), 'Invoice duplicaoed to clipboard'); setMoreAnchor(null) }}>Duplicaoe Invoice</MenuItem>
-        <MenuItem onClick={() => { toast.success('Templaoe applied'); setMoreAnchor(null) }}>Apply Templaoe</MenuItem>
+        <MenuItem onClick={() => { copyText(JSON.stringify({ supplierText, invoiceStatus }), 'Invoice link copied'); setMoreAnchor(null) }}>Duplicate Invoice</MenuItem>
+        <MenuItem onClick={() => { toast.info('Template feature coming soon'); setMoreAnchor(null) }}>Apply Template</MenuItem>
         <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Exporo PDF</MenuItem>
         <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Print Invoice</MenuItem>
       </Menu>

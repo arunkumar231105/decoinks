@@ -388,28 +388,38 @@ function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, 
   )
 }
 
-function ActionBar({ status, setStatus, onSave, onConvert, onPreview, saving }: { status: QuoteStatus; setStatus: (status: QuoteStatus) => void; onSave: () => void; onConvert: () => void; onPreview: () => void; saving?: boolean }) {
-  const [bottomSendOpen, setBottomSendOpen] = useState(false)
+function ActionBar({ status, setStatus, onSave, onConvert, onPreview, saving, onSendToCustomer, onRequestApproval }: {
+  status: QuoteStatus; setStatus: (status: QuoteStatus) => void
+  onSave: () => void; onConvert: () => void; onPreview: () => void
+  saving?: boolean; onSendToCustomer: () => void; onRequestApproval: () => void
+}) {
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
   return (
     <div className="nq-bottom-bar">
-      <div className="nq-bottom-left"><button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}><Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}</button><button className="lb-action-btn" onClick={onPreview}>Preview</button></div>
+      <div className="nq-bottom-left">
+        <button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}>
+          <Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}
+        </button>
+        <button className="lb-action-btn" onClick={onPreview}>Preview</button>
+      </div>
       <div className="nq-bottom-center">
-        <div style={{ position: 'relative' }}>
-          <div className="nq-send-group nq-send-group-bottom"><button className="lb-action-btn lb-action-primary nq-send-bottom-btn" onClick={() => { setStatus('Sent'); toast.success('Quote marked as sent') }}><Send size={13} /> Send to Customer</button><button className="lb-action-btn lb-action-primary nq-send-caret-btn" onClick={() => setBottomSendOpen(v => !v)}><ChevronDown size={13} /></button></div>
-          {bottomSendOpen && <div className="nq-send-dropdown"><button className="nq-send-dropdown-item" onClick={() => { setStatus('Sent'); toast.success('Quote queued for Messenger'); setBottomSendOpen(false) }}><MessageCircle size={13} /> Send to Facebook Messenger</button><button className="nq-send-dropdown-item" onClick={() => { setStatus('Sent'); toast.success('Quote queued for email'); setBottomSendOpen(false) }}><Send size={13} /> Send via Email</button></div>}
-        </div>
+        <button className="lb-action-btn lb-action-primary" onClick={onSendToCustomer} disabled={saving} style={{ gap: 6 }}>
+          <Send size={13} /> Send to Customer
+        </button>
       </div>
       <div className="nq-bottom-right">
-        <button className="lb-action-btn" onClick={() => { setStatus('Pending Approval'); toast.success('Approval requested') }}>Request Approval</button>
-        <button className="lb-action-btn nq-convert-btn" onClick={() => { setStatus('Converted'); onConvert() }}>Convert to Invoice</button>
+        <button className="lb-action-btn" onClick={onRequestApproval} disabled={saving}>Request Approval</button>
+        <button className="lb-action-btn nq-convert-btn" onClick={onConvert}>Convert to Invoice</button>
         <button className="lb-action-btn" onClick={e => setMoreAnchor(e.currentTarget)}>More Actions <ChevronDown size={13} /></button>
         <span className="nq-badge nq-badge-draft">{status}</span>
       </div>
       <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-        <MenuItem onClick={() => { copyText(window.location.href, 'Quote link copied'); setMoreAnchor(null) }}><Copy size={14} style={{ marginRight: 8 }} /> Duplicate Quote</MenuItem>
-        <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}><ExternalLink size={14} style={{ marginRight: 8 }} /> Export PDF</MenuItem>
-        <MenuItem onClick={() => { toast.success('Quote deleted'); setMoreAnchor(null) }} style={{ color: '#ef4444' }}><Trash2 size={14} style={{ marginRight: 8 }} /> Delete</MenuItem>
+        <MenuItem onClick={() => { copyText(window.location.href, 'Quote link copied'); setMoreAnchor(null) }}>
+          <Copy size={14} style={{ marginRight: 8 }} /> Copy Link
+        </MenuItem>
+        <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}>
+          <ExternalLink size={14} style={{ marginRight: 8 }} /> Preview / Print
+        </MenuItem>
       </Menu>
     </div>
   )
@@ -760,6 +770,33 @@ export function NewQuotationPage() {
     },
   })
 
+  const statusMutation = useMutation({
+    mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
+      api.patch(`/quotations/${id}/status`, { status: newStatus }),
+    onSuccess: (_res, vars) => {
+      toast.success(`Quote marked as ${vars.newStatus}`)
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      navigate('/quotes')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not update status'),
+  })
+
+  const handleSendToCustomer = () => {
+    if (quoteId) {
+      statusMutation.mutate({ id: quoteId, newStatus: 'Sent' })
+    } else {
+      toast.error('Save the quote first, then mark as Sent')
+    }
+  }
+
+  const handleRequestApproval = () => {
+    if (quoteId) {
+      statusMutation.mutate({ id: quoteId, newStatus: 'Pending Approval' })
+    } else {
+      toast.error('Save the quote first, then request approval')
+    }
+  }
+
   const apparelTotal    = useMemo(() => apparelEnabled  ? apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0) : 0, [apparelEnabled, apparelItems])
   const gangsheetTotal  = useMemo(() => gangsheetEnabled ? gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0) : 0, [gangsheetEnabled, gangsheetRows])
   const transfersTotal  = useMemo(() => transfersEnabled ? transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0) : 0, [transfersEnabled, transferRows])
@@ -879,7 +916,14 @@ export function NewQuotationPage() {
         </aside>
       </div>
 
-      <ActionBar status={status} setStatus={setStatus} onSave={handleSave} saving={saveMutation.isPending} onConvert={() => navigate('/invoices/new')} onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)} />
+      <ActionBar
+        status={status} setStatus={setStatus}
+        onSave={handleSave} saving={saveMutation.isPending || statusMutation.isPending}
+        onSendToCustomer={handleSendToCustomer}
+        onRequestApproval={handleRequestApproval}
+        onConvert={() => navigate('/invoices/new')}
+        onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)}
+      />
     </div>
   )
 }
