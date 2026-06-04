@@ -158,10 +158,10 @@ export function QuotesListPage() {
             {isLoading && <tr><td colSpan={9} className="ql-empty">Loading…</td></tr>}
             {!isLoading && quotes.length === 0 && <tr><td colSpan={9} className="ql-empty">No quotations found.</td></tr>}
             {!isLoading && quotes.map(q => (
-              <tr key={q.id} className="ql-row" onClick={() => navigate(`/quotes/${q.id}/artwork`)}>
+              <tr key={q.id} className="ql-row" onClick={() => navigate(`/quotes/${q.id}`)}>
                 <td onClick={e => e.stopPropagation()}><input type="checkbox" /></td>
                 <td>
-                  <button className="ql-quote-link" onClick={e => { e.stopPropagation(); navigate(`/quotes/${q.id}/artwork`) }}>
+                  <button className="ql-quote-link" onClick={e => { e.stopPropagation(); navigate(`/quotes/${q.id}`) }}>
                     {q.quote_number}
                   </button>
                 </td>
@@ -186,7 +186,7 @@ export function QuotesListPage() {
                   <button
                     className="lb-action-btn"
                     style={{ fontSize: 12, padding: '4px 10px' }}
-                    onClick={() => navigate(`/quotes/${q.id}/artwork`)}
+                    onClick={() => navigate(`/quotes/${q.id}`)}
                   >
                     View
                   </button>
