@@ -275,9 +275,10 @@ export function NewOrderPage() {
   const handleSave = (_asDraft = false) => {
     if (!supplierId && !supplierText.trim()) { toast.error('Please enter a supplier name'); return }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
-    if (!activeItems.length) { toast.error('Add at least one item'); return }
-    const itemErr = validateItems()
-    if (itemErr) { toast.error(itemErr); return }
+    if (activeItems.length > 0) {
+      const itemErr = validateItems()
+      if (itemErr) { toast.error(itemErr); return }
+    }
     createOrder.mutate(buildPayload())
   }
 

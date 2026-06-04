@@ -98,7 +98,7 @@ function validateItems(data, ctx) {
 const createSchema = z.object({
   order_type: z.enum(['apparel', 'gangsheet', 'dtf']),
   ...headerFields,
-  items: z.array(z.object({}).passthrough()).min(1, 'At least one item required'),
+  items: z.array(z.object({}).passthrough()).optional().default([]),
 }).superRefine(validateItems)
 
 // On update, all header fields are optional; items optional but if present must be non-empty.

@@ -385,7 +385,17 @@ export function NewInvoicePage() {
   const removeTransferItem = (id: string) => setTransferItems(prev => prev.filter(r => r.id !== id))
 
   const saveDraft = () => {
-    saveMutation.mutate({ supplier_name_text: supplierText || null, notes: internalNotes || null, status: 'Draft' })
+    if (!supplierId && !supplierText) {
+      toast.error('Please select a supplier before saving')
+      return
+    }
+    saveMutation.mutate({
+      supplier_id:   supplierId || null,
+      notes:         internalNotes || null,
+      subtotal:      0,
+      discount_amt:  0,
+      tax_amt:       0,
+    })
   }
 
   const previewInvoice = () => printPanel('Invoice Preview', `Supplier: ${supplierText || 'Draft supplier'}\nStatus: ${invoiceStatus}\nNotes: ${internalNotes || '-'}`)
