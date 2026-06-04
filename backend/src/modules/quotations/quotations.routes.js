@@ -65,7 +65,7 @@ const createSchema = z.object({
   discount_pct: z.number().min(0).max(100).default(0),
   tax_pct:      z.number().min(0).max(100).default(0),
   notes:        z.string().optional().nullable(),
-  items:        z.array(itemSchema).min(1, 'At least one item is required'),
+  items:        z.array(itemSchema).optional().default([]),
   ...intakeFields,
 })
 

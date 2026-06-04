@@ -388,12 +388,12 @@ function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, 
   )
 }
 
-function ActionBar({ status, setStatus, onSave, onConvert, onPreview }: { status: QuoteStatus; setStatus: (status: QuoteStatus) => void; onSave: () => void; onConvert: () => void; onPreview: () => void }) {
+function ActionBar({ status, setStatus, onSave, onConvert, onPreview, saving }: { status: QuoteStatus; setStatus: (status: QuoteStatus) => void; onSave: () => void; onConvert: () => void; onPreview: () => void; saving?: boolean }) {
   const [bottomSendOpen, setBottomSendOpen] = useState(false)
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
   return (
     <div className="nq-bottom-bar">
-      <div className="nq-bottom-left"><button className="lb-action-btn lb-action-primary" onClick={onSave} style={{ gap: 6 }}><Save size={14} /> Save Quote</button><button className="lb-action-btn" onClick={onPreview}>Preview</button></div>
+      <div className="nq-bottom-left"><button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}><Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}</button><button className="lb-action-btn" onClick={onPreview}>Preview</button></div>
       <div className="nq-bottom-center">
         <div style={{ position: 'relative' }}>
           <div className="nq-send-group nq-send-group-bottom"><button className="lb-action-btn lb-action-primary nq-send-bottom-btn" onClick={() => { setStatus('Sent'); toast.success('Quote marked as sent') }}><Send size={13} /> Send to Customer</button><button className="lb-action-btn lb-action-primary nq-send-caret-btn" onClick={() => setBottomSendOpen(v => !v)}><ChevronDown size={13} /></button></div>
@@ -748,10 +748,15 @@ export function NewQuotationPage() {
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       quoteId ? api.put(`/quotations/${quoteId}`, data) : api.post('/quotations', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+    onSuccess: (res: any) => {
+      const q = res.data?.data
+      toast.success(quoteId ? 'Quote updated successfully' : `Quote ${q?.quote_number ?? ''} saved!`)
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
       if (quoteId) queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
       navigate('/quotes')
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message ?? 'Could not save quote')
     },
   })
 
@@ -785,7 +790,7 @@ export function NewQuotationPage() {
       billing_address:              billingAddress || undefined,
       shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
       internal_notes:               internalNotes || undefined,
-      items:                        allItems.length ? allItems : undefined,
+      items:                        allItems,
       // 020 intake fields
       company_name:                 companyName     || undefined,
       customer_name:                customerName    || undefined,
@@ -874,7 +879,7 @@ export function NewQuotationPage() {
         </aside>
       </div>
 
-      <ActionBar status={status} setStatus={setStatus} onSave={handleSave} onConvert={() => navigate('/invoices/new')} onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)} />
+      <ActionBar status={status} setStatus={setStatus} onSave={handleSave} saving={saveMutation.isPending} onConvert={() => navigate('/invoices/new')} onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)} />
     </div>
   )
 }
