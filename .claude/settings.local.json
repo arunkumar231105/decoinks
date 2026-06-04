@@ -33,7 +33,9 @@
       "PowerShell(docker restart decoinks_backend)",
       "PowerShell(docker cp \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\dist\\\\.\" \"decoinks_frontend:/usr/share/nginx/html/\")",
       "Bash(cd \"/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software\" && echo \"=== Step 3b: Remove inner .git directory ===\" && ls \"decoinks-frontend/.git\" | head -5 && echo \"\" && rm -rf \"decoinks-frontend/.git\" && echo \"Inner .git removed\" && echo \"\" && echo \"=== Verify files still present after .git removal ===\" && ls \"decoinks-frontend/\" && echo \"\" && echo \"=== src/ still intact ===\" && ls \"decoinks-frontend/src/\")",
-      "Read(//c/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software/decoinks-frontend/**)"
+      "Read(//c/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software/decoinks-frontend/**)",
+      "Bash(grep -v \"^\\\\[2026\\\\|INFO\\\\|level.*30\\\\|level.*50\\\\|req:\\\\|res:\\\\|method\\\\|url\\\\|query\\\\|param\\\\|header\\\\|remoteA\\\\|remotePo\\\\|responseT\\\\|statusC\\\\|content\\\\|vary\\\\|strict\\\\|x-\\\\|origin\\\\|referr\\\\|access\\\\|etag\\\\|set-\\\\|{$\\\\|}$\\\\|\\\\\"id\\\\\"\")",
+      "Bash(grep -v \"^\\\\s*$\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git"

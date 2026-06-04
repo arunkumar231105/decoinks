@@ -303,7 +303,7 @@ export function NewOrderPage() {
       {/* â”€â”€ Top action bar â”€â”€ */}
       <div className="no-topbar">
         <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
-        <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save Draft</button>
+        <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save</button>
         <div className="no-split-wrap">
           <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
             <Send size={13} /> Send to Supplier
@@ -783,7 +783,7 @@ export function NewOrderPage() {
       <div className="no-bottom-bar">
         <div className="no-bottom-left">
           <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
-          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save Draft</button>
+          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save</button>
         </div>
         <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending}>
           {createOrder.isPending ? 'Saving...' : 'Save Order'}

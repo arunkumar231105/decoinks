@@ -424,7 +424,7 @@ export function NewInvoicePage() {
         <div className="ni-header-actions">
           <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
-          <button className="lb-action-btn" onClick={saveDraft}><Save size={13} /> Save Draft</button>
+          <button className="lb-action-btn lb-action-primary" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Invoice</button>
           <button className="lb-action-btn" title={isEditing ? 'Invoice is editable' : 'Edit invoice'} onClick={() => setIsEditing(true)}>
             <Pencil size={13} /> Edit
           </button>
@@ -1013,7 +1013,7 @@ export function NewInvoicePage() {
       <div className="ni-bottom-bar">
         <div className="ni-bottom-left">
           <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
-          <button className="lb-action-btn" onClick={saveDraft}><Save size={13} /> Save Draft</button>
+          <button className="lb-action-btn lb-action-primary" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Invoice</button>
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
         </div>
         <div className="ni-bottom-right">

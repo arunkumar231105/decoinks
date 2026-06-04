@@ -393,7 +393,7 @@ function ActionBar({ status, setStatus, onSave, onConvert, onPreview }: { status
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
   return (
     <div className="nq-bottom-bar">
-      <div className="nq-bottom-left"><button className="lb-action-btn" onClick={onSave}><Save size={13} /> Save Draft</button><button className="lb-action-btn" onClick={onPreview}>Preview Quote</button></div>
+      <div className="nq-bottom-left"><button className="lb-action-btn lb-action-primary" onClick={onSave} style={{ gap: 6 }}><Save size={14} /> Save Quote</button><button className="lb-action-btn" onClick={onPreview}>Preview</button></div>
       <div className="nq-bottom-center">
         <div style={{ position: 'relative' }}>
           <div className="nq-send-group nq-send-group-bottom"><button className="lb-action-btn lb-action-primary nq-send-bottom-btn" onClick={() => { setStatus('Sent'); toast.success('Quote marked as sent') }}><Send size={13} /> Send to Customer</button><button className="lb-action-btn lb-action-primary nq-send-caret-btn" onClick={() => setBottomSendOpen(v => !v)}><ChevronDown size={13} /></button></div>
