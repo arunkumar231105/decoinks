@@ -181,7 +181,7 @@ export function NewPurchaseOrderPage() {
 
   const { data: usersData } = useQuery({
     queryKey: ['users-for-po'],
-    queryFn: () => api.get('/users').then(r => r.data.data ?? r.data ?? []),
+    queryFn: () => api.get('/users', { params: { limit: 100 } }).then(r => r.data.data?.rows ?? r.data?.rows ?? []),
   })
 
   const suppliers: { id: string; name: string; email: string }[] = suppliersData ?? []
