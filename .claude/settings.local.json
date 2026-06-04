@@ -36,7 +36,9 @@
       "Read(//c/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software/decoinks-frontend/**)",
       "Bash(grep -v \"^\\\\[2026\\\\|INFO\\\\|level.*30\\\\|level.*50\\\\|req:\\\\|res:\\\\|method\\\\|url\\\\|query\\\\|param\\\\|header\\\\|remoteA\\\\|remotePo\\\\|responseT\\\\|statusC\\\\|content\\\\|vary\\\\|strict\\\\|x-\\\\|origin\\\\|referr\\\\|access\\\\|etag\\\\|set-\\\\|{$\\\\|}$\\\\|\\\\\"id\\\\\"\")",
       "Bash(grep -v \"^\\\\s*$\")",
-      "Bash(grep -v \"//\\\\|import\\\\|Binary\")"
+      "Bash(grep -v \"//\\\\|import\\\\|Binary\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git"

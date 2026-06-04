@@ -1,8 +1,7 @@
 const { query } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
-const { uploadToDrive } = require('../../config/googleDrive')
+const { uploadFile, deleteFile } = require('../../config/storage')
 const path = require('path')
-const fs = require('fs')
 
 async function list({ page = 1, limit = 10, search = '', status = '', supplier_id = '' }) {
   const offset = (page - 1) * limit
@@ -46,7 +45,6 @@ async function getById(id) {
 async function create({ artwork_no: providedNo, name, supplier_id, order_id, status = 'Draft', tags, notes, uploaded_by, file }) {
   if (!file) throw Object.assign(new Error('Artwork file is required'), { statusCode: 400 })
 
-  // Use caller-provided artwork_no if given, otherwise auto-generate (AW-YYYY-NNNN)
   let artwork_no = providedNo || null
   if (artwork_no) {
     const { rows: dupe } = await query(`SELECT id FROM artworks WHERE artwork_no = $1`, [artwork_no])
@@ -55,17 +53,10 @@ async function create({ artwork_no: providedNo, name, supplier_id, order_id, sta
     artwork_no = await getNextNumber('AW', 'artworks', 'artwork_no')
   }
 
-  const file_type  = path.extname(file.originalname).slice(1).toLowerCase()
+  const file_type = path.extname(file.originalname).slice(1).toLowerCase()
+  const file_url  = await uploadFile(file.buffer, file.originalname, file.mimetype, 'artworks')
 
-  // Try to upload to Google Drive; fall back to local path
-  let file_url = file.path.replace(/\\/g, '/')
-  try {
-    const driveUrl = await uploadToDrive(file.path, file.originalname, file.mimetype)
-    if (driveUrl) file_url = driveUrl
-  } catch (driveErr) {
-    // Drive upload failed — keep local file as fallback
-  }
-  const tagsArr    = tags
+  const tagsArr = tags
     ? (Array.isArray(tags) ? tags : tags.split(',').map((t) => t.trim()).filter(Boolean))
     : []
 
@@ -89,9 +80,7 @@ async function updateStatus(id, status) {
 async function remove(id) {
   const { rows } = await query(`DELETE FROM artworks WHERE id=$1 RETURNING *`, [id])
   if (!rows[0]) throw Object.assign(new Error('Artwork not found'), { statusCode: 404 })
-  if (rows[0].file_url && fs.existsSync(rows[0].file_url)) {
-    fs.unlink(rows[0].file_url, () => {})
-  }
+  await deleteFile(rows[0].file_url)
 }
 
 const DESIGN_STATUSES = ['Draft', 'Pending Approval', 'Changes Requested', 'Approved', 'Archived']
