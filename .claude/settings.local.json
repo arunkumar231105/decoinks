@@ -40,7 +40,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Read(//etc/nginx/conf.d/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git"

@@ -209,6 +209,9 @@ export function InvoiceDetailPage() {
               <Package size={13} /> Convert to Order
             </button>
           )}
+          <button className="lb-action-btn" onClick={() => window.open(`/invoices/${id}/print`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            🖨️ Print / PDF
+          </button>
           {canRecordPayment && (
             <button className="lb-action-btn lb-action-primary" onClick={() => setPaymentModalOpen(true)}>
               <CreditCard size={13} /> Record Payment
