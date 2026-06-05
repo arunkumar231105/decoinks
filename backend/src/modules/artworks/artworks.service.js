@@ -42,7 +42,7 @@ async function getById(id) {
   return rows[0]
 }
 
-async function create({ artwork_no: providedNo, name, supplier_id, order_id, status = 'Draft', tags, notes, uploaded_by, file }) {
+async function create({ artwork_no: providedNo, name, supplier_id, order_id, quotation_id, status = 'Draft', tags, notes, uploaded_by, file }) {
   if (!file) throw Object.assign(new Error('Artwork file is required'), { statusCode: 400 })
 
   let artwork_no = providedNo || null
@@ -61,9 +61,9 @@ async function create({ artwork_no: providedNo, name, supplier_id, order_id, sta
     : []
 
   const { rows } = await query(
-    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [artwork_no, name, supplier_id || null, order_id || null, status,
+    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, quotation_id, status, file_url, file_type, tags, notes, uploaded_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [artwork_no, name, supplier_id || null, order_id || null, quotation_id || null, status,
      file_url, file_type, tagsArr, notes || null, uploaded_by]
   )
   return rows[0]

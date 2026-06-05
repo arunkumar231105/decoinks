@@ -38,7 +38,9 @@
       "Bash(grep -v \"^\\\\s*$\")",
       "Bash(grep -v \"//\\\\|import\\\\|Binary\")",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git"

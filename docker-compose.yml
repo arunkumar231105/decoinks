@@ -13,6 +13,7 @@ services:
       - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
       - ./db/portal_migration.sql:/docker-entrypoint-initdb.d/02_portal.sql:ro
       - ./db/002_supplier_rename.sql:/docker-entrypoint-initdb.d/03_supplier_rename.sql:ro
+      - ./db/003_artwork_quotation.sql:/docker-entrypoint-initdb.d/04_artwork_quotation.sql:ro
     ports:
       - '5435:5432'
     networks: [decoinks_net]

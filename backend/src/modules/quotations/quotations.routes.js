@@ -5,6 +5,8 @@ const os = require('os')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const controller = require('./quotations.controller')
+const { uploadArtwork } = require('../../middleware/upload')
+const artworksSvc = require('../artworks/artworks.service')
 
 // CSV upload: store to OS temp dir, max 5 MB, .csv only
 const uploadCsv = multer({
@@ -94,5 +96,40 @@ router.post('/:id/convert-to-invoice',             controller.convertToInvoice)
 router.put('/:id',                    validate(updateSchema),  controller.update)
 router.patch('/:id/status',           validate(statusSchema),  controller.updateStatus)
 router.delete('/:id',                 controller.remove)
+
+// ── Artwork attachments on a quote ────────────────────────────────────────────
+router.get('/:id/artworks', async (req, res) => {
+  try {
+    const { rows } = await require('../../config/db').query(
+      `SELECT id, artwork_no, name, file_url, file_type, status, created_at
+       FROM artworks WHERE quotation_id = $1 ORDER BY created_at`,
+      [req.params.id]
+    )
+    res.json({ artworks: rows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.post('/:id/artworks', uploadArtwork, async (req, res) => {
+  try {
+    const artwork = await artworksSvc.create({
+      name: req.body.name || req.file.originalname.replace(/\.[^.]+$/, ''),
+      quotation_id: req.params.id,
+      supplier_id:  null,
+      order_id:     null,
+      status:       'Pending Review',
+      notes:        req.body.notes || null,
+      uploaded_by:  req.user.id,
+      file:         req.file,
+    })
+    res.status(201).json({ artwork })
+  } catch (e) { res.status(e.statusCode ?? 400).json({ error: e.message }) }
+})
+
+router.delete('/:id/artworks/:artworkId', async (req, res) => {
+  try {
+    await artworksSvc.remove(req.params.artworkId)
+    res.json({ success: true })
+  } catch (e) { res.status(e.statusCode ?? 400).json({ error: e.message }) }
+})
 
 module.exports = router

@@ -24,6 +24,7 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
+import ArtworkUploader from '../components/ArtworkUploader'
 
 type QuoteStatus = 'Draft' | 'Sent' | 'Pending Approval' | 'Approved' | 'Converted'
 
@@ -762,7 +763,13 @@ export function NewQuotationPage() {
       const q = res.data?.data
       toast.success(quoteId ? 'Quote updated successfully' : `Quote ${q?.quote_number ?? ''} saved!`)
       queryClient.invalidateQueries({ queryKey: ['quotations'] })
-      if (quoteId) queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
+      if (quoteId) {
+        queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
+      } else if (q?.id) {
+        // Stay on the edit page so artworks can be uploaded right away
+        navigate(`/quotes/${q.id}`, { replace: true })
+        return
+      }
       navigate('/quotes')
     },
     onError: (err: any) => {
@@ -906,6 +913,7 @@ export function NewQuotationPage() {
           <OtherChargesSection charges={otherCharges} toggleCharge={toggleCharge} updateCharge={updateCharge} />
           <NotesSection customerNotes={supplierNotes} internalNotes={internalNotes} setCustomerNotes={setSupplierNotes} setInternalNotes={setInternalNotes} />
           <AISection />
+          <ArtworkUploader quotationId={quoteId} />
         </main>
 
         <aside className="nq-sidebar">
