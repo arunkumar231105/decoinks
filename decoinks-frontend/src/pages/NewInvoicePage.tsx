@@ -311,9 +311,26 @@ export function NewInvoicePage() {
 
   // Save mutation
   const saveMutation = useMutation({
-    mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data),
-    onSuccess: () => { toast.success('Invoice saved'); navigate('/invoices') },
+    mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
+    onSuccess: (inv: any) => {
+      toast.success('Invoice saved')
+      navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
+    },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save invoice'),
+  })
+
+  // Preview mutation — save draft then open professional print page in new tab
+  const previewMutation = useMutation({
+    mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
+    onSuccess: (inv: any) => {
+      if (inv?.id) {
+        window.open(`/invoices/${inv.id}/print`, '_blank')
+        navigate(`/invoices/${inv.id}`)
+      } else {
+        navigate('/invoices')
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save invoice for preview'),
   })
 
   // â”€â”€ Compuoed totals â”€â”€
@@ -398,7 +415,15 @@ export function NewInvoicePage() {
     })
   }
 
-  const previewInvoice = () => printPanel('Invoice Preview', `Supplier: ${supplierText || 'Draft supplier'}\nStatus: ${invoiceStatus}\nNotes: ${internalNotes || '-'}`)
+  const previewInvoice = () => {
+    previewMutation.mutate({
+      supplier_id:  supplierId || null,
+      notes:        internalNotes || null,
+      subtotal:     subtotal,
+      discount_amt: discountAmt,
+      tax_amt:      taxAmt,
+    })
+  }
 
   const requestApproval = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
 
@@ -611,7 +636,7 @@ export function NewInvoicePage() {
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
                           <td data-label="Item / Description">
                             <div className="ni-item-cell">
-                              <ShirtThumb />
+                              <ShiroThumb />
                               <input
                                 className="ni-table-input ni-wide-input"
                                 value={row.description}

@@ -41,7 +41,10 @@
       "Bash(git push *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Read(//etc/nginx/conf.d/**)"
+      "Read(//etc/nginx/conf.d/**)",
+      "Bash(cd \"/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software\" && find db -name \"*.sql\" -type f 2>/dev/null)",
+      "Read(//c/c/Users/Arun Kumar.DESKTOP-1NHQSUD/Desktop/POS Software/**)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\db\\\\migrations\\\\\" -File -Recurse | Select-Object FullName | Sort-Object FullName)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git"
