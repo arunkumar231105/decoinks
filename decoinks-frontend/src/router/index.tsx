@@ -37,6 +37,7 @@ import { SetupPage } from '../pages/SetupPage'
 import { SupplierDetailPage } from '../pages/SupplierDetailPage'
 import { SettingsCustomFieldsPage } from '../pages/SettingsCustomFieldsPage'
 import { InvoiceDetailPage } from '../pages/InvoiceDetailPage'
+import { QuotePrintPage } from '../pages/QuotePrintPage'
 
 export const router = createBrowserRouter([
   {
@@ -95,6 +96,11 @@ export const router = createBrowserRouter([
                 path: '/quotes/:id/artwork',
                 element: <ArtworkFormPage />,
                 handle: { title: 'Artwork Form', subtitle: 'Review files, proofs, and customer approvals.' },
+              },
+              {
+                path: '/quotes/:id/print',
+                element: <QuotePrintPage />,
+                handle: { title: 'Quote Preview', subtitle: 'Print or download as PDF.' },
               },
               {
                 path: '/invoices',

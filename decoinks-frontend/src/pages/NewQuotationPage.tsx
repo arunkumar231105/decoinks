@@ -930,7 +930,10 @@ export function NewQuotationPage() {
         onSendToCustomer={handleSendToCustomer}
         onRequestApproval={handleRequestApproval}
         onConvert={() => navigate('/invoices/new')}
-        onPreview={() => printPanel('Quote Preview', `Supplier: ${supplierText || 'Draft supplier'}\nTotal: $${fmt(totals.finalTotal)}\nStatus: ${status}`)}
+        onPreview={() => {
+          if (quoteId) window.open(`/quotes/${quoteId}/print`, '_blank')
+          else toast.error('Save the quote first, then click Preview')
+        }}
       />
     </div>
   )
