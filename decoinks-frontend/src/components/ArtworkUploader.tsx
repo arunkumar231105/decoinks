@@ -96,7 +96,7 @@ export default function ArtworkUploader({ orderId, quotationId }: Props) {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('name', file.name.replace(/\.[^.]+$/, ''))
-      await api.post(`${base}/artworks`, fd)
+      await api.post(`${base}/artworks`, fd, { headers: { 'Content-Type': undefined } })
       queryClient.invalidateQueries({ queryKey })
       toast.success('Artwork uploaded')
     } catch (err) {
