@@ -5,8 +5,19 @@ const os = require('os')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const controller = require('./quotations.controller')
-const { uploadArtwork } = require('../../middleware/upload')
-const artworksSvc = require('../artworks/artworks.service')
+// Lazy-loaded — only needed for artwork sub-routes, keeps main quote routes alive
+// even if @aws-sdk/client-s3 is not yet installed in the container
+const getArtworkDeps = (() => {
+  let cache = null
+  return () => {
+    if (!cache) {
+      const { uploadArtwork } = require('../../middleware/upload')
+      const artworksSvc = require('../artworks/artworks.service')
+      cache = { uploadArtwork, artworksSvc }
+    }
+    return cache
+  }
+})()
 
 // CSV upload: store to OS temp dir, max 5 MB, .csv only
 const uploadCsv = multer({
@@ -109,24 +120,31 @@ router.get('/:id/artworks', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-router.post('/:id/artworks', uploadArtwork, async (req, res) => {
+router.post('/:id/artworks', async (req, res, next) => {
   try {
-    const artwork = await artworksSvc.create({
-      name: req.body.name || req.file.originalname.replace(/\.[^.]+$/, ''),
-      quotation_id: req.params.id,
-      supplier_id:  null,
-      order_id:     null,
-      status:       'Pending Review',
-      notes:        req.body.notes || null,
-      uploaded_by:  req.user.id,
-      file:         req.file,
+    const { uploadArtwork, artworksSvc } = getArtworkDeps()
+    uploadArtwork(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message })
+      try {
+        const artwork = await artworksSvc.create({
+          name: req.body.name || req.file?.originalname.replace(/\.[^.]+$/, '') || 'Artwork',
+          quotation_id: req.params.id,
+          supplier_id:  null,
+          order_id:     null,
+          status:       'Pending Review',
+          notes:        req.body.notes || null,
+          uploaded_by:  req.user.id,
+          file:         req.file,
+        })
+        res.status(201).json({ artwork })
+      } catch (e) { res.status(e.statusCode ?? 400).json({ error: e.message }) }
     })
-    res.status(201).json({ artwork })
-  } catch (e) { res.status(e.statusCode ?? 400).json({ error: e.message }) }
+  } catch (e) { res.status(500).json({ error: 'Storage module not available: ' + e.message }) }
 })
 
 router.delete('/:id/artworks/:artworkId', async (req, res) => {
   try {
+    const { artworksSvc } = getArtworkDeps()
     await artworksSvc.remove(req.params.artworkId)
     res.json({ success: true })
   } catch (e) { res.status(e.statusCode ?? 400).json({ error: e.message }) }

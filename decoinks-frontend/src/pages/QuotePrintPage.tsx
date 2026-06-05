@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { useAuthStore } from '../store/authStore'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
@@ -145,6 +146,12 @@ const colorHex = (c: string): string => {
 // ── Main component ────────────────────────────────────────────────────────────
 export function QuotePrintPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { isAuthenticated } = useAuthStore()
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate('/login')
+  }, [isAuthenticated, navigate])
 
   const { data: quote, isLoading } = useQuery<Quote>({
     queryKey: ['quote-print', id],

@@ -98,11 +98,6 @@ export const router = createBrowserRouter([
                 handle: { title: 'Artwork Form', subtitle: 'Review files, proofs, and customer approvals.' },
               },
               {
-                path: '/quotes/:id/print',
-                element: <QuotePrintPage />,
-                handle: { title: 'Quote Preview', subtitle: 'Print or download as PDF.' },
-              },
-              {
                 path: '/invoices',
                 element: <WorkflowListPage kind="invoices" />,
                 handle: { title: 'Invoices', subtitle: 'Track billing and payment status.' },
@@ -236,6 +231,11 @@ export const router = createBrowserRouter([
                 handle: { title: 'Custom Fields', subtitle: 'Define additional fields for leads, quotes, orders, and more.' },
               },
             ],
+          },
+          // ── Standalone print pages (no AppLayout, no sidebar) ──────────────
+          {
+            path: '/quotes/:id/print',
+            element: <QuotePrintPage />,
           },
         ],
       },
