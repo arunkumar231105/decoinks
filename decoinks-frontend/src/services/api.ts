@@ -28,8 +28,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 })
 
 // ── Silent-refresh state ──────────────────────────────────────────────────────
-let isRefreshing  = false
-let sessionEnded  = false   // true after a refresh fails — stops further attempts this session
+let isRefreshing = false
 let refreshQueue: Array<{
   resolve: (token: string) => void
   reject:  (err: unknown)  => void
@@ -43,9 +42,7 @@ function processQueue(err: unknown, newToken: string | null) {
   refreshQueue = []
 }
 
-// Called by authStore on successful login so the guard resets
 export function resetSessionState() {
-  sessionEnded = false
   isRefreshing = false
   refreshQueue = []
 }
@@ -57,18 +54,13 @@ api.interceptors.response.use(
     const originalReq = err.config as AxiosRequestConfig & { _retried?: boolean }
 
     // Only intercept 401s that haven't already been retried,
-    // and never intercept the refresh call itself (avoid infinite loop).
+    // and never intercept the refresh/login calls themselves.
     if (
       err.response?.status !== 401 ||
       originalReq._retried ||
       originalReq.url === '/auth/refresh' ||
       originalReq.url === '/auth/login'
     ) {
-      return Promise.reject(err)
-    }
-
-    // Refresh already failed this session — don't attempt again, just reject
-    if (sessionEnded) {
       return Promise.reject(err)
     }
 
@@ -95,17 +87,14 @@ api.interceptors.response.use(
       tokenMemory.set(newToken)
       processQueue(null, newToken)
 
-      // Retry original request with new token
       if (originalReq.headers) {
         (originalReq.headers as Record<string, string>).Authorization = `Bearer ${newToken}`
       }
       return api(originalReq)
     } catch (refreshErr) {
-      sessionEnded = true   // prevent any further refresh attempts until next login
+      // Refresh token itself is expired — user must log in again
       processQueue(refreshErr, null)
       tokenMemory.set(null)
-
-      // Notify app to redirect to login — fires exactly once per expired session
       window.dispatchEvent(new CustomEvent('auth:session-expired'))
       return Promise.reject(refreshErr)
     } finally {

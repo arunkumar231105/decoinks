@@ -3,8 +3,8 @@ const jwt      = require('jsonwebtoken')
 const crypto   = require('crypto')
 const { query, getClient } = require('../../config/db')
 
-const ACCESS_EXPIRES   = process.env.JWT_ACCESS_EXPIRES_IN || '15m'
-const REFRESH_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000   // 7 days
+const ACCESS_EXPIRES   = process.env.JWT_ACCESS_EXPIRES_IN || '8h'
+const REFRESH_EXPIRES_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
 const COOKIE_NAME      = 'decoinks_rt'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

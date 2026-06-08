@@ -1,7 +1,7 @@
 const authService = require('./auth.service')
 const { success } = require('../../utils/response')
 
-const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
 
 function setRefreshCookie(res, token) {
   res.cookie(authService.COOKIE_NAME, token, {
