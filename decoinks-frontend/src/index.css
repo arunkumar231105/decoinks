@@ -10279,6 +10279,135 @@ select.al-input {
   white-space: nowrap;
 }
 
+/* ── Quote Type Selector ── */
+.nq-type-selector-card {
+  border: 2px solid #e0f2fe;
+  background: linear-gradient(135deg, #f0f9ff 0%, #fff 60%);
+}
+
+.nq-type-selector-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.nq-type-selector-hd h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.nq-type-hint {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.nq-tab-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.nq-tab-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  width: 100%;
+}
+
+.nq-tab-card:hover {
+  border-color: #93c5fd;
+  background: #f8faff;
+  box-shadow: 0 2px 8px rgba(59,130,246,0.1);
+}
+
+.nq-tab-card-active {
+  border-color: var(--tab-color, #0ea5e9);
+  background: #f0f9ff;
+  box-shadow: 0 0 0 3px rgba(14,165,233,0.12);
+}
+
+.nq-tab-icon {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nq-tab-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.nq-tab-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.nq-tab-text span {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.nq-tab-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nq-tab-selected {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.nq-tab-select-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.nq-tab-total {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0d9488;
+}
+
+.nq-tab-section-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .nq-tab-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1500px) {
   .nq-body {
     grid-template-columns: 1fr;

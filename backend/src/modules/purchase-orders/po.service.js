@@ -94,8 +94,10 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT po.*, s.name AS supplier_name, u.name AS created_by_name,
-            b.name AS buyer_name
+    `SELECT po.*, s.name AS supplier_name, s.email AS supplier_email,
+            s.phone AS supplier_phone, s.city AS supplier_city,
+            s.company AS supplier_company,
+            u.name AS created_by_name, b.name AS buyer_name
      FROM purchase_orders po
      LEFT JOIN suppliers s ON s.id = po.supplier_id
      LEFT JOIN users u ON u.id = po.created_by

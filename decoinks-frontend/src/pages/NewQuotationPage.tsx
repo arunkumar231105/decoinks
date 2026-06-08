@@ -35,6 +35,7 @@ interface ApparelItem {
   brand: string
   model: string
   variant: string
+  sizes: string
   qty: number
   printDetails: { location: string; size: string }[]
   stdCost: number
@@ -249,31 +250,50 @@ function SupplierSection({
   )
 }
 
-function ProductSection({
-  title,
-  sectionNumber,
-  enabled,
-  onToggle,
-  total,
-  children,
-}: {
-  title: string
-  sectionNumber: number
-  enabled: boolean
-  onToggle: () => void
-  total: number
-  children: React.ReactNode
+type QuoteTab = 'apparel' | 'dtf' | 'gangsheet'
+
+const QUOTE_TABS: { key: QuoteTab; icon: string; label: string; desc: string; color: string }[] = [
+  { key: 'apparel',   icon: '👕', label: 'Custom Printed Apparel', desc: 'T-Shirts, Hoodies, Caps with DTF / screen prints',  color: '#0ea5e9' },
+  { key: 'dtf',       icon: '🖨️', label: 'DTF Transfers',          desc: 'Gang-sheet cut heat transfers quoted by size & qty', color: '#f97316' },
+  { key: 'gangsheet', icon: '📐', label: 'Gangsheet',              desc: 'Full gang sheets with multiple artwork designs',     color: '#8b5cf6' },
+]
+
+function QuoteTypeSelector({ activeTab, onChange, tabTotals }: {
+  activeTab: QuoteTab
+  onChange: (tab: QuoteTab) => void
+  tabTotals: Record<QuoteTab, number>
 }) {
   return (
-    <section className="nq-card">
-      <div className="nq-section-header">
-        <label className="nq-section-checkbox"><input type="checkbox" checked={enabled} onChange={onToggle} /></label>
-        <span className="nq-section-num">{sectionNumber}</span>
-        <h3>{title}</h3>
-        {enabled && <span className="nq-badge nq-badge-active">Active</span>}
-        <strong className="nq-section-total">Section Total: ${fmt(total)}</strong>
+    <section className="nq-card nq-type-selector-card">
+      <div className="nq-type-selector-hd">
+        <h3>Quote Type</h3>
+        <span className="nq-type-hint">Select ONE — each type generates its own PDF layout</span>
       </div>
-      {enabled && children}
+      <div className="nq-tab-cards">
+        {QUOTE_TABS.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            className={cn('nq-tab-card', activeTab === tab.key && 'nq-tab-card-active')}
+            style={activeTab === tab.key ? { borderColor: tab.color, '--tab-color': tab.color } as React.CSSProperties : undefined}
+            onClick={() => onChange(tab.key)}
+          >
+            <span className="nq-tab-icon">{tab.icon}</span>
+            <div className="nq-tab-text">
+              <strong>{tab.label}</strong>
+              <span>{tab.desc}</span>
+            </div>
+            <div className="nq-tab-right">
+              {activeTab === tab.key
+                ? <span className="nq-tab-selected" style={{ background: tab.color }}>✓ Selected</span>
+                : <span className="nq-tab-select-hint">Click to select</span>}
+              {tabTotals[tab.key] > 0 && (
+                <span className="nq-tab-total">${fmt(tabTotals[tab.key])}</span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
     </section>
   )
 }
@@ -389,19 +409,24 @@ function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, 
   )
 }
 
-function ActionBar({ status, setStatus, onSave, onConvert, onPreview, saving, onSendToCustomer, onRequestApproval }: {
+function ActionBar({ status, setStatus, onSave, onConvert, onPreview, activeTab, saving, onSendToCustomer, onRequestApproval }: {
   status: QuoteStatus; setStatus: (status: QuoteStatus) => void
-  onSave: () => void; onConvert: () => void; onPreview: () => void
+  onSave: () => void; onConvert: () => void
+  onPreview: () => void; activeTab: QuoteTab
   saving?: boolean; onSendToCustomer: () => void; onRequestApproval: () => void
 }) {
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
+  const tab = QUOTE_TABS.find(t => t.key === activeTab)!
+  const previewLabel = `${tab.icon} Preview ${tab.label} PDF`
   return (
     <div className="nq-bottom-bar">
       <div className="nq-bottom-left">
         <button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}>
           <Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}
         </button>
-        <button className="lb-action-btn" onClick={onPreview}>Preview</button>
+        <button className="lb-action-btn" onClick={onPreview} title={`Preview ${tab.label} PDF`}>
+          {previewLabel}
+        </button>
       </div>
       <div className="nq-bottom-center">
         <button className="lb-action-btn lb-action-primary" onClick={onSendToCustomer} disabled={saving} style={{ gap: 6 }}>
@@ -419,7 +444,7 @@ function ActionBar({ status, setStatus, onSave, onConvert, onPreview, saving, on
           <Copy size={14} style={{ marginRight: 8 }} /> Copy Link
         </MenuItem>
         <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}>
-          <ExternalLink size={14} style={{ marginRight: 8 }} /> Preview / Print
+          <ExternalLink size={14} style={{ marginRight: 8 }} /> {previewLabel}
         </MenuItem>
       </Menu>
     </div>
@@ -661,9 +686,7 @@ export function NewQuotationPage() {
   const [billingAddress, setBillingAddress] = useState('')
   const [shippingAddress, setShippingAddress] = useState('')
   const [sameAsBilling, setSameAsBilling] = useState(false)
-  const [apparelEnabled, setApparelEnabled] = useState(true)
-  const [gangsheetEnabled, setGangsheetEnabled] = useState(true)
-  const [transfersEnabled, setTransfersEnabled] = useState(true)
+  const [activeTab, setActiveTab] = useState<QuoteTab>('apparel')
   const [apparelItems, setApparelItems] = useState<ApparelItem[]>(initialApparelItems)
   const [gangsheetRows, setGangsheetRows] = useState<GangsheetRow[]>(initialGangsheetRows)
   const [transferRows, setTransferRows] = useState<TransferRow[]>(initialTransferRows)
@@ -732,17 +755,42 @@ export function NewQuotationPage() {
     setBillingAddress(q.billing_address ?? '')
     setShippingAddress(q.shipping_address ?? '')
     if (q.internal_notes) setInternalNotes(q.internal_notes)
+    const orderType = ((q.order_type as string) || 'apparel') as QuoteTab
+    setActiveTab(orderType)
+
     if (Array.isArray(q.items) && q.items.length > 0) {
-      setLeadItems(q.items.map((item: Record<string, any>) => ({
-        id:            item.id ?? uid(),
-        description:   item.description ?? '',
-        qty:           item.qty ?? 1,
-        sizes:         item.sizes ?? '',
-        colors:        item.colors ?? '',
-        artwork_count: item.artwork_count ?? 0,
-        unit_price:    item.unit_price ?? 0,
-        sort_order:    item.sort_order ?? 0,
-      })))
+      if (orderType === 'apparel') {
+        setApparelItems(q.items.map((item: Record<string, any>) => ({
+          id:           item.id ?? uid(),
+          name:         (item.description ?? '').split('\n')[0],
+          description:  (item.description ?? '').split('\n').slice(1).join('\n'),
+          brand:        '',
+          model:        '',
+          variant:      item.colors ?? '',
+          sizes:        item.sizes ?? '',
+          qty:          item.qty ?? 1,
+          printDetails: Array.from({ length: item.artwork_count ?? 0 }, () => ({ location: 'Front Print', size: '12x16' })),
+          stdCost:      0,
+          quotedCost:   item.unit_price ?? 0,
+        })))
+      } else if (orderType === 'dtf') {
+        setTransferRows(q.items.map((item: Record<string, any>) => ({
+          id:           item.id ?? uid(),
+          transferSize: item.description ?? '12" x 12"',
+          qty:          item.qty ?? 1,
+          stdCost:      0,
+          quotedCost:   item.unit_price ?? 0,
+        })))
+      } else if (orderType === 'gangsheet') {
+        setGangsheetRows(q.items.map((item: Record<string, any>) => ({
+          id:         item.id ?? uid(),
+          size:       item.description ?? '22" x 60"',
+          noArtworks: item.artwork_count ?? 1,
+          qtySheets:  item.qty ?? 1,
+          stdCost:    0,
+          quotedCost: item.unit_price ?? 0,
+        })))
+      }
     }
     if (q.status) setStatus(q.status as QuoteStatus)
     setFormInitialized(true)
@@ -804,11 +852,11 @@ export function NewQuotationPage() {
     }
   }
 
-  const apparelTotal    = useMemo(() => apparelEnabled  ? apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0) : 0, [apparelEnabled, apparelItems])
-  const gangsheetTotal  = useMemo(() => gangsheetEnabled ? gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0) : 0, [gangsheetEnabled, gangsheetRows])
-  const transfersTotal  = useMemo(() => transfersEnabled ? transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0) : 0, [transfersEnabled, transferRows])
-  const leadItemsTotal  = useMemo(() => leadItems.reduce((sum, item) => sum + item.qty * item.unit_price, 0), [leadItems])
-  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: apparelTotal, gangsheet: gangsheetTotal, transfers: transfersTotal, leadItems: leadItemsTotal }, otherCharges, taxRate: 0.07 }), [apparelTotal, gangsheetTotal, transfersTotal, leadItemsTotal, otherCharges])
+  const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
+  const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
+  const transfersTotal = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0), [transferRows])
+  const activeTotal    = activeTab === 'apparel' ? apparelTotal : activeTab === 'dtf' ? transfersTotal : gangsheetTotal
+  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges, taxRate: 0.07 }), [activeTotal, otherCharges])
 
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) => setApparelItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item))
   const updateGangsheetRow = (id: string, patch: Partial<GangsheetRow>) => setGangsheetRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
@@ -817,38 +865,78 @@ export function NewQuotationPage() {
   const updateCharge = (key: OtherCharge['key'], patch: Partial<OtherCharge>) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, ...patch } : charge))
 
   const handleSave = () => {
-    // Build items array from lead items (for backend quotation_items table)
-    const allItems = leadItems.map((item, i) => ({
-      description:   item.description || 'Item',
-      qty:           item.qty,
-      unit_price:    item.unit_price,
-      sizes:         item.sizes || undefined,
-      colors:        item.colors || undefined,
-      artwork_count: item.artwork_count,
-      sort_order:    i,
-    }))
+    let sortIdx = 0
+    const allItems: Record<string, unknown>[] = []
+
+    if (activeTab === 'apparel') {
+      apparelItems.forEach(item => {
+        const color = (item.variant || '').trim() || undefined
+        const brand = [item.brand, item.model].filter(Boolean).join(' | ')
+        const fullDesc = [item.name || item.description, item.description && item.name !== item.description ? item.description : null, brand || null].filter(Boolean).join('\n')
+        allItems.push({
+          description:   fullDesc || 'Apparel Item',
+          qty:           item.qty,
+          unit_price:    item.quotedCost,
+          colors:        color,
+          sizes:         item.sizes || undefined,
+          artwork_count: item.printDetails.length || 0,
+          sort_order:    sortIdx++,
+        })
+      })
+    } else if (activeTab === 'dtf') {
+      transferRows.forEach(row => {
+        allItems.push({
+          description:   row.transferSize || 'DTF Transfer',
+          qty:           row.qty,
+          unit_price:    row.quotedCost,
+          artwork_count: 1,
+          sort_order:    sortIdx++,
+        })
+      })
+    } else if (activeTab === 'gangsheet') {
+      gangsheetRows.forEach(row => {
+        allItems.push({
+          description:   row.size || 'Gangsheet',
+          qty:           row.qtySheets,
+          unit_price:    row.quotedCost,
+          artwork_count: row.noArtworks,
+          sort_order:    sortIdx++,
+        })
+      })
+    }
+
+    const taxEnabled     = otherCharges.find(c => c.key === 'tax')?.enabled ?? false
+    const taxPct         = taxEnabled ? 7 : 0
+    const discountCharge = otherCharges.find(c => c.key === 'discount')
+    const subtotalVal    = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
+    const discountPct    = discountCharge?.enabled && subtotalVal > 0
+      ? +((Math.abs(discountCharge.quotedCost) / subtotalVal) * 100).toFixed(4)
+      : 0
 
     saveMutation.mutate({
-      lead_id:                      leadId    || undefined,
-      supplier_id:                  supplierId || undefined,
+      order_type:                   activeTab,
+      lead_id:                      leadId        || undefined,
+      supplier_id:                  supplierId    || undefined,
       billing_address:              billingAddress || undefined,
       shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
       internal_notes:               internalNotes || undefined,
+      discount_pct:                 discountPct,
+      tax_pct:                      taxPct,
       items:                        allItems,
-      // 020 intake fields
-      company_name:                 companyName     || undefined,
-      customer_name:                customerName    || undefined,
-      billing_email:                billingEmail    || undefined,
-      contact_number:               contactNumber   || undefined,
-      whatsapp:                     whatsapp        || undefined,
-      wechat:                       wechat          || undefined,
-      customer_category:            customerCategory || undefined,
-      customer_source:              customerSource  || undefined,
-      shipping_country:             shippingCountry || undefined,
-      shipping_state:               shippingState   || undefined,
-      shipping_city:                shippingCity    || undefined,
-      zip_code:                     zipCode         || undefined,
-      due_date:                     dueDate         || undefined,
+      // Customer intake fields
+      company_name:                 companyName       || undefined,
+      customer_name:                customerName      || undefined,
+      billing_email:                billingEmail      || undefined,
+      contact_number:               contactNumber     || undefined,
+      whatsapp:                     whatsapp          || undefined,
+      wechat:                       wechat            || undefined,
+      customer_category:            customerCategory  || undefined,
+      customer_source:              customerSource    || undefined,
+      shipping_country:             shippingCountry   || undefined,
+      shipping_state:               shippingState     || undefined,
+      shipping_city:                shippingCity      || undefined,
+      zip_code:                     zipCode           || undefined,
+      due_date:                     dueDate           || undefined,
       customer_requirement_summary: customerReqSummary || undefined,
       quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
     })
@@ -898,17 +986,89 @@ export function NewQuotationPage() {
             <LeadItemsSection items={leadItems} setItems={setLeadItems} />
           )}
 
-          <ProductSection title="Custom Printed Apparel" sectionNumber={1} enabled={apparelEnabled} onToggle={() => setApparelEnabled(v => !v)} total={apparelTotal}>
-            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Variant</th><th>Qty</th><th>Print Details</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{apparelItems.map((item, idx) => <tr key={item.id}><td className="nq-td-num">{idx + 1}</td><td><div className="nq-item-desc"><div className="nq-item-thumb"><Shirt size={18} /></div><div><strong>{item.name}</strong><span>{item.description}</span><span className="nq-item-meta">Brand: {item.brand} | Model: {item.model}</span></div></div></td><td><select className="nq-table-select" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })}>{VARIANTS.map(v => <option key={v}>{v}</option>)}</select></td><td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td><td><div className="nq-print-details"><span className="nq-print-method-badge">DTF Transfer</span>{item.printDetails.map((pd, pi) => <div key={pi} className="nq-print-location-row"><span className="nq-print-dot" /><select className="nq-print-loc-select" value={pd.location} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, location: e.target.value } : row) })}>{PRINT_LOCATIONS.map(l => <option key={l}>{l}</option>)}</select><select className="nq-print-size-select" value={pd.size} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, size: e.target.value } : row) })}>{PRINT_SIZES.map(s => <option key={s}>{s}</option>)}</select><button className="nq-icon-btn" onClick={() => updateApparelItem(item.id, { printDetails: item.printDetails.filter((_, i) => i !== pi) })}><X size={10} /></button></div>)}<button className="nq-add-location-btn" onClick={() => updateApparelItem(item.id, { printDetails: [...item.printDetails, { location: 'Front Print', size: '12x16' }] })}><Plus size={11} /> Add Location</button></div></td><td><div className="nq-money-input"><span>$</span><input type="number" value={item.stdCost} onChange={e => updateApparelItem(item.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(row => row.id !== item.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), name: '', description: '', brand: '', model: '', variant: '', qty: 1, printDetails: [], stdCost: 0, quotedCost: 0 }])}><Plus size={12} /> Add Apparel Row</button>
-          </ProductSection>
+          {/* ── Quote Type Selector ── */}
+          <QuoteTypeSelector
+            activeTab={activeTab}
+            onChange={setActiveTab}
+            tabTotals={{ apparel: apparelTotal, dtf: transfersTotal, gangsheet: gangsheetTotal }}
+          />
 
-          <ProductSection title="Gangsheet" sectionNumber={2} enabled={gangsheetEnabled} onToggle={() => setGangsheetEnabled(v => !v)} total={gangsheetTotal}>
-            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{gangsheetRows.map((row, idx) => <tr key={row.id}><td className="nq-td-num">{idx + 1}</td><td><select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })}>{GANGSHEET_SIZES.map(s => <option key={s}>{s}</option>)}</select></td><td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td><td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td><td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateGangsheetRow(row.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(item => item.id !== row.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, stdCost: 25, quotedCost: 30 }])}><Plus size={12} /> Add Gangsheet Row</button>
-          </ProductSection>
+          {/* ── Active Tab Content ── */}
+          {activeTab === 'apparel' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
+                <strong className="nq-section-total">Section Total: ${fmt(apparelTotal)}</strong>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Color</th><th>Sizes (e.g. S:10,M:20)</th><th>Qty</th><th>Print Locations</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+                {apparelItems.map((item, idx) => (
+                  <tr key={item.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td><div className="nq-item-desc"><div className="nq-item-thumb"><Shirt size={18} /></div><div><input className="nq-table-input" placeholder="Item name (e.g. T-Shirt Premium)" value={item.name} onChange={e => updateApparelItem(item.id, { name: e.target.value })} /><input className="nq-table-input" placeholder="Brand | Model (e.g. Gildan | 18500)" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></div></div></td>
+                    <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
+                    <td><input className="nq-table-input" placeholder="S:10, M:20, L:15" value={item.sizes} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })} /></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><div className="nq-print-details"><span className="nq-print-method-badge">DTF Transfer</span>{item.printDetails.map((pd, pi) => (<div key={pi} className="nq-print-location-row"><span className="nq-print-dot" /><select className="nq-print-loc-select" value={pd.location} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, location: e.target.value } : row) })}>{PRINT_LOCATIONS.map(l => <option key={l}>{l}</option>)}</select><select className="nq-print-size-select" value={pd.size} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, size: e.target.value } : row) })}>{PRINT_SIZES.map(s => <option key={s}>{s}</option>)}</select><button className="nq-icon-btn" onClick={() => updateApparelItem(item.id, { printDetails: item.printDetails.filter((_, i) => i !== pi) })}><X size={10} /></button></div>))}<button className="nq-add-location-btn" onClick={() => updateApparelItem(item.id, { printDetails: [...item.printDetails, { location: 'Front Print', size: '12x16' }] })}><Plus size={11} /> Add Location</button></div></td>
+                    <td><div className="nq-money-input"><span>$</span><input type="number" value={item.stdCost} onChange={e => updateApparelItem(item.id, { stdCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
+              </tbody></table></div>
+              <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), name: '', description: '', brand: '', model: '', variant: '', sizes: '', qty: 1, printDetails: [], stdCost: 0, quotedCost: 0 }])}><Plus size={12} /> Add Apparel Row</button>
+            </section>
+          )}
 
-          <ProductSection title="DTF Transfers" sectionNumber={3} enabled={transfersEnabled} onToggle={() => setTransfersEnabled(v => !v)} total={transfersTotal}>
-            <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Transfer Size</th><th>Qty</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th>Action</th></tr></thead><tbody>{transferRows.map((row, idx) => <tr key={row.id}><td className="nq-td-num">{idx + 1}</td><td><select className="nq-table-select" value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })}>{TRANSFER_SIZES.map(size => <option key={size}>{size}</option>)}</select></td><td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td><td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td><td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td><td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td><td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(item => item.id !== row.id))}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div><button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), transferSize: '12" x 12"', qty: 1, stdCost: 1.5, quotedCost: 2 }])}><Plus size={12} /> Add Transfer Row</button>
-          </ProductSection>
+          {activeTab === 'dtf' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
+                <strong className="nq-section-total">Section Total: ${fmt(transfersTotal)}</strong>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Transfer Size</th><th>Qty</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+                {transferRows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td><select className="nq-table-select" value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })}>{TRANSFER_SIZES.map(size => <option key={size}>{size}</option>)}</select></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {transferRows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
+              </tbody></table></div>
+              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), transferSize: '12" x 12"', qty: 1, stdCost: 1.5, quotedCost: 2 }])}><Plus size={12} /> Add Transfer Row</button>
+            </section>
+          )}
+
+          {activeTab === 'gangsheet' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>📐 Gangsheet</span>
+                <strong className="nq-section-total">Section Total: ${fmt(gangsheetTotal)}</strong>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+                {gangsheetRows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td><select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })}>{GANGSHEET_SIZES.map(s => <option key={s}>{s}</option>)}</select></td>
+                    <td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td>
+                    <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
+                    <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateGangsheetRow(row.id, { stdCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {gangsheetRows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No sheets yet — click "Add Gangsheet Row" below.</td></tr>}
+              </tbody></table></div>
+              <button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, stdCost: 25, quotedCost: 30 }])}><Plus size={12} /> Add Gangsheet Row</button>
+            </section>
+          )}
 
           <OtherChargesSection charges={otherCharges} toggleCharge={toggleCharge} updateCharge={updateCharge} />
           <NotesSection customerNotes={supplierNotes} internalNotes={internalNotes} setCustomerNotes={setSupplierNotes} setInternalNotes={setInternalNotes} />
@@ -930,8 +1090,9 @@ export function NewQuotationPage() {
         onSendToCustomer={handleSendToCustomer}
         onRequestApproval={handleRequestApproval}
         onConvert={() => navigate('/invoices/new')}
+        activeTab={activeTab}
         onPreview={() => {
-          if (quoteId) window.open(`/quotes/${quoteId}/print`, '_blank')
+          if (quoteId) { handleSave(); setTimeout(() => window.open(`/quotes/${quoteId}/print`, '_blank'), 800) }
           else toast.error('Save the quote first, then click Preview')
         }}
       />

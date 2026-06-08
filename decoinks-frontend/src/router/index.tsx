@@ -39,6 +39,7 @@ import { SettingsCustomFieldsPage } from '../pages/SettingsCustomFieldsPage'
 import { InvoiceDetailPage } from '../pages/InvoiceDetailPage'
 import { QuotePrintPage } from '../pages/QuotePrintPage'
 import { InvoicePrintPage } from '../pages/InvoicePrintPage'
+import { PurchaseOrderPrintPage } from '../pages/PurchaseOrderPrintPage'
 
 export const router = createBrowserRouter([
   {
@@ -241,6 +242,10 @@ export const router = createBrowserRouter([
           {
             path: '/invoices/:id/print',
             element: <InvoicePrintPage />,
+          },
+          {
+            path: '/purchase-orders/:id/print',
+            element: <PurchaseOrderPrintPage />,
           },
         ],
       },

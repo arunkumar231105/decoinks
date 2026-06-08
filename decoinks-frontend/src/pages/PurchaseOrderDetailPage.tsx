@@ -212,6 +212,11 @@ export function PurchaseOrderDetailPage() {
             </button>
           )}
           <button className="lb-action-btn"
+            onClick={() => window.open(`/purchase-orders/${id}/print`, '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            🖨️ Print / PDF
+          </button>
+          <button className="lb-action-btn"
             onClick={() => { setPortalSupplierId(po.supplier_id ?? ''); setPortalModalOpen(true) }}>
             <Send size={13} /> Send to Portal
           </button>
