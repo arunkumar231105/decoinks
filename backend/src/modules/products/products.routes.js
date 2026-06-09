@@ -18,6 +18,10 @@ const createSchema = z.object({
   cost_price:   z.number().nonnegative().optional().default(0),
   stock_qty:    z.number().int().nonnegative().optional().default(0),
   image_url:    z.string().url().optional().nullable(),
+  brand:        z.string().max(100).optional().nullable(),
+  model_number: z.string().max(50).optional().nullable(),
+  color:        z.string().max(80).optional().nullable(),
+  size:         z.string().max(20).optional().nullable(),
 })
 
 const updateSchema = z.object({
@@ -28,7 +32,11 @@ const updateSchema = z.object({
   stock_qty:    z.number().int().nonnegative().optional(),
   image_url:    z.string().url().optional().nullable(),
   is_active:    z.boolean().optional(),
-}).strict()
+  brand:        z.string().max(100).optional().nullable(),
+  model_number: z.string().max(50).optional().nullable(),
+  color:        z.string().max(80).optional().nullable(),
+  size:         z.string().max(20).optional().nullable(),
+})
 
 const bulkImportSchema = z.object({
   products: z.array(z.object({
@@ -39,6 +47,10 @@ const bulkImportSchema = z.object({
     base_price:   z.number().nonnegative().optional().default(0),
     cost_price:   z.number().nonnegative().optional().default(0),
     stock_qty:    z.number().int().nonnegative().optional().default(0),
+    brand:        z.string().max(100).optional().nullable(),
+    model_number: z.string().max(50).optional().nullable(),
+    color:        z.string().max(80).optional().nullable(),
+    size:         z.string().max(20).optional().nullable(),
   })).min(1).max(2000),
 })
 
