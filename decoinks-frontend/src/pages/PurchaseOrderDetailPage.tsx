@@ -106,13 +106,13 @@ export function PurchaseOrderDetailPage() {
 
   const { data: po, isLoading } = useQuery({
     queryKey: ['purchase-order', id],
-    queryFn: () => api.get(`/purchase-orders/${id}`).then(r => r.data.po as PurchaseOrder),
+    queryFn: () => api.get(`/purchase-orders/${id}`).then(r => (r.data.data ?? r.data.po) as PurchaseOrder),
     enabled: !!id,
   })
 
   const { data: history = [] } = useQuery({
     queryKey: ['po-history', id],
-    queryFn: () => api.get(`/purchase-orders/${id}/history`).then(r => r.data.history ?? r.data ?? []),
+    queryFn: () => api.get(`/purchase-orders/${id}/history`).then(r => r.data.data ?? r.data.history ?? []),
     enabled: !!id,
   })
 

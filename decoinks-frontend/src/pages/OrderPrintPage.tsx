@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { usePrintAuth } from '../hooks/usePrintAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Order {
@@ -268,14 +269,21 @@ interface DtfGroup { desc: string; rate: number; rowSpan: number; rows: DtfRow[]
 // ── Main component ────────────────────────────────────────────────────────────
 export function OrderPrintPage() {
   const { id } = useParams<{ id: string }>()
+  const { authReady, authFailed } = usePrintAuth()
 
   const { data: order, isLoading } = useQuery<Order>({
     queryKey: ['order', id],
-    queryFn:  () => api.get(`/orders/${id}`).then(r => r.data.order ?? r.data),
-    enabled: !!id,
+    queryFn:  () => api.get(`/orders/${id}`).then(r => r.data.data ?? r.data.order ?? r.data),
+    enabled: !!id && authReady,
   })
 
-  if (isLoading) return (
+  if (authFailed) return (
+    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
+      <span style={{ fontSize:15, color:'#ef4444' }}>Session expired.</span>
+      <a href="/login" style={{ fontSize:13, color:'#1a2b5c', fontWeight:600 }}>Log in again →</a>
+    </div>
+  )
+  if (!authReady || isLoading) return (
     <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', fontSize:15, color:'#6b7280' }}>
       Loading order…
     </div>
@@ -290,12 +298,13 @@ export function OrderPrintPage() {
   const isDtf       = order.order_type === 'dtf'
   const isGangsheet = order.order_type === 'gangsheet'
 
-  const apparelItems = isApparel ? (order.items as ApparelItem[]) : []
-  const dtfItems     = isDtf     ? (order.items as DtfItem[])     : []
-  const gsItems      = isGangsheet ? (order.items as GangsheetItem[]) : []
+  const allItems    = order.items ?? []
+  const apparelItems = isApparel ? (allItems as ApparelItem[]) : []
+  const dtfItems     = isDtf     ? (allItems as DtfItem[])     : []
+  const gsItems      = isGangsheet ? (allItems as GangsheetItem[]) : []
 
-  const totalQty = order.items.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0)
-  const itemsTotal = order.items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
+  const totalQty   = allItems.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0)
+  const itemsTotal = allItems.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
   const shippingAmt = Number(order.shipping_charges ?? 0)
   const subtotalPlus = itemsTotal + shippingAmt
 
@@ -739,7 +748,7 @@ export function OrderPrintPage() {
                     <div className="stat-icon">👕</div>
                     <div>
                       <div className="stat-lbl">Total Items</div>
-                      <div className="stat-val">{isDtf ? dtfGroups.length : order.items.length}</div>
+                      <div className="stat-val">{isDtf ? dtfGroups.length : allItems.length}</div>
                     </div>
                   </div>
                 </td>

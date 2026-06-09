@@ -114,20 +114,11 @@ export function OrderDetailPage() {
     enabled: !!id,
   })
 
-  const convertToPOMutation = useMutation({
-    mutationFn: () => api.post(`/orders/${id}/convert-to-po`),
-    onSuccess: (res: any) => {
-      const po = res.data?.data
-      toast.success(`Purchase Order ${po?.po_number ?? ''} created`)
-      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
-      setMoreAnchor(null)
-      if (po?.id) navigate(`/purchase-orders/${po.id}`)
-    },
-    onError: (err: any) => {
-      setMoreAnchor(null)
-      toast.error(err.response?.data?.message ?? 'Could not create Purchase Order')
-    },
-  })
+  // Navigate to PO form with order pre-populated instead of direct API call
+  const handleConvertToPO = () => {
+    setMoreAnchor(null)
+    navigate('/purchase-orders/new', { state: { fromOrderId: id } })
+  }
 
   const handleSendToPortal = async () => {
     setMoreAnchor(null)
@@ -276,9 +267,9 @@ export function OrderDetailPage() {
       </Menu>
 
       <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-        <MenuItem onClick={() => convertToPOMutation.mutate()} disabled={convertToPOMutation.isPending}>
+        <MenuItem onClick={handleConvertToPO}>
           <ShoppingCart size={14} style={{ marginRight: 8, color: '#0d9488' }} />
-          {convertToPOMutation.isPending ? 'Creating PO...' : 'Convert to Purchase Order'}
+          Convert to Purchase Order
         </MenuItem>
         <MenuItem onClick={handleSendToPortal} disabled={!order.supplier_id}>
           <Send size={14} style={{ marginRight: 8, color: '#2563EB' }} />

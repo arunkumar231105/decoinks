@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { usePrintAuth } from '../hooks/usePrintAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -368,19 +369,27 @@ const CSS = `
 export function PurchaseOrderPrintPage() {
   const { id }      = useParams<{ id: string }>()
   const navigate    = useNavigate()
+  const { authReady, authFailed } = usePrintAuth()
+
   const { data: po, isLoading } = useQuery<PurchaseOrder>({
     queryKey: ['purchase-order-print', id],
     queryFn:  () => api.get(`/purchase-orders/${id}`).then(r => r.data.po ?? r.data.data ?? r.data),
-    enabled: !!id,
+    enabled: !!id && authReady,
   })
 
   const { data: artworkData } = useQuery<{ artworks: Artwork[] }>({
     queryKey: ['order-artworks-for-po', po?.order_id],
     queryFn:  () => api.get(`/orders/${po!.order_id}/artworks`).then(r => r.data),
-    enabled:  !!po?.order_id,
+    enabled:  !!po?.order_id && authReady,
   })
 
-  if (isLoading) return (
+  if (authFailed) return (
+    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
+      <span style={{ fontSize:15, color:'#ef4444' }}>Session expired.</span>
+      <a href="/login" style={{ fontSize:13, color:'#1a2b5c', fontWeight:600 }}>Log in again →</a>
+    </div>
+  )
+  if (!authReady || isLoading) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'Inter, sans-serif', fontSize: 15, color: '#6b7280' }}>
       Loading purchase order…
     </div>

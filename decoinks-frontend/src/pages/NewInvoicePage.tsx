@@ -1,5 +1,5 @@
 ﻿import { useMemo, useRef, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { Avatar, Menu, MenuItem } from '@mui/material'
@@ -264,12 +264,17 @@ function getInvoiceCounters(
 
 export function NewInvoicePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuthStore()
+
+  // Convert-from-quote context (set when navigated from QuotesListPage)
+  const fromQuoteId: string | undefined = (location.state as any)?.fromQuoteId
 
   // Header / Info
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus>('Draft')
   const [isEditing, setIsEditing] = useState(true)
   const [quoteText, setQuoteText] = useState('')
+  const [quoteId, setQuoteId] = useState<string>(fromQuoteId ?? '')
   const [invoiceDate, setInvoiceDate] = useState(todayISO())
   const [dueDate, setDueDate] = useState('')
   const [supplierId, setSupplierId] = useState('')
@@ -304,6 +309,60 @@ export function NewInvoicePage() {
   const [currency, setCurrency] = useState('USD - US Dollar')
   const [sendPaymentLink, setSendPaymentLink] = useState(false)
   const [isPaid, setIsPaid] = useState(false)
+
+  // ── Fetch source quote when converting from quote ──────────────────────────
+  const { data: sourceQuote } = useQuery({
+    queryKey: ['convert-from-quote', fromQuoteId],
+    queryFn:  () => api.get(`/quotations/${fromQuoteId}`).then(r => r.data.data ?? r.data),
+    enabled:  !!fromQuoteId,
+  })
+
+  // Pre-populate form fields from quote once data arrives
+  useEffect(() => {
+    if (!sourceQuote) return
+    // Supplier
+    if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
+    if (sourceQuote.supplier_name) setsupplierText(sourceQuote.supplier_name)
+    // Quote ref
+    if (sourceQuote.quote_number)  { setQuoteText(sourceQuote.quote_number); setQuoteId(sourceQuote.id) }
+    // Order type
+    if (sourceQuote.order_type) {
+      const ot = sourceQuote.order_type === 'dtf' ? 'transfers' : sourceQuote.order_type as OrderType
+      setOrderType(ot)
+    }
+    // Notes
+    if (sourceQuote.notes) setInternalNotes(sourceQuote.notes)
+    // Totals
+    if (sourceQuote.shipping_charges) setShippingCharges(Number(sourceQuote.shipping_charges))
+    if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
+    if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
+    else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
+      setDiscountType('fixed'); setDiscountValue(Number(sourceQuote.discount_amt))
+    }
+    // Pre-populate items
+    const items = sourceQuote.items ?? []
+    if (sourceQuote.order_type === 'apparel') {
+      setApparelItems(items.map((it: any) => ({
+        id: uid(), description: it.item || it.description || '',
+        color: it.color || '', size: it.size || 'M',
+        qty: Number(it.qty) || 1, artworkNo: it.artwork_no || '',
+        unitPrice: Number(it.unit_price) || 0,
+      })))
+    } else if (sourceQuote.order_type === 'dtf') {
+      setTransferItems(items.map((it: any) => ({
+        id: uid(), artworkName: it.artwork_name || it.description || '',
+        size: it.size || '', qty: Number(it.qty) || 1,
+        unitPrice: Number(it.unit_price) || 0,
+      })))
+    } else if (sourceQuote.order_type === 'gangsheet') {
+      setGangsheetItems(items.map((it: any) => ({
+        id: uid(), size: it.size || '22"x60"',
+        numArtworks: Number(it.no_artworks) || 0,
+        qtySheets: Number(it.qty) || 1,
+        pricePerSheet: Number(it.unit_price) || 18,
+      })))
+    }
+  }, [sourceQuote])
 
   // More menu
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
@@ -408,6 +467,7 @@ export function NewInvoicePage() {
     }
     saveMutation.mutate({
       supplier_id:   supplierId || null,
+      quote_id:      quoteId || null,
       notes:         internalNotes || null,
       subtotal:      0,
       discount_amt:  0,
@@ -418,6 +478,7 @@ export function NewInvoicePage() {
   const previewInvoice = () => {
     previewMutation.mutate({
       supplier_id:  supplierId || null,
+      quote_id:     quoteId || null,
       notes:        internalNotes || null,
       subtotal:     subtotal,
       discount_amt: discountAmt,

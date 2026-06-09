@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { usePrintAuth } from '../hooks/usePrintAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
@@ -260,17 +261,18 @@ const CSS = `
 export function QuotePrintPage() {
   const { id }   = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { authReady, authFailed } = usePrintAuth()
 
   const { data: quote, isLoading } = useQuery<Quote>({
     queryKey: ['quote-print', id],
     queryFn:  () => api.get(`/quotations/${id}`).then(r => r.data.data),
-    enabled:  !!id,
+    enabled:  !!id && authReady,
   })
 
   const { data: artworkData } = useQuery<{ artworks: Artwork[] }>({
     queryKey: ['quote-artworks-print', id],
     queryFn:  () => api.get(`/quotations/${id}/artworks`).then(r => r.data),
-    enabled:  !!id,
+    enabled:  !!id && authReady,
   })
   const artworks = artworkData?.artworks ?? []
 
@@ -278,7 +280,15 @@ export function QuotePrintPage() {
     if (quote) document.title = `${quote.quote_number} – Decoinks Quotation`
   }, [quote])
 
-  if (isLoading || !quote) {
+  if (authFailed) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
+        <span style={{ fontSize:15, color:'#ef4444' }}>Session expired.</span>
+        <a href="/login" style={{ fontSize:13, color:'#1a2b5c', fontWeight:600 }}>Log in again →</a>
+      </div>
+    )
+  }
+  if (!authReady || isLoading || !quote) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Inter, sans-serif', color: '#64748b', fontSize: 15 }}>
         Loading quotation…

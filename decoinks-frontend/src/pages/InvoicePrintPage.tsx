@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { usePrintAuth } from '../hooks/usePrintAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
@@ -254,26 +255,33 @@ interface DtfGroup { desc: string; rate: number; rowSpan: number; rows: DtfRow[]
 // ── Main component ────────────────────────────────────────────────────────────
 export function InvoicePrintPage() {
   const { id } = useParams<{ id: string }>()
+  const { authReady, authFailed } = usePrintAuth()
 
   const { data: invoice, isLoading } = useQuery<Invoice>({
     queryKey: ['invoice', id],
-    queryFn:  () => api.get(`/invoices/${id}`).then(r => r.data.invoice ?? r.data),
-    enabled: !!id,
+    queryFn:  () => api.get(`/invoices/${id}`).then(r => r.data.data ?? r.data.invoice ?? r.data),
+    enabled: !!id && authReady,
   })
 
   const { data: quotation } = useQuery<Quotation>({
     queryKey: ['quotation', invoice?.quote_id],
-    queryFn:  () => api.get(`/quotations/${invoice!.quote_id}`).then(r => r.data.quotation ?? r.data),
-    enabled:  !!invoice?.quote_id,
+    queryFn:  () => api.get(`/quotations/${invoice!.quote_id}`).then(r => r.data.data ?? r.data.quotation ?? r.data),
+    enabled:  !!invoice?.quote_id && authReady,
   })
 
   const { data: artworkData } = useQuery<{ artworks: Artwork[] }>({
     queryKey: ['quote-artworks', invoice?.quote_id],
     queryFn:  () => api.get(`/quotations/${invoice!.quote_id}/artworks`).then(r => r.data),
-    enabled:  !!invoice?.quote_id,
+    enabled:  !!invoice?.quote_id && authReady,
   })
 
-  if (isLoading) return (
+  if (authFailed) return (
+    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
+      <span style={{ fontSize:15, color:'#ef4444' }}>Session expired.</span>
+      <a href="/login" style={{ fontSize:13, color:'#1a2b5c', fontWeight:600 }}>Log in again →</a>
+    </div>
+  )
+  if (!authReady || isLoading) return (
     <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', fontSize:15, color:'#6b7280' }}>
       Loading invoice…
     </div>

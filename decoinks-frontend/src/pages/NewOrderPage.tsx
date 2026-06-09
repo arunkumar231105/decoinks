@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ChevronDown, Edit3, ExternalLink, Plus, Send, Trash2, X, Check } from 'lucide-react'
 import { Menu, MenuItem, Tooltip } from '@mui/material'
 import toast from '../utils/toast'
@@ -86,8 +86,13 @@ function ArtworkThumb({ label }: { label: string }) {
 
 export function NewOrderPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const { user: me } = useAuthStore()
+
+  // Convert-from-invoice context (set when navigated from InvoiceDetailPage)
+  const fromInvoiceId: string | undefined = (location.state as any)?.fromInvoiceId
+  const fromOrderType: OrderType | undefined = (location.state as any)?.orderType
 
   // Header fields
   const [supplierId, setSupplierId]       = useState<string | null>(null)
@@ -95,7 +100,7 @@ export function NewOrderPage() {
   const [supplierOpen, setSupplierOpen]   = useState(false)
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
-  const [orderType, setOrderType] = useState<OrderType>('apparel')
+  const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
 
   // Table data
   const [apparel,   setApparel]   = useState<ApparelItem[]>(initApparel)
@@ -130,7 +135,29 @@ export function NewOrderPage() {
   // Send menu
   const [sendAnchor, setSendAnchor] = useState<null | HTMLElement>(null)
 
-  // â”€â”€ Load customers & agents â”€â”€
+  // ── Fetch source invoice when converting from invoice ────────────────────
+  const { data: sourceInvoice } = useQuery({
+    queryKey: ['convert-from-invoice', fromInvoiceId],
+    queryFn:  () => api.get(`/invoices/${fromInvoiceId}`).then(r => r.data.data ?? r.data),
+    enabled:  !!fromInvoiceId,
+  })
+
+  useEffect(() => {
+    if (!sourceInvoice) return
+    if (sourceInvoice.supplier_id)   setSupplierId(sourceInvoice.supplier_id)
+    if (sourceInvoice.supplier_name) setSupplierText(sourceInvoice.supplier_name)
+    if (sourceInvoice.contact_name)  setContactName(sourceInvoice.contact_name)
+    if (sourceInvoice.contact_email) setContactEmail(sourceInvoice.contact_email)
+    if (sourceInvoice.contact_phone) setContactPhone(sourceInvoice.contact_phone)
+    if (sourceInvoice.shipping_name)    setShippingName(sourceInvoice.shipping_name)
+    if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
+    if (sourceInvoice.notes)          setOrderNotes(sourceInvoice.notes)
+    if (sourceInvoice.shipping_charges) setShippingCharges(Number(sourceInvoice.shipping_charges))
+    if (sourceInvoice.rush_services)    setRushServices(Number(sourceInvoice.rush_services))
+    if (sourceInvoice.discount_pct)     setDiscountPct(Number(sourceInvoice.discount_pct))
+  }, [sourceInvoice])
+
+  // ── Load customers & agents ──
   const { data: supplierData } = useQuery({
     queryKey: ['suppliers-list'],
     queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data.rows as Supplier[]),
@@ -238,6 +265,7 @@ export function NewOrderPage() {
     return {
       supplier_id:        supplierId || null,
       supplier_name_text: !supplierId ? supplierText.trim() : null,
+      invoice_id:         fromInvoiceId || null,
       order_type:       orderType,
       order_date:       orderDate,
       payment_terms:    paymentTerms,

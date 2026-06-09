@@ -50,6 +50,23 @@ export const router = createBrowserRouter([
       { path: '/login', element: <LoginPage /> },
       { path: '/forgot-password', element: <ForgotPasswordPage /> },
       { path: '/reset-password', element: <ResetPasswordPage /> },
+      // ── Standalone print pages (outside ProtectedRoute — handle own silent auth) ──
+      {
+        path: '/quotes/:id/print',
+        element: <QuotePrintPage />,
+      },
+      {
+        path: '/invoices/:id/print',
+        element: <InvoicePrintPage />,
+      },
+      {
+        path: '/purchase-orders/:id/print',
+        element: <PurchaseOrderPrintPage />,
+      },
+      {
+        path: '/orders/:id/print',
+        element: <OrderPrintPage />,
+      },
       {
         element: <ProtectedRoute />,
         children: [
@@ -234,23 +251,6 @@ export const router = createBrowserRouter([
                 handle: { title: 'Custom Fields', subtitle: 'Define additional fields for leads, quotes, orders, and more.' },
               },
             ],
-          },
-          // ── Standalone print pages (no AppLayout, no sidebar) ──────────────
-          {
-            path: '/quotes/:id/print',
-            element: <QuotePrintPage />,
-          },
-          {
-            path: '/invoices/:id/print',
-            element: <InvoicePrintPage />,
-          },
-          {
-            path: '/purchase-orders/:id/print',
-            element: <PurchaseOrderPrintPage />,
-          },
-          {
-            path: '/orders/:id/print',
-            element: <OrderPrintPage />,
           },
         ],
       },

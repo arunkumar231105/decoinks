@@ -1,5 +1,5 @@
-import { useReducer, useMemo, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useReducer, useMemo, useState, useEffect } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
@@ -52,6 +52,7 @@ type Action =
   | { type: 'ADD_ITEM' }
   | { type: 'UPDATE_ITEM'; id: string; patch: Partial<POLineItem> }
   | { type: 'REMOVE_ITEM'; id: string }
+  | { type: 'INIT'; payload: Partial<POFormState> }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -145,6 +146,8 @@ function reducer(state: POFormState, action: Action): POFormState {
     }
     case 'REMOVE_ITEM':
       return { ...state, items: state.items.filter(it => it.id !== action.id) }
+    case 'INIT':
+      return { ...state, ...action.payload }
     default:
       return state
   }
@@ -165,12 +168,47 @@ const SHIPPING_METHODS = ['Standard', 'Express', 'Air Freight', 'Sea Freight', '
 
 export function NewPurchaseOrderPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [state, dispatch] = useReducer(reducer, initialState)
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierOpen, setSupplierOpen] = useState(false)
 
+  // Convert-from-order context (set when navigated from OrderDetailPage)
+  const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
+
   const set = (field: keyof Omit<POFormState, 'items'>, value: string | number) =>
     dispatch({ type: 'SET', field, value })
+
+  // ── Fetch source order when converting from order ──────────────────────────
+  const { data: sourceOrder } = useQuery({
+    queryKey: ['convert-from-order', fromOrderId],
+    queryFn:  () => api.get(`/orders/${fromOrderId}`).then(r => r.data.data ?? r.data),
+    enabled:  !!fromOrderId,
+  })
+
+  useEffect(() => {
+    if (!sourceOrder) return
+    if (sourceOrder.supplier_name) setSupplierSearch(sourceOrder.supplier_name)
+    const srcItems: any[] = sourceOrder.items ?? []
+    dispatch({
+      type: 'INIT',
+      payload: {
+        supplier_id:      sourceOrder.supplier_id   || '',
+        supplier_name:    sourceOrder.supplier_name || '',
+        shipping_address: sourceOrder.shipping_address || '',
+        shipping_method:  sourceOrder.shipping_method  || '',
+        notes:            sourceOrder.notes || '',
+        order_id:         sourceOrder.id   || '',
+        items: srcItems.map((it: any, idx: number) => ({
+          ...newItem(idx),
+          item_name:   it.item || it.artwork_name || it.description || '',
+          qty_ordered: Number(it.qty) || 1,
+          unit_price:  Number(it.unit_price) || 0,
+          line_total:  calcLineTotal({ qty_ordered: Number(it.qty) || 1, unit_price: Number(it.unit_price) || 0, discount_pct: 0, tax_pct: 0 }),
+        })),
+      },
+    })
+  }, [sourceOrder])
 
   // ── Data fetching ──
 

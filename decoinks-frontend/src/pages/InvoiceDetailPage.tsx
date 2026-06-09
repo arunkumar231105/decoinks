@@ -136,18 +136,11 @@ export function InvoiceDetailPage() {
     onError: (err) => toast.error(getApiError(err)),
   })
 
-  const convertToOrderMutation = useMutation({
-    mutationFn: (order_type: string) =>
-      api.post(`/invoices/${id}/convert-to-order`, { order_type }),
-    onSuccess: (res: any) => {
-      const order = res.data?.data
-      toast.success(res.data?.message ?? 'Order created')
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      setOrderTypeModal(false)
-      if (order?.id) navigate(`/orders/${order.id}`)
-    },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not convert to order'),
-  })
+  // Navigate to order form with invoice pre-populated instead of direct API call
+  const handleConvertToOrder = (order_type: string) => {
+    setOrderTypeModal(false)
+    navigate('/orders/new', { state: { fromInvoiceId: id, orderType: order_type } })
+  }
 
   // ── Helpers ──
 
@@ -540,10 +533,9 @@ export function InvoiceDetailPage() {
               <button className="lb-action-btn" onClick={() => setOrderTypeModal(false)}>Cancel</button>
               <button
                 className="lb-action-btn lb-action-primary"
-                disabled={convertToOrderMutation.isPending}
-                onClick={() => convertToOrderMutation.mutate(selectedOrderType)}
+                onClick={() => handleConvertToOrder(selectedOrderType)}
               >
-                {convertToOrderMutation.isPending ? 'Creating...' : 'Create Order'}
+                Continue to Order Form
               </button>
             </div>
           </div>

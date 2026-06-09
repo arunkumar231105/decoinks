@@ -66,20 +66,10 @@ export function QuotesListPage() {
     },
   })
 
-  const convertMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/quotations/${id}/convert-to-invoice`),
-    onSuccess: (res: any) => {
-      const inv = res.data?.data
-      const msg = res.data?.message ?? 'Invoice created'
-      toast.success(msg)
-      queryClient.invalidateQueries({ queryKey: ['quotations'] })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      if (inv?.id) navigate(`/invoices/${inv.id}`)
-      else navigate('/invoices')
-    },
-    onError: (err: any) =>
-      toast.error(err.response?.data?.message ?? 'Could not convert to invoice'),
-  })
+  // Navigate to invoice form with quote pre-populated instead of direct API call
+  const handleConvertToInvoice = (quoteId: string) => {
+    navigate('/invoices/new', { state: { fromQuoteId: quoteId } })
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['quotations', { search, statusFilter }],
@@ -193,8 +183,7 @@ export function QuotesListPage() {
                   <button
                     className="lb-action-btn lb-action-primary"
                     style={{ fontSize: 12, padding: '4px 10px', gap: 4 }}
-                    disabled={convertMutation.isPending}
-                    onClick={() => convertMutation.mutate(q.id)}
+                    onClick={() => handleConvertToInvoice(q.id)}
                     title="Convert to Invoice"
                   >
                     <FileText size={12} />
