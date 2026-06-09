@@ -205,6 +205,9 @@ export function InvoiceDetailPage() {
           <button className="lb-action-btn" onClick={() => window.open(`/invoices/${id}/print`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Print / PDF
           </button>
+          <button className="lb-action-btn" onClick={() => window.open(`/invoices/${id}/receipt`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            🧾 Short Invoice
+          </button>
           {canRecordPayment && (
             <button className="lb-action-btn lb-action-primary" onClick={() => setPaymentModalOpen(true)}>
               <CreditCard size={13} /> Record Payment
