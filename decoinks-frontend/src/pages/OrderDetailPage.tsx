@@ -205,6 +205,15 @@ export function OrderDetailPage() {
             <ChevronDown size={13} />
           </button>
 
+          {/* Print Sales Order */}
+          <button
+            className="od-status-btn"
+            style={{ background: '#1a2b5c', color: '#fff', borderColor: '#1a2b5c' }}
+            onClick={() => window.open(`/orders/${order.id}/print`, '_blank')}
+          >
+            🖨️ Print Sales Order
+          </button>
+
           {/* More Actions */}
           <button
             className="od-status-btn"

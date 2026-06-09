@@ -98,34 +98,12 @@ async function refresh(rawToken, ip, userAgent) {
   }
   if (!record.is_active)  throw Object.assign(new Error('Account is deactivated'),        { statusCode: 403 })
 
-  const newRefreshToken = generateRefreshToken()
-  const newAccessToken  = signAccessToken({ id: record.uid, email: record.email, role: record.role })
+  const newAccessToken = signAccessToken({ id: record.uid, email: record.email, role: record.role })
 
-  const client = await getClient()
-  try {
-    await client.query('BEGIN')
-    // Rotate: revoke consumed token
-    await client.query(
-      `UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`,
-      [record.id]
-    )
-    // Issue replacement token
-    await storeRefreshToken(client, record.user_id, newRefreshToken, ip, userAgent)
-    // Audit
-    await client.query(
-      `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description, metadata)
-       VALUES ($1, 'user', $1, 'token_refreshed', $2, $3::jsonb)`,
-      [record.uid, `Silent token refresh for ${record.email}`, JSON.stringify({ ip })]
-    )
-    await client.query('COMMIT')
-  } catch (err) {
-    await client.query('ROLLBACK')
-    throw err
-  } finally {
-    client.release()
-  }
-
-  return { accessToken: newAccessToken, refreshToken: newRefreshToken }
+  // No rotation — reuse the same refresh token so multiple tabs can refresh
+  // simultaneously without revoking each other's tokens.
+  // Token is only invalidated on explicit logout or expiry.
+  return { accessToken: newAccessToken, refreshToken: rawToken }
 }
 
 // ── Logout (single device) ────────────────────────────────────────────────────

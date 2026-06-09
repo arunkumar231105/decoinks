@@ -1,8 +1,6 @@
-import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
-import { useAuthStore } from '../store/authStore'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,39 +16,36 @@ interface POItem {
   remarks: string | null
   required_by_date: string | null
   sort_order: number
+  artwork_count?: number
 }
 
 interface PurchaseOrder {
   id: string
   po_number: string
   status: string
-  priority: string
+  priority: string | null
   currency: string
   order_date: string | null
   expected_date: string | null
   created_at: string
-  supplier_id: string | null
+  order_id: string | null
+  order_number?: string | null
   supplier_name: string | null
   supplier_email: string | null
   supplier_phone: string | null
   supplier_city: string | null
   supplier_company: string | null
   supplier_reference: string | null
-  payment_terms: string | null
   buyer_name: string | null
-  department: string | null
   shipping_method: string | null
   shipping_address: string | null
-  billing_address: string | null
   notes: string | null
   terms_conditions: string | null
   subtotal: number
   total_discount: number
   total_tax: number
   freight_charges: number
-  other_charges: number
   grand_total: number
-  order_id: string | null
   items: POItem[]
 }
 
@@ -60,45 +55,40 @@ interface Artwork {
   name: string
   file_url: string | null
   file_type: string | null
+  width?: number | null
+  height?: number | null
   location: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
-
-const fmt = (n: number | null | undefined) =>
-  '$' + Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-function parseSizes(raw: string | null): Record<string, number> {
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
-  } catch {}
-  const result: Record<string, number> = {}
-  const rx = /([A-Z0-9/]+)\s*[-:]\s*(\d+)/gi
-  let m: RegExpExecArray | null
-  while ((m = rx.exec(raw)) !== null) {
-    result[m[1].toUpperCase()] = parseInt(m[2], 10)
-  }
-  return result
+const fmtDate = (d: string | null | undefined) => {
+  if (!d) return '—'
+  const dt = new Date(d)
+  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-')
 }
-
-const SIZE_KEYS = ['S', 'M', 'L', 'XL', '2XL', '3XL']
-
-// ── Company constants ─────────────────────────────────────────────────────────
 
 const CO = {
   name: 'decoinks',
   tagline: 'PRINTSHOP OS',
   address: 'Suite 111, 1218 Magnolia Avenue',
-  city: 'Corona, CA 92881',
-  country: 'United States',
+  city: 'Corona, CA 92881, United States',
   email: 'info@decoinks.com',
   phone: '+1 (714) 790-1460',
-  website: 'www.decoinks.com',
+}
+
+// Parse gangsheet width from item_name like '22" x 60"' → '22"'
+function parseGsWidth(name: string | null): string {
+  if (!name) return '—'
+  const m = name.match(/^([\d.]+[""]?)/i)
+  return m ? m[1].replace(/['"]/g, '"') : name
+}
+
+// Parse gangsheet length from item_name like '22" x 60"' → '60"'
+function parseGsLength(name: string | null): string {
+  if (!name) return '—'
+  const m = name.match(/[×xX]\s*([\d."]+)/)
+  return m ? m[1].replace(/['"]/g, '"') : '—'
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -107,13 +97,13 @@ const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Inter', sans-serif; font-size: 11px; color: #111827; background: #f1f5f9; }
-  .page { max-width: 1100px; margin: 0 auto; background: #fff; }
+  .page { max-width: 900px; margin: 0 auto; background: #fff; box-shadow: 0 0 40px rgba(0,0,0,0.12); }
 
   @media print {
     body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .no-print { display: none !important; }
-    .page { max-width: 100%; }
-    @page { margin: 6mm; size: A4 landscape; }
+    .page { max-width: 100%; box-shadow: none; }
+    @page { margin: 8mm; size: A4 portrait; }
   }
 
   /* ── Print button ── */
@@ -122,241 +112,265 @@ const CSS = `
     background: #0f1f3d; color: #fff; border: none;
     padding: 10px 22px; border-radius: 8px;
     font-size: 13px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; gap: 8px;
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
-  .print-btn:hover { background: #1a3260; }
 
-  /* ── HEADER ── */
+  /* ══════════════════════════════════════════
+     HEADER — white background
+  ══════════════════════════════════════════ */
   .po-header {
-    background: #0f1f3d;
-    padding: 22px 28px;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 20px;
-  }
-  .po-logo-wrap { display: flex; flex-direction: column; gap: 2px; }
-  .po-logo-name {
-    font-size: 28px; font-weight: 900; color: #fff;
-    letter-spacing: -1px; text-transform: lowercase;
-    display: flex; align-items: center; gap: 4px;
-  }
-  .logo-dots { display: flex; gap: 3px; align-items: center; margin-left: 2px; }
-  .logo-dots span { width: 7px; height: 7px; border-radius: 50%; }
-  .po-logo-tag { font-size: 9px; font-weight: 700; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; margin-top: 2px; }
-  .po-co-addr { margin-top: 10px; }
-  .po-co-addr p { font-size: 10px; color: #94a3b8; line-height: 1.7; }
-
-  .po-title-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; flex: 1; }
-  .po-title-text {
-    font-size: 38px; font-weight: 900; color: #fff;
-    letter-spacing: 6px; text-transform: uppercase; line-height: 1;
-  }
-  .po-status-badge {
-    background: rgba(255,255,255,0.12); color: #e2e8f0;
-    padding: 3px 12px; border-radius: 20px;
-    font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-  }
-  .po-priority-badge {
-    padding: 3px 10px; border-radius: 20px;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
-  }
-  .pri-urgent { background: #fef2f2; color: #dc2626; }
-  .pri-high   { background: #fff7ed; color: #ea580c; }
-  .pri-medium { background: #eff6ff; color: #2563eb; }
-  .pri-low    { background: #f0fdf4; color: #16a34a; }
-
-  .po-meta-box {
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px; padding: 12px 16px; min-width: 210px;
-  }
-  .po-meta-box table { border-collapse: collapse; width: 100%; }
-  .po-meta-box td { padding: 3.5px 0; font-size: 11px; }
-  .pm-lbl { color: #94a3b8; font-weight: 500; width: 110px; }
-  .pm-val { color: #fff; font-weight: 700; }
-  .pm-sep { color: #475569; padding: 0 6px; }
-
-  /* ── Info cards ── */
-  .info-cards-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: 220px 1fr 230px;
     gap: 0;
-    border-bottom: 1px solid #e2e8f0;
+    padding: 22px 24px 18px;
+    border-bottom: 2px solid #e5e7eb;
+    align-items: flex-start;
   }
-  .info-card-po {
+
+  /* Left: Logo */
+  .po-logo-col {}
+  .po-logo-name {
+    font-size: 26px; font-weight: 900; color: #0f1f3d;
+    letter-spacing: -1px; text-transform: lowercase;
+    display: flex; align-items: center; gap: 3px;
+  }
+  .logo-dots { display: flex; gap: 3px; align-items: center; }
+  .logo-dots span { width: 7px; height: 7px; border-radius: 50%; }
+  .po-logo-tag {
+    font-size: 8px; font-weight: 700; letter-spacing: 2.5px;
+    color: #6b7280; text-transform: uppercase; margin-top: 1px;
+  }
+  .po-addr { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .po-addr-row { display: flex; align-items: flex-start; gap: 6px; font-size: 10px; color: #374151; }
+  .po-addr-icon { font-size: 11px; flex-shrink: 0; margin-top: 0px; }
+
+  /* Center: Title */
+  .po-title-col {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 0 12px;
+  }
+  .po-main-title {
+    font-size: 36px; font-weight: 900; color: #0f1f3d;
+    letter-spacing: 4px; text-transform: uppercase; line-height: 1;
+    text-align: center;
+  }
+  .po-subtitle-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; width: 100%;
+  }
+  .po-subtitle-line { flex: 1; height: 1px; background: #9ca3af; }
+  .po-subtitle-text { font-size: 10px; color: #6b7280; white-space: nowrap; font-weight: 500; }
+
+  /* Right: Meta box */
+  .po-meta-box {
+    border: 1px solid #d1d5db; border-radius: 6px;
+    overflow: hidden;
+  }
+  .po-meta-table { width: 100%; border-collapse: collapse; }
+  .po-meta-table tr { border-bottom: 1px solid #e5e7eb; }
+  .po-meta-table tr:last-child { border-bottom: none; }
+  .po-meta-table td { padding: 5px 8px; font-size: 10px; }
+  .pm-label { color: #6b7280; font-weight: 500; width: 52%; }
+  .pm-colon { color: #9ca3af; width: 6px; padding: 0 0 0 2px; }
+  .pm-value { color: #111827; font-weight: 600; }
+
+  /* ══════════════════════════════════════════
+     3 INFO CARDS
+  ══════════════════════════════════════════ */
+  .info-cards {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    border-top: none; border-bottom: 2px solid #e5e7eb;
+  }
+  .info-card {
     padding: 14px 16px;
-    border-right: 1px solid #e2e8f0;
+    border-right: 1px solid #e5e7eb;
   }
-  .info-card-po:last-child { border-right: none; }
-  .card-po-hdr {
-    display: flex; align-items: center; gap: 7px;
+  .info-card:last-child { border-right: none; }
+
+  .card-head {
+    display: flex; align-items: center; gap: 8px;
     margin-bottom: 10px; padding-bottom: 8px;
-    border-bottom: 2px solid;
+    border-bottom: 1.5px solid currentColor;
   }
-  .card-po-icon {
-    width: 26px; height: 26px; border-radius: 6px;
+  .card-icon {
+    width: 28px; height: 28px; border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 13px; flex-shrink: 0; color: #fff;
+    font-size: 14px; flex-shrink: 0;
   }
-  .card-po-title {
-    font-size: 9px; font-weight: 800; letter-spacing: 1.5px;
-    text-transform: uppercase;
+  .card-title {
+    font-size: 9.5px; font-weight: 800;
+    letter-spacing: 1px; text-transform: uppercase;
   }
-  .card-po-body p { font-size: 11px; color: #374151; line-height: 1.65; }
-  .card-po-body .val-name { font-size: 13px; font-weight: 700; color: #111827; }
-  .card-po-body .val-sub  { font-size: 10.5px; color: #6b7280; }
 
-  /* Card color themes */
-  .theme-green .card-po-hdr { border-color: #16a34a; }
-  .theme-green .card-po-icon { background: #16a34a; }
-  .theme-green .card-po-title { color: #16a34a; }
+  /* color themes */
+  .theme-green .card-head { color: #15803d; border-color: #16a34a; }
+  .theme-green .card-icon { background: #dcfce7; }
+  .theme-blue  .card-head { color: #1d4ed8; border-color: #2563eb; }
+  .theme-blue  .card-icon { background: #dbeafe; }
+  .theme-orange .card-head { color: #c2410c; border-color: #ea580c; }
+  .theme-orange .card-icon { background: #ffedd5; }
 
-  .theme-blue .card-po-hdr { border-color: #2563eb; }
-  .theme-blue .card-po-icon { background: #2563eb; }
-  .theme-blue .card-po-title { color: #2563eb; }
+  .card-field { display: flex; gap: 0; align-items: flex-start; margin-bottom: 4px; }
+  .card-field-label { font-size: 10px; color: #6b7280; font-weight: 500; width: 110px; flex-shrink: 0; }
+  .card-field-sep { color: #9ca3af; padding: 0 4px; font-size: 10px; }
+  .card-field-value { font-size: 10px; color: #111827; font-weight: 600; line-height: 1.5; }
+  .card-notes ul { padding-left: 14px; }
+  .card-notes li { font-size: 10px; color: #374151; line-height: 1.6; }
 
-  .theme-purple .card-po-hdr { border-color: #7c3aed; }
-  .theme-purple .card-po-icon { background: #7c3aed; }
-  .theme-purple .card-po-title { color: #7c3aed; }
-
-  .theme-orange .card-po-hdr { border-color: #ea580c; }
-  .theme-orange .card-po-icon { background: #ea580c; }
-  .theme-orange .card-po-title { color: #ea580c; }
-
-  /* ── Neck label mockup ── */
-  .neck-label {
-    width: 80px; height: 80px;
+  /* ══════════════════════════════════════════
+     SECTION HEADERS
+  ══════════════════════════════════════════ */
+  .sec-hdr {
     background: #0f1f3d;
-    border-radius: 6px;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: 2px; margin: 4px 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    margin: 0;
   }
-  .neck-label-name {
-    font-size: 11px; font-weight: 900; color: #fff;
-    letter-spacing: -0.5px; text-transform: lowercase;
-    display: flex; align-items: center; gap: 2px;
+  .sec-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); border: 1.5px solid rgba(255,255,255,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
   }
-  .neck-dots { display: flex; gap: 2px; }
-  .neck-dots span { width: 5px; height: 5px; border-radius: 50%; }
-  .neck-label-tag { font-size: 7px; color: #94a3b8; letter-spacing: 1.5px; text-transform: uppercase; }
-  .neck-label-sub { font-size: 7px; color: #64748b; margin-top: 2px; }
+  .sec-title {
+    font-size: 12px; font-weight: 800; color: #fff;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
 
-  /* ── Items table ── */
-  .tbl-section { padding: 0; overflow-x: auto; }
-  .items-tbl {
-    width: 100%; border-collapse: collapse;
-    font-size: 10.5px;
+  /* ══════════════════════════════════════════
+     TABLES
+  ══════════════════════════════════════════ */
+  .po-table {
+    width: 100%; border-collapse: collapse; font-size: 10.5px;
   }
-  .items-tbl thead tr.hdr-row1 { background: #0f1f3d; color: #fff; }
-  .items-tbl thead tr.hdr-row2 { background: #1a3260; color: #c7d7f5; }
-  .items-tbl thead th {
-    padding: 8px 5px; text-align: center;
-    font-size: 9px; font-weight: 700;
-    letter-spacing: 0.4px; text-transform: uppercase;
-    white-space: nowrap; border: 1px solid rgba(255,255,255,0.08);
+  .po-table thead th {
+    background: #1a3260; color: #c7d7f5;
+    padding: 7px 10px; text-align: center;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px;
+    border: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
   }
-  .items-tbl thead th.left { text-align: left; }
-  .items-tbl thead th.size-group {
-    background: #1e3a5f; font-size: 9.5px; letter-spacing: 1px;
+  .po-table thead th.left { text-align: left; }
+  .po-table tbody tr { border-bottom: 1px solid #f1f5f9; }
+  .po-table tbody tr:nth-child(even) { background: #f8fafc; }
+  .po-table tbody td {
+    padding: 8px 10px; text-align: center;
+    font-size: 10.5px; border-right: 1px solid #f1f5f9;
+    vertical-align: middle;
   }
-  .items-tbl thead th.art-group { background: #1a3260; }
-  .items-tbl tbody tr { border-bottom: 1px solid #f1f5f9; }
-  .items-tbl tbody tr:nth-child(even) { background: #f8fafc; }
-  .items-tbl tbody td {
-    padding: 7px 5px; text-align: center;
-    vertical-align: middle; border-right: 1px solid #f1f5f9;
-    font-size: 10.5px;
+  .po-table tbody td.left { text-align: left; }
+  .po-table tfoot td {
+    background: #f1f5f9; font-weight: 800;
+    font-size: 10.5px; padding: 7px 10px;
+    text-align: center; border-top: 2px solid #e5e7eb;
+    color: #0f1f3d;
   }
-  .items-tbl tbody td.left { text-align: left; }
-  .items-tbl tbody td.item-num {
-    font-weight: 700; color: #6b7280; width: 30px;
+  .po-table tfoot td.left { text-align: left; }
+
+  .order-no-link { color: #16a34a; font-weight: 700; text-decoration: none; }
+  .td-sno { font-weight: 700; color: #6b7280; width: 36px; }
+
+  /* ══════════════════════════════════════════
+     ARTWORKS 2-COLUMN GRID
+  ══════════════════════════════════════════ */
+  .artworks-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border: none; gap: 0;
   }
-  .items-tbl .item-name-cell .name { font-weight: 600; color: #111827; font-size: 11px; }
-  .items-tbl .item-name-cell .desc { font-size: 9.5px; color: #6b7280; margin-top: 1px; }
-  .items-tbl .size-val { font-weight: 700; color: #1a3260; font-size: 11px; }
-  .items-tbl .size-zero { color: #d1d5db; }
-  .art-thumb-cell { width: 60px; }
+  .art-col-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  .art-col-table thead th {
+    background: #1a3260; color: #c7d7f5;
+    padding: 7px 8px; font-size: 9.5px; font-weight: 700;
+    text-align: center; border: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
+  }
+  .art-col-table tbody tr { border-bottom: 1px solid #f1f5f9; }
+  .art-col-table tbody tr:nth-child(even) { background: #f8fafc; }
+  .art-col-table tbody td {
+    padding: 6px 8px; text-align: center;
+    border-right: 1px solid #f1f5f9;
+    vertical-align: middle; font-size: 10.5px;
+  }
+  .art-col-table tbody td:first-child { color: #6b7280; font-weight: 700; width: 30px; }
+  .art-col-right thead th { border-left: 3px solid #0f1f3d; }
+
   .art-thumb {
     width: 52px; height: 52px; object-fit: contain;
     border: 1px solid #e2e8f0; border-radius: 4px;
     background: #fff; display: block; margin: 0 auto;
   }
-  .art-empty {
+  .art-empty-thumb {
     width: 52px; height: 52px;
     display: flex; align-items: center; justify-content: center;
-    color: #d1d5db; font-size: 18px; margin: 0 auto;
+    color: #d1d5db; font-size: 20px; margin: 0 auto;
     border: 1px dashed #e2e8f0; border-radius: 4px; background: #fafafa;
   }
+  .more-artworks {
+    text-align: center; padding: 10px;
+    font-size: 11px; font-weight: 600; color: #6b7280;
+    background: #f8fafc; border-top: 1px solid #e5e7eb;
+    grid-column: 1 / -1;
+  }
 
-  /* ── Totals bar ── */
-  .totals-bar {
-    background: #0f1f3d;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    border-top: 3px solid #1e3a5f;
+  /* ══════════════════════════════════════════
+     STATS BAR
+  ══════════════════════════════════════════ */
+  .stats-bar {
+    display: flex; align-items: stretch;
+    border: 1px solid #e5e7eb; border-top: none;
   }
-  .totals-cell {
-    padding: 12px 16px;
-    border-right: 1px solid rgba(255,255,255,0.08);
-    display: flex; align-items: center; gap: 12px;
+  .stat-cell {
+    flex: 1; display: flex; align-items: center; gap: 14px;
+    padding: 16px 20px;
+    border-right: 1px solid #e5e7eb;
   }
-  .totals-cell:last-child { border-right: none; }
-  .totals-icon { font-size: 22px; }
-  .totals-lbl { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #94a3b8; text-transform: uppercase; }
-  .totals-val { font-size: 16px; font-weight: 900; color: #fff; line-height: 1; }
+  .stat-cell:last-child { border-right: none; }
+  .stat-icon-box {
+    width: 44px; height: 44px; background: #0f1f3d;
+    border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 20px; flex-shrink: 0;
+  }
+  .stat-text {}
+  .stat-label { font-size: 9px; font-weight: 700; color: #6b7280; letter-spacing: 0.5px; text-transform: uppercase; }
+  .stat-value { font-size: 26px; font-weight: 900; color: #0f1f3d; line-height: 1.1; }
 
-  /* ── Financial summary row ── */
-  .fin-row {
-    display: flex; justify-content: flex-end;
-    padding: 14px 24px;
-    border-bottom: 1px solid #e2e8f0;
-    background: #f8fafc;
-    gap: 32px; align-items: center;
+  /* ══════════════════════════════════════════
+     PRODUCTION NOTES
+  ══════════════════════════════════════════ */
+  .prod-notes {
+    border-top: 2px solid #e5e7eb; padding: 14px 20px;
   }
-  .fin-item { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-  .fin-lbl { font-size: 9px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
-  .fin-val { font-size: 12px; font-weight: 700; color: #374151; }
-  .fin-total .fin-val { font-size: 16px; font-weight: 900; color: #0f1f3d; }
-  .fin-divider { width: 1px; height: 36px; background: #e2e8f0; }
-
-  /* ── Footer ── */
-  .po-footer {
-    background: #0f1f3d; color: #fff;
-    padding: 12px 28px;
-    display: flex; justify-content: space-between; align-items: center;
+  .prod-notes-hdr {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
   }
-  .footer-brand { font-size: 12px; color: #94a3b8; }
-  .footer-msg { font-size: 13px; font-weight: 600; font-style: italic; color: #e2e8f0; letter-spacing: 0.4px; }
-  .footer-contact { font-size: 11px; color: #64748b; text-align: right; line-height: 1.6; }
+  .prod-notes-icon {
+    width: 22px; height: 22px; background: #fff7ed;
+    border-radius: 4px; display: flex; align-items: center;
+    justify-content: center; font-size: 12px;
+  }
+  .prod-notes-title {
+    font-size: 11px; font-weight: 800; color: #c2410c;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .prod-notes-cols {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 20px;
+  }
+  .prod-notes-item {
+    display: flex; gap: 6px; align-items: flex-start;
+    font-size: 10px; color: #374151; line-height: 1.5;
+  }
+  .prod-notes-dot { color: #ea580c; font-size: 10px; margin-top: 1px; flex-shrink: 0; }
 `
-
-// ── Priority badge helper ─────────────────────────────────────────────────────
-
-function priorityClass(p: string | null): string {
-  if (!p) return 'pri-medium'
-  if (p === 'Urgent') return 'pri-urgent'
-  if (p === 'High')   return 'pri-high'
-  if (p === 'Low')    return 'pri-low'
-  return 'pri-medium'
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function PurchaseOrderPrintPage() {
   const { id }      = useParams<{ id: string }>()
   const navigate    = useNavigate()
-  const { isAuthenticated } = useAuthStore()
-
-  useEffect(() => {
-    if (!isAuthenticated) navigate('/login')
-  }, [isAuthenticated, navigate])
-
   const { data: po, isLoading } = useQuery<PurchaseOrder>({
     queryKey: ['purchase-order-print', id],
-    queryFn:  () => api.get(`/purchase-orders/${id}`).then(r => r.data.po ?? r.data),
+    queryFn:  () => api.get(`/purchase-orders/${id}`).then(r => r.data.po ?? r.data.data ?? r.data),
     enabled: !!id,
   })
 
@@ -379,19 +393,48 @@ export function PurchaseOrderPrintPage() {
 
   const items    = po.items ?? []
   const artworks = artworkData?.artworks ?? []
-  const currency = po.currency || 'USD'
 
-  const totalQty = items.reduce((s, it) => {
-    const sizes = parseSizes(it.remarks)
-    const sizeSum = Object.values(sizes).reduce((a, b) => a + b, 0)
-    return s + (sizeSum > 0 ? sizeSum : (it.qty_ordered || 0))
-  }, 0)
+  // Totals
+  const totalArtworks = artworks.length || items.reduce((s, it) => s + (it.artwork_count ?? 0), 0)
+  const totalQty      = items.reduce((s, it) => s + (it.qty_ordered ?? 0), 0)
 
-  const frontArtworks = artworks.filter(a => !a.location || a.location?.toLowerCase().includes('front'))
-  const backArtworks  = artworks.filter(a => a.location?.toLowerCase().includes('back'))
+  // Artwork range string e.g. "AW1001 – AW1076"
+  const artRange = artworks.length > 0
+    ? `${artworks[0].artwork_no} – ${artworks[artworks.length - 1].artwork_no}`
+    : '—'
 
-  const supplierLine1 = po.supplier_name || po.supplier_company || '—'
-  const shipAddr = po.shipping_address || '—'
+  // For the Gangsheet Order summary row (section 1) – aggregate all items
+  const totalWidth  = items[0] ? parseGsWidth(items[0].item_name) : '—'
+  const gsOrderNo   = po.order_id ? (po.order_number || `ORD-${po.po_number}`) : po.po_number
+
+  // Notes as bullet list
+  const noteLines: string[] = po.notes
+    ? po.notes.split('\n').map(l => l.trim()).filter(Boolean)
+    : [
+        'All gangsheets are print-ready.',
+        'Please verify quantities before production.',
+        'Refer to Gangsheet Numbers listed above.',
+        'Artwork revisions are not permitted after approval.',
+        'Ensure all measurements and artwork placements are accurate.',
+      ]
+
+  // Artworks to display (first 10 in 2 columns)
+  const DISPLAY_COUNT = 10
+  const leftArtworks  = artworks.slice(0, Math.ceil(Math.min(artworks.length, DISPLAY_COUNT) / 2))
+  const rightArtworks = artworks.slice(leftArtworks.length, DISPLAY_COUNT)
+  const remainingArt  = artworks.length > DISPLAY_COUNT ? artworks.length - DISPLAY_COUNT : 0
+
+  const renderArtThumb = (art: Artwork) => {
+    if (art.file_url && art.file_type !== 'pdf') {
+      return <img src={art.file_url} alt={art.artwork_no} className="art-thumb" />
+    }
+    return <div className="art-empty-thumb">🖼</div>
+  }
+
+  const artSize = (art: Artwork) => {
+    if (art.width && art.height) return `${art.width} × ${art.height}`
+    return art.name || '—'
+  }
 
   return (
     <>
@@ -403,333 +446,389 @@ export function PurchaseOrderPrintPage() {
 
       <div className="page">
 
-        {/* ── HEADER ── */}
+        {/* ══ HEADER ══ */}
         <div className="po-header">
 
-          {/* Left: Logo + company info */}
-          <div className="po-logo-wrap">
+          {/* Left — Logo + address */}
+          <div className="po-logo-col">
             <div className="po-logo-name">
               decoinks
-              <span className="logo-dots">
+              <span className="logo-dots" style={{ marginLeft: 4 }}>
+                <span style={{ background: '#06b6d4' }} />
                 <span style={{ background: '#ec4899' }} />
+                <span style={{ background: '#1f2937' }} />
                 <span style={{ background: '#f97316' }} />
-                <span style={{ background: '#eab308' }} />
-                <span style={{ background: '#f1f5f9' }} />
               </span>
             </div>
             <div className="po-logo-tag">PRINTSHOP OS</div>
-            <div className="po-co-addr" style={{ marginTop: 10 }}>
-              <p>{CO.address}</p>
-              <p>{CO.city}, {CO.country}</p>
-              <p style={{ marginTop: 3 }}>{CO.email}</p>
-              <p>{CO.phone}</p>
+            <div className="po-addr">
+              <div className="po-addr-row">
+                <span className="po-addr-icon">📍</span>
+                <span>{CO.address}<br />{CO.city}</span>
+              </div>
+              <div className="po-addr-row">
+                <span className="po-addr-icon">✉</span>
+                <span>{CO.email}</span>
+              </div>
+              <div className="po-addr-row">
+                <span className="po-addr-icon">📞</span>
+                <span>{CO.phone}</span>
+              </div>
             </div>
           </div>
 
-          {/* Center: PO title */}
-          <div className="po-title-center">
-            <div className="po-title-text">Purchase Order</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-              <span className="po-status-badge">{po.status}</span>
-              {po.priority && (
-                <span className={`po-priority-badge ${priorityClass(po.priority)}`}>
-                  {po.priority}
-                </span>
-              )}
+          {/* Center — Title */}
+          <div className="po-title-col">
+            <div className="po-main-title">PURCHASE ORDER</div>
+            <div className="po-subtitle-row">
+              <div className="po-subtitle-line" />
+              <div className="po-subtitle-text">Request materials from suppliers</div>
+              <div className="po-subtitle-line" />
             </div>
           </div>
 
-          {/* Right: PO meta */}
+          {/* Right — PO meta */}
           <div className="po-meta-box">
-            <table>
+            <table className="po-meta-table">
               <tbody>
                 <tr>
-                  <td className="pm-lbl">PO Number</td>
-                  <td className="pm-sep">:</td>
-                  <td className="pm-val">{po.po_number}</td>
+                  <td className="pm-label">PO Number</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{po.po_number}</td>
                 </tr>
                 <tr>
-                  <td className="pm-lbl">PO Date</td>
-                  <td className="pm-sep">:</td>
-                  <td className="pm-val">{fmtDate(po.order_date || po.created_at)}</td>
+                  <td className="pm-label">PO Date</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{fmtDate(po.order_date || po.created_at)}</td>
                 </tr>
                 <tr>
-                  <td className="pm-lbl">Need By Date</td>
-                  <td className="pm-sep">:</td>
-                  <td className="pm-val">{fmtDate(po.expected_date)}</td>
+                  <td className="pm-label">Production Priority</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{po.priority || 'Standard'}</td>
                 </tr>
-                {po.payment_terms && (
-                  <tr>
-                    <td className="pm-lbl">Payment Terms</td>
-                    <td className="pm-sep">:</td>
-                    <td className="pm-val">{po.payment_terms}</td>
-                  </tr>
-                )}
                 <tr>
-                  <td className="pm-lbl">Currency</td>
-                  <td className="pm-sep">:</td>
-                  <td className="pm-val">{currency}</td>
+                  <td className="pm-label">Required Dispatch Date</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{fmtDate(po.expected_date)}</td>
                 </tr>
-                {po.buyer_name && (
-                  <tr>
-                    <td className="pm-lbl">Buyer</td>
-                    <td className="pm-sep">:</td>
-                    <td className="pm-val">{po.buyer_name}</td>
-                  </tr>
-                )}
+                <tr>
+                  <td className="pm-label">Order Date</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{fmtDate(po.order_date || po.created_at)}</td>
+                </tr>
+                <tr>
+                  <td className="pm-label">Need By Date</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{fmtDate(po.expected_date)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
 
         </div>
 
-        {/* ── 4 INFO CARDS ── */}
-        <div className="info-cards-row">
+        {/* ══ 3 INFO CARDS ══ */}
+        <div className="info-cards">
 
-          {/* Card 1: Fulfillment Supplier */}
-          <div className="info-card-po theme-green">
-            <div className="card-po-hdr">
-              <div className="card-po-icon">🏭</div>
-              <div className="card-po-title">Fulfillment Supplier</div>
+          {/* Card 1 — Supplier Information */}
+          <div className="info-card theme-green">
+            <div className="card-head">
+              <div className="card-icon">🤝</div>
+              <div className="card-title">Supplier Information</div>
             </div>
-            <div className="card-po-body">
-              <p className="val-name">{supplierLine1}</p>
-              {po.supplier_email && <p className="val-sub">✉ {po.supplier_email}</p>}
-              {po.supplier_phone && <p className="val-sub">📞 {po.supplier_phone}</p>}
-              {po.supplier_city  && <p className="val-sub">📍 {po.supplier_city}</p>}
-              {po.supplier_reference && <p className="val-sub">Ref: {po.supplier_reference}</p>}
+            <div className="card-field">
+              <span className="card-field-label">Supplier Name</span>
+              <span className="card-field-sep">:</span>
+              <span className="card-field-value">{po.supplier_name || po.supplier_company || '—'}</span>
             </div>
-          </div>
-
-          {/* Card 2: Shipping Info */}
-          <div className="info-card-po theme-blue">
-            <div className="card-po-hdr">
-              <div className="card-po-icon">🚚</div>
-              <div className="card-po-title">Shipping Info</div>
-            </div>
-            <div className="card-po-body">
-              {po.shipping_method && <p className="val-name">{po.shipping_method}</p>}
-              <p style={{ whiteSpace: 'pre-line', fontSize: 11 }}>{shipAddr}</p>
-              {po.department && <p className="val-sub">Dept: {po.department}</p>}
-            </div>
-          </div>
-
-          {/* Card 3: Neck Label */}
-          <div className="info-card-po theme-purple">
-            <div className="card-po-hdr">
-              <div className="card-po-icon">🏷️</div>
-              <div className="card-po-title">Neck Label</div>
-            </div>
-            <div className="card-po-body">
-              <div className="neck-label">
-                <div className="neck-label-name">
-                  decoinks
-                  <span className="neck-dots">
-                    <span style={{ background: '#ec4899' }} />
-                    <span style={{ background: '#f97316' }} />
-                    <span style={{ background: '#eab308' }} />
-                  </span>
-                </div>
-                <div className="neck-label-tag">PRINTSHOP OS</div>
-                <div className="neck-label-sub">{CO.website}</div>
+            {po.buyer_name && (
+              <div className="card-field">
+                <span className="card-field-label">Contact Person</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.buyer_name}</span>
               </div>
-              <p className="val-sub" style={{ marginTop: 4 }}>Standard decoinks neck label</p>
-              <p className="val-sub">Include on all garments</p>
-            </div>
+            )}
+            {po.supplier_email && (
+              <div className="card-field">
+                <span className="card-field-label">Email</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.supplier_email}</span>
+              </div>
+            )}
+            {po.supplier_phone && (
+              <div className="card-field">
+                <span className="card-field-label">Phone</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.supplier_phone}</span>
+              </div>
+            )}
+            {po.supplier_reference && (
+              <div className="card-field">
+                <span className="card-field-label">WeChat</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.supplier_reference}</span>
+              </div>
+            )}
           </div>
 
-          {/* Card 4: Notes & Packing */}
-          <div className="info-card-po theme-orange">
-            <div className="card-po-hdr">
-              <div className="card-po-icon">📦</div>
-              <div className="card-po-title">Notes &amp; Packing</div>
+          {/* Card 2 — Shipping Information */}
+          <div className="info-card theme-blue">
+            <div className="card-head">
+              <div className="card-icon">🚚</div>
+              <div className="card-title">Shipping Information</div>
             </div>
-            <div className="card-po-body">
-              {po.notes ? (
-                <p style={{ whiteSpace: 'pre-line', fontSize: 11 }}>{po.notes}</p>
-              ) : (
-                <p className="val-sub">No special packing instructions.</p>
-              )}
-              {po.terms_conditions && (
-                <p className="val-sub" style={{ marginTop: 6, borderTop: '1px solid #fed7aa', paddingTop: 6 }}>
-                  {po.terms_conditions}
-                </p>
-              )}
-            </div>
+            {po.buyer_name && (
+              <div className="card-field">
+                <span className="card-field-label">Name</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.buyer_name}</span>
+              </div>
+            )}
+            {po.shipping_address && (
+              <div className="card-field">
+                <span className="card-field-label">Address</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value" style={{ whiteSpace: 'pre-line' }}>{po.shipping_address}</span>
+              </div>
+            )}
+            {po.shipping_method && (
+              <div className="card-field">
+                <span className="card-field-label">Shipping Service</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.shipping_method}</span>
+              </div>
+            )}
           </div>
 
-        </div>
-
-        {/* ── ITEMS TABLE ── */}
-        <div className="tbl-section">
-          <table className="items-tbl">
-            <thead>
-              {/* Row 1: group headers */}
-              <tr className="hdr-row1">
-                <th rowSpan={2} style={{ width: 32 }}>#</th>
-                <th rowSpan={2} className="left" style={{ minWidth: 160 }}>Item Description</th>
-                <th rowSpan={2} style={{ width: 44 }}>Qty</th>
-                <th rowSpan={2} style={{ width: 64 }}>Unit Price</th>
-                <th colSpan={6} className="size-group">Size Breakdown</th>
-                <th rowSpan={2} className="art-group" style={{ width: 62 }}>Front Artwork</th>
-                <th rowSpan={2} className="art-group" style={{ width: 62 }}>Back Artwork</th>
-                <th rowSpan={2} className="art-group" style={{ width: 62 }}>Front Mockup</th>
-                <th rowSpan={2} className="art-group" style={{ width: 62 }}>Back Mockup</th>
-                <th rowSpan={2} style={{ width: 76 }}>Line Total</th>
-              </tr>
-              {/* Row 2: size sub-headers */}
-              <tr className="hdr-row2">
-                {SIZE_KEYS.map(s => (
-                  <th key={s} style={{ width: 34 }}>{s}</th>
+          {/* Card 3 — Notes & Instructions */}
+          <div className="info-card theme-orange">
+            <div className="card-head">
+              <div className="card-icon">📋</div>
+              <div className="card-title">Notes &amp; Instructions</div>
+            </div>
+            <div className="card-notes">
+              <ul>
+                {noteLines.map((line, i) => (
+                  <li key={i}>{line}</li>
                 ))}
+              </ul>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ══ SECTION 1: GANGSHEET ORDER ══ */}
+        <div className="sec-hdr">
+          <div className="sec-num">1</div>
+          <div className="sec-title">Gangsheet Order</div>
+        </div>
+        <table className="po-table">
+          <thead>
+            <tr>
+              <th className="left" style={{ width: 40 }}>S.No</th>
+              <th className="left">Order No</th>
+              <th>Gangsheet Width (inch)</th>
+              <th>Total Length (inch)</th>
+              <th>No. of Artworks</th>
+              <th>Qty (Artworks)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ padding: '18px', textAlign: 'center', color: '#9ca3af' }}>No items</td>
               </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={15} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                    No line items found
-                  </td>
+            ) : items.map((item, idx) => (
+              <tr key={item.id}>
+                <td className="td-sno left">{idx + 1}</td>
+                <td className="left">
+                  <span className="order-no-link">{gsOrderNo}</span>
+                </td>
+                <td>{parseGsWidth(item.item_name)}</td>
+                <td>{parseGsLength(item.item_name)}</td>
+                <td style={{ fontWeight: 700 }}>{item.artwork_count ?? totalArtworks}</td>
+                <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{item.qty_ordered}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="left" colSpan={2} style={{ fontWeight: 800, color: '#0f1f3d' }}>TOTAL</td>
+              <td>—</td>
+              <td>—</td>
+              <td style={{ fontWeight: 800 }}>{totalArtworks}</td>
+              <td style={{ fontWeight: 800 }}>{totalQty}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        {/* ══ SECTION 2: GANGSHEETS BREAKDOWN ══ */}
+        <div className="sec-hdr" style={{ marginTop: 2 }}>
+          <div className="sec-num">2</div>
+          <div className="sec-title">Gangsheets Breakdown</div>
+        </div>
+        <table className="po-table">
+          <thead>
+            <tr>
+              <th className="left" style={{ width: 40 }}>S.No</th>
+              <th className="left">Gangsheet No</th>
+              <th>Gangsheet Size (W × L)</th>
+              <th>No. of Artworks</th>
+              <th>Artworks Covered</th>
+              <th>Qty (Artworks)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ padding: '18px', textAlign: 'center', color: '#9ca3af' }}>No items</td>
+              </tr>
+            ) : items.map((item, idx) => {
+              const gsNo = `GS-${po.po_number}-${String(idx + 1).padStart(2, '0')}`
+              const gsSize = item.item_name || '—'
+              const artCount = item.artwork_count ?? 0
+              return (
+                <tr key={item.id}>
+                  <td className="td-sno left">{idx + 1}</td>
+                  <td className="left" style={{ fontWeight: 600 }}>{gsNo}</td>
+                  <td>{gsSize}</td>
+                  <td style={{ fontWeight: 700 }}>{artCount}</td>
+                  <td style={{ color: '#374151' }}>{artRange}</td>
+                  <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{item.qty_ordered}</td>
                 </tr>
-              ) : items.map((item, idx) => {
-                const sizes     = parseSizes(item.remarks)
-                const frontArt  = frontArtworks[idx] ?? null
-                const backArt   = backArtworks[idx] ?? null
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="left" colSpan={2} style={{ fontWeight: 800, color: '#0f1f3d' }}>TOTAL</td>
+              <td>—</td>
+              <td style={{ fontWeight: 800 }}>{totalArtworks}</td>
+              <td>—</td>
+              <td style={{ fontWeight: 800 }}>{totalQty}</td>
+            </tr>
+          </tfoot>
+        </table>
 
-                const renderArt = (art: Artwork | null) => {
-                  if (art?.file_url && art.file_type !== 'pdf') {
-                    return <img src={art.file_url} alt={art.name} className="art-thumb" />
-                  }
-                  return <div className="art-empty">—</div>
-                }
+        {/* ══ SECTION 3: ARTWORKS ══ */}
+        <div className="sec-hdr" style={{ marginTop: 2 }}>
+          <div className="sec-num">3</div>
+          <div className="sec-title">Artworks ({totalArtworks} Artworks)</div>
+        </div>
 
-                return (
-                  <tr key={item.id}>
-                    <td className="item-num">{idx + 1}</td>
-                    <td className="left item-name-cell">
-                      <div className="name">{item.item_name}</div>
-                      {item.description && <div className="desc">{item.description}</div>}
-                      {item.hsn_code && <div className="desc">HSN: {item.hsn_code}</div>}
+        {artworks.length === 0 ? (
+          <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>
+            No artworks linked — attach an order with artworks to this PO to see them here.
+          </div>
+        ) : (
+          <div className="artworks-grid">
+            {/* Left column */}
+            <table className="art-col-table art-col-left">
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Artwork No</th>
+                  <th>Thumbnail</th>
+                  <th>Artwork Size (inch)</th>
+                  <th>Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leftArtworks.map((art, i) => (
+                  <tr key={art.id}>
+                    <td>{i + 1}</td>
+                    <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
+                    <td>{renderArtThumb(art)}</td>
+                    <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
+                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>
+                      {items[0]?.qty_ordered
+                        ? Math.round(items[0].qty_ordered / Math.max(totalArtworks, 1))
+                        : 5}
                     </td>
-                    <td style={{ fontWeight: 700 }}>{item.qty_ordered}</td>
-                    <td>{currency} {fmt(item.unit_price)}</td>
-                    {SIZE_KEYS.map(s => {
-                      const qty = sizes[s] ?? 0
-                      return (
-                        <td key={s} className={qty > 0 ? 'size-val' : 'size-zero'}>
-                          {qty > 0 ? qty : '—'}
-                        </td>
-                      )
-                    })}
-                    <td className="art-thumb-cell">{renderArt(frontArt)}</td>
-                    <td className="art-thumb-cell">{renderArt(backArt)}</td>
-                    <td className="art-thumb-cell">
-                      <div className="art-empty" style={{ fontSize: 10, color: '#94a3b8' }}>
-                        Mockup
-                      </div>
-                    </td>
-                    <td className="art-thumb-cell">
-                      <div className="art-empty" style={{ fontSize: 10, color: '#94a3b8' }}>
-                        Mockup
-                      </div>
-                    </td>
-                    <td style={{ fontWeight: 700 }}>{currency} {fmt(item.line_total)}</td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
 
-        {/* ── TOTALS BAR ── */}
-        <div className="totals-bar">
-          <div className="totals-cell">
-            <span className="totals-icon">👕</span>
-            <div>
-              <div className="totals-lbl">Total Items</div>
-              <div className="totals-val">{items.length}</div>
-            </div>
-          </div>
-          <div className="totals-cell">
-            <span className="totals-icon">🖼️</span>
-            <div>
-              <div className="totals-lbl">Total Artworks</div>
-              <div className="totals-val">{artworks.length}</div>
-            </div>
-          </div>
-          <div className="totals-cell">
-            <span className="totals-icon">📦</span>
-            <div>
-              <div className="totals-lbl">Total Quantity</div>
-              <div className="totals-val">{totalQty} pcs</div>
-            </div>
-          </div>
-          <div className="totals-cell">
-            <span className="totals-icon">💰</span>
-            <div>
-              <div className="totals-lbl">Grand Total</div>
-              <div className="totals-val">{currency} {fmt(po.grand_total)}</div>
-            </div>
-          </div>
-        </div>
+            {/* Right column */}
+            <table className="art-col-table art-col-right">
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Artwork No</th>
+                  <th>Thumbnail</th>
+                  <th>Artwork Size (inch)</th>
+                  <th>Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rightArtworks.map((art, i) => (
+                  <tr key={art.id}>
+                    <td>{leftArtworks.length + i + 1}</td>
+                    <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
+                    <td>{renderArtThumb(art)}</td>
+                    <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
+                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>
+                      {items[0]?.qty_ordered
+                        ? Math.round(items[0].qty_ordered / Math.max(totalArtworks, 1))
+                        : 5}
+                    </td>
+                  </tr>
+                ))}
+                {rightArtworks.length < leftArtworks.length && (
+                  Array.from({ length: leftArtworks.length - rightArtworks.length }).map((_, i) => (
+                    <tr key={`empty-${i}`}>
+                      <td colSpan={5} style={{ background: '#fafafa' }}></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
 
-        {/* ── FINANCIAL SUMMARY ── */}
-        <div className="fin-row">
-          <div className="fin-item">
-            <span className="fin-lbl">Subtotal</span>
-            <span className="fin-val">{currency} {fmt(po.subtotal)}</span>
+            {remainingArt > 0 && (
+              <div className="more-artworks">... and {remainingArt} more artworks</div>
+            )}
           </div>
-          {Number(po.total_discount) > 0 && (
-            <>
-              <div className="fin-divider" />
-              <div className="fin-item">
-                <span className="fin-lbl">Discount</span>
-                <span className="fin-val" style={{ color: '#dc2626' }}>- {currency} {fmt(po.total_discount)}</span>
-              </div>
-            </>
-          )}
-          {Number(po.total_tax) > 0 && (
-            <>
-              <div className="fin-divider" />
-              <div className="fin-item">
-                <span className="fin-lbl">Tax</span>
-                <span className="fin-val">{currency} {fmt(po.total_tax)}</span>
-              </div>
-            </>
-          )}
-          {Number(po.freight_charges) > 0 && (
-            <>
-              <div className="fin-divider" />
-              <div className="fin-item">
-                <span className="fin-lbl">Freight</span>
-                <span className="fin-val">{currency} {fmt(po.freight_charges)}</span>
-              </div>
-            </>
-          )}
-          {Number(po.other_charges) > 0 && (
-            <>
-              <div className="fin-divider" />
-              <div className="fin-item">
-                <span className="fin-lbl">Other</span>
-                <span className="fin-val">{currency} {fmt(po.other_charges)}</span>
-              </div>
-            </>
-          )}
-          <div className="fin-divider" />
-          <div className="fin-item fin-total">
-            <span className="fin-lbl">Grand Total</span>
-            <span className="fin-val">{currency} {fmt(po.grand_total)}</span>
+        )}
+
+        {/* ══ STATS BAR ══ */}
+        <div className="stats-bar">
+          <div className="stat-cell">
+            <div className="stat-icon-box">📐</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Artworks</div>
+              <div className="stat-value">{totalArtworks}</div>
+            </div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-icon-box">🖼</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Artworks</div>
+              <div className="stat-value">{totalArtworks}</div>
+            </div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-icon-box">📦</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Qty (Artworks)</div>
+              <div className="stat-value">{totalQty}</div>
+            </div>
           </div>
         </div>
 
-        {/* ── FOOTER ── */}
-        <div className="po-footer">
-          <div className="footer-brand">
-            decoinks Printshop OS &nbsp;·&nbsp; {CO.website}
+        {/* ══ PRODUCTION NOTES ══ */}
+        <div className="prod-notes">
+          <div className="prod-notes-hdr">
+            <div className="prod-notes-icon">📋</div>
+            <div className="prod-notes-title">Production Notes</div>
           </div>
-          <div className="footer-msg">✦ Thank you for your business! ✦</div>
-          <div className="footer-contact">
-            {CO.email} &nbsp;|&nbsp; {CO.phone}
+          <div className="prod-notes-cols">
+            {noteLines.map((line, i) => (
+              <div key={i} className="prod-notes-item">
+                <span className="prod-notes-dot">•</span>
+                <span>{line}</span>
+              </div>
+            ))}
           </div>
         </div>
 

@@ -40,6 +40,7 @@ import { InvoiceDetailPage } from '../pages/InvoiceDetailPage'
 import { QuotePrintPage } from '../pages/QuotePrintPage'
 import { InvoicePrintPage } from '../pages/InvoicePrintPage'
 import { PurchaseOrderPrintPage } from '../pages/PurchaseOrderPrintPage'
+import { OrderPrintPage } from '../pages/OrderPrintPage'
 
 export const router = createBrowserRouter([
   {
@@ -246,6 +247,10 @@ export const router = createBrowserRouter([
           {
             path: '/purchase-orders/:id/print',
             element: <PurchaseOrderPrintPage />,
+          },
+          {
+            path: '/orders/:id/print',
+            element: <OrderPrintPage />,
           },
         ],
       },
