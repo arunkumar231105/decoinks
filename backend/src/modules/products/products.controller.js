@@ -26,4 +26,13 @@ async function toggle(req, res, next) {
 async function remove(req, res, next) {
   try { await service.remove(req.params.id); return success(res, null, 'Product deleted') } catch (err) { next(err) }
 }
-module.exports = { list, getOne, create, update, toggle, remove }
+async function bulkImport(req, res, next) {
+  try {
+    const { products } = req.body
+    if (!Array.isArray(products) || products.length === 0)
+      return res.status(400).json({ success: false, message: 'products array required' })
+    const result = await service.bulkImport(products, req.user.id)
+    return success(res, result, `Imported ${result.inserted} products (${result.skipped} skipped as duplicates)`)
+  } catch (err) { next(err) }
+}
+module.exports = { list, getOne, create, update, toggle, remove, bulkImport }

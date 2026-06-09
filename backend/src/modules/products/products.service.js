@@ -99,4 +99,34 @@ async function remove(id) {
   if (!rows[0]) throw Object.assign(new Error('Product not found'), { statusCode: 404 })
 }
 
-module.exports = { list, getById, create, update, toggle, remove }
+async function bulkImport(rows, created_by) {
+  const { pool } = require('../../config/db')
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    let inserted = 0, skipped = 0
+    for (const row of rows) {
+      const { rows: dupe } = await client.query(
+        `SELECT id FROM products WHERE sku = $1 AND deleted_at IS NULL`, [row.sku]
+      )
+      if (dupe.length) { skipped++; continue }
+      await client.query(
+        `INSERT INTO products (sku, name, product_type, description, base_price, cost_price, stock_qty, is_active, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [row.sku, row.name, row.product_type || 'Apparel',
+         row.description || null, row.base_price || 0, row.cost_price || 0,
+         row.stock_qty || 0, true, created_by]
+      )
+      inserted++
+    }
+    await client.query('COMMIT')
+    return { inserted, skipped }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+module.exports = { list, getById, create, update, toggle, remove, bulkImport }

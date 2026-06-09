@@ -30,11 +30,24 @@ const updateSchema = z.object({
   is_active:    z.boolean().optional(),
 }).strict()
 
-router.get('/',             controller.list)
-router.get('/:id',          controller.getOne)
-router.post('/',            validate(createSchema), controller.create)
-router.put('/:id',          validate(updateSchema), controller.update)
-router.patch('/:id/toggle', controller.toggle)
-router.delete('/:id',       controller.remove)
+const bulkImportSchema = z.object({
+  products: z.array(z.object({
+    sku:          z.string().min(1).max(50),
+    name:         z.string().min(1).max(200),
+    product_type: z.enum(PRODUCT_TYPES).optional().default('Apparel'),
+    description:  z.string().optional().nullable(),
+    base_price:   z.number().nonnegative().optional().default(0),
+    cost_price:   z.number().nonnegative().optional().default(0),
+    stock_qty:    z.number().int().nonnegative().optional().default(0),
+  })).min(1).max(2000),
+})
+
+router.get('/',              controller.list)
+router.get('/:id',           controller.getOne)
+router.post('/bulk-import',  validate(bulkImportSchema), controller.bulkImport)
+router.post('/',             validate(createSchema), controller.create)
+router.put('/:id',           validate(updateSchema), controller.update)
+router.patch('/:id/toggle',  controller.toggle)
+router.delete('/:id',        controller.remove)
 
 module.exports = router
