@@ -38,6 +38,7 @@ interface Product {
 
 interface ImportRow {
   sku: string; name: string; product_type: ProductType; description: string
+  _brand?: string; _model?: string; _color?: string; _size?: string; _file?: string
 }
 
 const PAGE_SIZE = 10
@@ -102,6 +103,11 @@ function parseCatalogCsv(text: string, defaultType: ProductType): ImportRow[] {
       name:         name || sku,
       product_type: defaultType,
       description:  parts.join(' | '),
+      _brand: iBrand >= 0 ? cols[iBrand] ?? '' : '',
+      _model: iModel >= 0 ? cols[iModel] ?? '' : '',
+      _color: iColor >= 0 ? cols[iColor] ?? '' : '',
+      _size:  iSize  >= 0 ? cols[iSize]  ?? '' : '',
+      _file:  iFile  >= 0 ? cols[iFile]  ?? '' : '',
     })
   }
   return rows
@@ -417,29 +423,32 @@ export function ProductsPage() {
               </div>
 
               {/* Preview table */}
-              <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+              <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, maxHeight: 340, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                     <tr style={{ background: '#f9fafb' }}>
-                      <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontWeight: 600 }}>#</th>
-                      <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontWeight: 600 }}>SKU</th>
-                      <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontWeight: 600 }}>Name</th>
-                      <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontWeight: 600 }}>Description</th>
+                      {[['#','36px'],['SKU','100px'],['Brand','80px'],['Model No','72px'],['Color','90px'],['Size','52px'],['Model Name','220px'],['File Format','80px']].map(([h, w]) => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', fontWeight: 600, whiteSpace: 'nowrap', minWidth: w, background: '#f9fafb' }}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {importRows.slice(0, 20).map((r, i) => (
+                    {importRows.slice(0, 50).map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
                         <td style={{ padding: '6px 10px', color: '#9ca3af' }}>{i + 1}</td>
                         <td style={{ padding: '6px 10px' }}><code style={{ fontSize: 11 }}>{r.sku}</code></td>
-                        <td style={{ padding: '6px 10px', fontWeight: 500 }}>{r.name}</td>
-                        <td style={{ padding: '6px 10px', color: '#6b7280', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description}</td>
+                        <td style={{ padding: '6px 10px', color: '#374151' }}>{r._brand}</td>
+                        <td style={{ padding: '6px 10px', color: '#374151' }}>{r._model}</td>
+                        <td style={{ padding: '6px 10px', color: '#374151' }}>{r._color}</td>
+                        <td style={{ padding: '6px 10px', color: '#374151' }}>{r._size}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</td>
+                        <td style={{ padding: '6px 10px', color: '#6b7280' }}>{r._file}</td>
                       </tr>
                     ))}
-                    {importRows.length > 20 && (
+                    {importRows.length > 50 && (
                       <tr>
-                        <td colSpan={4} style={{ padding: '8px 10px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>
-                          ... and {importRows.length - 20} more rows
+                        <td colSpan={8} style={{ padding: '8px 10px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>
+                          ... and {importRows.length - 50} more rows (all will be imported)
                         </td>
                       </tr>
                     )}
