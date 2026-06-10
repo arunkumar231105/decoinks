@@ -45,8 +45,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '9002:9000'
+      - '9003:9001'
     networks: [decoinks_net]
     healthcheck:
       test: ['CMD','curl','-f','http://localhost:9000/minio/health/live']
@@ -63,6 +63,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      COOKIE_SECURE: "false"
       DATABASE_URL: postgresql://postgres:decoinks_pass@postgres:5432/decoinks_db
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: http://31.97.110.197
@@ -74,7 +75,7 @@ services:
       MINIO_ACCESS_KEY: decoinks
       MINIO_SECRET_KEY: decoinks_secret_123
       MINIO_BUCKET: decoinks
-      MINIO_PUBLIC_URL: http://31.97.110.197:9000
+      MINIO_PUBLIC_URL: http://31.97.110.197:9002
     volumes:
       - ./backend:/app
       - /app/node_modules
