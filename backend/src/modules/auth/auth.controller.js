@@ -6,15 +6,18 @@ const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
 function setRefreshCookie(res, token) {
   res.cookie(authService.COOKIE_NAME, token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    // Use Secure flag only when explicitly enabled via env var.
+    // Do NOT tie to NODE_ENV=production — many production deployments run
+    // behind an HTTP reverse proxy and setting Secure on HTTP breaks refresh.
+    secure:   process.env.COOKIE_SECURE === 'true',
+    sameSite: 'lax',
     maxAge:   COOKIE_MAX_AGE_MS,
-    path:     '/api/auth',  // only sent to auth endpoints
+    path:     '/',   // send on ALL requests so new-tab print pages can refresh
   })
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie(authService.COOKIE_NAME, { path: '/api/auth' })
+  res.clearCookie(authService.COOKIE_NAME, { path: '/' })
 }
 
 async function login(req, res, next) {
