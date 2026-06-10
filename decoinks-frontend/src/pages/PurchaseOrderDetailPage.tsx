@@ -212,7 +212,7 @@ export function PurchaseOrderDetailPage() {
             </button>
           )}
           <button className="lb-action-btn"
-            onClick={() => window.open(`/purchase-orders/${id}/print`, '_blank')}
+            onClick={() => navigate(`/purchase-orders/${id}/print`)}
             style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Print / PDF
           </button>

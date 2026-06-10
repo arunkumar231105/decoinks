@@ -1092,7 +1092,7 @@ export function NewQuotationPage() {
         onConvert={() => navigate('/invoices/new')}
         activeTab={activeTab}
         onPreview={() => {
-          if (quoteId) { handleSave(); setTimeout(() => window.open(`/quotes/${quoteId}/print`, '_blank'), 800) }
+          if (quoteId) { handleSave(); setTimeout(() => navigate(`/quotes/${quoteId}/print`), 800) }
           else toast.error('Save the quote first, then click Preview')
         }}
       />

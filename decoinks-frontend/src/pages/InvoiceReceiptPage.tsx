@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
@@ -179,6 +179,17 @@ const CSS = `
   }
   .rc-footer strong { color: #fff; }
 
+  /* Back button */
+  .back-btn {
+    position: fixed; top: 12px; left: 12px;
+    background: #fff; color: #374151; border: 1.5px solid #d1d5db;
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 12px; font-weight: 600; cursor: pointer; z-index: 999;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .back-btn:hover { background: #f9fafb; }
+  @media print { .back-btn { display: none; } }
+
   /* Print button */
   .print-btn {
     position: fixed; top: 12px; right: 12px;
@@ -206,6 +217,7 @@ const fmtDate = (d: string | null | undefined) =>
 // ── Component ─────────────────────────────────────────────────────────────────
 export function InvoiceReceiptPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
 
   const { data: invoice, isLoading } = useQuery<Invoice>({
@@ -292,6 +304,9 @@ export function InvoiceReceiptPage() {
   return (
     <>
       <style>{CSS}</style>
+      <button className="back-btn" onClick={() => navigate(-1)}>
+        ← Back
+      </button>
       <button className="print-btn" onClick={() => window.print()}>
         🖨️ Print / Save PDF
       </button>

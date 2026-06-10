@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
@@ -246,6 +246,8 @@ const CSS = `
   /* ── Print button ── */
   .print-btn { position: fixed; top: 16px; right: 16px; background: #1a2b5c; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 999; display: flex; align-items: center; gap: 7px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
   .print-btn:hover { background: #243d82; }
+  .back-btn { position: fixed; top: 16px; left: 16px; background: #fff; color: #374151; border: 1.5px solid #d1d5db; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 999; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .back-btn:hover { background: #f9fafb; }
 `
 
 // ── DTF group types ───────────────────────────────────────────────────────────
@@ -255,6 +257,7 @@ interface DtfGroup { desc: string; rate: number; rowSpan: number; rows: DtfRow[]
 // ── Main component ────────────────────────────────────────────────────────────
 export function InvoicePrintPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
 
   const { data: invoice, isLoading } = useQuery<Invoice>({
@@ -337,6 +340,9 @@ export function InvoicePrintPage() {
   return (
     <>
       <style>{CSS}</style>
+      <button className="back-btn no-print" onClick={() => navigate(-1)}>
+        ← Back
+      </button>
       <button className="print-btn no-print" onClick={() => window.print()}>
         🖨️ Download / Print PDF
       </button>

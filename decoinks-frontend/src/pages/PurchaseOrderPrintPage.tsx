@@ -115,6 +115,14 @@ const CSS = `
     font-size: 13px; font-weight: 600; cursor: pointer;
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
+  .back-btn {
+    position: fixed; top: 16px; left: 16px; z-index: 999;
+    background: #fff; color: #374151; border: 1.5px solid #d1d5db;
+    padding: 9px 18px; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .back-btn:hover { background: #f9fafb; }
 
   /* ══════════════════════════════════════════
      HEADER — white background
@@ -449,6 +457,9 @@ export function PurchaseOrderPrintPage() {
     <>
       <style>{CSS}</style>
 
+      <button className="back-btn no-print" onClick={() => navigate(-1)}>
+        ← Back
+      </button>
       <button className="print-btn no-print" onClick={() => window.print()}>
         🖨️ Download / Print PDF
       </button>

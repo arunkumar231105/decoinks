@@ -200,7 +200,7 @@ export function OrderDetailPage() {
           <button
             className="od-status-btn"
             style={{ background: '#1a2b5c', color: '#fff', borderColor: '#1a2b5c' }}
-            onClick={() => window.open(`/orders/${order.id}/print`, '_blank')}
+            onClick={() => navigate(`/orders/${order.id}/print`)}
           >
             🖨️ Print Sales Order
           </button>

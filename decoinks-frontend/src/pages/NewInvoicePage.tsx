@@ -383,8 +383,7 @@ export function NewInvoicePage() {
     mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
     onSuccess: (inv: any) => {
       if (inv?.id) {
-        window.open(`/invoices/${inv.id}/print`, '_blank')
-        navigate(`/invoices/${inv.id}`)
+        navigate(`/invoices/${inv.id}/print`)
       } else {
         navigate('/invoices')
       }

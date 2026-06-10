@@ -202,10 +202,10 @@ export function InvoiceDetailPage() {
               <Package size={13} /> Convert to Order
             </button>
           )}
-          <button className="lb-action-btn" onClick={() => window.open(`/invoices/${id}/print`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <button className="lb-action-btn" onClick={() => navigate(`/invoices/${id}/print`)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Print / PDF
           </button>
-          <button className="lb-action-btn" onClick={() => window.open(`/invoices/${id}/receipt`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <button className="lb-action-btn" onClick={() => navigate(`/invoices/${id}/receipt`)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🧾 Short Invoice
           </button>
           {canRecordPayment && (
