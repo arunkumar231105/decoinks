@@ -94,10 +94,11 @@ async function create({
       const item = items[i]
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [qId, item.description || null, item.qty, item.unit_price, amount, i,
-         item.sizes || null, item.colors || null, item.artwork_count ?? 0]
+         item.sizes || null, item.colors || null, item.artwork_count ?? 0,
+         item.front_image || null, item.back_image || null, item.artwork_image || null]
       )
     }
     await client.query('COMMIT')
@@ -162,10 +163,11 @@ async function update(id, {
         const item = itemList[i]
         const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
         await client.query(
-          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [id, item.description || null, item.qty, item.unit_price, amount, i,
-           item.sizes || null, item.colors || null, item.artwork_count ?? 0]
+           item.sizes || null, item.colors || null, item.artwork_count ?? 0,
+           item.front_image || null, item.back_image || null, item.artwork_image || null]
         )
       }
     }

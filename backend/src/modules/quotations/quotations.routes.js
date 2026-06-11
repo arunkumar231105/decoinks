@@ -44,6 +44,9 @@ const itemSchema = z.object({
   sizes:         z.string().optional().nullable(),
   colors:        z.string().optional().nullable(),
   artwork_count: z.number().int().min(0).optional().nullable(),
+  front_image:   z.string().optional().nullable(),
+  back_image:    z.string().optional().nullable(),
+  artwork_image: z.string().optional().nullable(),
 })
 
 const ORDER_TYPES = ['apparel', 'gangsheet', 'dtf']

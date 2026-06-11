@@ -174,7 +174,7 @@ export function NewOrderPage() {
     }>
     if (type === 'apparel') {
       setApparel(qItems.map(it => ({
-        id: uid(),
+        id:          uid(),
         item:        it.description || 'T-Shirt (Premium)',
         color:       it.colors     ?? '',
         size:        it.sizes      ?? '',
@@ -182,22 +182,26 @@ export function NewOrderPage() {
         artworkNo:   '',
         artworkSize: '',
         unitPrice:   Number(it.unit_price),
+        frontImage:  (it as any).front_image ?? null,
+        backImage:   (it as any).back_image  ?? null,
       })))
     } else if (type === 'gangsheet') {
       setGangsheet(qItems.map(it => ({
-        id:           uid(),
-        size:         it.sizes ?? it.description ?? '',
-        noArtworks:   Number(it.artwork_count ?? 1),
-        qty:          Number(it.qty),
+        id:            uid(),
+        size:          it.sizes ?? it.description ?? '',
+        noArtworks:    Number(it.artwork_count ?? 1),
+        qty:           Number(it.qty),
         pricePerSheet: Number(it.unit_price),
+        frontImage:    (it as any).front_image ?? null,
       })))
     } else {
       setDtf(qItems.map(it => ({
-        id:          uid(),
-        artworkName: it.description ?? '',
-        size:        it.sizes ?? '',
-        qty:         Number(it.qty),
-        unitPrice:   Number(it.unit_price),
+        id:            uid(),
+        artworkName:   it.description ?? '',
+        size:          it.sizes ?? '',
+        qty:           Number(it.qty),
+        unitPrice:     Number(it.unit_price),
+        artworkImage:  (it as any).artwork_image ?? null,
       })))
     }
   }, [sourceQuote])
@@ -302,10 +306,10 @@ export function NewOrderPage() {
 
   const buildPayload = () => {
     const itemsPayload = orderType === 'apparel'
-      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice }))
+      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: (r as any).frontImage || null, back_image: (r as any).backImage || null }))
       : orderType === 'gangsheet'
-        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet }))
-        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice }))
+        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: (r as any).frontImage || null }))
+        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: (r as any).artworkImage || null }))
 
     return {
       supplier_id:        supplierId || null,

@@ -21,6 +21,7 @@ const artworkRoutes = require('./modules/artworks/artworks.routes')
 const dashRoutes    = require('./modules/dashboard/dashboard.routes')
 const supplierPortalRoutes = require('./modules/supplier-portal/portal.routes')
 const customFieldRoutes    = require('./modules/custom-fields/custom_fields.routes')
+const uploadRoutes         = require('./modules/upload/upload.routes')
 
 const app = express()
 
@@ -57,6 +58,7 @@ app.use('/api/artworks',       artworkRoutes)
 app.use('/api/dashboard',      dashRoutes)
 app.use('/api/supplier',       supplierPortalRoutes)
 app.use('/api/custom-fields', customFieldRoutes)
+app.use('/api/upload',       uploadRoutes)
 
 app.use(errorHandler)
 
