@@ -22,7 +22,7 @@ interface Quote {
   shipping_state: string | null; zip_code: string | null; shipping_country: string | null
   billing_address: string | null; supplier_name: string | null
   subtotal: number; discount_pct: number; discount_amt: number
-  tax_pct: number; tax_amt: number; total: number; notes: string | null
+  tax_pct: number; tax_amt: number; total: number; notes: string | null; customer_notes: string | null
   rush_services: number | null; estimated_shipping: number | null
   payment_terms: string | null; items: QuoteItem[]
 }
@@ -563,7 +563,7 @@ export function QuotePrintPage() {
               Notes
             </div>
             <div className="notes-box">
-              {quote.notes || <span style={{ color: '#94a3b8' }}>Add your notes here...</span>}
+              {(quote.customer_notes || quote.notes) || <span style={{ color: '#94a3b8' }}>Add your notes here...</span>}
             </div>
             <div className="page-count">0 / 500</div>
           </div>

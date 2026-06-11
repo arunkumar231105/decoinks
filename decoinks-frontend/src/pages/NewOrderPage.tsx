@@ -142,6 +142,13 @@ export function NewOrderPage() {
     enabled:  !!fromInvoiceId,
   })
 
+  // Fetch linked quotation to get items
+  const { data: sourceQuote } = useQuery({
+    queryKey: ['convert-from-quote', sourceInvoice?.quote_id],
+    queryFn:  () => api.get(`/quotations/${sourceInvoice!.quote_id}`).then(r => r.data.data ?? r.data),
+    enabled:  !!sourceInvoice?.quote_id,
+  })
+
   useEffect(() => {
     if (!sourceInvoice) return
     if (sourceInvoice.supplier_id)   setSupplierId(sourceInvoice.supplier_id)
@@ -156,6 +163,44 @@ export function NewOrderPage() {
     if (sourceInvoice.rush_services)    setRushServices(Number(sourceInvoice.rush_services))
     if (sourceInvoice.discount_pct)     setDiscountPct(Number(sourceInvoice.discount_pct))
   }, [sourceInvoice])
+
+  useEffect(() => {
+    if (!sourceQuote?.items?.length) return
+    const type: OrderType = (fromOrderType ?? sourceQuote.order_type ?? 'apparel') as OrderType
+    setOrderType(type)
+    const qItems = sourceQuote.items as Array<{
+      description: string; qty: number; unit_price: number
+      sizes?: string | null; colors?: string | null; artwork_count?: number | null
+    }>
+    if (type === 'apparel') {
+      setApparel(qItems.map(it => ({
+        id: uid(),
+        item:        it.description || 'T-Shirt (Premium)',
+        color:       it.colors     ?? '',
+        size:        it.sizes      ?? '',
+        qty:         Number(it.qty),
+        artworkNo:   '',
+        artworkSize: '',
+        unitPrice:   Number(it.unit_price),
+      })))
+    } else if (type === 'gangsheet') {
+      setGangsheet(qItems.map(it => ({
+        id:           uid(),
+        size:         it.sizes ?? it.description ?? '',
+        noArtworks:   Number(it.artwork_count ?? 1),
+        qty:          Number(it.qty),
+        pricePerSheet: Number(it.unit_price),
+      })))
+    } else {
+      setDtf(qItems.map(it => ({
+        id:          uid(),
+        artworkName: it.description ?? '',
+        size:        it.sizes ?? '',
+        qty:         Number(it.qty),
+        unitPrice:   Number(it.unit_price),
+      })))
+    }
+  }, [sourceQuote])
 
   // ── Load customers & agents ──
   const { data: supplierData } = useQuery({

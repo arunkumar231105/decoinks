@@ -199,13 +199,18 @@ export function NewPurchaseOrderPage() {
         shipping_method:  sourceOrder.shipping_method  || '',
         notes:            sourceOrder.notes || '',
         order_id:         sourceOrder.id   || '',
-        items: srcItems.map((it: any, idx: number) => ({
-          ...newItem(idx),
-          item_name:   it.item || it.artwork_name || it.description || '',
-          qty_ordered: Number(it.qty) || 1,
-          unit_price:  Number(it.unit_price) || 0,
-          line_total:  calcLineTotal({ qty_ordered: Number(it.qty) || 1, unit_price: Number(it.unit_price) || 0, discount_pct: 0, tax_pct: 0 }),
-        })),
+        items: srcItems.map((it: any, idx: number) => {
+          const itemName = it.item || it.artwork_name || it.description || it.size || ''
+          const unitPrice = Number(it.unit_price ?? it.price_per_sheet) || 0
+          const qty = Number(it.qty) || 1
+          return {
+            ...newItem(idx),
+            item_name:   itemName,
+            qty_ordered: qty,
+            unit_price:  unitPrice,
+            line_total:  calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: 0, tax_pct: 0 }),
+          }
+        }),
       },
     })
   }, [sourceOrder])

@@ -793,6 +793,24 @@ export function NewQuotationPage() {
       }
     }
     if (q.status) setStatus(q.status as QuoteStatus)
+
+    // Restore other charges from saved values
+    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_amt > 0 || q.tax_pct > 0) {
+      setOtherCharges(prev => prev.map(charge => {
+        if (charge.key === 'shipping' && q.estimated_shipping > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.estimated_shipping) }
+        if (charge.key === 'discount' && q.discount_amt > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.discount_amt) }
+        if (charge.key === 'tax' && q.tax_pct > 0)
+          return { ...charge, enabled: true }
+        if (charge.key === 'artwork' && q.rush_services > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.rush_services) }
+        return charge
+      }))
+    }
+    if (q.payment_terms) setPaymentTerms(q.payment_terms)
+    if (q.customer_notes) setSupplierNotes(q.customer_notes)
+
     setFormInitialized(true)
   }, [quotationData, formInitialized])
 
@@ -804,6 +822,8 @@ export function NewQuotationPage() {
     }
   }, [leadData])
 
+  const navigateAfterSave = useRef<string | null>(null)
+
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       quoteId ? api.put(`/quotations/${quoteId}`, data) : api.post('/quotations', data),
@@ -813,7 +833,16 @@ export function NewQuotationPage() {
       queryClient.invalidateQueries({ queryKey: ['quotations'] })
       if (quoteId) {
         queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
-      } else if (q?.id) {
+        queryClient.invalidateQueries({ queryKey: ['quote-print', quoteId] })
+      }
+      // If preview was triggered, navigate to print page after save completes
+      if (navigateAfterSave.current) {
+        const path = navigateAfterSave.current
+        navigateAfterSave.current = null
+        navigate(path)
+        return
+      }
+      if (!quoteId && q?.id) {
         // Stay on the edit page so artworks can be uploaded right away
         navigate(`/quotes/${q.id}`, { replace: true })
         return
@@ -821,6 +850,7 @@ export function NewQuotationPage() {
       navigate('/quotes')
     },
     onError: (err: any) => {
+      navigateAfterSave.current = null
       toast.error(err.response?.data?.message ?? 'Could not save quote')
     },
   })
@@ -905,13 +935,19 @@ export function NewQuotationPage() {
       })
     }
 
-    const taxEnabled     = otherCharges.find(c => c.key === 'tax')?.enabled ?? false
-    const taxPct         = taxEnabled ? 7 : 0
-    const discountCharge = otherCharges.find(c => c.key === 'discount')
-    const subtotalVal    = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
-    const discountPct    = discountCharge?.enabled && subtotalVal > 0
+    const taxEnabled      = otherCharges.find(c => c.key === 'tax')?.enabled ?? false
+    const taxPct          = taxEnabled ? 7 : 0
+    const discountCharge  = otherCharges.find(c => c.key === 'discount')
+    const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
+    const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
+    const packagingCharge = otherCharges.find(c => c.key === 'packaging')
+    const subtotalVal     = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
+    const discountPct     = discountCharge?.enabled && subtotalVal > 0
       ? +((Math.abs(discountCharge.quotedCost) / subtotalVal) * 100).toFixed(4)
       : 0
+    const estimatedShipping = shippingCharge?.enabled ? (shippingCharge.quotedCost || 0) : 0
+    const rushServices = (artworkCharge?.enabled ? (artworkCharge.quotedCost || 0) : 0)
+      + (packagingCharge?.enabled ? (packagingCharge.quotedCost || 0) : 0)
 
     saveMutation.mutate({
       order_type:                   activeTab,
@@ -923,6 +959,10 @@ export function NewQuotationPage() {
       discount_pct:                 discountPct,
       tax_pct:                      taxPct,
       items:                        allItems,
+      estimated_shipping:           estimatedShipping,
+      rush_services:                rushServices,
+      payment_terms:                paymentTerms,
+      customer_notes:               supplierNotes || undefined,
       // Customer intake fields
       company_name:                 companyName       || undefined,
       customer_name:                customerName      || undefined,
@@ -1092,8 +1132,12 @@ export function NewQuotationPage() {
         onConvert={() => navigate('/invoices/new')}
         activeTab={activeTab}
         onPreview={() => {
-          if (quoteId) { handleSave(); setTimeout(() => navigate(`/quotes/${quoteId}/print`), 800) }
-          else toast.error('Save the quote first, then click Preview')
+          if (quoteId) {
+            navigateAfterSave.current = `/quotes/${quoteId}/print`
+            handleSave()
+          } else {
+            toast.error('Save the quote first, then click Preview')
+          }
         }}
       />
     </div>
