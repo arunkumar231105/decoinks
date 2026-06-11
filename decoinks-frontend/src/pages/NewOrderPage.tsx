@@ -158,7 +158,8 @@ export function NewOrderPage() {
     rowId: string,
     field: 'frontImage' | 'backImage' | 'artworkImage',
     file: File,
-    updater: (id: string, patch: Record<string, string | null>) => void
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    updater: (id: string, patch: any) => void
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     try {
@@ -407,6 +408,7 @@ export function NewOrderPage() {
       supplier_id:        supplierId || null,
       supplier_name_text: !supplierId ? supplierText.trim() : null,
       invoice_id:         fromInvoiceId || null,
+      quotation_id:       sourceInvoice?.quote_id || null,
       order_type:       orderType,
       order_date:       orderDate,
       due_date:         dueDate || null,

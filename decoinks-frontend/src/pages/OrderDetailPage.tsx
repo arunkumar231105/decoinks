@@ -100,7 +100,7 @@ export function OrderDetailPage() {
   })
 
   const updatePayStatus = useMutation({
-    mutationFn: (payment_status: string) => api.put(`/orders/${id}`, { payment_status }),
+    mutationFn: (payment_status: string) => api.patch(`/orders/${id}/payment-status`, { payment_status }),
     onSuccess: () => {
       toast.success('Payment status updated')
       queryClient.invalidateQueries({ queryKey: ['order', id] })

@@ -142,7 +142,7 @@ router.post('/:id/artworks', async (req, res, next) => {
           quotation_id: req.params.id,
           supplier_id:  null,
           order_id:     null,
-          status:       'Pending Review',
+          status:       'Pending Approval',
           notes:        req.body.notes || null,
           uploaded_by:  req.user.id,
           file:         req.file,

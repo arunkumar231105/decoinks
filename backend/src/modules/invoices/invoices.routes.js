@@ -23,13 +23,14 @@ const createSchema = z.object({
 )
 
 const updateSchema = z.object({
-  supplier_id:  z.string().uuid().optional().nullable(),
-  issue_date:   z.string().optional().nullable(),
-  due_date:     z.string().optional().nullable(),
-  subtotal:     z.number().nonnegative().optional(),
-  discount_amt: z.number().nonnegative().optional(),
-  tax_amt:      z.number().nonnegative().optional(),
-  notes:        z.string().optional().nullable(),
+  supplier_id:     z.string().uuid().optional().nullable(),
+  issue_date:      z.string().optional().nullable(),
+  due_date:        z.string().optional().nullable(),
+  subtotal:        z.number().nonnegative().optional(),
+  discount_amt:    z.number().nonnegative().optional(),
+  tax_amt:         z.number().nonnegative().optional(),
+  notes:           z.string().optional().nullable(),
+  payment_status:  z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
 }).strict()
 
 const statusSchema = z.object({
@@ -38,7 +39,7 @@ const statusSchema = z.object({
 
 const paymentSchema = z.object({
   amount:         z.number().positive(),
-  payment_method: z.enum(['cash', 'bank_transfer', 'card', 'cashapp', 'zelle', 'paypal', 'check', 'other']),
+  payment_method: z.enum(['cashapp', 'zelle', 'paypal', 'bank_transfer', 'cash', 'other']),
   reference_no:   z.string().optional().nullable(),
   notes:          z.string().optional().nullable(),
 })

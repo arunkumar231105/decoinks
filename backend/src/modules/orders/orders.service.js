@@ -316,6 +316,17 @@ async function remove(id) {
     )
   }
 
+  // Block if any invoice is linked to this order
+  const { rows: linkedInvoices } = await query(
+    `SELECT id FROM invoices WHERE order_id = $1 LIMIT 1`, [id]
+  )
+  if (linkedInvoices[0]) {
+    throw Object.assign(
+      new Error('This order has a linked invoice and cannot be deleted. Delete the invoice first.'),
+      { statusCode: 409 }
+    )
+  }
+
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -335,7 +346,7 @@ async function remove(id) {
   }
 }
 
-const BOARD_STATUSES = ['Confirmed', 'In Production', 'Ready to Ship', 'Shipped', 'Delivered']
+const BOARD_STATUSES = ['Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered']
 
 async function getBoard() {
   const { rows } = await query(
@@ -425,6 +436,7 @@ const ORDER_HEADER_MAP = {
   contactname: 'contact_name', contact: 'contact_name',
   contactemail: 'contact_email', email: 'contact_email',
   contactphone: 'contact_phone', phone: 'contact_phone',
+  shippingname: 'shipping_name', shipname: 'shipping_name',
   shippingaddress: 'shipping_address', address: 'shipping_address',
   // item fields (prefix li_)
   item: 'li_item', product: 'li_item', artworkname: 'li_item',

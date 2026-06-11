@@ -111,7 +111,7 @@ const updateSchema = z.object({
 }).strict()
 
 const statusSchema = z.object({
-  status: z.enum(['Draft', 'Confirmed', 'In Production', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled']),
+  status: z.enum(['Draft', 'Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled']),
 })
 
 router.get('/',              controller.list)
@@ -122,6 +122,19 @@ router.get('/:id',           controller.getOne)
 router.get('/:id/invoice',   controller.getInvoice)
 router.post('/',             validate(createSchema), controller.create)
 router.post('/:id/convert-to-po', controller.convertToPO)
+router.patch('/:id/payment-status', async (req, res, next) => {
+  try {
+    const { payment_status } = req.body
+    const valid = ['Unpaid','Partial','Paid','Refunded']
+    if (!valid.includes(payment_status)) return res.status(400).json({ success: false, message: 'Invalid payment_status' })
+    const { rows } = await require('../../config/db').query(
+      `UPDATE orders SET payment_status = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING id, payment_status`,
+      [payment_status, req.params.id]
+    )
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Order not found' })
+    res.json({ success: true, data: rows[0] })
+  } catch (err) { next(err) }
+})
 router.put('/:id',           validate(updateSchema), controller.update)
 router.patch('/:id/status',  validate(statusSchema), controller.updateStatus)
 router.delete('/:id',        controller.remove)
@@ -180,7 +193,7 @@ router.post('/:id/artworks', uploadArtwork, validate(artworkUploadSchema), async
       name,
       order_id:    req.params.id,
       supplier_id: null,
-      status:      'Pending Review',
+      status:      'Pending Approval',
       notes,
       uploaded_by: req.user.id,
       file:        req.file,

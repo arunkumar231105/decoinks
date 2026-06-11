@@ -118,12 +118,13 @@ async function getById(id) {
 
 async function create(data) {
   const {
-    supplier_id, supplier_reference, payment_terms, currency = 'USD', exchange_rate = 1,
+    vendor_id, supplier_reference, payment_terms, currency = 'USD', exchange_rate = 1,
     buyer_id, department, priority = 'Medium', shipping_method, shipping_address,
     billing_address, terms_conditions, order_date, expected_date, notes,
     freight_charges = 0, other_charges = 0, order_id,
     items = [], created_by,
   } = data
+  const supplier_id = data.supplier_id || vendor_id || null
 
   const po_number = await getNextNumber('PO', 'purchase_orders', 'po_number')
   const { subtotal, total_discount, total_tax, grand_total } = calcTotals(items, freight_charges, other_charges)

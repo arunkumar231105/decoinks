@@ -26,7 +26,7 @@ import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
 import ArtworkUploader from '../components/ArtworkUploader'
 
-type QuoteStatus = 'Draft' | 'Sent' | 'Pending Approval' | 'Approved' | 'Converted'
+type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
 
 interface ApparelItem {
   id: string
@@ -180,12 +180,14 @@ function QuoteHeader({
   status,
   quoteDate,
   validUntil,
+  setValidUntil,
   agent,
   setAgent,
 }: {
   status: QuoteStatus
   quoteDate: string
   validUntil: string
+  setValidUntil: (v: string) => void
   agent: string
   setAgent: (agent: string) => void
 }) {
@@ -199,7 +201,7 @@ function QuoteHeader({
         </div>
       </div>
       <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" value={quoteDate} readOnly /></div>
-      <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" value={validUntil} readOnly /><span className="nq-validity-hint">7 days validity</span></div>
+      <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
       <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
       <div className="nq-info-field">
         <label>Sales Agent</label>
@@ -714,7 +716,7 @@ export function NewQuotationPage() {
   // ── Base form state ──
   const [status, setStatus] = useState<QuoteStatus>('Draft')
   const [quoteDate] = useState(today())
-  const [validUntil] = useState('')
+  const [validUntil, setValidUntil] = useState('')
   const [agent, setAgent] = useState(user?.name ?? '')
   const [supplierText, setSupplierText] = useState('')
   const [supplierId, setSupplierId] = useState('')
@@ -834,12 +836,12 @@ export function NewQuotationPage() {
     if (q.status) setStatus(q.status as QuoteStatus)
 
     // Restore other charges from saved values
-    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_amt > 0 || q.tax_pct > 0) {
+    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_pct > 0 || q.tax_pct > 0) {
       setOtherCharges(prev => prev.map(charge => {
         if (charge.key === 'shipping' && q.estimated_shipping > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.estimated_shipping) }
-        if (charge.key === 'discount' && q.discount_amt > 0)
-          return { ...charge, enabled: true, quotedCost: Number(q.discount_amt) }
+        if (charge.key === 'discount' && q.discount_pct > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.discount_pct) }
         if (charge.key === 'tax' && q.tax_pct > 0)
           return { ...charge, enabled: true }
         if (charge.key === 'artwork' && q.rush_services > 0)
@@ -915,7 +917,7 @@ export function NewQuotationPage() {
 
   const handleRequestApproval = () => {
     if (quoteId) {
-      statusMutation.mutate({ id: quoteId, newStatus: 'Pending Approval' })
+      statusMutation.mutate({ id: quoteId, newStatus: 'Sent' })
     } else {
       toast.error('Save the quote first, then request approval')
     }
@@ -1042,6 +1044,7 @@ export function NewQuotationPage() {
       due_date:                     dueDate           || undefined,
       customer_requirement_summary: customerReqSummary || undefined,
       quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
+      valid_until:                  validUntil || undefined,
     })
   }
 
@@ -1061,7 +1064,7 @@ export function NewQuotationPage() {
         </div>
       </header>
 
-      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} agent={agent} setAgent={setAgent} />
+      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil} agent={agent} setAgent={setAgent} />
 
       <div className="nq-body">
         <main className="nq-main">
@@ -1196,7 +1199,7 @@ export function NewQuotationPage() {
         onSave={handleSave} saving={saveMutation.isPending || statusMutation.isPending}
         onSendToCustomer={handleSendToCustomer}
         onRequestApproval={handleRequestApproval}
-        onConvert={() => navigate('/invoices/new')}
+        onConvert={() => navigate('/invoices/new', { state: { fromQuoteId: quoteId } })}
         activeTab={activeTab}
         onPreview={() => {
           if (quoteId) {

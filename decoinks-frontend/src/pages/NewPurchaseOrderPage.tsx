@@ -248,7 +248,7 @@ export function NewPurchaseOrderPage() {
     mutationFn: (payload: object) => api.post('/purchase-orders', payload),
     onSuccess: (res) => {
       toast.success('Purchase order created')
-      navigate(`/purchase-orders/${res.data.po?.id ?? ''}`)
+      navigate(`/purchase-orders/${res.data.data?.id ?? ''}`)
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to create PO'),
   })

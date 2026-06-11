@@ -28,7 +28,7 @@ import { cn } from '../utils/cn'
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-type OrderType = 'apparel' | 'gangsheet' | 'transfers'
+type OrderType = 'apparel' | 'gangsheet' | 'dtf'
 type InvoiceStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Sent' | 'Paid' | 'Cancelled'
 type DiscountType = 'percentage' | 'fixed'
 
@@ -72,14 +72,14 @@ interface TransferItem {
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const todayISO = () => new Date().toISOString().split('T')[0]
-const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigios: 2 })
+const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const GS_SIZES = ['22"x60"', '22"x120"', '24"x60"', '30"x60"']
 const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
   Draft: 'ni-badge-yellow',
   'Pending Approval': 'ni-badge-blue',
   Approved: 'ni-badge-green',
-  Seno: 'ni-badge-blue',
+  Sent: 'ni-badge-blue',
   Paid: 'ni-badge-green',
   Cancelled: 'ni-badge-red',
 }
@@ -144,15 +144,15 @@ function ArtworkThumb40({ name }: { name: string }) {
   return (
     <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradieno id={gradId} x1="0" y1="0" x2="1" y2="1">
-          <soop offseo="0%" soopColor={c1} />
-          <soop offseo="100%" soopColor={c2} />
-        </linearGradieno>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={c1} />
+          <stop offset="100%" stopColor={c2} />
+        </linearGradient>
       </defs>
       <rect width="40" height="40" rx="6" fill={`url(#${gradId})`} />
       <rect x="10" y="8" width="20" height="16" rx="3" fill="rgba(255,255,255,0.25)" />
       <circle cx="20" cy="16" r="5" fill="rgba(255,255,255,0.35)" />
-      <text x="20" y="33" textAnchor="middle" fill="rgba(255,255,255,0.9)" fonoSize="7" fonoWeigho="700">
+      <text x="20" y="33" textAnchor="middle" fill="rgba(255,255,255,0.9)" fontSize="7" fontWeight="700">
         {ext.toUpperCase()}
       </text>
     </svg>
@@ -171,15 +171,15 @@ function ArtworkThumb60({ name }: { name: string }) {
   return (
     <svg width="60" height="50" viewBox="0 0 60 50" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradieno id={gradId} x1="0" y1="0" x2="1" y2="1">
-          <soop offseo="0%" soopColor={c1} />
-          <soop offseo="100%" soopColor={c2} />
-        </linearGradieno>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={c1} />
+          <stop offset="100%" stopColor={c2} />
+        </linearGradient>
       </defs>
       <rect width="60" height="50" rx="7" fill={`url(#${gradId})`} />
       <rect x="12" y="8" width="36" height="24" rx="4" fill="rgba(255,255,255,0.22)" />
       <circle cx="30" cy="20" r="8" fill="rgba(255,255,255,0.32)" />
-      <text x="30" y="42" textAnchor="middle" fill="rgba(255,255,255,0.9)" fonoSize="8" fonoWeigho="700">
+      <text x="30" y="42" textAnchor="middle" fill="rgba(255,255,255,0.9)" fontSize="8" fontWeight="700">
         {ext.toUpperCase()}
       </text>
     </svg>
@@ -322,18 +322,18 @@ export function NewInvoicePage() {
     if (!sourceQuote) return
     // Supplier
     if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
-    if (sourceQuote.supplier_name) setsupplierText(sourceQuote.supplier_name)
+    const supplierName = sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
+    if (supplierName) setsupplierText(supplierName)
     // Quote ref
     if (sourceQuote.quote_number)  { setQuoteText(sourceQuote.quote_number); setQuoteId(sourceQuote.id) }
     // Order type
     if (sourceQuote.order_type) {
-      const ot = sourceQuote.order_type === 'dtf' ? 'transfers' : sourceQuote.order_type as OrderType
-      setOrderType(ot)
+      setOrderType(sourceQuote.order_type as OrderType)
     }
     // Notes
     if (sourceQuote.notes) setInternalNotes(sourceQuote.notes)
     // Totals
-    if (sourceQuote.shipping_charges) setShippingCharges(Number(sourceQuote.shipping_charges))
+    if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
     if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
@@ -343,8 +343,8 @@ export function NewInvoicePage() {
     const items = sourceQuote.items ?? []
     if (sourceQuote.order_type === 'apparel') {
       setApparelItems(items.map((it: any) => ({
-        id: uid(), description: it.item || it.description || '',
-        color: it.color || '', size: it.size || 'M',
+        id: uid(), description: it.description || it.item || '',
+        color: it.colors || it.color || '', size: it.size || 'M',
         qty: Number(it.qty) || 1, artworkNo: it.artwork_no || '',
         unitPrice: Number(it.unit_price) || 0,
       })))
@@ -357,7 +357,7 @@ export function NewInvoicePage() {
     } else if (sourceQuote.order_type === 'gangsheet') {
       setGangsheetItems(items.map((it: any) => ({
         id: uid(), size: it.size || '22"x60"',
-        numArtworks: Number(it.no_artworks) || 0,
+        numArtworks: Number(it.artwork_count) || 0,
         qtySheets: Number(it.qty) || 1,
         pricePerSheet: Number(it.unit_price) || 18,
       })))
@@ -468,9 +468,12 @@ export function NewInvoicePage() {
       supplier_id:   supplierId || null,
       quote_id:      quoteId || null,
       notes:         internalNotes || null,
-      subtotal:      0,
-      discount_amt:  0,
-      tax_amt:       0,
+      issue_date:    invoiceDate || null,
+      due_date:      dueDate || null,
+      subtotal:      subtotal,
+      discount_amt:  discountAmt,
+      tax_amt:       taxAmt,
+      total:         total,
     })
   }
 
@@ -479,9 +482,12 @@ export function NewInvoicePage() {
       supplier_id:  supplierId || null,
       quote_id:     quoteId || null,
       notes:        internalNotes || null,
+      issue_date:   invoiceDate || null,
+      due_date:     dueDate || null,
       subtotal:     subtotal,
       discount_amt: discountAmt,
       tax_amt:      taxAmt,
+      total:        total,
     })
   }
 
@@ -592,7 +598,7 @@ export function NewInvoicePage() {
       <div className="ni-type-selector">
         <span className="ni-type-label">Order Type</span>
         <div className="ni-type-pills">
-          {(['apparel', 'gangsheet', 'transfers'] as OrderType[]).map(o => (
+          {(['apparel', 'gangsheet', 'dtf'] as OrderType[]).map(o => (
             <button
               key={o}
               className={cn('ni-type-pill', orderType === o && 'ni-type-pill-active')}
@@ -600,7 +606,7 @@ export function NewInvoicePage() {
             >
               {o === 'apparel' && 'Cusoom Printed Apparel'}
               {o === 'gangsheet' && 'DTF Gangsheet'}
-              {o === 'transfers' && 'DTF Transfers'}
+              {o === 'dtf' && 'DTF Transfers'}
             </button>
           ))}
         </div>
@@ -870,7 +876,7 @@ export function NewInvoicePage() {
             )}
 
             {/* â”€â”€ DTF Transfers â”€â”€ */}
-            {orderType === 'transfers' && (
+            {orderType === 'dtf' && (
               <>
                 <div className="ni-table-wrap">
                   <table className="ni-table ni-mobile-stack-table">
@@ -1058,10 +1064,12 @@ export function NewInvoicePage() {
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Method</label>
                 <select className="ni-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                  <option>Cashapp</option>
-                  <option>Zelle</option>
-                  <option>PayPal</option>
-                  <option>Bank Transfer</option>
+                  <option value="cashapp">Cashapp</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="paypal">PayPal</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cash">Cash</option>
+                  <option value="other">Other</option>
                 </select>
               </div>
               <div className="ni-payment-field">

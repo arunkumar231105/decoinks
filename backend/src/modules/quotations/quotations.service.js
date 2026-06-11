@@ -3,12 +3,13 @@ const { getNextNumber } = require('../../utils/counter')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
-function calcTotals(items, discountPct, taxPct) {
-  const subtotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
+function calcTotals(items, discountPct, taxPct, estimatedShipping = 0, rushServices = 0) {
+  const itemsTotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
+  const subtotal = +(itemsTotal + Number(estimatedShipping) + Number(rushServices)).toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
   const tax_amt = +((subtotal - discount_amt) * (taxPct / 100)).toFixed(2)
   const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
-  return { subtotal: +subtotal.toFixed(2), discount_amt, tax_amt, total }
+  return { subtotal, discount_amt, tax_amt, total }
 }
 
 async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
@@ -61,7 +62,7 @@ async function create({
   estimated_shipping = 0, rush_services = 0, payment_terms, customer_notes,
 }) {
   const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, tax_pct)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, tax_pct, estimated_shipping, rush_services)
 
   const client = await getClient()
   try {
@@ -120,7 +121,7 @@ async function update(id, {
   estimated_shipping, rush_services, payment_terms, customer_notes,
 }, actorId) {
   const itemList = items ?? []
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, tax_pct)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, tax_pct, estimated_shipping, rush_services)
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -151,7 +152,7 @@ async function update(id, {
         estimated_shipping != null ? estimated_shipping : null,
         rush_services != null ? rush_services : null,
         payment_terms || null,
-        customer_notes != null ? customer_notes : null,
+        customer_notes || null,
         id,
       ]
     )
@@ -382,7 +383,7 @@ const HEADER_MAP = {
   artworkcount:      'li_artwork_count',
 }
 
-const VALID_STATUSES = ['Draft', 'Sent', 'Pending Approval', 'Approved', 'Converted', 'Rejected', 'Expired']
+const VALID_STATUSES = ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired']
 
 function parseDate(val) {
   if (!val || !val.trim()) return null

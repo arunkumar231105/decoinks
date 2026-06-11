@@ -108,7 +108,7 @@ async function createTask({ name, supplier_id, order_id, notes, tags, uploaded_b
     : []
   const { rows } = await query(
     `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, status, file_url, file_type, tags, notes, uploaded_by)
-     VALUES ($1,$2,$3,$4,'Pending Review',NULL,NULL,$5,$6,$7) RETURNING *`,
+     VALUES ($1,$2,$3,$4,'Pending Approval',NULL,NULL,$5,$6,$7) RETURNING *`,
     [artwork_no, name, supplier_id || null, order_id || null, tagsArr, notes || null, uploaded_by || null]
   )
   return rows[0]
