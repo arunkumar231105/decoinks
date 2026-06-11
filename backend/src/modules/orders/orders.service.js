@@ -112,7 +112,7 @@ async function create(data) {
     supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     rush_services = 0, shipping_charges = 0,
-    discount_pct = 0, tax_pct = 7,
+    discount_pct = 0, tax_pct = 0,
     notes, contact_name, contact_email, contact_phone,
     shipping_name, shipping_address,
     assigned_to, created_by,

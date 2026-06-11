@@ -1,7 +1,7 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Edit3, ExternalLink, Plus, Send, Trash2, X, Check } from 'lucide-react'
-import { Menu, MenuItem, Tooltip } from '@mui/material'
+import { ChevronDown, Edit3, Plus, Send, Trash2, X, Check } from 'lucide-react'
+import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -23,9 +23,10 @@ interface Agent { id: string; name: string; role: string }
 interface ApparelItem {
   id: string; item: string; color: string; size: string; qty: number
   artworkNo: string; artworkSize: string; unitPrice: number
+  frontImage?: string | null; backImage?: string | null
 }
-interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number }
-interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number }
+interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null }
+interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
@@ -58,25 +59,33 @@ const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size:
 // ArtworkThumb
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function ArtworkThumb({ label }: { label: string }) {
+function ImageUploadCell({
+  imageUrl, label, onUpload, onRemove, uploading,
+}: {
+  imageUrl?: string | null; label: string
+  onUpload: (file: File) => void; onRemove: () => void; uploading?: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <Tooltip title="View Artwork" placement="top">
-      <div className="no-thumb-wrap">
-        <div className="no-artwork-thumb">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <rect width="20" height="20" rx="4" fill="url(#g)" />
-            <defs>
-              <linearGradient id="g" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#d1d5db" /><stop offset="1" stopColor="#e5e7eb" />
-              </linearGradient>
-            </defs>
-            <path d="M4 14l4-4 3 3 2-2 3 3" stroke="#9ca3af" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="7" cy="7" r="1.5" fill="#9ca3af" />
-          </svg>
+    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
+      {imageUrl ? (
+        <div className="nq-img-thumb-wrap">
+          <img src={imageUrl} className="nq-img-thumb" alt={label} />
+          <button className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
         </div>
-        <span className="no-thumb-label">{label}</span>
-      </div>
-    </Tooltip>
+      ) : (
+        <div className="nq-img-placeholder" onClick={() => inputRef.current?.click()}>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+            <rect width="20" height="20" rx="4" fill="#e2e8f0" />
+            <path d="M4 14l4-4 3 3 2-2 3 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="7" cy="7" r="1.5" fill="#94a3b8" />
+          </svg>
+          <span>{label}</span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -93,6 +102,8 @@ export function NewOrderPage() {
   // Convert-from-invoice context (set when navigated from InvoiceDetailPage)
   const fromInvoiceId: string | undefined = (location.state as any)?.fromInvoiceId
   const fromOrderType: OrderType | undefined = (location.state as any)?.orderType
+  // Edit-existing-order context (set when navigated from OrderDetailPage)
+  const editOrderId: string | undefined = (location.state as any)?.editOrderId
 
   // Header fields
   const [supplierId, setSupplierId]       = useState<string | null>(null)
@@ -109,14 +120,17 @@ export function NewOrderPage() {
 
   // Payment
   const [paymentTerms,   setPaymentTerms]   = useState(PAYMENT_TERMS[0])
-  const [paymentMethod,  setPaymentMethod]  = useState<'cashapp' | 'zelle' | 'paypal'>('zelle')
+  const [paymentMethod,  setPaymentMethod]  = useState<string>('zelle')
   const [paymentStatus,  setPaymentStatus]  = useState<PaymentStatus>('Unpaid')
+
+  // Dates
+  const [dueDate, setDueDate] = useState('')
 
   // Pricing
   const [rushServices,    setRushServices]    = useState(0)
   const [shippingCharges, setShippingCharges] = useState(0)
   const [discountPct,     setDiscountPct]     = useState(0)
-  const taxPct = 7
+  const [taxPct,          setTaxPct]          = useState(0)
 
   // Contact panel
   const [contactName,  setContactName]  = useState('')
@@ -134,6 +148,70 @@ export function NewOrderPage() {
 
   // Send menu
   const [sendAnchor, setSendAnchor] = useState<null | HTMLElement>(null)
+
+  // Currency
+  const [currency, setCurrency] = useState('USD')
+
+  // Image uploads
+  const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
+  const uploadItemImage = async (
+    rowId: string,
+    field: 'frontImage' | 'backImage' | 'artworkImage',
+    file: File,
+    updater: (id: string, patch: Record<string, string | null>) => void
+  ) => {
+    setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      updater(rowId, { [field]: res.data.url })
+    } catch {
+      toast.error('Image upload failed')
+    } finally {
+      setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
+    }
+  }
+
+  // ── Fetch existing order when editing ────────────────────────────────────
+  const { data: existingOrder } = useQuery({
+    queryKey: ['edit-order', editOrderId],
+    queryFn:  () => api.get(`/orders/${editOrderId}`).then(r => r.data.data),
+    enabled:  !!editOrderId,
+  })
+
+  useEffect(() => {
+    if (!existingOrder) return
+    setOrderType(existingOrder.order_type as OrderType)
+    setSupplierId(existingOrder.supplier_id ?? null)
+    setSupplierText(existingOrder.supplier_name ?? '')
+    setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
+    setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
+    setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
+    setPaymentMethod(existingOrder.payment_method ?? 'zelle')
+    setPaymentStatus((existingOrder.payment_status ?? 'Unpaid') as PaymentStatus)
+    setCurrency(existingOrder.currency ?? 'USD')
+    setRushServices(Number(existingOrder.rush_services ?? 0))
+    setShippingCharges(Number(existingOrder.shipping_charges ?? 0))
+    setDiscountPct(Number(existingOrder.discount_pct ?? 0))
+    setTaxPct(Number(existingOrder.tax_pct ?? 0))
+    setContactName(existingOrder.contact_name ?? '')
+    setContactEmail(existingOrder.contact_email ?? '')
+    setContactPhone(existingOrder.contact_phone ?? '')
+    setShippingName(existingOrder.shipping_name ?? '')
+    setShippingAddress(existingOrder.shipping_address ?? '')
+    setOrderNotes(existingOrder.notes ?? '')
+    setAgentId(existingOrder.assigned_to ?? '')
+
+    const items = existingOrder.items ?? []
+    if (existingOrder.order_type === 'apparel') {
+      setApparel(items.map((r: any) => ({ id: uid(), item: r.item ?? '', color: r.color ?? 'Black', size: r.size ?? 'M', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
+    } else if (existingOrder.order_type === 'gangsheet') {
+      setGangsheet(items.map((r: any) => ({ id: uid(), size: r.size ?? '', noArtworks: Number(r.no_artworks ?? 1), qty: Number(r.qty), pricePerSheet: Number(r.price_per_sheet), frontImage: r.front_image ?? null })))
+    } else {
+      setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null })))
+    }
+  }, [existingOrder])
 
   // ── Fetch source invoice when converting from invoice ────────────────────
   const { data: sourceInvoice } = useQuery({
@@ -304,12 +382,26 @@ export function NewOrderPage() {
     },
   })
 
+  const updateOrder = useMutation({
+    mutationFn: (payload: object) => api.put(`/orders/${editOrderId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['order', editOrderId] })
+      toast.success('Order updated!')
+      navigate(`/orders/${editOrderId}`)
+    },
+    onError: (err: any) => {
+      const data = err?.response?.data
+      toast.error(data?.message ?? 'Failed to update order')
+    },
+  })
+
   const buildPayload = () => {
     const itemsPayload = orderType === 'apparel'
-      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: (r as any).frontImage || null, back_image: (r as any).backImage || null }))
+      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null }))
       : orderType === 'gangsheet'
-        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: (r as any).frontImage || null }))
-        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: (r as any).artworkImage || null }))
+        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: r.frontImage || null }))
+        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.artworkImage || null }))
 
     return {
       supplier_id:        supplierId || null,
@@ -317,9 +409,11 @@ export function NewOrderPage() {
       invoice_id:         fromInvoiceId || null,
       order_type:       orderType,
       order_date:       orderDate,
+      due_date:         dueDate || null,
       payment_terms:    paymentTerms,
       payment_method:   paymentMethod,
       payment_status:   paymentStatus,
+      currency:         currency,
       rush_services:    rushServices,
       shipping_charges: shippingCharges,
       discount_pct:     discountPct,
@@ -356,7 +450,11 @@ export function NewOrderPage() {
       const itemErr = validateItems()
       if (itemErr) { toast.error(itemErr); return }
     }
-    createOrder.mutate(buildPayload())
+    if (editOrderId) {
+      updateOrder.mutate(buildPayload())
+    } else {
+      createOrder.mutate(buildPayload())
+    }
   }
 
   const handleSendToSupplier = () => {
@@ -379,24 +477,28 @@ export function NewOrderPage() {
     <div className="no-page">
 
       {/* â”€â”€ Top action bar â”€â”€ */}
-      <div className="no-topbar">
-        <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
-        <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save</button>
-        <div className="no-split-wrap">
-          <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
-            <Send size={13} /> Send to Supplier
-          </button>
-          <button className="no-topbar-btn no-topbar-send no-split-chevron" onClick={e => setSendAnchor(e.currentTarget)}>
-            <ChevronDown size={13} />
-          </button>
-        </div>
+      <div className=”no-topbar”>
+        <button className=”no-topbar-btn no-topbar-cancel” onClick={() => navigate(-1)}>Cancel</button>
+        {!editOrderId && (
+          <button className=”no-topbar-btn no-topbar-draft” onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>
+        )}
+        {!editOrderId && (
+          <div className=”no-split-wrap”>
+            <button className=”no-topbar-btn no-topbar-send” onClick={handleSendToSupplier} disabled={createOrder.isPending}>
+              <Send size={13} /> Send to Supplier
+            </button>
+            <button className=”no-topbar-btn no-topbar-send no-split-chevron” onClick={e => setSendAnchor(e.currentTarget)}>
+              <ChevronDown size={13} />
+            </button>
+          </div>
+        )}
         <Menu anchorEl={sendAnchor} open={Boolean(sendAnchor)} onClose={() => setSendAnchor(null)}>
           <MenuItem onClick={() => { toast.info('Email integration coming soon - share order link manually'); setSendAnchor(null) }}>Send via Email</MenuItem>
           <MenuItem onClick={() => { toast.info('WhatsApp integration coming soon'); setSendAnchor(null) }}>Send via WhatsApp</MenuItem>
           <MenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Order link copied'); setSendAnchor(null) }}>Copy Link</MenuItem>
         </Menu>
-        <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending}>
-          {createOrder.isPending ? 'Saving...' : 'Save Order'}
+        <button className=”no-topbar-btn no-topbar-save” onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
+          {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
         </button>
       </div>
 
@@ -449,6 +551,11 @@ export function NewOrderPage() {
         <div className="no-info-field no-info-select-field">
           <span className="no-info-label">Order Date</span>
           <input type="date" className="no-info-select" value={orderDate} onChange={e => setOrderDate(e.target.value)} />
+        </div>
+
+        <div className="no-info-field no-info-select-field">
+          <span className="no-info-label">Due Date</span>
+          <input type="date" className="no-info-select" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
 
         <div className="no-info-field no-info-select-field">
@@ -544,8 +651,8 @@ export function NewOrderPage() {
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><ArtworkThumb label="Front" /></td>
-                          <td><ArtworkThumb label="Back" /></td>
+                          <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></td>
                           <td>
                             <input
                               type="text"
@@ -621,7 +728,7 @@ export function NewOrderPage() {
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><ArtworkThumb label="Front" /></td>
+                          <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -664,7 +771,7 @@ export function NewOrderPage() {
                       {dtf.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td><ArtworkThumb label="Art" /></td>
+                          <td><ImageUploadCell imageUrl={row.artworkImage} label="Art" uploading={uploadingImg[`${row.id}-artworkImage`]} onUpload={f => uploadItemImage(row.id, 'artworkImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { artworkImage: null })} /></td>
                           <td>
                             <input type="text" className="no-table-input no-table-input-wide" placeholder="Artwork name" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
@@ -801,8 +908,12 @@ export function NewOrderPage() {
               </div>
             </div>
             <div className="no-pricing-row">
-              <span>Tax ({taxPct}%)</span>
-              <strong>${fmt(taxAmt)}</strong>
+              <span>Tax</span>
+              <div className="no-pricing-input-group">
+                <input type="number" className="no-pricing-input no-pricing-pct" min={0} max={100} step={0.5} value={taxPct} onFocus={e => e.target.select()} onChange={e => setTaxPct(+e.target.value)} />
+                <span className="no-pricing-sym">%</span>
+                <span className="no-pricing-neg" style={{ color: '#374151' }}>${fmt(taxAmt)}</span>
+              </div>
             </div>
             <div className="no-pricing-total-row">
               <span>Total</span>
@@ -823,22 +934,24 @@ export function NewOrderPage() {
 
             <div className="no-payment-field">
               <label className="no-payment-label">Payment Method</label>
-              <div className="no-payment-method-row">
-                {(['cashapp', 'zelle', 'paypal'] as const).map(method => (
-                  <label key={method} className={`no-pay-opt${paymentMethod === method ? ' no-pay-opt-active' : ''}`}>
-                    <input type="radio" name="paymentMethod" value={method} checked={paymentMethod === method} onChange={() => setPaymentMethod(method)} className="no-type-radio" />
-                    {method.charAt(0).toUpperCase() + method.slice(1)}
-                  </label>
-                ))}
-              </div>
+              <select className="no-info-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as typeof paymentMethod)}>
+                <option value="cashapp">CashApp</option>
+                <option value="zelle">Zelle</option>
+                <option value="paypal">PayPal</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cash">Cash</option>
+                <option value="other">Other</option>
+              </select>
             </div>
 
             <div className="no-payment-field">
               <label className="no-payment-label">Currency</label>
-              <select className="no-info-select" defaultValue="usd">
-                <option value="usd">USD - US Dollar</option>
-                <option value="eur">EUR - Euro</option>
-                <option value="cad">CAD - Canadian Dollar</option>
+              <select className="no-info-select" value={currency} onChange={e => setCurrency(e.target.value)}>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="CAD">CAD - Canadian Dollar</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="AUD">AUD - Australian Dollar</option>
               </select>
             </div>
 
@@ -858,13 +971,13 @@ export function NewOrderPage() {
       </div>
 
       {/* â”€â”€ Sticky bottom bar â”€â”€ */}
-      <div className="no-bottom-bar">
-        <div className="no-bottom-left">
-          <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
-          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending}>Save</button>
+      <div className=”no-bottom-bar”>
+        <div className=”no-bottom-left”>
+          <button className=”no-topbar-btn no-topbar-cancel” onClick={() => navigate(-1)}>Cancel</button>
+          {!editOrderId && <button className=”no-topbar-btn no-topbar-draft” onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>}
         </div>
-        <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending}>
-          {createOrder.isPending ? 'Saving...' : 'Save Order'}
+        <button className=”no-topbar-btn no-topbar-save” onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
+          {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
         </button>
       </div>
 

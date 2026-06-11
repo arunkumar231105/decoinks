@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import {
   ArrowLeft, Calendar, ChevronDown, DollarSign,
-  FileText, Package, ShoppingCart, Truck, User, Send, MoreHorizontal, AlertTriangle,
+  FileText, Package, ShoppingCart, Truck, User, Send, MoreHorizontal, AlertTriangle, Edit3,
 } from 'lucide-react'
 import ArtworkUploader from '../components/ArtworkUploader'
 import { Menu, MenuItem } from '@mui/material'
@@ -267,6 +267,10 @@ export function OrderDetailPage() {
       </Menu>
 
       <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+        <MenuItem onClick={() => { setMoreAnchor(null); navigate('/orders/new', { state: { editOrderId: order.id } }) }}>
+          <Edit3 size={14} style={{ marginRight: 8, color: '#7c3aed' }} />
+          Edit Order
+        </MenuItem>
         <MenuItem onClick={handleConvertToPO}>
           <ShoppingCart size={14} style={{ marginRight: 8, color: '#0d9488' }} />
           Convert to Purchase Order
