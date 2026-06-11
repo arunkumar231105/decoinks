@@ -509,12 +509,27 @@ async function bulkCreateOrdersFromCsv(csvBuffer, { dryRun = false, createdBy = 
     }
   }
 
+  // Pre-resolve supplier IDs by name (batch, case-insensitive)
+  const supplierNameMap = new Map()
+  const uniqueSupplierNames = [...new Set(validRows.map(r => r.mapped.supplier_name).filter(Boolean))]
+  for (const name of uniqueSupplierNames) {
+    const { rows } = await query('SELECT id FROM suppliers WHERE LOWER(name) = LOWER($1) LIMIT 1', [name])
+    if (rows[0]) supplierNameMap.set(name.toLowerCase(), rows[0].id)
+  }
+
   const created = []; const skipped = []
   for (const { rowNumber, mapped, item, errors } of processed) {
     if (errors.length > 0) { skipped.push({ rowNumber, errors }); continue }
     try {
       const items = item ? [item] : []
-      const order = await create({ ...mapped, items, created_by: createdBy })
+      const resolvedSupplierId = mapped.supplier_id || supplierNameMap.get((mapped.supplier_name || '').toLowerCase()) || null
+      const order = await create({
+        ...mapped,
+        supplier_id:        resolvedSupplierId,
+        supplier_name_text: mapped.supplier_name || null,
+        items,
+        created_by: createdBy,
+      })
       created.push({ rowNumber, order_number: order.order_number, id: order.id })
     } catch (err) {
       skipped.push({ rowNumber, errors: [`DB error: ${err.message}`] })
@@ -524,10 +539,10 @@ async function bulkCreateOrdersFromCsv(csvBuffer, { dryRun = false, createdBy = 
 }
 
 function getOrderCsvTemplate() {
-  const headers = ['order_type','supplier_name','order_date','due_date','payment_terms','notes','contact_name','contact_email','contact_phone','shipping_address','item','color','size','qty','unit_price']
-  const ex1 = ['apparel','ABC Supplier','2026-06-10','2026-06-20','Net 30','Rush order','John Smith','john@abc.com','+1-555-1234','123 Main St, Dallas TX','T-Shirt Premium','Black','XL','50','5.00']
-  const ex2 = ['dtf','XYZ Vendor','2026-06-10','2026-06-18','Due on Receipt','','','','','','Custom Transfer','','10x12 in','100','1.50']
-  const ex3 = ['gangsheet','Print Co','2026-06-10','2026-06-25','Net 15','Gangsheet job','','','','','','','22" x 60"','5','18.00']
+  const headers = ['order_type','supplier_name','order_date','due_date','payment_terms','payment_status','notes','contact_name','contact_email','contact_phone','shipping_address','item','color','size','qty','unit_price','price_per_sheet','no_artworks']
+  const ex1 = ['apparel','ABC Supplier','2026-06-10','2026-06-20','Net 30','Unpaid','Rush order','John Smith','john@abc.com','+1-555-1234','123 Main St, Dallas TX','T-Shirt Premium','Black','XL','50','5.00','','']
+  const ex2 = ['dtf','XYZ Vendor','2026-06-10','2026-06-18','Due on Receipt','Unpaid','','Mike Ross','mike@xyz.com','+1-555-5678','','Custom Transfer','','10x12 in','100','1.50','','']
+  const ex3 = ['gangsheet','Print Co','2026-06-10','2026-06-25','Net 15','Unpaid','Gangsheet job','Chris Tan','chris@pm.com','+1-555-9012','','','','22" x 60"','5','','18.00','12']
   return [headers, ex1, ex2, ex3].map(r => r.join(',')).join('\n') + '\n'
 }
 

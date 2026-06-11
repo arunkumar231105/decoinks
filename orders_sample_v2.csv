@@ -1,0 +1,9 @@
+order_type,supplier_name,order_date,due_date,payment_terms,payment_status,notes,contact_name,contact_email,contact_phone,shipping_address,item,color,size,qty,unit_price,price_per_sheet,no_artworks
+apparel,Techno Cas,2026-06-11,2026-06-20,Net 30,Unpaid,Rush order - priority,John Smith,john@technocas.com,+1-555-1001,"123 Main St, Dallas TX 75201",T-Shirt Premium,Black,S,17,5.00,,
+apparel,Techno Cas,2026-06-11,2026-06-20,Net 30,Unpaid,Rush order - priority,John Smith,john@technocas.com,+1-555-1001,"123 Main St, Dallas TX 75201",T-Shirt Premium,Black,M,23,5.00,,
+apparel,ABC Printing,2026-06-11,2026-06-25,Due on Receipt,Unpaid,Wedding shirts,Sarah Lee,sarah@abc.com,+1-555-2002,"456 Oak Ave, Houston TX 77001",Polo Shirt,White,L,30,6.50,,
+apparel,ABC Printing,2026-06-11,2026-06-25,Due on Receipt,Unpaid,Wedding shirts,Sarah Lee,sarah@abc.com,+1-555-2002,"456 Oak Ave, Houston TX 77001",Polo Shirt,White,XL,20,6.50,,
+dtf,XYZ Transfers,2026-06-11,2026-06-18,Net 15,Unpaid,Logo transfers for client,Mike Ross,mike@xyz.com,+1-555-3003,"789 Elm Rd, Austin TX 78701",Full Color Logo,,10x12 in,100,1.50,,
+dtf,XYZ Transfers,2026-06-11,2026-06-18,Net 15,Unpaid,Logo transfers for client,Mike Ross,mike@xyz.com,+1-555-3003,"789 Elm Rd, Austin TX 78701",Back Print Design,,8x10 in,75,1.25,,
+gangsheet,Print Masters,2026-06-11,2026-06-22,Net 30,Unpaid,Batch gangsheet run,Chris Tan,chris@pm.com,+1-555-4004,"321 Pine St, San Antonio TX 78201",,,"22"" x 60""",5,,18.00,12
+gangsheet,Print Masters,2026-06-11,2026-06-22,Net 30,Unpaid,Batch gangsheet run,Chris Tan,chris@pm.com,+1-555-4004,"321 Pine St, San Antonio TX 78201",,,"22"" x 120""",3,,35.00,24
