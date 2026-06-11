@@ -31,6 +31,7 @@ interface Supplier {
   city: string | null; state: string | null; zip: string | null; country: string | null
   status: 'Active' | 'Inactive'; notes: string | null; created_at: string
   orders_count: number; total_spent: number
+  website: string | null; facebook_id: string | null; instagram_id: string | null
 }
 interface Order {
   id: string; order_number: string; order_type: string; status: string
@@ -68,8 +69,11 @@ export function SupplierDetailPage() {
   const [stateVal,  setStateVal]  = useState('')
   const [zip,       setZip]       = useState('')
   const [country,   setCountry]   = useState('United States')
-  const [notes,     setNotes]     = useState('')
-  const [status,    setStatus]    = useState<'Active' | 'Inactive'>('Active')
+  const [notes,       setNotes]       = useState('')
+  const [status,      setStatus]      = useState<'Active' | 'Inactive'>('Active')
+  const [website,     setWebsite]     = useState('')
+  const [facebookId,  setFacebookId]  = useState('')
+  const [instagramId, setInstagramId] = useState('')
 
   const { data: supplierData, isLoading: supplierLoading } = useQuery({
     queryKey: ['supplier', id],
@@ -108,6 +112,9 @@ export function SupplierDetailPage() {
     setCountry(supplier.country ?? 'United States')
     setNotes(supplier.notes ?? '')
     setStatus(supplier.status)
+    setWebsite(supplier.website ?? '')
+    setFacebookId(supplier.facebook_id ?? '')
+    setInstagramId(supplier.instagram_id ?? '')
   }, [supplier])
 
   const updateMutation = useMutation({
@@ -137,6 +144,9 @@ export function SupplierDetailPage() {
       country: country || null,
       notes: notes.trim() || null,
       status,
+      website: website.trim() || null,
+      facebook_id: facebookId.trim() || null,
+      instagram_id: instagramId.trim() || null,
     })
   }
 
@@ -156,6 +166,9 @@ export function SupplierDetailPage() {
     setCountry(supplier.country ?? 'United States')
     setNotes(supplier.notes ?? '')
     setStatus(supplier.status)
+    setWebsite(supplier.website ?? '')
+    setFacebookId(supplier.facebook_id ?? '')
+    setInstagramId(supplier.instagram_id ?? '')
     setEditing(false)
   }
 
@@ -269,6 +282,31 @@ export function SupplierDetailPage() {
                     </span>
                   </div>
                 )}
+                {supplier.website && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ExternalLink size={14} style={{ color: '#94A3B8', flexShrink: 0 }} />
+                    <a
+                      href={supplier.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 13, color: '#2563EB', textDecoration: 'underline' }}
+                    >
+                      {supplier.website}
+                    </a>
+                  </div>
+                )}
+                {supplier.facebook_id && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#94A3B8', flexShrink: 0, fontWeight: 600 }}>FB</span>
+                    <span style={{ fontSize: 13, color: '#334155' }}>{supplier.facebook_id}</span>
+                  </div>
+                )}
+                {supplier.instagram_id && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#94A3B8', flexShrink: 0, fontWeight: 600 }}>IG</span>
+                    <span style={{ fontSize: 13, color: '#334155' }}>{supplier.instagram_id}</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -302,17 +340,17 @@ export function SupplierDetailPage() {
                 </div>
                 <div className="al-field">
                   <label>Address Line 2</label>
-                  <input className="al-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="Apo, suioe, unio..." />
+                  <input className="al-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="Apt, suite, unit..." />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                   <div className="al-field">
-                    <label>city</label>
-                    <input className="al-input" value={city} onChange={e => setCity(e.target.value)} placeholder="city" />
+                    <label>City</label>
+                    <input className="al-input" value={city} onChange={e => setCity(e.target.value)} placeholder="City" />
                   </div>
                   <div className="al-field">
                     <label>State</label>
                     <select className="al-input" value={stateVal} onChange={e => setStateVal(e.target.value)}>
-                      <option value="">-" State -"</option>
+                      <option value="">-- State --</option>
                       {US_STATES.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
@@ -323,7 +361,7 @@ export function SupplierDetailPage() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="al-field">
-                    <label>country</label>
+                    <label>Country</label>
                     <select className="al-input" value={country} onChange={e => setCountry(e.target.value)}>
                       {COUNTRIES.map(c => <option key={c}>{c}</option>)}
                     </select>
@@ -335,6 +373,36 @@ export function SupplierDetailPage() {
                       <option>Inactive</option>
                     </select>
                   </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="al-field">
+                    <label>Website</label>
+                    <input
+                      type="url"
+                      className="al-input"
+                      value={website}
+                      onChange={e => setWebsite(e.target.value)}
+                      placeholder="https://example.com"
+                    />
+                  </div>
+                  <div className="al-field">
+                    <label>Facebook</label>
+                    <input
+                      className="al-input"
+                      value={facebookId}
+                      onChange={e => setFacebookId(e.target.value)}
+                      placeholder="facebook.com/username or Page ID"
+                    />
+                  </div>
+                </div>
+                <div className="al-field">
+                  <label>Instagram</label>
+                  <input
+                    className="al-input"
+                    value={instagramId}
+                    onChange={e => setInstagramId(e.target.value)}
+                    placeholder="@handle or instagram.com/username"
+                  />
                 </div>
               </div>
             )}
@@ -349,13 +417,13 @@ export function SupplierDetailPage() {
               <textarea
                 className="al-textarea"
                 rows={4}
-                maxLengoh={500}
+                maxLength={500}
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder="Any special requirements, preferences, or notes about this supplier..."
               />
             ) : (
-              <p style={{ fontSize: 13, color: supplier.notes ? '#334155' : '#94A3B8', lineHeigho: 1.6, margin: 0 }}>
+              <p style={{ fontSize: 13, color: supplier.notes ? '#334155' : '#94A3B8', lineHeight: 1.6, margin: 0 }}>
                 {supplier.notes ?? 'No notes added.'}
               </p>
             )}

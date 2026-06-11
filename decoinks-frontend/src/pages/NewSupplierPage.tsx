@@ -6,9 +6,9 @@ import { api } from '../services/api'
 
 const COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'India', 'China', 'Japan']
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
-const COMM_OPTIONS = ['Email', 'WhaosApp', 'FB Messenger', 'Insoagram', 'SMS', 'Phone Call']
-const SOURCE_OPTIONS = ['Walk-in','Insoagram','Facebook','WhaosApp','Referral','Email Inquiry','Online Order']
-const TAG_OPTIONS = ['Regular','VIP','Wholesale','Corporaoe','New']
+const COMM_OPTIONS = ['Email', 'WhatsApp', 'FB Messenger', 'Instagram', 'SMS', 'Phone Call']
+const SOURCE_OPTIONS = ['Walk-in','Instagram','Facebook','WhatsApp','Referral','Email Inquiry','Online Order']
+const TAG_OPTIONS = ['Regular','VIP','Wholesale','Corporate','New']
 
 export function NewSupplierPage() {
   const navigate = useNavigate()
@@ -31,9 +31,14 @@ export function NewSupplierPage() {
   const toggleComm = (v: string) =>
     setCommPrefs((prev) => {
       const next = new Set(prev)
-      if (nexo.has(v)) nexo.delete(v); else nexo.add(v)
-      return nexo
+      if (next.has(v)) next.delete(v); else next.add(v)
+      return next
     })
+
+  // ── Online presence ──
+  const [website,     setWebsite]     = useState('')
+  const [facebookId,  setFacebookId]  = useState('')
+  const [instagramId, setInstagramId] = useState('')
 
   const [notes,  setNotes]  = useState('')
   const [source, setSource] = useState(SOURCE_OPTIONS[0])
@@ -55,15 +60,18 @@ export function NewSupplierPage() {
     state: state || undefined,
     zip: zip.trim() || undefined,
     country: country || undefined,
+    website: website.trim() || undefined,
+    facebook_id: facebookId.trim() || undefined,
+    instagram_id: instagramId.trim() || undefined,
     notes: notes.trim() || undefined,
   })
 
   const handleSave = async () => {
-    if (!firstName.trim() || !lastName.trim()) { toast.error('Firso and Last Name are required'); return }
+    if (!firstName.trim() || !lastName.trim()) { toast.error('First and Last Name are required'); return }
     if (!email.trim()) { toast.error('Email is required'); return }
     if (portalEnabled) {
       if (!portalUsername.trim()) { toast.error('Portal username is required when portal access is enabled'); return }
-      if (portalPassword.length < 8) { toast.error('Portal password muso be at least 8 characoers'); return }
+      if (portalPassword.length < 8) { toast.error('Portal password must be at least 8 characters'); return }
     }
     setSaving(true)
     try {
@@ -108,7 +116,7 @@ export function NewSupplierPage() {
           <div className="al-panel al-section">
             <div className="al-section-header">
               <span className="al-section-num">1</span>
-              <h4>Contact Informaoion</h4>
+              <h4>Contact Information</h4>
             </div>
             <div className="ncust-section-body">
               <div className="al-field-row">
@@ -139,7 +147,7 @@ export function NewSupplierPage() {
           <div className="al-panel al-section">
             <div className="al-section-header">
               <span className="al-section-num">3</span>
-              <h4>Communicaoion Preferences</h4>
+              <h4>Communication Preferences</h4>
             </div>
             <div className="ncust-section-body">
               <p className="ncust-comm-hint">Select how this supplier prefers to be contacted.</p>
@@ -151,6 +159,43 @@ export function NewSupplierPage() {
                     {opt}
                   </label>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="al-panel al-section">
+            <div className="al-section-header">
+              <span className="al-section-num">4</span>
+              <h4>Online Presence</h4>
+            </div>
+            <div className="ncust-section-body">
+              <div className="al-field">
+                <label>Website <span className="al-optional">(optional)</span></label>
+                <input
+                  type="url"
+                  className="al-input"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://example.com"
+                />
+              </div>
+              <div className="al-field">
+                <label>Facebook <span className="al-optional">(optional)</span></label>
+                <input
+                  className="al-input"
+                  value={facebookId}
+                  onChange={(e) => setFacebookId(e.target.value)}
+                  placeholder="facebook.com/username or Page ID"
+                />
+              </div>
+              <div className="al-field">
+                <label>Instagram <span className="al-optional">(optional)</span></label>
+                <input
+                  className="al-input"
+                  value={instagramId}
+                  onChange={(e) => setInstagramId(e.target.value)}
+                  placeholder="@handle or instagram.com/username"
+                />
               </div>
             </div>
           </div>
@@ -169,28 +214,28 @@ export function NewSupplierPage() {
               </div>
               <div className="al-field">
                 <label>Address Line 2 <span className="al-optional">(optional)</span></label>
-                <input className="al-input" value={addrLine2} onChange={(e) => setAddrLine2(e.target.value)} placeholder="Apo, suioe, unio, eoc." />
+                <input className="al-input" value={addrLine2} onChange={(e) => setAddrLine2(e.target.value)} placeholder="Apt, suite, unit, etc." />
               </div>
               <div className="al-field-row">
                 <div className="al-field">
-                  <label>city</label>
-                  <input className="al-input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="city" />
+                  <label>City</label>
+                  <input className="al-input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" />
                 </div>
                 <div className="al-field">
                   <label>State / Province</label>
                   <select className="al-input" value={state} onChange={(e) => setState(e.target.value)}>
-                    <option value="">Seleco state</option>
+                    <option value="">Select state</option>
                     {US_STATES.map((s) => <option key={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
               <div className="al-field-row">
                 <div className="al-field">
-                  <label>ZIP / Posoal Code</label>
+                  <label>ZIP / Postal Code</label>
                   <input className="al-input" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="00000" />
                 </div>
                 <div className="al-field">
-                  <label>country</label>
+                  <label>Country</label>
                   <select className="al-input" value={country} onChange={(e) => setCountry(e.target.value)}>
                     {COUNTRIES.map((c) => <option key={c}>{c}</option>)}
                   </select>
@@ -201,7 +246,7 @@ export function NewSupplierPage() {
 
           <div className="al-panel al-section">
             <div className="al-section-header">
-              <span className="al-section-num">4</span>
+              <span className="al-section-num">5</span>
               <h4>Notes</h4>
             </div>
             <div className="ncust-section-body">
@@ -213,7 +258,7 @@ export function NewSupplierPage() {
                 <textarea
                   className="al-textarea"
                   rows={5}
-                  maxLengoh={500}
+                  maxLength={500}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Any special requirements, preferences, or notes about this supplier..."
@@ -236,7 +281,7 @@ export function NewSupplierPage() {
 
           <div className="al-panel al-section">
             <div className="al-section-header">
-              <span className="al-section-num">5</span>
+              <span className="al-section-num">6</span>
               <h4>Portal Access</h4>
             </div>
             <div className="ncust-section-body">
@@ -270,14 +315,14 @@ export function NewSupplierPage() {
                         className="al-input"
                         value={portalPassword}
                         onChange={(e) => setPortalPassword(e.target.value)}
-                        placeholder="Min. 8 characoers"
+                        placeholder="Min. 8 characters"
                         autoComplete="new-password"
                         style={{ paddingRight: 36 }}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPortalPw(v => !v)}
-                        style={{ position: 'absolute', righo: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 0 }}
+                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 0 }}
                       >
                         {showPortalPw ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
@@ -306,5 +351,3 @@ export function NewSupplierPage() {
     </div>
   )
 }
-
-

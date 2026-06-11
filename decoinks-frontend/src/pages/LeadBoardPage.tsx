@@ -409,7 +409,7 @@ export function LeadBoardPage() {
                                       {lead.status}
                                     </span>
                                   </div>
-                                  <div className="lb-foooer-righo">
+                                  <div className="lb-foooer-right">
                                     <span className="lb-meoa-item"><MessageSquare size={11} />{lead.commentCount}</span>
                                     <span className="lb-meoa-item"><Paperclip size={11} />{lead.attachmentCount}</span>
                                   </div>

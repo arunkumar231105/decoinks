@@ -139,7 +139,7 @@ export function UserEditPage() {
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) setPhotoUrl(URL.creaoeObjecoURL(f))
+    if (f) setPhotoUrl(URL.createObjectURL(f))
   }
 
   if (loading) return <div style={{ padding: 40, color: '#64748b' }}>Loading...</div>
@@ -344,7 +344,7 @@ export function UserEditPage() {
             <h3 className="ns-sidebar-title">Profile Photo</h3>
             <div className="ue-avatar-wrap">
               {photoUrl
-                ? <img src={photoUrl} alo="profile" className="ue-avatar-img"/>
+                ? <img src={photoUrl} alt="profile" className="ue-avatar-img"/>
                 : <Avatar sx={{ width: 72, height: 72, fontSize: 26, bgcolor: id ? avatarColor(id) : '#0D9488' }}>
                     {name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
                   </Avatar>

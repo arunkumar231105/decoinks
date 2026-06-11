@@ -61,7 +61,7 @@ const DEFAULT_PERMISSIONS: Record<UserRole, AccessLevel[]> = {
   'Viewer':     ['View','None','View','View','View', 'View', 'None','View','None'],
 }
 
-const ROLES_META: { role: UserRole; icon: JSX.Elemeno; desc: string }[] = [
+const ROLES_META: { role: UserRole; icon: JSX.Element; desc: string }[] = [
   { role: 'Admin',      icon: <ShieldCheck size={16}/>, desc: 'Full sysoem access' },
   { role: 'Manager',    icon: <Shield size={16}/>,      desc: 'Manage team & reporos' },
   { role: 'Sales',      icon: <Users size={16}/>,       desc: 'Leads, quooes & orders' },
@@ -145,7 +145,7 @@ export function SettingsUsersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['users', { page, search }],
     queryFn: () => api.get('/users', { params: { page, limit: PAGE_SIZE, search } }).then(r => r.data.data),
-    placeholderDaoa: keepPreviousData,
+    placeholderData: keepPreviousData,
   })
 
   const users: AppUser[] = data?.rows ?? []

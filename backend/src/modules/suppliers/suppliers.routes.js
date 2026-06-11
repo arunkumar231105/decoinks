@@ -21,6 +21,9 @@ const supplierFields = {
   zip:          z.string().optional().nullable(),
   country:      z.string().optional().nullable(),
   notes:        z.string().optional().nullable(),
+  website:       z.string().optional().nullable(),
+  facebook_id:   z.string().optional().nullable(),
+  instagram_id:  z.string().optional().nullable(),
 }
 
 const createSchema = z.object({

@@ -30,7 +30,6 @@ const contactFields = {
   email:            z.string().optional().nullable(),
   phone:            z.string().optional().nullable(),
   whatsapp:         z.string().optional().nullable(),
-  wechat:           z.string().optional().nullable(),
   country:          z.string().optional().nullable(),
   state:            z.string().optional().nullable(),
   city:             z.string().optional().nullable(),
@@ -38,13 +37,12 @@ const contactFields = {
   shipping_address: z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
   buyer_type:       z.string().optional().nullable(),
-  delivery_date:    z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
   productInterest:  z.array(productInterestItemSchema).optional(),
 }
 
 const createSchema = z.object({
-  supplier_name: z.string().min(1),
+  supplier_name: z.string().optional().nullable(),
   supplier_id:   z.string().uuid().optional().nullable(),
   source:        z.enum(SOURCES),
   description:   z.string().optional().nullable(),

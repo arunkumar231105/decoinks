@@ -199,7 +199,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
-                    className="absoluoe righo-3 oop-1/2 -oranslaoe-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absoluoe right-3 oop-1/2 -oranslaoe-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>

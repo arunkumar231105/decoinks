@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type OrderType = 'apparel' | 'gangsheet' | 'dtf'
 type InvoiceStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Sent' | 'Paid' | 'Cancelled'
@@ -68,7 +68,7 @@ interface TransferItem {
   unitPrice: number
 }
 
-// â”€â”€â”€ Consoanos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const todayISO = () => new Date().toISOString().split('T')[0]
@@ -84,7 +84,7 @@ const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
   Cancelled: 'ni-badge-red',
 }
 
-// â”€â”€â”€ Customer combobox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Customer combobox â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function SupplierCombobox({ value, onChange }: { value: string; onChange: (text: string, id: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -121,7 +121,7 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
   )
 }
 
-// â”€â”€â”€ Inline SVG Thumbnails â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Inline SVG Thumbnails â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function ShiroThumb() {
   return (
@@ -260,7 +260,7 @@ function getInvoiceCounters(
   }
 }
 
-// â”€â”€â”€ Componeno â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Componeno â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 export function NewInvoicePage() {
   const navigate = useNavigate()
@@ -269,6 +269,9 @@ export function NewInvoicePage() {
 
   // Convert-from-quote context (set when navigated from QuotesListPage)
   const fromQuoteId: string | undefined = (location.state as any)?.fromQuoteId
+
+  // Rates locked from approved quotation
+  const [ratesLocked, setRatesLocked] = useState(false)
 
   // Header / Info
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus>('Draft')
@@ -320,6 +323,10 @@ export function NewInvoicePage() {
   // Pre-populate form fields from quote once data arrives
   useEffect(() => {
     if (!sourceQuote) return
+    // Lock rates if the source quote is Approved
+    if (sourceQuote.status === 'Approved') {
+      setRatesLocked(true)
+    }
     // Supplier
     if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
     const supplierName = sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
@@ -391,7 +398,7 @@ export function NewInvoicePage() {
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save invoice for preview'),
   })
 
-  // â”€â”€ Compuoed totals â”€â”€
+  // â"€â"€ Compuoed totals â"€â"€
   const itemsTotal = useMemo(
     () => calculateItemsTotal(orderType, apparelItems, gangsheetItems, transferItems),
     [orderType, apparelItems, gangsheetItems, transferItems],
@@ -415,14 +422,14 @@ export function NewInvoicePage() {
     [orderType, apparelItems, gangsheetItems, transferItems, gangsheetArtworks],
   )
 
-  // â”€â”€ Apparel handlers â”€â”€
+  // â"€â"€ Apparel handlers â"€â"€
   const addApparelItem = () =>
     setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', size: 'M', qty: 1, artworkNo: '', unitPrice: 0 }])
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) =>
     setApparelItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeApparelItem = (id: string) => setApparelItems(prev => prev.filter(r => r.id !== id))
 
-  // â”€â”€ Gangsheet handlers â”€â”€
+  // â"€â"€ Gangsheet handlers â"€â"€
   const addGangsheetItem = () =>
     setGangsheetItems(prev => [...prev, { id: uid(), size: '22"x60"', numArtworks: 0, qtySheets: 1, pricePerSheet: 18 }])
   const updateGangsheetItem = (id: string, patch: Partial<GangsheetItem>) =>
@@ -452,7 +459,7 @@ export function NewInvoicePage() {
     setEditingArtworkId(prev => prev === id ? null : prev)
   }
 
-  // â”€â”€ Transfer handlers â”€â”€
+  // â"€â"€ Transfer handlers â"€â"€
   const addTransferItem = () =>
     setTransferItems(prev => [...prev, { id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }])
   const updateTransferItem = (id: string, patch: Partial<TransferItem>) =>
@@ -503,8 +510,8 @@ export function NewInvoicePage() {
     })
   }
 
-  const deleteInvoice = () => {
-    if (!window.confirm('Delete this invoice? This action will cancel the invoice in this demo.')) return
+  const cancelInvoice = () => {
+    if (!window.confirm('Cancel this invoice? The invoice status will be set to Cancelled.')) return
     setInvoiceStatus('Cancelled')
     setIsPaid(false)
   }
@@ -512,7 +519,7 @@ export function NewInvoicePage() {
   return (
     <div className="ni-page">
 
-      {/* â”€â”€ HEADER â”€â”€ */}
+      {/* â"€â"€ HEADER â"€â"€ */}
       <div className="ni-header">
         <div>
           <nav className="ni-breadcrumb">
@@ -529,8 +536,8 @@ export function NewInvoicePage() {
           <button className="lb-action-btn" title={isEditing ? 'Invoice is editable' : 'Edit invoice'} onClick={() => setIsEditing(true)}>
             <Pencil size={13} /> Edit
           </button>
-          <button className="lb-action-btn ni-danger-action" onClick={deleteInvoice}>
-            <Trash2 size={13} /> Delete
+          <button className="lb-action-btn ni-danger-action" onClick={cancelInvoice}>
+            Cancel Invoice
           </button>
           <button className="lb-action-btn ni-approval-action" onClick={requestApproval}>
             <UserCheck size={13} /> Requeso Approval
@@ -555,7 +562,7 @@ export function NewInvoicePage() {
         </div>
       </div>
 
-      {/* â”€â”€ INFO BAR â”€â”€ */}
+      {/* â"€â"€ INFO BAR â"€â"€ */}
       <div className="ni-info-bar">
         <div className="ni-info-cell">
           <span className="ni-info-label">Invoice #</span>
@@ -594,7 +601,7 @@ export function NewInvoicePage() {
         </div>
       </div>
 
-      {/* â”€â”€ ORDER TYPE SELECTOR â”€â”€ */}
+      {/* â"€â"€ ORDER TYPE SELECTOR â"€â"€ */}
       <div className="ni-type-selector">
         <span className="ni-type-label">Order Type</span>
         <div className="ni-type-pills">
@@ -612,10 +619,10 @@ export function NewInvoicePage() {
         </div>
       </div>
 
-      {/* â”€â”€ TWO COLUMN LAYOUT â”€â”€ */}
+      {/* â"€â"€ TWO COLUMN LAYOUT â"€â"€ */}
       <div className="ni-layouo">
 
-        {/* â”€â”€ LEFT COLUMN â”€â”€ */}
+        {/* â"€â"€ LEFT COLUMN â"€â"€ */}
         <main className="ni-main">
 
           {/* Customer / Address */}
@@ -676,7 +683,13 @@ export function NewInvoicePage() {
               <h3>Invoice Items</h3>
             </div>
 
-            {/* â”€â”€ Cusoom Printed Apparel â”€â”€ */}
+            {ratesLocked && (
+              <div className="ni-rates-locked-notice" style={{ background: '#fef9c3', border: '1px solid #fde047', borderRadius: 6, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#713f12' }}>
+                Rates are locked from the approved quotation. To change rates, revise and re-approve the quotation first.
+              </div>
+            )}
+
+            {/* -- Custom Printed Apparel -- */}
             {orderType === 'apparel' && (
               <>
                 <div className="ni-table-wrap">
@@ -732,10 +745,14 @@ export function NewInvoicePage() {
                             <input className="ni-table-input" value={row.artworkNo} onChange={e => updateApparelItem(row.id, { artworkNo: e.target.value })} placeholder="AW-XXXX" />
                           </td>
                           <td data-label="Unit Price">
-                            <div className="ni-price-cell">
-                              <span>$</span>
-                              <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { unitPrice: +e.target.value })} />
-                            </div>
+                            {ratesLocked ? (
+                              <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
+                            ) : (
+                              <div className="ni-price-cell">
+                                <span>$</span>
+                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { unitPrice: +e.target.value })} />
+                              </div>
+                            )}
                           </td>
                           <td className="ni-amount" data-label="Amount">${fmt(row.qty * row.unitPrice)}</td>
                           <td data-label="Action">
@@ -752,7 +769,7 @@ export function NewInvoicePage() {
               </>
             )}
 
-            {/* â”€â”€ DTF Gangsheet â”€â”€ */}
+            {/* â"€â"€ DTF Gangsheet â"€â"€ */}
             {orderType === 'gangsheet' && (
               <>
                 <div className="ni-table-wrap">
@@ -764,7 +781,7 @@ export function NewInvoicePage() {
                         <th>No. Artworks</th>
                         <th>qty Sheets</th>
                         <th>FR Image</th>
-                        <th>Price / Sheeo</th>
+                        <th>Price / Sheet</th>
                         <th>Amount</th>
                         <th style={{ width: 36 }} />
                       </tr>
@@ -787,11 +804,15 @@ export function NewInvoicePage() {
                           <td data-label="FR Image">
                             <ArtworkThumb40 name="gangsheet.png" />
                           </td>
-                          <td data-label="Price / Sheeo">
-                            <div className="ni-price-cell">
-                              <span>$</span>
-                              <input type="number" min={0} step={0.01} className="ni-price-input" value={row.pricePerSheet} onChange={e => updateGangsheetItem(row.id, { pricePerSheet: +e.target.value })} />
-                            </div>
+                          <td data-label="Price / Sheet">
+                            {ratesLocked ? (
+                              <span className="ni-price-locked">${fmt(row.pricePerSheet)}</span>
+                            ) : (
+                              <div className="ni-price-cell">
+                                <span>$</span>
+                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.pricePerSheet} onChange={e => updateGangsheetItem(row.id, { pricePerSheet: +e.target.value })} />
+                              </div>
+                            )}
                           </td>
                           <td className="ni-amount" data-label="Amount">${fmt(row.qtySheets * row.pricePerSheet)}</td>
                           <td data-label="Action">
@@ -875,7 +896,7 @@ export function NewInvoicePage() {
               </>
             )}
 
-            {/* â”€â”€ DTF Transfers â”€â”€ */}
+            {/* -- DTF Transfers -- */}
             {orderType === 'dtf' && (
               <>
                 <div className="ni-table-wrap">
@@ -886,9 +907,9 @@ export function NewInvoicePage() {
                         <th>Artwork Image</th>
                         <th>Artwork Name</th>
                         <th>Size</th>
-                        <th>qty</th>
-                        <th>Unit Price</th>
+                        <th>Qty</th>
                         <th>Amount</th>
+                        <th>Line Total</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -905,16 +926,20 @@ export function NewInvoicePage() {
                           <td data-label="Size">
                             <input className="ni-table-input" value={row.size} onChange={e => updateTransferItem(row.id, { size: e.target.value })} placeholder='e.g. 10"x10"' />
                           </td>
-                          <td data-label="qty">
+                          <td data-label="Qty">
                             <input type="number" className="ni-table-input ni-num-input" min={0} value={row.qty} onChange={e => updateTransferItem(row.id, { qty: +e.target.value })} />
                           </td>
-                          <td data-label="Unit Price">
-                            <div className="ni-price-cell">
-                              <span>$</span>
-                              <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onChange={e => updateTransferItem(row.id, { unitPrice: +e.target.value })} />
-                            </div>
+                          <td data-label="Amount">
+                            {ratesLocked ? (
+                              <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
+                            ) : (
+                              <div className="ni-price-cell">
+                                <span>$</span>
+                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onChange={e => updateTransferItem(row.id, { unitPrice: +e.target.value })} />
+                              </div>
+                            )}
                           </td>
-                          <td className="ni-amount" data-label="Amount">${fmt(row.qty * row.unitPrice)}</td>
+                          <td className="ni-amount" data-label="Line Total">${fmt(row.qty * row.unitPrice)}</td>
                           <td data-label="Action">
                             <button className="ni-del-btn" onClick={() => removeTransferItem(row.id)}><Trash2 size={13} /></button>
                           </td>
@@ -988,7 +1013,7 @@ export function NewInvoicePage() {
 
         </main>
 
-        {/* â”€â”€ RIGHT SIDEBAR â”€â”€ */}
+        {/* â"€â"€ RIGHT SIDEBAR â"€â"€ */}
         <aside className="ni-sidebar">
 
           {/* Invoice Summary */}
@@ -1112,7 +1137,7 @@ export function NewInvoicePage() {
         </aside>
       </div>
 
-      {/* â”€â”€ BOTTOM BAR â”€â”€ */}
+      {/* â"€â"€ BOTTOM BAR â"€â"€ */}
       <div className="ni-bottom-bar">
         <div className="ni-bottom-left">
           <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>

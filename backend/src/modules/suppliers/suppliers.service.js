@@ -74,19 +74,20 @@ async function getOrders(supplierId, { page = 1, limit = 10 }) {
   return { rows, total }
 }
 
-async function create({ name, email, phone, company, address_line1, address_line2, city, state, zip, country, notes, created_by }) {
+async function create({ name, email, phone, company, address_line1, address_line2, city, state, zip, country, notes, website, facebook_id, instagram_id, created_by }) {
   const client = await getClient()
   try {
     await client.query('BEGIN')
 
     const { rows } = await client.query(
-      `INSERT INTO suppliers (name, email, phone, company, address_line1, address_line2, city, state, zip, country, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO suppliers (name, email, phone, company, address_line1, address_line2, city, state, zip, country, notes, website, facebook_id, instagram_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [name, email || null, phone || null, company || null,
        address_line1 || null, address_line2 || null,
        city || null, state || null, zip || null,
-       country || 'United States', notes || null, created_by]
+       country || 'United States', notes || null,
+       website || null, facebook_id || null, instagram_id || null, created_by]
     )
     const supplier = rows[0]
 
@@ -107,7 +108,7 @@ async function create({ name, email, phone, company, address_line1, address_line
 }
 
 async function update(id, fields, actorId) {
-  const allowed = ['name','email','phone','company','address_line1','address_line2','city','state','zip','country','status','notes']
+  const allowed = ['name','email','phone','company','address_line1','address_line2','city','state','zip','country','status','notes','website','facebook_id','instagram_id']
   const sets = []
   const params = []
 

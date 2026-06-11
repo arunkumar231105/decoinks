@@ -7,9 +7,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type OrderType = 'apparel' | 'gangsheet' | 'dtf'
 type PaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Refunded'
@@ -28,9 +28,9 @@ interface ApparelItem {
 interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null }
 interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Helpers
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -55,9 +55,9 @@ const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premiu
 const initGangsheet= (): GangsheetItem[] => [{ id: uid(), size: '', noArtworks: 1, qty: 1, pricePerSheet: 0 }]
 const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // ArtworkThumb
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function ImageUploadCell({
   imageUrl, label, onUpload, onRemove, uploading,
@@ -89,9 +89,9 @@ function ImageUploadCell({
   )
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Main component
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 export function NewOrderPage() {
   const navigate = useNavigate()
@@ -323,7 +323,7 @@ export function NewOrderPage() {
     setEditingShipping(false)
   }, [supplierId])
 
-  // â”€â”€ Derived totals â”€â”€
+  // â"€â"€ Derived totals â"€â"€
   const itemsTotal  = useMemo(() => {
     if (orderType === 'apparel')   return apparel.reduce((s, r) => s + r.unitPrice * r.qty, 0)
     if (orderType === 'gangsheet') return gangsheet.reduce((s, r) => s + r.pricePerSheet * r.qty, 0)
@@ -335,7 +335,7 @@ export function NewOrderPage() {
   const taxAmt      = useMemo(() => +((subtotal - discountAmt) * (taxPct / 100)).toFixed(2), [subtotal, discountAmt])
   const total       = useMemo(() => +(subtotal - discountAmt + taxAmt).toFixed(2), [subtotal, discountAmt, taxAmt])
 
-  // â”€â”€ Table helpers â”€â”€
+  // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeApparel  = (id: string) => setApparel(prev => prev.filter(r => r.id !== id))
   const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }])
@@ -348,7 +348,7 @@ export function NewOrderPage() {
   const removeDtf      = (id: string) => setDtf(prev => prev.filter(r => r.id !== id))
   const addDtf         = () => setDtf(prev => [...prev, { id: uid(), artworkName: '', size: '12 x 16 in', qty: 1, unitPrice: 0 }])
 
-  // â”€â”€ Save â”€â”€
+  // â"€â"€ Save â"€â"€
   const [sendToPortalAfterSave, setSendToPortalAfterSave] = useState(false)
 
   const createOrder = useMutation({
@@ -471,25 +471,25 @@ export function NewOrderPage() {
 
   const psStyle = PAYMENT_STATUS_STYLES[paymentStatus]
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   // Render
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   return (
     <div className="no-page">
 
-      {/* â”€â”€ Top action bar â”€â”€ */}
-      <div className=”no-topbar”>
-        <button className=”no-topbar-btn no-topbar-cancel” onClick={() => navigate(-1)}>Cancel</button>
+      {/* â"€â"€ Top action bar â"€â"€ */}
+      <div className="no-topbar">
+        <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
         {!editOrderId && (
-          <button className=”no-topbar-btn no-topbar-draft” onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>
+          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>
         )}
         {!editOrderId && (
-          <div className=”no-split-wrap”>
-            <button className=”no-topbar-btn no-topbar-send” onClick={handleSendToSupplier} disabled={createOrder.isPending}>
+          <div className="no-split-wrap">
+            <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
               <Send size={13} /> Send to Supplier
             </button>
-            <button className=”no-topbar-btn no-topbar-send no-split-chevron” onClick={e => setSendAnchor(e.currentTarget)}>
+            <button className="no-topbar-btn no-topbar-send no-split-chevron" onClick={e => setSendAnchor(e.currentTarget)}>
               <ChevronDown size={13} />
             </button>
           </div>
@@ -499,12 +499,12 @@ export function NewOrderPage() {
           <MenuItem onClick={() => { toast.info('WhatsApp integration coming soon'); setSendAnchor(null) }}>Send via WhatsApp</MenuItem>
           <MenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Order link copied'); setSendAnchor(null) }}>Copy Link</MenuItem>
         </Menu>
-        <button className=”no-topbar-btn no-topbar-save” onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
+        <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
           {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
         </button>
       </div>
 
-      {/* â”€â”€ Info bar â”€â”€ */}
+      {/* â"€â"€ Info bar â"€â"€ */}
       <div className="no-info-bar">
         <div className="no-info-field">
           <span className="no-info-label">Order #</span>
@@ -581,7 +581,7 @@ export function NewOrderPage() {
         </div>
       </div>
 
-      {/* â”€â”€ Order Type pills â”€â”€ */}
+      {/* â"€â"€ Order Type pills â"€â"€ */}
       <div className="no-order-type-row">
         <span className="no-type-row-label">Order Type</span>
         {([
@@ -596,10 +596,10 @@ export function NewOrderPage() {
         ))}
       </div>
 
-      {/* â”€â”€ Two-column body â”€â”€ */}
+      {/* â"€â"€ Two-column body â"€â"€ */}
       <div className="no-body no-body-cols">
 
-        {/* â”€â”€ LEFT / MAIN â”€â”€ */}
+        {/* â"€â"€ LEFT / MAIN â"€â"€ */}
         <div className="no-main">
 
           {/* Table card */}
@@ -610,7 +610,7 @@ export function NewOrderPage() {
               {orderType === 'dtf' && 'DTF Transfers'}
             </h3>
 
-            {/* â”€â”€ Apparel table â”€â”€ */}
+            {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
               <>
                 <div className="no-table-wrap">
@@ -694,7 +694,7 @@ export function NewOrderPage() {
               </>
             )}
 
-            {/* â”€â”€ Gangsheet table â”€â”€ */}
+            {/* â"€â"€ Gangsheet table â"€â"€ */}
             {orderType === 'gangsheet' && (
               <>
                 <div className="no-table-wrap">
@@ -752,7 +752,7 @@ export function NewOrderPage() {
               </>
             )}
 
-            {/* â”€â”€ DTF Transfers table â”€â”€ */}
+            {/* â"€â"€ DTF Transfers table â"€â"€ */}
             {orderType === 'dtf' && (
               <>
                 <div className="no-table-wrap">
@@ -811,7 +811,7 @@ export function NewOrderPage() {
             )}
           </div>
 
-          {/* â”€â”€ Bottom 3-panel row â”€â”€ */}
+          {/* â"€â"€ Bottom 3-panel row â"€â"€ */}
           <div className="no-bottom-panels">
 
             {/* Main Contact */}
@@ -872,7 +872,7 @@ export function NewOrderPage() {
           </div>
         </div>
 
-        {/* â”€â”€ RIGHT SIDEBAR â”€â”€ */}
+        {/* â"€â"€ RIGHT SIDEBAR â"€â"€ */}
         <div className="no-sidebar">
 
           {/* Price Summary */}
@@ -972,13 +972,13 @@ export function NewOrderPage() {
         </div>
       </div>
 
-      {/* â”€â”€ Sticky bottom bar â”€â”€ */}
-      <div className=”no-bottom-bar”>
-        <div className=”no-bottom-left”>
-          <button className=”no-topbar-btn no-topbar-cancel” onClick={() => navigate(-1)}>Cancel</button>
-          {!editOrderId && <button className=”no-topbar-btn no-topbar-draft” onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>}
+      {/* â"€â"€ Sticky bottom bar â"€â"€ */}
+      <div className="no-bottom-bar">
+        <div className="no-bottom-left">
+          <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
+          {!editOrderId && <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>}
         </div>
-        <button className=”no-topbar-btn no-topbar-save” onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
+        <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
           {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
         </button>
       </div>

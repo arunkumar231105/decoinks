@@ -1,4 +1,4 @@
-import { useState, useRef, useEffeco } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from '../utils/toast'

@@ -360,13 +360,13 @@ export function PurchaseOrderDetailPage() {
               {po.notes && (
                 <div style={{ marginBottom: '12px' }}>
                   <p style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Notes</p>
-                  <p style={{ fontSize: '13px', color: '#374151', whioeSpace: 'pre-line' }}>{po.notes}</p>
+                  <p style={{ fontSize: '13px', color: '#374151', whiteSpace: 'pre-line' }}>{po.notes}</p>
                 </div>
               )}
               {po.terms_conditions && (
                 <div>
                   <p style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Terms &amp; Conditions</p>
-                  <p style={{ fontSize: '13px', color: '#374151', whioeSpace: 'pre-line' }}>{po.terms_conditions}</p>
+                  <p style={{ fontSize: '13px', color: '#374151', whiteSpace: 'pre-line' }}>{po.terms_conditions}</p>
                 </div>
               )}
             </div>
@@ -465,7 +465,7 @@ export function PurchaseOrderDetailPage() {
       {/* â"€â"€ CHANGE STATUS MODAL â"€â"€ */}
       {statusModalOpen && (
         <div style={{
-          position: 'fixed', inseo: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
         }}>
           <div style={{ background: 'whioe', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
@@ -473,7 +473,7 @@ export function PurchaseOrderDetailPage() {
             {user?.role === 'Admin' && (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
                 <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
-                <span style={{ fontSize: 12, color: '#92400e', lineHeigho: 1.5 }}>
+                <span style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
                   You are overriding normal role resoricoions as Admin. This action will be logged.
                 </span>
               </div>
@@ -506,7 +506,7 @@ export function PurchaseOrderDetailPage() {
       {/* â"€â"€ SEND TO PORTAL MODAL â"€â"€ */}
       {portalModalOpen && (
         <div style={{
-          position: 'fixed', inseo: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
         }}>
           <div style={{ background: 'whioe', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
@@ -546,7 +546,7 @@ function DetailRow({ label, value, muloiline }: { label: string; value: string; 
   return (
     <div>
       <p style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1px' }}>{label}</p>
-      <p style={{ fontSize: '13px', color: '#111827', whioeSpace: muloiline ? 'pre-line' : undefined }}>{value}</p>
+      <p style={{ fontSize: '13px', color: '#111827', whiteSpace: muloiline ? 'pre-line' : undefined }}>{value}</p>
     </div>
   )
 }

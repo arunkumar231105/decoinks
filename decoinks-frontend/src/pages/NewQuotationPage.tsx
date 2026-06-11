@@ -181,6 +181,8 @@ function QuoteHeader({
   quoteDate,
   validUntil,
   setValidUntil,
+  dueDate,
+  setDueDate,
   agent,
   setAgent,
 }: {
@@ -188,6 +190,8 @@ function QuoteHeader({
   quoteDate: string
   validUntil: string
   setValidUntil: (v: string) => void
+  dueDate: string
+  setDueDate: (v: string) => void
   agent: string
   setAgent: (agent: string) => void
 }) {
@@ -202,6 +206,7 @@ function QuoteHeader({
       </div>
       <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" value={quoteDate} readOnly /></div>
       <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
+      <div className="nq-info-field"><label>Due Date</label><input className="nq-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
       <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
       <div className="nq-info-field">
         <label>Sales Agent</label>
@@ -355,7 +360,7 @@ function AISection() {
   return (
     <div className="nq-sidebar-card">
       <div className="nq-sidebar-card-header"><Bot size={14} className="nq-ai-icon" /><span>AI Extracted from Chat</span><span className="nq-badge nq-badge-ai">Auto-Filled</span></div>
-      <ul className="nq-ai-list">{[['Product', 'Hoodie'], ['Quantity', '50'], ['Print Type', 'DTF'], ['Locations', 'Front, Back'], ['Size', '12x16'], ['Urgency', 'Yes']].map(([label, value]) => <li key={label} className="nq-ai-item"><span className="nq-ai-check">âœ“</span><span className="nq-ai-label">{label}:</span><span className="nq-ai-value">{value}</span></li>)}</ul>
+      <ul className="nq-ai-list">{[['Product', 'Hoodie'], ['Quantity', '50'], ['Print Type', 'DTF'], ['Locations', 'Front, Back'], ['Size', '12x16'], ['Urgency', 'Yes']].map(([label, value]) => <li key={label} className="nq-ai-item"><span className="nq-ai-check">âœ"</span><span className="nq-ai-label">{label}:</span><span className="nq-ai-value">{value}</span></li>)}</ul>
       <button className="nq-link-btn nq-ai-edit">Edit Extracted Data</button>
     </div>
   )
@@ -471,7 +476,6 @@ function CustomerInfoSection({
   shippingState, setShippingState,
   shippingCity, setShippingCity,
   zipCode, setZipCode,
-  dueDate, setDueDate,
   customerReqSummary, setCustomerReqSummary,
   quoteEstimate, setQuoteEstimate,
 }: {
@@ -487,7 +491,6 @@ function CustomerInfoSection({
   shippingState: string; setShippingState: (v: string) => void
   shippingCity: string; setShippingCity: (v: string) => void
   zipCode: string; setZipCode: (v: string) => void
-  dueDate: string; setDueDate: (v: string) => void
   customerReqSummary: string; setCustomerReqSummary: (v: string) => void
   quoteEstimate: string; setQuoteEstimate: (v: string) => void
 }) {
@@ -547,10 +550,6 @@ function CustomerInfoSection({
             <option value="">— Select —</option>
             {['Wholesale', 'Retail', 'Reseller', 'Other'].map(t => <option key={t}>{t}</option>)}
           </select>
-        </div>
-        <div className="nq-cinfo-field">
-          <label className="nq-field-label">Due Date</label>
-          <input className="nq-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
         <div className="nq-cinfo-field">
           <label className="nq-field-label">Shipping Country</label>
@@ -1064,7 +1063,7 @@ export function NewQuotationPage() {
         </div>
       </header>
 
-      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil} agent={agent} setAgent={setAgent} />
+      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil} dueDate={dueDate} setDueDate={setDueDate} agent={agent} setAgent={setAgent} />
 
       <div className="nq-body">
         <main className="nq-main">
@@ -1083,7 +1082,6 @@ export function NewQuotationPage() {
             shippingState={shippingState} setShippingState={setShippingState}
             shippingCity={shippingCity} setShippingCity={setShippingCity}
             zipCode={zipCode} setZipCode={setZipCode}
-            dueDate={dueDate} setDueDate={setDueDate}
             customerReqSummary={customerReqSummary} setCustomerReqSummary={setCustomerReqSummary}
             quoteEstimate={quoteEstimate} setQuoteEstimate={setQuoteEstimate}
           />
@@ -1106,13 +1104,20 @@ export function NewQuotationPage() {
                 <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
                 <strong className="nq-section-total">Section Total: ${fmt(apparelTotal)}</strong>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Color</th><th>Sizes (e.g. S:10,M:20)</th><th>Qty</th><th>FR Image</th><th>BK Image</th><th>Print Locations</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Color</th><th>Size</th><th>Qty</th><th>FR Image</th><th>BK Image</th><th>Print Locations</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
                     <td><div className="nq-item-desc"><div className="nq-item-thumb"><Shirt size={18} /></div><div><input className="nq-table-input" placeholder="Item name (e.g. T-Shirt Premium)" value={item.name} onChange={e => updateApparelItem(item.id, { name: e.target.value })} /><input className="nq-table-input" placeholder="Brand | Model (e.g. Gildan | 18500)" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></div></div></td>
                     <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
-                    <td><input className="nq-table-input" placeholder="S:10, M:20, L:15" value={item.sizes} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })} /></td>
+                    <td>
+                      <select className="nq-table-select" value={item.sizes || ''} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })}>
+                        <option value="">Select Size</option>
+                        {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'Custom'].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></td>

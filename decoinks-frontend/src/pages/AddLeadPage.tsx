@@ -63,19 +63,18 @@ export function AddLeadPage() {
   const [email,       setEmail]       = useState('')
   const [phone,       setPhone]       = useState('')
   const [whatsapp,    setWhatsapp]    = useState('')
-  const [wechat,      setWechat]      = useState('')
 
   // ── Address ──
-  const [country,         setCountry]         = useState('')
-  const [state,           setState]           = useState('')
-  const [city,            setCity]            = useState('')
-  const [zip,             setZip]             = useState('')
   const [shippingAddress, setShippingAddress] = useState('')
+  const [city,            setCity]            = useState('')
+  const [state,           setState]           = useState('')
+  const [zip,             setZip]             = useState('')
+  const [country,         setCountry]         = useState('')
   const [billingAddress,  setBillingAddress]  = useState('')
+  const [sameAsBilling,   setSameAsBilling]   = useState(false)
 
   // ── Classification + notes ──
   const [buyerType,     setBuyerType]     = useState('')
-  const [deliveryDate,  setDeliveryDate]  = useState('')
   const [internalNotes, setInternalNotes] = useState('')
 
   // ── Product interest ──
@@ -88,14 +87,19 @@ export function AddLeadPage() {
   const filteredSuppliers = apiSuppliers.filter(c =>
     c.name.toLowerCase().includes(supplierQuery.toLowerCase()),
   )
-  const selectedSupplier = apiSuppliers.find(c => c.id === selectedSupplierId)
-  const selectedAgent    = apiUsers.find(u => u.id === selectedAgentId)
+  const selectedAgent = apiUsers.find(u => u.id === selectedAgentId)
 
   // ── PI handlers ──
   const updatePIRow = (id: string, patch: Partial<PIRow>) =>
     setPiRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removePIRow = (id: string) =>
     setPiRows(prev => prev.filter(r => r.id !== id))
+
+  // ── Same as billing handler ──
+  const handleSameAsBilling = (checked: boolean) => {
+    setSameAsBilling(checked)
+    if (checked) setBillingAddress(shippingAddress)
+  }
 
   // ── Mutation ──
   const createMutation = useMutation({
@@ -117,7 +121,7 @@ export function AddLeadPage() {
       if (r.qty && (isNaN(+r.qty) || +r.qty < 1))
         errs[`pi_qty_${i}`] = 'Must be a positive number'
       if (r.artwork_count && (isNaN(+r.artwork_count) || +r.artwork_count < 0))
-        errs[`pi_ac_${i}`] = 'Must be ≥ 0'
+        errs[`pi_ac_${i}`] = 'Must be >= 0'
     })
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -141,22 +145,20 @@ export function AddLeadPage() {
 
     createMutation.mutate({
       supplier_id:      selectedSupplierId ?? undefined,
-      supplier_name:    selectedSupplier?.name ?? supplierQuery.trim(),
+      supplier_name:    supplierQuery.trim() || undefined,
       source,
       assigned_to:      selectedAgentId  ?? undefined,
       company_name:     companyName      || undefined,
       email:            email            || undefined,
       phone:            phone            || undefined,
       whatsapp:         whatsapp         || undefined,
-      wechat:           wechat           || undefined,
-      country:          country          || undefined,
-      state:            state            || undefined,
-      city:             city             || undefined,
-      zip:              zip              || undefined,
       shipping_address: shippingAddress  || undefined,
+      city:             city             || undefined,
+      state:            state            || undefined,
+      zip:              zip              || undefined,
+      country:          country          || undefined,
       billing_address:  billingAddress   || undefined,
       buyer_type:       buyerType        || undefined,
-      delivery_date:    deliveryDate     || undefined,
       internal_notes:   internalNotes    || undefined,
       productInterest:  productInterest.length ? productInterest : undefined,
     })
@@ -184,14 +186,14 @@ export function AddLeadPage() {
                 <input className="al-input al-input-readonly" value="AUTO-GENERATED" readOnly />
               </div>
 
-              {/* Supplier Name */}
+              {/* Supplier dropdown (search) */}
               <div className="al-field" style={{ position: 'relative' }}>
-                <label>Supplier Name <span className="al-req">*</span></label>
+                <label>Supplier <span className="al-req">*</span></label>
                 {errors.supplier && <span className="al-error">{errors.supplier}</span>}
                 <div className={cn('al-combobox', showCustDrop && supplierQuery && 'al-combobox-open')}>
                   <Search size={13} className="al-combobox-icon" />
                   <input
-                    placeholder="Search or type name..."
+                    placeholder="Search supplier..."
                     value={supplierQuery}
                     onChange={e => {
                       setSupplierQuery(e.target.value)
@@ -322,15 +324,6 @@ export function AddLeadPage() {
                   placeholder="+1-555-0000"
                 />
               </div>
-              <div className="al-field">
-                <label>WeChat</label>
-                <input
-                  className="al-input"
-                  value={wechat}
-                  onChange={e => setWechat(e.target.value)}
-                  placeholder="WeChat ID"
-                />
-              </div>
             </div>
           </div>
 
@@ -340,36 +333,49 @@ export function AddLeadPage() {
               <span className="al-section-num">2</span>
               <h4>Address</h4>
             </div>
+            <div className="al-grid-2" style={{ marginBottom: 10 }}>
+              <div className="al-field" style={{ gridColumn: '1 / -1' }}>
+                <label>Shipping Address</label>
+                <textarea
+                  className="al-textarea"
+                  rows={2}
+                  value={shippingAddress}
+                  onChange={e => {
+                    setShippingAddress(e.target.value)
+                    if (sameAsBilling) setBillingAddress(e.target.value)
+                  }}
+                  placeholder="Street address..."
+                />
+              </div>
+            </div>
             <div className="al-grid-3">
               <div className="al-field">
-                <label>Country</label>
-                <input className="al-input" value={country} onChange={e => setCountry(e.target.value)} placeholder="USA" />
+                <label>City</label>
+                <input className="al-input" value={city} onChange={e => setCity(e.target.value)} placeholder="Dallas" />
               </div>
               <div className="al-field">
                 <label>State</label>
                 <input className="al-input" value={state} onChange={e => setState(e.target.value)} placeholder="TX" />
               </div>
               <div className="al-field">
-                <label>City</label>
-                <input className="al-input" value={city} onChange={e => setCity(e.target.value)} placeholder="Dallas" />
-              </div>
-              <div className="al-field">
                 <label>ZIP</label>
                 <input className="al-input" value={zip} onChange={e => setZip(e.target.value)} placeholder="75201" />
               </div>
+              <div className="al-field">
+                <label>Country</label>
+                <input className="al-input" value={country} onChange={e => setCountry(e.target.value)} placeholder="USA" />
+              </div>
             </div>
             <div className="al-grid-2" style={{ marginTop: 10 }}>
-              <div className="al-field">
-                <label>Shipping Address</label>
-                <textarea
-                  className="al-textarea"
-                  rows={2}
-                  value={shippingAddress}
-                  onChange={e => setShippingAddress(e.target.value)}
-                  placeholder="Street address..."
-                />
-              </div>
-              <div className="al-field">
+              <div className="al-field" style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={sameAsBilling}
+                    onChange={e => handleSameAsBilling(e.target.checked)}
+                  />
+                  Same as Shipping Address
+                </label>
                 <label>Billing Address</label>
                 <textarea
                   className="al-textarea"
@@ -377,6 +383,7 @@ export function AddLeadPage() {
                   value={billingAddress}
                   onChange={e => setBillingAddress(e.target.value)}
                   placeholder="Street address (if different)..."
+                  disabled={sameAsBilling}
                 />
               </div>
             </div>
@@ -396,18 +403,9 @@ export function AddLeadPage() {
                   value={buyerType}
                   onChange={e => setBuyerType(e.target.value)}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">-- Select --</option>
                   {BUYER_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
-              </div>
-              <div className="al-field">
-                <label>Expected Delivery Date</label>
-                <input
-                  className="al-input"
-                  type="date"
-                  value={deliveryDate}
-                  onChange={e => setDeliveryDate(e.target.value)}
-                />
               </div>
               <div className="al-field" style={{ gridColumn: '1 / -1' }}>
                 <div className="al-label-row">
@@ -543,7 +541,7 @@ export function AddLeadPage() {
             onClick={handleSubmit}
             disabled={createMutation.isPending}
           >
-            {createMutation.isPending ? 'Creating…' : 'Create Lead'}
+            {createMutation.isPending ? 'Creating...' : 'Create Lead'}
           </button>
         </div>
       </div>
