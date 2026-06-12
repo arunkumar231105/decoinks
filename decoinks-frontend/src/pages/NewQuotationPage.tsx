@@ -139,6 +139,44 @@ function calculateQuotationTotals({
   return { itemsTotal, shipping, subtotal, discount, tax, finalTotal }
 }
 
+function CustomerCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string, customer?: Record<string, any>) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const { data } = useQuery({
+    queryKey: ['customers-suggest', value],
+    queryFn: () => api.get(`/customers?limit=20&search=${encodeURIComponent(value)}`).then(r => r.data.rows ?? []),
+    enabled: value.length > 0,
+  })
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="nq-select"
+        placeholder="Search customer name..."
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && data && data.length > 0 && (
+        <div className="nq-dropdown" style={{ position: 'absolute', zIndex: 50, width: '100%', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          {data.map((c: Record<string, any>) => (
+            <button key={c.id} className="nq-dropdown-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }}
+              onMouseDown={() => { onChange(c.name, c.id, c); setOpen(false) }}>
+              <div style={{ fontWeight: 500 }}>{c.name}</div>
+              {c.company && <div style={{ fontSize: 11, color: '#64748b' }}>{c.company}</div>}
+              {c.email && <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.email}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SupplierCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -734,6 +772,10 @@ export function NewQuotationPage() {
   const [deliveryMethod, setDeliveryMethod] = useState('Standard Shipping')
   const [currency, setCurrency] = useState('USD - US Dollar')
 
+  // ── Customer link state ──
+  const [customerId,       setCustomerId]       = useState<string | null>(null)
+  const [customerText,     setCustomerText]     = useState('')
+
   // ── Lead intake / auto-fill state ──
   const [formInitialized, setFormInitialized] = useState(false)
   const [leadId,           setLeadId]           = useState<string | null>(null)
@@ -773,6 +815,7 @@ export function NewQuotationPage() {
     if (!quotationData || formInitialized) return
     const q = quotationData as Record<string, any>
     setLeadId(q.lead_id ?? null)
+    if (q.customer_id) { setCustomerId(q.customer_id as string); setCustomerText(q.customer_name ?? '') }
     setCustomerSource(q.customer_source ?? '')
     setCustomerName(q.customer_name ?? '')
     setCompanyName(q.company_name ?? '')
@@ -1016,6 +1059,7 @@ export function NewQuotationPage() {
     saveMutation.mutate({
       order_type:                   activeTab,
       lead_id:                      leadId        || undefined,
+      customer_id:                  customerId    || undefined,
       supplier_id:                  supplierId    || undefined,
       billing_address:              billingAddress || undefined,
       shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
@@ -1068,6 +1112,50 @@ export function NewQuotationPage() {
       <div className="nq-body">
         <main className="nq-main">
           <SupplierSection supplierText={supplierText} setSupplierText={setSupplierText} setSupplierId={setSupplierId} billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
+
+          {/* ── Customer Link ── */}
+          <section className="nq-card" style={{ marginBottom: 12 }}>
+            <div className="nq-card-heading">
+              <div className="nq-section-num-icon"><User2 size={14} /></div>
+              <h3>Link Customer</h3>
+              {customerId && <span className="nq-badge nq-badge-ai" style={{ marginLeft: 8 }}>Linked</span>}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '0 0 4px' }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b', display: 'block', marginBottom: 4 }}>Customer</label>
+                <CustomerCombobox
+                  value={customerText}
+                  onChange={(text, id, cust) => {
+                    setCustomerText(text)
+                    if (id && cust) {
+                      setCustomerId(id)
+                      if (cust.name)    setCustomerName(cust.name)
+                      if (cust.company) setCompanyName(cust.company)
+                      if (cust.email)   setBillingEmail(cust.email)
+                      if (cust.phone)   setContactNumber(cust.phone)
+                      if (cust.whatsapp) setWhatsapp(cust.whatsapp)
+                      if (cust.lead_id) setLeadId(cust.lead_id)
+                    } else if (!id) {
+                      setCustomerId(null)
+                    }
+                  }}
+                />
+                {customerId && (
+                  <button style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4 }}
+                    onClick={() => { setCustomerId(null); setCustomerText('') }}>
+                    Remove link
+                  </button>
+                )}
+              </div>
+              {leadId && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b', display: 'block', marginBottom: 4 }}>Linked Lead</label>
+                  <input className="nq-input nq-input-readonly" value={leadNumber || leadId} readOnly style={{ fontSize: 13 }} />
+                  <span style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginTop: 2 }}>auto-linked from customer</span>
+                </div>
+              )}
+            </div>
+          </section>
 
           <CustomerInfoSection
             leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}

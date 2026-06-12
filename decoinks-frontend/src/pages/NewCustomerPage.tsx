@@ -13,7 +13,8 @@ export function NewCustomerPage() {
   const [saving, setSaving] = useState(false)
 
   // Section 1 — Contact Info
-  const [name,      setName]      = useState('')
+  const [firstName,  setFirstName]  = useState('')
+  const [lastName,   setLastName]   = useState('')
   const [company,   setCompany]   = useState('')
   const [email,     setEmail]     = useState('')
   const [phone,     setPhone]     = useState('')
@@ -38,11 +39,12 @@ export function NewCustomerPage() {
   const [notes,     setNotes]     = useState('')
 
   const handleSave = async () => {
-    if (!name.trim()) { toast.error('Name is required'); return }
+    if (!firstName.trim()) { toast.error('First name is required'); return }
+    const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
-        name: name.trim(),
+        name: fullName,
         company: company.trim() || undefined,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
@@ -103,14 +105,25 @@ export function NewCustomerPage() {
               <h4>Contact Information</h4>
             </div>
             <div className="ncust-section-body">
-              <div className="al-field">
-                <label>Full Name <span className="al-req">*</span></label>
-                <input
-                  className="al-input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Jane Smith"
-                />
+              <div className="ncust-name-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="al-field">
+                  <label>First Name <span className="al-req">*</span></label>
+                  <input
+                    className="al-input"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="e.g. Jane"
+                  />
+                </div>
+                <div className="al-field">
+                  <label>Last Name <span className="al-optional">(optional)</span></label>
+                  <input
+                    className="al-input"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="e.g. Smith"
+                  />
+                </div>
               </div>
               <div className="al-field">
                 <label>Company / Business Name <span className="al-optional">(optional)</span></label>
