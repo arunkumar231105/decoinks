@@ -516,7 +516,7 @@ export function CustomerDetailPage() {
               <button
                 className="lb-action-btn"
                 style={{ fontSize: 12 }}
-                onClick={() => navigate(`/quotes/new?customer=${id}`)}
+                onClick={() => navigate('/quotes/new', { state: { fromCustomerId: id } })}
               >
                 New Quote <ExternalLink size={12} />
               </button>
@@ -604,7 +604,7 @@ export function CustomerDetailPage() {
               <button
                 className="lb-action-btn"
                 style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}
-                onClick={() => navigate(`/quotes/new?customer=${id}`)}
+                onClick={() => navigate('/quotes/new', { state: { fromCustomerId: id } })}
               >
                 <FileText size={13} /> New Quotation
               </button>

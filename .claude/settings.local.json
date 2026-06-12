@@ -51,7 +51,8 @@
       "Bash(Select-Object FullName)",
       "Bash(Out-File C:\\\\temp\\\\pos_files.txt)",
       "Bash(Write-Host \"Done\")",
-      "Bash(node -e \"const fs=require\\('fs'\\);const files=['src/pages/NewInvoicePage.tsx','src/pages/NewQuotationPage.tsx','src/pages/NewPurchaseOrderPage.tsx','src/pages/PurchaseOrderDetailPage.tsx','src/pages/OrderDetailPage.tsx'];files.forEach\\(f=>{let c=fs.readFileSync\\(f,'utf8'\\);const n=\\(c.match\\(/[“”‘’]/g\\)||[]\\).length;if\\(n>0\\){c=c.replace\\(/“/g,'\\\\\"'\\).replace\\(/”/g,'\\\\\"'\\).replace\\(/‘/g,\\\\\"'\\\\\"\\).replace\\(/’/g,\\\\\"'\\\\\"\\);fs.writeFileSync\\(f,c,'utf8'\\);console.log\\(f,'- fixed',n\\);}else{console.log\\(f,'- clean'\\);}}\\);\")"
+      "Bash(node -e \"const fs=require\\('fs'\\);const files=['src/pages/NewInvoicePage.tsx','src/pages/NewQuotationPage.tsx','src/pages/NewPurchaseOrderPage.tsx','src/pages/PurchaseOrderDetailPage.tsx','src/pages/OrderDetailPage.tsx'];files.forEach\\(f=>{let c=fs.readFileSync\\(f,'utf8'\\);const n=\\(c.match\\(/[“”‘’]/g\\)||[]\\).length;if\\(n>0\\){c=c.replace\\(/“/g,'\\\\\"'\\).replace\\(/”/g,'\\\\\"'\\).replace\\(/‘/g,\\\\\"'\\\\\"\\).replace\\(/’/g,\\\\\"'\\\\\"\\);fs.writeFileSync\\(f,c,'utf8'\\);console.log\\(f,'- fixed',n\\);}else{console.log\\(f,'- clean'\\);}}\\);\")",
+      "Bash(docker version *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

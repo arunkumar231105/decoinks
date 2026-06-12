@@ -8,29 +8,39 @@ const router = Router()
 router.use(verifyToken)
 
 const createSchema = z.object({
-  quote_id:     z.string().uuid().optional().nullable(),
-  order_id:     z.string().uuid().optional().nullable(),
-  supplier_id:  z.string().uuid().optional().nullable(),
-  issue_date:   z.string().optional().nullable(),
-  due_date:     z.string().optional().nullable(),
-  subtotal:     z.number().nonnegative().default(0),
-  discount_amt: z.number().nonnegative().default(0),
-  tax_amt:      z.number().nonnegative().default(0),
-  notes:        z.string().optional().nullable(),
+  quote_id:         z.string().uuid().optional().nullable(),
+  order_id:         z.string().uuid().optional().nullable(),
+  supplier_id:      z.string().uuid().optional().nullable(),
+  issue_date:       z.string().optional().nullable(),
+  due_date:         z.string().optional().nullable(),
+  subtotal:         z.number().nonnegative().default(0),
+  discount_amt:     z.number().nonnegative().default(0),
+  tax_amt:          z.number().nonnegative().default(0),
+  notes:            z.string().optional().nullable(),
+  customer_name:    z.string().optional().nullable(),
+  billing_email:    z.string().optional().nullable(),
+  contact_number:   z.string().optional().nullable(),
+  billing_address:  z.string().optional().nullable(),
+  shipping_address: z.string().optional().nullable(),
 }).refine(
-  (d) => d.quote_id || d.order_id || d.supplier_id,
-  { message: 'At least one of quote_id, order_id, or supplier_id is required' }
+  (d) => d.quote_id || d.order_id || d.supplier_id || d.customer_name,
+  { message: 'At least one of quote_id, order_id, supplier_id, or customer_name is required' }
 )
 
 const updateSchema = z.object({
-  supplier_id:     z.string().uuid().optional().nullable(),
-  issue_date:      z.string().optional().nullable(),
-  due_date:        z.string().optional().nullable(),
-  subtotal:        z.number().nonnegative().optional(),
-  discount_amt:    z.number().nonnegative().optional(),
-  tax_amt:         z.number().nonnegative().optional(),
-  notes:           z.string().optional().nullable(),
-  payment_status:  z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
+  supplier_id:      z.string().uuid().optional().nullable(),
+  issue_date:       z.string().optional().nullable(),
+  due_date:         z.string().optional().nullable(),
+  subtotal:         z.number().nonnegative().optional(),
+  discount_amt:     z.number().nonnegative().optional(),
+  tax_amt:          z.number().nonnegative().optional(),
+  notes:            z.string().optional().nullable(),
+  payment_status:   z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
+  customer_name:    z.string().optional().nullable(),
+  billing_email:    z.string().optional().nullable(),
+  contact_number:   z.string().optional().nullable(),
+  billing_address:  z.string().optional().nullable(),
+  shipping_address: z.string().optional().nullable(),
 }).strict()
 
 const statusSchema = z.object({

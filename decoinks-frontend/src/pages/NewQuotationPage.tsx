@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Menu, MenuItem } from '@mui/material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
@@ -255,9 +255,6 @@ function QuoteHeader({
 }
 
 function SupplierSection({
-  supplierText,
-  setSupplierText,
-  setSupplierId,
   billingAddress,
   setBillingAddress,
   shippingAddress,
@@ -265,9 +262,6 @@ function SupplierSection({
   sameAsBilling,
   setSameAsBilling,
 }: {
-  supplierText: string
-  setSupplierText: (v: string) => void
-  setSupplierId: (id: string) => void
   billingAddress: string
   setBillingAddress: (v: string) => void
   shippingAddress: string
@@ -277,22 +271,42 @@ function SupplierSection({
 }) {
   return (
     <section className="nq-card">
-      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Supplier Information</h3></div>
-      <div className="nq-customer-grid">
-        <div className="nq-customer-select-col">
-          <label className="nq-field-label">Supplier <span className="nq-req">*</span></label>
-          <SupplierCombobox value={supplierText} onChange={(text, id) => { setSupplierText(text); if (id) setSupplierId(id) }} />
-        </div>
+      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Address</h3></div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="nq-address-block">
           <div className="nq-address-header"><span className="nq-field-label">Billing Address</span></div>
-          <textarea className="nq-textarea" rows={3} placeholder="Billing address..." value={billingAddress} onChange={e => setBillingAddress(e.target.value)} />
+          <textarea
+            className="nq-textarea"
+            rows={4}
+            placeholder="Billing address..."
+            value={billingAddress}
+            onChange={e => setBillingAddress(e.target.value)}
+          />
         </div>
         <div className="nq-address-block">
-          <div className="nq-address-header">
+          <div className="nq-address-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="nq-field-label">Shipping Address</span>
-            <label className="nq-same-billing"><input type="checkbox" checked={sameAsBilling} onChange={e => setSameAsBilling(e.target.checked)} /> Same as billing</label>
+            <label className="nq-same-billing" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={sameAsBilling}
+                onChange={e => {
+                  setSameAsBilling(e.target.checked)
+                  if (e.target.checked) setShippingAddress(billingAddress)
+                }}
+              />
+              Same as billing
+            </label>
           </div>
-          <textarea className="nq-textarea" rows={3} placeholder="Shipping address..." value={sameAsBilling ? billingAddress : shippingAddress} onChange={e => { if (!sameAsBilling) setShippingAddress(e.target.value) }} readOnly={sameAsBilling} />
+          <textarea
+            className="nq-textarea"
+            rows={4}
+            placeholder="Shipping address..."
+            value={sameAsBilling ? billingAddress : shippingAddress}
+            onChange={e => { if (!sameAsBilling) setShippingAddress(e.target.value) }}
+            readOnly={sameAsBilling}
+            style={sameAsBilling ? { opacity: 0.6, cursor: 'not-allowed', resize: 'none' } : {}}
+          />
         </div>
       </div>
     </section>
@@ -747,8 +761,11 @@ function CRMSnapshotPanel({ lead }: { lead: Record<string, unknown> | null }) {
 export function NewQuotationPage() {
   const navigate     = useNavigate()
   const queryClient  = useQueryClient()
+  const location     = useLocation()
   const { id: quoteId } = useParams<{ id?: string }>()
   const { user } = useAuthStore()
+
+  const fromCustomerId = (location.state as Record<string, unknown>)?.fromCustomerId as string | undefined
 
   // ── Base form state ──
   const [status, setStatus] = useState<QuoteStatus>('Draft')
@@ -809,6 +826,27 @@ export function NewQuotationPage() {
     queryFn:  () => api.get(`/leads/${leadId}`).then(r => r.data.data),
     enabled:  !!leadId,
   })
+
+  const { data: fromCustomerData } = useQuery<Record<string, unknown>>({
+    queryKey: ['customer', fromCustomerId],
+    queryFn:  () => api.get(`/customers/${fromCustomerId}`).then(r => r.data.data),
+    enabled:  !!fromCustomerId && !quoteId,
+  })
+
+  // ── Auto-populate from customer when navigating via "Convert to Quote" ──
+  useEffect(() => {
+    if (!fromCustomerData || formInitialized) return
+    const c = fromCustomerData as Record<string, any>
+    setCustomerId(c.id as string)
+    setCustomerText(c.name ?? '')
+    setCustomerName(c.name ?? '')
+    setCompanyName(c.company ?? '')
+    setBillingEmail(c.email ?? '')
+    setContactNumber(c.phone ?? '')
+    setWhatsapp(c.whatsapp ?? '')
+    if (c.lead_id) setLeadId(c.lead_id as string)
+    if (c.address_line1) setBillingAddress([c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', '))
+  }, [fromCustomerData, formInitialized])
 
   // ── Initialize form from quotation once loaded ──
   useEffect(() => {
@@ -1111,51 +1149,8 @@ export function NewQuotationPage() {
 
       <div className="nq-body">
         <main className="nq-main">
-          <SupplierSection supplierText={supplierText} setSupplierText={setSupplierText} setSupplierId={setSupplierId} billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
+          <SupplierSection billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
 
-          {/* ── Customer Link ── */}
-          <section className="nq-card" style={{ marginBottom: 12 }}>
-            <div className="nq-card-heading">
-              <div className="nq-section-num-icon"><User2 size={14} /></div>
-              <h3>Link Customer</h3>
-              {customerId && <span className="nq-badge nq-badge-ai" style={{ marginLeft: 8 }}>Linked</span>}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '0 0 4px' }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b', display: 'block', marginBottom: 4 }}>Customer</label>
-                <CustomerCombobox
-                  value={customerText}
-                  onChange={(text, id, cust) => {
-                    setCustomerText(text)
-                    if (id && cust) {
-                      setCustomerId(id)
-                      if (cust.name)    setCustomerName(cust.name)
-                      if (cust.company) setCompanyName(cust.company)
-                      if (cust.email)   setBillingEmail(cust.email)
-                      if (cust.phone)   setContactNumber(cust.phone)
-                      if (cust.whatsapp) setWhatsapp(cust.whatsapp)
-                      if (cust.lead_id) setLeadId(cust.lead_id)
-                    } else if (!id) {
-                      setCustomerId(null)
-                    }
-                  }}
-                />
-                {customerId && (
-                  <button style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4 }}
-                    onClick={() => { setCustomerId(null); setCustomerText('') }}>
-                    Remove link
-                  </button>
-                )}
-              </div>
-              {leadId && (
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b', display: 'block', marginBottom: 4 }}>Linked Lead</label>
-                  <input className="nq-input nq-input-readonly" value={leadNumber || leadId} readOnly style={{ fontSize: 13 }} />
-                  <span style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginTop: 2 }}>auto-linked from customer</span>
-                </div>
-              )}
-            </div>
-          </section>
 
           <CustomerInfoSection
             leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}

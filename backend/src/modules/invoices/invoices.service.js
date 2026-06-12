@@ -67,9 +67,11 @@ async function getById(id) {
   return { ...rows[0], payments: payments.rows }
 }
 
-async function create({ quote_id, order_id, supplier_id, issue_date, due_date,
-                        subtotal = 0, discount_amt = 0, tax_amt = 0,
-                        notes, created_by }) {
+async function create(fields_in) {
+  const { quote_id, order_id, supplier_id, issue_date, due_date,
+          subtotal = 0, discount_amt = 0, tax_amt = 0,
+          notes, created_by } = fields_in
+  const fields = fields_in
   const invoice_number = await getNextNumber('INV', 'invoices', 'invoice_number')
 
   let resolvedSubtotal    = Number(subtotal)
@@ -110,8 +112,9 @@ async function create({ quote_id, order_id, supplier_id, issue_date, due_date,
     `INSERT INTO invoices
        (invoice_number, quote_id, order_id, supplier_id, issue_date, due_date,
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
-        notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        notes, created_by,
+        customer_name, billing_email, contact_number, billing_address, shipping_address)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      RETURNING *`,
     [
       invoice_number,
@@ -121,6 +124,9 @@ async function create({ quote_id, order_id, supplier_id, issue_date, due_date,
       resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt,
       total, 0, balance_due,
       notes || null, created_by,
+      fields.customer_name || null, fields.billing_email || null,
+      fields.contact_number || null, fields.billing_address || null,
+      fields.shipping_address || null,
     ]
   )
 
@@ -140,7 +146,7 @@ async function create({ quote_id, order_id, supplier_id, issue_date, due_date,
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'quote_id']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address']
   const sets = []
   const params = []
 

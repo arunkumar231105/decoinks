@@ -306,6 +306,12 @@ export function NewInvoicePage() {
   const [discountValue, setDiscountValue] = useState(0)
   const taxRate = 7
 
+  // Customer details
+  const [billingEmail,    setBillingEmail]    = useState('')
+  const [contactNumber,   setContactNumber]   = useState('')
+  const [billingAddress,  setBillingAddress]  = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
+
   // Payment
   const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
@@ -327,10 +333,14 @@ export function NewInvoicePage() {
     if (sourceQuote.status === 'Approved') {
       setRatesLocked(true)
     }
-    // Supplier
+    // Supplier / Customer
     if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
-    const supplierName = sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
+    const supplierName = sourceQuote.customer_name ?? sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
     if (supplierName) setsupplierText(supplierName)
+    if (sourceQuote.billing_email)  setBillingEmail(sourceQuote.billing_email)
+    if (sourceQuote.contact_number) setContactNumber(sourceQuote.contact_number)
+    if (sourceQuote.billing_address) setBillingAddress(sourceQuote.billing_address)
+    if (sourceQuote.shipping_address) setShippingAddress(sourceQuote.shipping_address)
     // Quote ref
     if (sourceQuote.quote_number)  { setQuoteText(sourceQuote.quote_number); setQuoteId(sourceQuote.id) }
     // Order type
@@ -472,29 +482,39 @@ export function NewInvoicePage() {
       return
     }
     saveMutation.mutate({
-      supplier_id:   supplierId || null,
-      quote_id:      quoteId || null,
-      notes:         internalNotes || null,
-      issue_date:    invoiceDate || null,
-      due_date:      dueDate || null,
-      subtotal:      subtotal,
-      discount_amt:  discountAmt,
-      tax_amt:       taxAmt,
-      total:         total,
+      supplier_id:      supplierId || null,
+      quote_id:         quoteId || null,
+      notes:            internalNotes || null,
+      issue_date:       invoiceDate || null,
+      due_date:         dueDate || null,
+      subtotal:         subtotal,
+      discount_amt:     discountAmt,
+      tax_amt:          taxAmt,
+      total:            total,
+      customer_name:    supplierText || null,
+      billing_email:    billingEmail || null,
+      contact_number:   contactNumber || null,
+      billing_address:  billingAddress || null,
+      shipping_address: shippingAddress || null,
     })
   }
 
   const previewInvoice = () => {
     previewMutation.mutate({
-      supplier_id:  supplierId || null,
-      quote_id:     quoteId || null,
-      notes:        internalNotes || null,
-      issue_date:   invoiceDate || null,
-      due_date:     dueDate || null,
-      subtotal:     subtotal,
-      discount_amt: discountAmt,
-      tax_amt:      taxAmt,
-      total:        total,
+      supplier_id:      supplierId || null,
+      quote_id:         quoteId || null,
+      notes:            internalNotes || null,
+      issue_date:       invoiceDate || null,
+      due_date:         dueDate || null,
+      subtotal:         subtotal,
+      discount_amt:     discountAmt,
+      tax_amt:          taxAmt,
+      total:            total,
+      customer_name:    supplierText || null,
+      billing_email:    billingEmail || null,
+      contact_number:   contactNumber || null,
+      billing_address:  billingAddress || null,
+      shipping_address: shippingAddress || null,
     })
   }
 
@@ -634,47 +654,70 @@ export function NewInvoicePage() {
             <div className="ni-address-grid">
               <div className="ni-address-block">
                 <p className="ni-addr-block-title">Customer Info</p>
-                <strong className="ni-addr-name">{supplierText || '-'}</strong>
-                <p className="ni-addr-line" style={{ color: '#9ca3af', fontSize: 12 }}>Seleco supplier above to auto-fill</p>
+                <input
+                  className="al-input"
+                  style={{ fontSize: 13, marginBottom: 4 }}
+                  value={supplierText}
+                  onChange={e => setsupplierText(e.target.value)}
+                  placeholder="Customer name..."
+                />
+                <input
+                  className="al-input"
+                  type="email"
+                  style={{ fontSize: 13, marginBottom: 4 }}
+                  value={billingEmail}
+                  onChange={e => setBillingEmail(e.target.value)}
+                  placeholder="Email address (optional)"
+                />
+                <input
+                  className="al-input"
+                  style={{ fontSize: 13 }}
+                  value={contactNumber}
+                  onChange={e => setContactNumber(e.target.value)}
+                  placeholder="Phone / WhatsApp (optional)"
+                />
               </div>
               <div className="ni-address-block">
                 <p className="ni-addr-block-title">Billing Address</p>
-                <textarea className="al-textarea" rows={3} placeholder="Enoer billing address..." style={{ fontSize: 13 }} />
+                <textarea className="al-textarea" rows={3} placeholder="Enter billing address..." style={{ fontSize: 13 }} value={billingAddress} onChange={e => setBillingAddress(e.target.value)} />
               </div>
               <div className="ni-address-block">
                 <p className="ni-addr-block-title">Shipping Address</p>
-                <textarea className="al-textarea" rows={3} placeholder="Enoer shipping address..." style={{ fontSize: 13 }} />
+                <textarea className="al-textarea" rows={3} placeholder="Enter shipping address..." style={{ fontSize: 13 }} value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
               </div>
             </div>
           </div>
 
-          {/* AI Exoracoed Panel */}
-          <div className="ni-card ni-ai-panel">
-            <div className="ni-ai-header">
-              <div className="ni-ai-title">
-                <Bot size={16} className="ni-ai-icon" />
-                <strong>AI Exoracoed from Chao</strong>
-              </div>
-              <span className="ni-badge ni-badge-green">auto-filled</span>
-            </div>
-            <div className="ni-ai-items">
-              {[
-                { label: 'Produco', value: 'Hoodie' },
-                { label: 'Quantity', value: '50' },
-                { label: 'Print Type', value: 'DTF' },
-                { label: 'Locaoions', value: 'Frono + Back' },
-                { label: 'Size', value: '12Ã—16"' },
-                { label: 'Urgency', value: 'Yes' },
-              ].map(item => (
-                <div key={item.label} className="ni-ai-item">
-                  <Check size={13} className="ni-ai-check" />
-                  <span className="ni-ai-label">{item.label}:</span>
-                  <strong className="ni-ai-val">{item.value}</strong>
+          {/* Quote Summary Panel — shown only when converting from a quote */}
+          {sourceQuote && (
+            <div className="ni-card ni-ai-panel">
+              <div className="ni-ai-header">
+                <div className="ni-ai-title">
+                  <FileText size={16} className="ni-ai-icon" />
+                  <strong>From Quotation: {sourceQuote.quote_number ?? ''}</strong>
                 </div>
-              ))}
+                <span className="ni-badge ni-badge-green">auto-filled</span>
+              </div>
+              <div className="ni-ai-items">
+                {[
+                  { label: 'Customer', value: sourceQuote.customer_name ?? sourceQuote.supplier_name ?? '—' },
+                  { label: 'Order Type', value: String(sourceQuote.order_type ?? '—') },
+                  { label: 'Items', value: String(Array.isArray(sourceQuote.items) ? sourceQuote.items.length : '—') },
+                  { label: 'Subtotal', value: sourceQuote.subtotal != null ? `$${Number(sourceQuote.subtotal).toFixed(2)}` : '—' },
+                  { label: 'Total', value: sourceQuote.total != null ? `$${Number(sourceQuote.total).toFixed(2)}` : '—' },
+                  sourceQuote.customer_requirement_summary
+                    ? { label: 'Requirements', value: String(sourceQuote.customer_requirement_summary) }
+                    : null,
+                ].filter(Boolean).map((item: any) => (
+                  <div key={item.label} className="ni-ai-item">
+                    <Check size={13} className="ni-ai-check" />
+                    <span className="ni-ai-label">{item.label}:</span>
+                    <strong className="ni-ai-val">{item.value}</strong>
+                  </div>
+                ))}
+              </div>
             </div>
-            <button className="ni-link-btn ni-ai-edit">Edit Extracted Data</button>
-          </div>
+          )}
 
           {/* Items Table */}
           <div className="ni-card ni-section">
