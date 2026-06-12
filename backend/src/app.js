@@ -23,6 +23,7 @@ const supplierPortalRoutes = require('./modules/supplier-portal/portal.routes')
 const customFieldRoutes    = require('./modules/custom-fields/custom_fields.routes')
 const uploadRoutes         = require('./modules/upload/upload.routes')
 const settingsRoutes       = require('./modules/settings/settings.routes')
+const customerRoutes       = require('./modules/customers/customers.routes')
 
 const app = express()
 
@@ -61,6 +62,7 @@ app.use('/api/supplier',       supplierPortalRoutes)
 app.use('/api/custom-fields', customFieldRoutes)
 app.use('/api/upload',       uploadRoutes)
 app.use('/api/settings',     settingsRoutes)
+app.use('/api/customers',    customerRoutes)
 
 app.use(errorHandler)
 

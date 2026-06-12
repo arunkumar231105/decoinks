@@ -42,6 +42,9 @@ import { InvoicePrintPage } from '../pages/InvoicePrintPage'
 import { PurchaseOrderPrintPage } from '../pages/PurchaseOrderPrintPage'
 import { OrderPrintPage } from '../pages/OrderPrintPage'
 import { InvoiceReceiptPage } from '../pages/InvoiceReceiptPage'
+import { CustomersPage } from '../pages/CustomersPage'
+import { NewCustomerPage } from '../pages/NewCustomerPage'
+import { CustomerDetailPage } from '../pages/CustomerDetailPage'
 
 export const router = createBrowserRouter([
   {
@@ -101,6 +104,21 @@ export const router = createBrowserRouter([
                 path: '/leads/board',
                 element: <LeadBoardPage />,
                 handle: { title: 'Lead Board', subtitle: 'Kanban view of all leads by stage.' },
+              },
+              {
+                path: '/customers',
+                element: <CustomersPage />,
+                handle: { title: 'Customers', subtitle: 'Manage client profiles linked to leads and quotations.' },
+              },
+              {
+                path: '/customers/new',
+                element: <NewCustomerPage />,
+                handle: { title: 'New Customer', subtitle: 'Create a customer profile.' },
+              },
+              {
+                path: '/customers/:id',
+                element: <CustomerDetailPage />,
+                handle: { title: 'Customer Detail', subtitle: 'View and manage customer information.' },
               },
               {
                 path: '/quotes',

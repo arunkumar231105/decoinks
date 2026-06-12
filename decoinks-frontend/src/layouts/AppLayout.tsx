@@ -38,6 +38,7 @@ import {
   Sparkles,
   Truck,
   User,
+  UserCheck,
   Users,
   Workflow,
 } from 'lucide-react'
@@ -50,6 +51,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
   { label: 'Leads', path: '/leads', icon: ClipboardList },
+  { label: 'Customers', path: '/customers', icon: UserCheck },
   { label: 'Quotes', path: '/quotes', icon: FileText },
   { label: 'Invoices', path: '/invoices', icon: ReceiptText },
   { label: 'Orders', path: '/orders', icon: Package },

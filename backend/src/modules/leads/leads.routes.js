@@ -30,10 +30,6 @@ const contactFields = {
   email:            z.string().optional().nullable(),
   phone:            z.string().optional().nullable(),
   whatsapp:         z.string().optional().nullable(),
-  country:          z.string().optional().nullable(),
-  state:            z.string().optional().nullable(),
-  city:             z.string().optional().nullable(),
-  zip:              z.string().optional().nullable(),
   shipping_address: z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
   buyer_type:       z.string().optional().nullable(),
@@ -42,7 +38,7 @@ const contactFields = {
 }
 
 const createSchema = z.object({
-  supplier_name: z.string().optional().nullable(),
+  customer_name: z.string().min(1),
   supplier_id:   z.string().uuid().optional().nullable(),
   source:        z.enum(SOURCES),
   description:   z.string().optional().nullable(),
@@ -51,7 +47,7 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
-  supplier_name: z.string().min(1).optional(),
+  customer_name: z.string().min(1).optional(),
   supplier_id:   z.string().uuid().optional().nullable(),
   source:        z.enum(SOURCES).optional(),
   description:   z.string().optional().nullable(),
@@ -79,6 +75,36 @@ router.get('/list',     controller.list)
 router.get('/:id',      controller.getOne)
 router.post('/',        validate(createSchema), controller.create)
 router.post('/:id/convert-to-quote', controller.convertToQuote)
+router.post('/:id/convert-to-customer', async (req, res, next) => {
+  try {
+    const db = require('../../config/db')
+    const { rows } = await db.query(
+      `SELECT * FROM leads WHERE id = $1 AND deleted_at IS NULL`, [req.params.id]
+    )
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Lead not found' })
+    const lead = rows[0]
+
+    // Check if already converted
+    if (lead.customer_id) {
+      return res.json({ success: true, message: 'Already converted', customer_id: lead.customer_id })
+    }
+
+    const custSvc = require('../customers/customers.service')
+    const customer = await custSvc.create({
+      lead_id: lead.id,
+      name: lead.customer_name || lead.company_name || lead.email || 'Unknown',
+      email: lead.email || null,
+      phone: lead.phone || null,
+      whatsapp: lead.whatsapp || null,
+      company: lead.company_name || null,
+      address_line1: lead.shipping_address || null,
+      buyer_type: lead.buyer_type || null,
+      internal_notes: lead.internal_notes || null,
+      created_by: req.user.id,
+    })
+    res.status(201).json({ success: true, data: customer })
+  } catch (err) { next(err) }
+})
 router.put('/:id',      validate(updateSchema), controller.update)
 router.patch('/:id/status', validate(statusSchema), controller.updateStatus)
 router.patch('/:id/move',   validate(moveSchema),   controller.move)

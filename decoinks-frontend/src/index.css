@@ -6913,6 +6913,7 @@ select.al-input {
 
 .cust-status-active   { background: #dcfce7; color: #15803d; }
 .cust-status-inactive { background: #f1f5f9; color: #64748b; }
+.cust-status-blocked  { background: #fee2e2; color: #dc2626; }
 
 /* Portal access button */
 .cust-portal-btn {

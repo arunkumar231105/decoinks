@@ -116,7 +116,7 @@ async function insertProductInterest(client, leadId, items) {
 }
 
 async function create({
-  supplier_name, supplier_id, source, description, assigned_to, created_by,
+  customer_name, supplier_id, source, description, assigned_to, created_by,
   company_name, email, phone, whatsapp,
   country, state, city, zip, shipping_address, billing_address,
   buyer_type, internal_notes,
@@ -129,14 +129,14 @@ async function create({
     await client.query('BEGIN')
     const { rows } = await client.query(
       `INSERT INTO leads
-         (lead_number, supplier_id, supplier_name, source, description, assigned_to,
+         (lead_number, supplier_id, customer_name, source, description, assigned_to,
           company_name, email, phone, whatsapp,
           country, state, city, zip, shipping_address, billing_address,
           buyer_type, internal_notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
-        lead_number, supplier_id || null, supplier_name || null, source, description || null, assigned_to || null,
+        lead_number, supplier_id || null, customer_name || null, source, description || null, assigned_to || null,
         company_name || null, email || null, phone || null, whatsapp || null,
         country || null, state || null, city || null, zip || null,
         shipping_address || null, billing_address || null,
@@ -158,7 +158,7 @@ async function create({
 
 async function update(id, fields, actorId) {
   const SCALAR_FIELDS = [
-    'supplier_name', 'supplier_id', 'source', 'description', 'assigned_to', 'status', 'has_artwork',
+    'customer_name', 'supplier_id', 'source', 'description', 'assigned_to', 'status', 'has_artwork',
     'company_name', 'email', 'phone', 'whatsapp',
     'country', 'state', 'city', 'zip', 'shipping_address', 'billing_address',
     'buyer_type', 'internal_notes',

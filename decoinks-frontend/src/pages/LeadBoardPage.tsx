@@ -82,7 +82,7 @@ function SourceChip({ source }: { source: string | null }) {
   )
 }
 
-// â”€â”€ Quick-add card form shown inline at bottom of column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€ Quick-add card form shown inline at bottom of column â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function AddCardForm({
   stageId,
   onClose,
@@ -155,7 +155,7 @@ function AddCardForm({
   )
 }
 
-// â”€â”€ Edit Lead Slideover â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€ Edit Lead Slideover â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function EditLeadForm({
   lead,
   onClose,
@@ -233,7 +233,7 @@ function EditLeadForm({
   )
 }
 
-// â”€â”€ Main LeadBoardPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€ Main LeadBoardPage â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 export function LeadBoardPage() {
   const navigate     = useNavigate()
   const queryClient  = useQueryClient()
@@ -284,6 +284,28 @@ export function LeadBoardPage() {
       else navigate('/quotes')
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not convert lead to quote'),
+  })
+
+  const convertToCustomerMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
+    onSuccess: (res: any) => {
+      const customer = res.data?.data
+      toast.success('Lead converted to customer')
+      queryClient.invalidateQueries({ queryKey: ['leads', 'kanban'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      if (customer?.id) navigate(`/customers/${customer.id}`)
+      else navigate('/customers')
+    },
+    onError: (err: any) => {
+      const msg: string = err.response?.data?.message ?? ''
+      const existingId: string | undefined = err.response?.data?.data?.customer_id
+      if (existingId) {
+        toast.success('Already a customer — opening profile')
+        navigate(`/customers/${existingId}`)
+      } else {
+        toast.error(msg || 'Could not convert lead to customer')
+      }
+    },
   })
 
   const handleDragEnd = (result: DropResult) => {
@@ -423,7 +445,7 @@ export function LeadBoardPage() {
                     )}
                   </Droppable>
 
-                  {/* â”€â”€ Add Card â”€â”€ */}
+                  {/* â"€â"€ Add Card â"€â"€ */}
                   {addingToCol === col.id ? (
                     <AddCardForm
                       stageId={col.id}
@@ -441,7 +463,7 @@ export function LeadBoardPage() {
           </DragDropContext>
         </div>
       ) : (
-        /* â”€â”€ List View â”€â”€ */
+        /* â"€â"€ List View â"€â"€ */
         <div className="lb-list-view">
           <table className="lb-list-table">
             <thead>
@@ -517,6 +539,9 @@ export function LeadBoardPage() {
         <MenuItem onClick={() => { convertMutation.mutate(cardMenuAnchor?.leadId ?? ''); setCardMenuAnchor(null) }}>
           Convert to Quote
         </MenuItem>
+        <MenuItem onClick={() => { convertToCustomerMutation.mutate(cardMenuAnchor?.leadId ?? ''); setCardMenuAnchor(null) }}>
+          Convert to Customer
+        </MenuItem>
         <MuiDivider />
         <MenuItem onClick={() => { deleteMutation.mutate(cardMenuAnchor?.leadId ?? ''); setCardMenuAnchor(null) }} sx={{ color: '#DC2626' }}>
           Mark as Lost
@@ -576,6 +601,14 @@ export function LeadBoardPage() {
             <div className="lb-so-actions">
               <button className="lb-action-btn lb-action-primary" style={{ flex: 1 }} onClick={() => { seteditingLead(selectedLead.lead); setSelectedLead(null) }}>
                 Edit Lead
+              </button>
+              <button
+                className="lb-action-btn"
+                style={{ flex: 1 }}
+                onClick={() => { convertToCustomerMutation.mutate(selectedLead.lead.id); setSelectedLead(null) }}
+                disabled={convertToCustomerMutation.isPending}
+              >
+                {convertToCustomerMutation.isPending ? 'Converting...' : 'Convert to Customer'}
               </button>
               <button className="lb-action-btn" style={{ flex: 1 }} onClick={() => setSelectedLead(null)}>Close</button>
             </div>
