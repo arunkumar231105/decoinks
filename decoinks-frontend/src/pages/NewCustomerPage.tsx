@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, User } from 'lucide-react'
+import { ChevronRight, User, Link2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { api } from '../services/api'
 
@@ -9,9 +10,64 @@ const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','
 const BUYER_TYPES = ['Retail', 'Wholesale', 'Corporate', 'Non-Profit', 'Individual', 'Other']
 const SOURCES = ['', 'Facebook Messenger', 'WhatsApp', 'Instagram', 'Email', 'Walk-in', 'Phone', 'Referral', 'Other']
 
+function LeadCombobox({ value, onChange }: {
+  value: string
+  onChange: (text: string, lead?: { id: string; lead_number: string; customer_name: string; source: string }) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const { data: leads = [] } = useQuery<any[]>({
+    queryKey: ['leads-mini'],
+    queryFn: () => api.get('/leads', { params: { limit: 200, status: 'Open' } }).then(r => r.data.data?.rows ?? []),
+  })
+  const filtered = leads.filter((l: any) =>
+    (l.lead_number ?? '').toLowerCase().includes(value.toLowerCase()) ||
+    (l.customer_name ?? '').toLowerCase().includes(value.toLowerCase())
+  ).slice(0, 8)
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <input
+        className="al-input"
+        value={value}
+        placeholder="Search by lead # or name..."
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.1)', zIndex: 999, maxHeight: 220, overflowY: 'auto' }}>
+          {filtered.map((l: any) => (
+            <div
+              key={l.id}
+              style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #F8FAFC', fontSize: 13 }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
+              onMouseLeave={e => (e.currentTarget.style.background = '')}
+              onMouseDown={() => { onChange(l.lead_number, l); setOpen(false) }}
+            >
+              <span style={{ fontWeight: 600, color: '#0D9488' }}>{l.lead_number}</span>
+              <span style={{ color: '#334155', marginLeft: 8 }}>{l.customer_name}</span>
+              {l.source && <span style={{ color: '#94A3B8', marginLeft: 8, fontSize: 11 }}>· {l.source}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function NewCustomerPage() {
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
+
+  // Lead link
+  const [leadId,     setLeadId]     = useState<string | null>(null)
+  const [leadText,   setLeadText]   = useState('')
 
   // Section 1 — Contact Info
   const [firstName,  setFirstName]  = useState('')
@@ -46,6 +102,7 @@ export function NewCustomerPage() {
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
+        lead_id: leadId || undefined,
         name: fullName,
         company: company.trim() || undefined,
         email: email.trim() || undefined,
@@ -100,6 +157,44 @@ export function NewCustomerPage() {
 
         {/* Left column */}
         <div className="ncust-col">
+
+          {/* Lead Link */}
+          <div className="al-panel al-section" style={{ borderLeft: leadId ? '3px solid #0D9488' : '3px solid #E2E8F0' }}>
+            <div className="al-section-header">
+              <Link2 size={15} style={{ color: leadId ? '#0D9488' : '#94A3B8' }} />
+              <h4 style={{ marginLeft: 6 }}>Link to Lead <span style={{ fontSize: 11, fontWeight: 400, color: '#94A3B8' }}>(optional)</span></h4>
+              {leadId && <span style={{ marginLeft: 'auto', fontSize: 11, background: '#CCFBF1', color: '#0D9488', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>Linked</span>}
+            </div>
+            <div className="ncust-section-body">
+              <div className="al-field">
+                <label>Search Lead</label>
+                <LeadCombobox
+                  value={leadText}
+                  onChange={(text, lead) => {
+                    setLeadText(text)
+                    if (lead) {
+                      setLeadId(lead.id)
+                      if (lead.source && !source) setSource(lead.source)
+                      if (lead.customer_name && !firstName) setFirstName(lead.customer_name)
+                    } else {
+                      setLeadId(null)
+                    }
+                  }}
+                />
+                {leadId && (
+                  <button
+                    style={{ fontSize: 11, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4, padding: 0 }}
+                    onClick={() => { setLeadId(null); setLeadText('') }}
+                  >Remove link</button>
+                )}
+              </div>
+              {!leadId && (
+                <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>
+                  Agar yeh customer kisi lead se convert hua ha toh lead search karo — warna khali chhodo.
+                </p>
+              )}
+            </div>
+          </div>
 
           {/* Section 1 — Contact Info */}
           <div className="al-panel al-section">
