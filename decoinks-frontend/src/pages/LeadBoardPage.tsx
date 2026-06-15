@@ -290,10 +290,12 @@ export function LeadBoardPage() {
     mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
     onSuccess: (res: any) => {
       const customer = res.data?.data
-      toast.success('Lead converted to customer')
+      const existingId: string | undefined = res.data?.customer_id
+      toast.success(res.data?.message === 'Already converted' ? 'Already a customer — opening profile' : 'Lead converted to customer')
       queryClient.invalidateQueries({ queryKey: ['leads', 'kanban'] })
       queryClient.invalidateQueries({ queryKey: ['customers'] })
-      if (customer?.id) navigate(`/customers/${customer.id}`)
+      const targetId = customer?.id ?? existingId
+      if (targetId) navigate(`/customers/${targetId}`)
       else navigate('/customers')
     },
     onError: (err: any) => {

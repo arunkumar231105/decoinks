@@ -106,11 +106,11 @@ export function CustomerDetailPage() {
 
   const { data: customerData, isLoading } = useQuery({
     queryKey: ['customer', id],
-    queryFn: () => api.get(`/customers/${id}`).then(r => r.data.data as { customer: Customer; quotes: Quote[] }),
+    queryFn: () => api.get(`/customers/${id}`).then(r => r.data.data as (Customer & { quotes: Quote[] })),
     enabled: !!id,
   })
 
-  const customer: Customer | undefined = customerData?.customer
+  const customer: Customer | undefined = customerData
   const quotes: Quote[] = customerData?.quotes ?? []
 
   const populateForm = (c: Customer) => {

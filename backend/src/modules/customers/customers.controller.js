@@ -4,7 +4,7 @@ async function list(req, res, next) {
   try {
     const { page = 1, limit = 20, search = '', status = '' } = req.query
     const result = await svc.list({ page: +page, limit: +limit, search, status })
-    res.json({ success: true, ...result })
+    res.json({ success: true, data: result })
   } catch (err) { next(err) }
 }
 
