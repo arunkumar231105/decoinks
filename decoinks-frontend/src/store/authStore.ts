@@ -43,21 +43,35 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   // ── Silent refresh on app mount ────────────────────────────────────────────
-  // Called once from App.tsx. Tries to get a new access token using the
-  // httpOnly refresh cookie. If the cookie is absent or expired, sets
-  // isAuthenticated=false without showing a login prompt.
+  // Called once from ProtectedRoute. Tries to get a new access token using the
+  // httpOnly refresh cookie. Retries up to 3 times (2s apart) to handle
+  // transient backend restarts, then gives up and redirects to login.
   initAuth: async () => {
-    try {
-      const res = await api.post('/auth/refresh')
-      const { token } = res.data.data
-      tokenMemory.set(token)
-      // Fetch full user profile now that we have an access token
-      const meRes = await api.get('/auth/me')
-      set({ user: meRes.data.data, isAuthenticated: true, isLoading: false })
-    } catch {
-      tokenMemory.set(null)
-      set({ user: null, isAuthenticated: false, isLoading: false })
+    const MAX_ATTEMPTS = 3
+    const RETRY_DELAY  = 2000
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await api.post('/auth/refresh')
+        const { token } = res.data.data
+        tokenMemory.set(token)
+        const meRes = await api.get('/auth/me')
+        set({ user: meRes.data.data, isAuthenticated: true, isLoading: false })
+        return
+      } catch (err: any) {
+        // 401/403 means the token itself is invalid — no point retrying
+        const status = err?.response?.status
+        if (status === 401 || status === 403) break
+
+        // Any other error (502, network down, etc.) — retry if attempts remain
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY))
+        }
+      }
     }
+
+    tokenMemory.set(null)
+    set({ user: null, isAuthenticated: false, isLoading: false })
   },
 }))
 

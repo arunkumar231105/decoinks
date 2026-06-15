@@ -58,7 +58,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
-      target: dev
+      target: prod
     container_name: decoinks_backend
     restart: unless-stopped
     environment:
@@ -66,7 +66,7 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: postgresql://postgres:decoinks_pass@postgres:5432/decoinks_db
       REDIS_URL: redis://redis:6379
-      CORS_ORIGIN: http://31.97.110.197
+      CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094
       JWT_SECRET: Decoinks2026SecretKeyPOSSoftwarePrintShop123XYZ
       UPLOAD_DIR: uploads
       MAX_FILE_SIZE_MB: "10"
@@ -77,8 +77,7 @@ services:
       MINIO_BUCKET: decoinks
       MINIO_PUBLIC_URL: http://31.97.110.197:9002
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - backend_uploads:/app/uploads
     ports:
       - '8094:8000'
     depends_on:
@@ -115,6 +114,7 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  backend_uploads:
 
 networks:
   decoinks_net:

@@ -41,7 +41,7 @@ interface Customer {
   state: string | null
   zip: string | null
   country: string | null
-  same_as_billing: boolean
+  same_as_shipping: boolean
   billing_address: string | null
   buyer_type: string | null
   source: string | null
@@ -127,7 +127,7 @@ export function CustomerDetailPage() {
     setStateVal(c.state ?? '')
     setZip(c.zip ?? '')
     setCountry(c.country ?? 'United States')
-    setSameAsBilling(c.same_as_billing ?? true)
+    setSameAsBilling(c.same_as_shipping ?? true)
     setBillingAddress(c.billing_address ?? '')
     setBuyerType(c.buyer_type ?? BUYER_TYPES[0])
     setSource(c.source ?? '')
@@ -176,7 +176,7 @@ export function CustomerDetailPage() {
       state: stateVal || null,
       zip: zip.trim() || null,
       country: country || null,
-      same_as_billing: sameAsBilling,
+      same_as_shipping: sameAsBilling,
       billing_address: sameAsBilling ? null : (billingAddress.trim() || null),
       buyer_type: buyerType || null,
       source: source || null,
@@ -511,7 +511,7 @@ export function CustomerDetailPage() {
                 <FileCheck size={15} style={{ color: '#64748B' }} />
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Billing Address</span>
               </div>
-              {customer.same_as_billing ? (
+              {customer.same_as_shipping ? (
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>
                   Same as shipping address — {[customer.address_line1, customer.city, customer.state, customer.zip, customer.country].filter(Boolean).join(', ') || 'No address on file'}
                 </p>
