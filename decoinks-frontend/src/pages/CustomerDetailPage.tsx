@@ -44,9 +44,12 @@ interface Customer {
   same_as_billing: boolean
   billing_address: string | null
   buyer_type: string | null
+  source: string | null
   notes: string | null
   status: 'Active' | 'Inactive' | 'Blocked'
   lead_id: string | null
+  lead_number: string | null
+  lead_source: string | null
   created_at: string
   quotes_count: number
 }
@@ -97,6 +100,7 @@ export function CustomerDetailPage() {
   const [sameAsBilling,  setSameAsBilling]  = useState(true)
   const [billingAddress, setBillingAddress] = useState('')
   const [buyerType,      setBuyerType]      = useState(BUYER_TYPES[0])
+  const [source,         setSource]         = useState('')
   const [notes,          setNotes]          = useState('')
   const [status,         setStatus]         = useState<'Active' | 'Inactive' | 'Blocked'>('Active')
 
@@ -126,6 +130,7 @@ export function CustomerDetailPage() {
     setSameAsBilling(c.same_as_billing ?? true)
     setBillingAddress(c.billing_address ?? '')
     setBuyerType(c.buyer_type ?? BUYER_TYPES[0])
+    setSource(c.source ?? '')
     setNotes(c.notes ?? '')
     setStatus(c.status)
   }
@@ -174,6 +179,7 @@ export function CustomerDetailPage() {
       same_as_billing: sameAsBilling,
       billing_address: sameAsBilling ? null : (billingAddress.trim() || null),
       buyer_type: buyerType || null,
+      source: source || null,
       notes: notes.trim() || null,
       status,
     })
@@ -223,7 +229,7 @@ export function CustomerDetailPage() {
             )}
             {customer.lead_id && (
               <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' }}>
-                Converted from Lead #{customer.lead_id.slice(0, 8)}
+                Converted from {customer.lead_number ?? `Lead #${customer.lead_id.slice(0, 8)}`}
               </span>
             )}
           </div>
@@ -336,6 +342,12 @@ export function CustomerDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: '#94A3B8', flexShrink: 0, fontWeight: 600 }}>IG</span>
                     <span style={{ fontSize: 13, color: '#334155' }}>{customer.instagram_id}</span>
+                  </div>
+                )}
+                {customer.source && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: '#94A3B8', flexShrink: 0, fontWeight: 600 }}>SRC</span>
+                    <span style={{ fontSize: 13, color: '#0D9488', fontWeight: 500 }}>{customer.source}</span>
                   </div>
                 )}
                 {customer.buyer_type && (
@@ -452,6 +464,14 @@ export function CustomerDetailPage() {
 
                 {/* Classification */}
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '8px 0 0' }}>Classification</p>
+                <div className="al-field">
+                  <label>Source Channel</label>
+                  <select className="al-input" value={source} onChange={e => setSource(e.target.value)}>
+                    {['', 'Facebook Messenger', 'WhatsApp', 'Instagram', 'Email', 'Walk-in', 'Phone', 'Referral', 'Other'].map(s => (
+                      <option key={s} value={s}>{s || '— Select source —'}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="al-field">
                   <label>Buyer Type</label>
                   <select className="al-input" value={buyerType} onChange={e => setBuyerType(e.target.value)}>
@@ -573,6 +593,7 @@ export function CustomerDetailPage() {
             {[
               { label: 'Customer Since', value: fmtDate(customer.created_at) },
               { label: 'Total Quotes', value: String(customer.quotes_count ?? quotes.length) },
+              { label: 'Source Channel', value: customer.source ?? customer.lead_source ?? 'Not set' },
               { label: 'Buyer Type', value: customer.buyer_type ?? 'Not set' },
             ].map(({ label, value }) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F1F5F9' }}>
@@ -584,15 +605,25 @@ export function CustomerDetailPage() {
 
           {customer.lead_id && (
             <div className="al-panel" style={{ padding: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
                 Lead Origin
               </div>
-              <p style={{ fontSize: 13, color: '#64748B', margin: '0 0 10px' }}>
-                This customer was converted from a lead.
-              </p>
-              <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A', fontWeight: 600 }}>
-                Lead #{customer.lead_id.slice(0, 8)}
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#64748B' }}>Lead ID</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 999, background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' }}>
+                    {customer.lead_number ?? `#${customer.lead_id.slice(0, 8)}`}
+                  </span>
+                </div>
+                {(customer.lead_source || customer.source) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#64748B' }}>Source Channel</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#0D9488' }}>
+                      {customer.lead_source ?? customer.source}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

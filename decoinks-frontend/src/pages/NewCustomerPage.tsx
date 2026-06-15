@@ -7,6 +7,7 @@ import { api } from '../services/api'
 const COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'India', 'China', 'Japan']
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
 const BUYER_TYPES = ['Retail', 'Wholesale', 'Corporate', 'Non-Profit', 'Individual', 'Other']
+const SOURCES = ['', 'Facebook Messenger', 'WhatsApp', 'Instagram', 'Email', 'Walk-in', 'Phone', 'Referral', 'Other']
 
 export function NewCustomerPage() {
   const navigate = useNavigate()
@@ -36,6 +37,7 @@ export function NewCustomerPage() {
 
   // Section 4 — Classification
   const [buyerType, setBuyerType] = useState(BUYER_TYPES[0])
+  const [source,    setSource]    = useState('')
   const [notes,     setNotes]     = useState('')
 
   const handleSave = async () => {
@@ -60,6 +62,7 @@ export function NewCustomerPage() {
         same_as_billing: sameAsBilling,
         billing_address: sameAsBilling ? undefined : (billingAddress.trim() || undefined),
         buyer_type: buyerType,
+        source: source || undefined,
         notes: notes.trim() || undefined,
       }
       const res = await api.post('/customers', payload)
@@ -214,11 +217,19 @@ export function NewCustomerPage() {
               <h4>Classification</h4>
             </div>
             <div className="ncust-section-body">
-              <div className="al-field">
-                <label>Buyer Type</label>
-                <select className="al-input" value={buyerType} onChange={(e) => setBuyerType(e.target.value)}>
-                  {BUYER_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
+              <div className="al-field-row">
+                <div className="al-field">
+                  <label>Source Channel <span className="al-optional">(optional)</span></label>
+                  <select className="al-input" value={source} onChange={(e) => setSource(e.target.value)}>
+                    {SOURCES.map(s => <option key={s} value={s}>{s || '— Select source —'}</option>)}
+                  </select>
+                </div>
+                <div className="al-field">
+                  <label>Buyer Type</label>
+                  <select className="al-input" value={buyerType} onChange={(e) => setBuyerType(e.target.value)}>
+                    {BUYER_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="al-field">
                 <div className="al-label-row">

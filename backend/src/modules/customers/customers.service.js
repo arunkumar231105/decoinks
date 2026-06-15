@@ -59,7 +59,7 @@ async function getById(id) {
 
 async function create({ lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,
   address_line1, city, state, zip, country, billing_address, same_as_shipping,
-  buyer_type, internal_notes, created_by }) {
+  buyer_type, internal_notes, source, created_by }) {
   const customer_number = await getNextNumber('CUST', 'customers', 'customer_number')
   const client = await getClient()
   try {
@@ -68,8 +68,8 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
       `INSERT INTO customers
          (customer_number, lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,
           address_line1, city, state, zip, country, billing_address, same_as_shipping,
-          buyer_type, internal_notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          buyer_type, internal_notes, source, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [
         customer_number, lead_id || null, name,
@@ -77,7 +77,7 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
         website || null, facebook_id || null, instagram_id || null,
         address_line1 || null, city || null, state || null, zip || null,
         country || 'United States', billing_address || null, same_as_shipping || false,
-        buyer_type || null, internal_notes || null, created_by,
+        buyer_type || null, internal_notes || null, source || null, created_by,
       ]
     )
     const customer = rows[0]
@@ -109,7 +109,7 @@ async function update(id, fields, actorId) {
   const allowed = [
     'name', 'email', 'phone', 'whatsapp', 'company', 'website', 'facebook_id', 'instagram_id',
     'address_line1', 'city', 'state', 'zip', 'country', 'billing_address', 'same_as_shipping',
-    'buyer_type', 'internal_notes', 'status',
+    'buyer_type', 'internal_notes', 'status', 'source',
   ]
   const sets = []
   const params = []

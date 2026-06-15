@@ -26,6 +26,7 @@ const customerFields = {
   same_as_shipping: z.boolean().optional(),
   buyer_type:       z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
+  source:           z.string().optional().nullable(),
 }
 
 const createSchema = z.object(customerFields)

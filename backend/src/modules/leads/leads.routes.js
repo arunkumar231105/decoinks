@@ -92,7 +92,7 @@ router.post('/:id/convert-to-customer', async (req, res, next) => {
     const custSvc = require('../customers/customers.service')
     const customer = await custSvc.create({
       lead_id: lead.id,
-      name: lead.customer_name || lead.company_name || lead.email || 'Unknown',
+      name: lead.customer_name || lead.supplier_name || lead.company_name || lead.email || 'Unknown',
       email: lead.email || null,
       phone: lead.phone || null,
       whatsapp: lead.whatsapp || null,
@@ -100,6 +100,7 @@ router.post('/:id/convert-to-customer', async (req, res, next) => {
       address_line1: lead.shipping_address || null,
       buyer_type: lead.buyer_type || null,
       internal_notes: lead.internal_notes || null,
+      source: lead.source || null,
       created_by: req.user.id,
     })
     res.status(201).json({ success: true, data: customer })
