@@ -834,9 +834,24 @@ export function NewInvoicePage() {
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
                           <td data-label="Gangsheet Size">
-                            <select className="ni-table-select" value={row.size} onChange={e => updateGangsheetItem(row.id, { size: e.target.value })}>
-                              {GS_SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            {GS_SIZES.includes(row.size) ? (
+                              <select className="ni-table-select" value={row.size} onChange={e => updateGangsheetItem(row.id, { size: e.target.value === '__custom__' ? '' : e.target.value })}>
+                                {GS_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                                <option value="__custom__">Custom...</option>
+                              </select>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <input
+                                  className="ni-table-input"
+                                  style={{ width: 88 }}
+                                  placeholder='e.g. 36"x60"'
+                                  value={row.size}
+                                  onChange={e => updateGangsheetItem(row.id, { size: e.target.value })}
+                                  autoFocus
+                                />
+                                <button type="button" title="Back to list" onClick={() => updateGangsheetItem(row.id, { size: '22"x60"' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 13, lineHeight: 1 }}>✕</button>
+                              </div>
+                            )}
                           </td>
                           <td data-label="No. Artworks">
                             <input type="number" className="ni-table-input ni-num-input" min={0} value={row.numArtworks} onChange={e => updateGangsheetItem(row.id, { numArtworks: +e.target.value })} />
