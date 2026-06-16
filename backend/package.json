@@ -16,7 +16,7 @@
     "test:coverage": "jest --coverage --runInBand --forceExit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1061.0",
+    "@aws-sdk/client-s3": "^3.1062.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

@@ -422,7 +422,7 @@ async function convertToQuote(leadId, createdBy) {
     items,
     created_by:                   createdBy,
     company_name:                 lead.company_name           || null,
-    customer_name:                lead.supplier_name          || null,
+    customer_name:                lead.customer_name || lead.supplier_name || null,
     billing_email:                lead.email                  || null,
     contact_number:               lead.phone                  || null,
     whatsapp:                     lead.whatsapp               || null,
