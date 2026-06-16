@@ -45,7 +45,7 @@ interface Customer {
   billing_address: string | null
   buyer_type: string | null
   source: string | null
-  notes: string | null
+  internal_notes: string | null
   status: 'Active' | 'Inactive' | 'Blocked'
   lead_id: string | null
   lead_number: string | null
@@ -104,10 +104,11 @@ export function CustomerDetailPage() {
   const [notes,          setNotes]          = useState('')
   const [status,         setStatus]         = useState<'Active' | 'Inactive' | 'Blocked'>('Active')
 
-  const { data: customerData, isLoading } = useQuery({
+  const { data: customerData, isLoading, isError } = useQuery({
     queryKey: ['customer', id],
     queryFn: () => api.get(`/customers/${id}`).then(r => r.data.data as (Customer & { quotes: Quote[] })),
     enabled: !!id,
+    retry: 1,
   })
 
   const customer: Customer | undefined = customerData
@@ -131,7 +132,7 @@ export function CustomerDetailPage() {
     setBillingAddress(c.billing_address ?? '')
     setBuyerType(c.buyer_type ?? BUYER_TYPES[0])
     setSource(c.source ?? '')
-    setNotes(c.notes ?? '')
+    setNotes(c.internal_notes ?? '')
     setStatus(c.status)
   }
 
@@ -180,7 +181,7 @@ export function CustomerDetailPage() {
       billing_address: sameAsBilling ? null : (billingAddress.trim() || null),
       buyer_type: buyerType || null,
       source: source || null,
-      notes: notes.trim() || null,
+      internal_notes: notes.trim() || null,
       status,
     })
   }
@@ -194,6 +195,15 @@ export function CustomerDetailPage() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
         <span style={{ color: '#94A3B8', fontSize: 14 }}>Loading...</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12 }}>
+        <span style={{ color: '#EF4444', fontSize: 14, fontWeight: 600 }}>Failed to load customer.</span>
+        <span style={{ color: '#94A3B8', fontSize: 13 }}>The server may still be starting up — try refreshing in a moment.</span>
       </div>
     )
   }
@@ -498,8 +508,8 @@ export function CustomerDetailPage() {
                 placeholder="Any special requirements, preferences, or notes about this customer..."
               />
             ) : (
-              <p style={{ fontSize: 13, color: customer.notes ? '#334155' : '#94A3B8', lineHeight: 1.6, margin: 0 }}>
-                {customer.notes ?? 'No notes added.'}
+              <p style={{ fontSize: 13, color: customer.internal_notes ? '#334155' : '#94A3B8', lineHeight: 1.6, margin: 0 }}>
+                {customer.internal_notes ?? 'No notes added.'}
               </p>
             )}
           </div>

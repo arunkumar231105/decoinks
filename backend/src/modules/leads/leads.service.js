@@ -43,7 +43,7 @@ async function list({ page = 1, limit = 10, search = '', stage = '', status = ''
 
   if (search) {
     params.push(`%${search}%`)
-    conditions.push(`(l.lead_number ILIKE $${params.length} OR l.supplier_name ILIKE $${params.length} OR l.description ILIKE $${params.length})`)
+    conditions.push(`(l.lead_number ILIKE $${params.length} OR l.supplier_name ILIKE $${params.length} OR l.customer_name ILIKE $${params.length} OR l.description ILIKE $${params.length})`)
   }
   if (stage) { params.push(stage); conditions.push(`l.stage = $${params.length}`) }
   if (status) { params.push(status); conditions.push(`l.status = $${params.length}`) }
@@ -370,6 +370,7 @@ function formatLead(r) {
   return {
     id: r.id,
     leadId: r.lead_number,
+    customerName: r.customer_name ?? r.supplier_name ?? null,
     supplierName: r.supplier_name,
     source: r.source,
     description: r.description,
