@@ -295,10 +295,13 @@ export function InvoicePrintPage() {
     </div>
   )
 
-  const items    = quotation?.items ?? []
-  const artworks = artworkData?.artworks ?? []
-  const isDtf    = quotation?.order_type === 'dtf'
-  const totalQty = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
+  const items       = quotation?.items ?? []
+  const artworks    = artworkData?.artworks ?? []
+  const isDtf       = quotation?.order_type === 'dtf'
+  const isGangsheet = quotation?.order_type === 'gangsheet'
+  const totalQty    = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
+  const totalSheets = isGangsheet ? items.reduce((s, i) => s + (Number(i.qty) || 0), 0) : 0
+  const totalArts   = isGangsheet ? items.reduce((s, i) => s + (Number(i.artwork_count) || 0), 0) : 0
 
   const payMethod = invoice.payments?.[0]?.method
     ?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) ?? '—'
@@ -507,7 +510,44 @@ export function InvoicePrintPage() {
 
         {/* ══ ITEMS TABLE ══ */}
         <div className="tbl-wrap">
-          {isDtf ? (
+          {isGangsheet ? (
+            /* Gangsheet — Size, No. Artworks, Qty Sheets, FR Image, Price/Sheet, Amount */
+            <table className="inv-tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: 40 }}>S.No</th>
+                  <th style={{ minWidth: 120 }}>Gangsheet Size</th>
+                  <th style={{ width: 100 }}>No. Artworks</th>
+                  <th style={{ width: 90 }}>Qty Sheets</th>
+                  <th style={{ width: 80 }}>FR Image</th>
+                  <th style={{ width: 90 }}>Price/Sheet<br />(USD)</th>
+                  <th style={{ width: 90 }}>Amount<br />(USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                ) : items.map((item, idx) => {
+                  const art = artworks[idx] ?? null
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
+                      <td style={{ fontWeight: 700, color: '#1a2b5c', fontSize: 13 }}>{item.description || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{item.artwork_count || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{item.qty}</td>
+                      <td>
+                        {art?.file_url && art.file_type !== 'pdf'
+                          ? <img src={art.file_url} alt={art.name} className="art-thumb" />
+                          : <div className="art-empty">🖼</div>}
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
+                      <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : isDtf ? (
             /* DTF — S.No sequential per row, only Item Desc + Rate rowSpan */
             <table className="inv-tbl">
               <thead>
@@ -636,9 +676,9 @@ export function InvoicePrintPage() {
               <tr>
                 <td style={{ width: '25%' }}>
                   <div className="stat-cell">
-                    <div className="stat-icon">👕</div>
+                    <div className="stat-icon">{isGangsheet ? '🗂' : '👕'}</div>
                     <div>
-                      <div className="stat-lbl">Total Items</div>
+                      <div className="stat-lbl">{isGangsheet ? 'Gangsheet Sizes' : 'Total Items'}</div>
                       <div className="stat-val">{isDtf ? dtfGroups.length : items.length}</div>
                     </div>
                   </div>
@@ -648,7 +688,7 @@ export function InvoicePrintPage() {
                     <div className="stat-icon">🖼</div>
                     <div>
                       <div className="stat-lbl">Total Artworks</div>
-                      <div className="stat-val">{isDtf ? items.length : artworks.length}</div>
+                      <div className="stat-val">{isGangsheet ? totalArts : isDtf ? items.length : artworks.length}</div>
                     </div>
                   </div>
                 </td>
@@ -656,8 +696,8 @@ export function InvoicePrintPage() {
                   <div className="stat-cell">
                     <div className="stat-icon">📦</div>
                     <div>
-                      <div className="stat-lbl">{isDtf ? 'Total Qty (Transfers)' : 'Total Qty'}</div>
-                      <div className="stat-val">{totalQty}{!isDtf && ' pcs'}</div>
+                      <div className="stat-lbl">{isGangsheet ? 'Total Sheets' : isDtf ? 'Total Qty (Transfers)' : 'Total Qty'}</div>
+                      <div className="stat-val">{isGangsheet ? totalSheets : totalQty}{!isDtf && !isGangsheet && ' pcs'}</div>
                     </div>
                   </div>
                 </td>

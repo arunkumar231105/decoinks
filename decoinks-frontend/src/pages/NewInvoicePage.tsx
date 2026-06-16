@@ -304,7 +304,7 @@ export function NewInvoicePage() {
   const [rushServices, setRushServices] = useState(0)
   const [discountType, setDiscountType] = useState<DiscountType>('percentage')
   const [discountValue, setDiscountValue] = useState(0)
-  const taxRate = 7
+  const taxRate = 0
 
   // Customer details
   const [billingEmail,    setBillingEmail]    = useState('')
@@ -1120,10 +1120,6 @@ export function NewInvoicePage() {
                   </div>
                   <strong className="ni-discount-amt">-${fmt(discountAmt)}</strong>
                 </div>
-              </div>
-              <div className="ni-summary-row">
-                <span>Tax ({taxRate}%)</span>
-                <strong>${fmt(taxAmt)}</strong>
               </div>
             </div>
             <div className="ni-total-row">
