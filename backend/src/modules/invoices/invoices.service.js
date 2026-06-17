@@ -6,8 +6,8 @@ const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function calcTotal(subtotal, discount_amt, tax_amt) {
-  return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
+function calcTotal(subtotal, discount_amt) {
+  return +(Number(subtotal) - Number(discount_amt)).toFixed(2)
 }
 
 async function logActivity(actorId, invoiceId, action, description) {
@@ -73,13 +73,12 @@ async function getById(id) {
 
 async function create(fields_in) {
   const { quote_id, order_id, supplier_id, issue_date, due_date,
-          subtotal = 0, discount_amt = 0, tax_amt = 0,
+          subtotal = 0, discount_amt = 0,
           notes, created_by, order_type, items } = fields_in
   const fields = fields_in
 
   let resolvedSubtotal    = Number(subtotal)
   let resolvedDiscountAmt = Number(discount_amt)
-  let resolvedTaxAmt      = Number(tax_amt)
   let resolvedSupplierId  = supplier_id || null
   let resolvedCustomerName = fields.customer_name || null
 
@@ -93,7 +92,6 @@ async function create(fields_in) {
     const q = qRows[0]
     resolvedSubtotal    = Number(q.subtotal)
     resolvedDiscountAmt = Number(q.discount_amt)
-    resolvedTaxAmt      = Number(q.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
     if (!resolvedCustomerName) resolvedCustomerName = q.customer_name
   } else if (order_id) {
@@ -106,7 +104,6 @@ async function create(fields_in) {
     const o = orderRows[0]
     resolvedSubtotal    = Number(o.subtotal)
     resolvedDiscountAmt = Number(o.discount_amt)
-    resolvedTaxAmt      = Number(o.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
   }
 
@@ -118,7 +115,7 @@ async function create(fields_in) {
 
   const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
 
-  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
+  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt)
   const balance_due = total
 
   const { rows } = await query(
@@ -135,7 +132,7 @@ async function create(fields_in) {
       quote_id || null, order_id || null, resolvedSupplierId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
-      resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt,
+      resolvedSubtotal, resolvedDiscountAmt, 0,
       total, 0, balance_due,
       notes || null, created_by,
       fields.customer_name || null, fields.billing_email || null,
@@ -182,7 +179,7 @@ async function create(fields_in) {
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'notes', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address']
   const sets = []
   const params = []
 
@@ -194,13 +191,12 @@ async function update(id, fields) {
   }
   if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
-  const financialFields = ['subtotal', 'discount_amt', 'tax_amt']
+  const financialFields = ['subtotal', 'discount_amt']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
     const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
-    const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
-    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
+    const newTotal       = calcTotal(newSubtotal, newDiscountAmt)
     const newBalanceDue  = +(Math.max(0, newTotal - Number(existing.amount_paid))).toFixed(2)
 
     params.push(newTotal);     sets.push(`total = $${params.length}`)
@@ -250,7 +246,7 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
     [
       ordNumber, invoiceId, invoice.supplier_id, orderType,
       new Date().toISOString().split('T')[0],
-      invoice.subtotal, invoice.discount_amt, invoice.tax_amt, total,
+      invoice.subtotal, invoice.discount_amt, 0, total,
       actorId,
     ]
   )
@@ -320,7 +316,7 @@ async function updateStatus(id, status, actor) {
             [
               ordNumber, id, invoice.supplier_id, orderType,
               new Date().toISOString().split('T')[0],
-              invoice.subtotal, invoice.discount_amt, invoice.tax_amt, total,
+              invoice.subtotal, invoice.discount_amt, 0, total,
               actorId,
             ]
           )

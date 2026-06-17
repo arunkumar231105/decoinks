@@ -36,7 +36,6 @@ interface Invoice {
   quote_number: string | null
   subtotal: number
   discount_amt: number
-  tax_amt: number
   total: number
   amount_paid: number
   balance_due: number
@@ -375,7 +374,6 @@ export function InvoiceDetailPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <SummaryRow label="Subtotal"       value={`$${fmt(invoice.subtotal)}`} />
               <SummaryRow label="Discount"       value={`— $${fmt(invoice.discount_amt)}`} dimmed />
-              <SummaryRow label="Tax"            value={`$${fmt(invoice.tax_amt)}`} />
               <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
                 <SummaryRow label="Invoice Total" value={`$${fmt(invoice.total)}`} bold />
               </div>

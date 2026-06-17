@@ -210,7 +210,6 @@ function calculateInvoiceTotals({
   rushServices,
   discountType,
   discountValue,
-  taxRate,
 }: {
   itemsTotal: number
   rushCharges: number
@@ -218,16 +217,13 @@ function calculateInvoiceTotals({
   rushServices: number
   discountType: DiscountType
   discountValue: number
-  taxRate: number
 }) {
   const subtotal = itemsTotal + rushCharges + shippingCharges + rushServices
   const rawDiscount = discountType === 'percentage' ? subtotal * (discountValue / 100) : discountValue
   const discountAmt = +Math.min(Math.max(rawDiscount, 0), subtotal).toFixed(2)
-  const taxableAmount = Math.max(subtotal - discountAmt, 0)
-  const taxAmt = +(taxableAmount * (taxRate / 100)).toFixed(2)
-  const total = +(taxableAmount + taxAmt).toFixed(2)
+  const total = +(Math.max(subtotal - discountAmt, 0)).toFixed(2)
 
-  return { subtotal, discountAmt, taxableAmount, taxAmt, total }
+  return { subtotal, discountAmt, taxAmt: 0, total }
 }
 
 function getInvoiceCounters(
@@ -304,7 +300,6 @@ export function NewInvoicePage() {
   const [rushServices, setRushServices] = useState(0)
   const [discountType, setDiscountType] = useState<DiscountType>('percentage')
   const [discountValue, setDiscountValue] = useState(0)
-  const taxRate = 0
 
   // Customer details
   const [billingEmail,    setBillingEmail]    = useState('')
@@ -422,7 +417,6 @@ export function NewInvoicePage() {
       rushServices,
       discountType,
       discountValue,
-      taxRate,
     }),
     [itemsTotal, rushCharges, shippingCharges, rushServices, discountType, discountValue],
   )

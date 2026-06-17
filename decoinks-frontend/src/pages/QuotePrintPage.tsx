@@ -23,7 +23,7 @@ interface Quote {
   shipping_state: string | null; zip_code: string | null; shipping_country: string | null
   billing_address: string | null; supplier_name: string | null
   subtotal: number; discount_pct: number; discount_amt: number
-  tax_pct: number; tax_amt: number; total: number; notes: string | null; customer_notes: string | null
+  total: number; notes: string | null; customer_notes: string | null
   rush_services: number | null; estimated_shipping: number | null
   payment_terms: string | null; items: QuoteItem[]
 }
@@ -510,7 +510,6 @@ export function QuotePrintPage() {
             <hr className="pr-divider" />
             <div className="pr-row"><span className="lbl">Subtotal</span><span className="val">{fmt(quote.subtotal + rushAmt + shippingAmt)}</span></div>
             <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>
-            <div className="pr-row"><span className="lbl">Tax ({quote.tax_pct ?? 0}%)</span><span className="val">{fmt(quote.tax_amt)}</span></div>
             <div className="pr-row total"><span className="lbl">Total</span><span className="val">{fmt(quote.total)}</span></div>
           </div>
 

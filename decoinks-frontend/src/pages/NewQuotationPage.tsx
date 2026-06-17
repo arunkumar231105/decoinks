@@ -64,7 +64,7 @@ interface TransferRow {
 }
 
 interface OtherCharge {
-  key: 'artwork' | 'packaging' | 'shipping' | 'discount' | 'tax'
+  key: 'artwork' | 'packaging' | 'shipping' | 'discount'
   label: string
   description: string
   enabled: boolean
@@ -112,31 +112,26 @@ const initialOtherCharges: OtherCharge[] = [
   { key: 'packaging', label: 'Packaging', description: 'Poly mailer + label', enabled: false, stdCost: 0, quotedCost: 0 },
   { key: 'shipping', label: 'Estimated Shipping', description: 'Shipping & handling', enabled: false, stdCost: 0, quotedCost: 0 },
   { key: 'discount', label: 'Discount', description: 'Special discount', enabled: false, stdCost: 0, quotedCost: 0 },
-  { key: 'tax', label: 'Tax', description: 'Tax is calculated from taxable amount', enabled: false, stdCost: 0, quotedCost: 0 },
 ]
 
 function calculateQuotationTotals({
   productTotals,
   otherCharges,
-  taxRate,
 }: {
   productTotals: ProductTotals
   otherCharges: OtherCharge[]
-  taxRate: number
 }) {
   const itemsTotal = productTotals.apparel + productTotals.gangsheet + productTotals.transfers + productTotals.leadItems
   const enabled = otherCharges.filter(charge => charge.enabled)
   const shipping = enabled.find(charge => charge.key === 'shipping')?.quotedCost ?? 0
   const nonTaxCharges = enabled
-    .filter(charge => !['shipping', 'discount', 'tax'].includes(charge.key))
+    .filter(charge => !['shipping', 'discount'].includes(charge.key))
     .reduce((sum, charge) => sum + charge.quotedCost, 0)
   const discount = enabled.find(charge => charge.key === 'discount')?.quotedCost ?? 0
   const subtotal = itemsTotal + shipping + nonTaxCharges
-  const taxableAmount = Math.max(subtotal + discount, 0)
-  const tax = enabled.some(charge => charge.key === 'tax') ? +(taxableAmount * taxRate).toFixed(2) : 0
-  const finalTotal = +(taxableAmount + tax).toFixed(2)
+  const finalTotal = +(Math.max(subtotal + discount, 0)).toFixed(2)
 
-  return { itemsTotal, shipping, subtotal, discount, tax, finalTotal }
+  return { itemsTotal, shipping, subtotal, discount, finalTotal }
 }
 
 function CustomerCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string, customer?: Record<string, any>) => void }) {
@@ -441,7 +436,6 @@ function PricingSummary({ totals }: { totals: ReturnType<typeof calculateQuotati
           <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Shipping</label></td><td>${fmt(totals.shipping)}</td></tr>
           <tr className="nq-pricing-subtotal"><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Subtotal</label></td><td>${fmt(totals.subtotal)}</td></tr>
           <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Discount</label></td><td className="nq-pricing-discount">${fmt(totals.discount)}</td></tr>
-          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Tax</label></td><td>${fmt(totals.tax)}</td></tr>
         </tbody>
         <tfoot><tr className="nq-pricing-total-row"><td>Total</td><td><strong className="nq-total-quoted">${fmt(totals.finalTotal)}</strong></td></tr></tfoot>
       </table>
@@ -918,14 +912,12 @@ export function NewQuotationPage() {
     if (q.status) setStatus(q.status as QuoteStatus)
 
     // Restore other charges from saved values
-    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_pct > 0 || q.tax_pct > 0) {
+    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_pct > 0) {
       setOtherCharges(prev => prev.map(charge => {
         if (charge.key === 'shipping' && q.estimated_shipping > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.estimated_shipping) }
         if (charge.key === 'discount' && q.discount_pct > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.discount_pct) }
-        if (charge.key === 'tax' && q.tax_pct > 0)
-          return { ...charge, enabled: true }
         if (charge.key === 'artwork' && q.rush_services > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.rush_services) }
         return charge
@@ -1009,7 +1001,7 @@ export function NewQuotationPage() {
   const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
   const transfersTotal = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0), [transferRows])
   const activeTotal    = activeTab === 'apparel' ? apparelTotal : activeTab === 'dtf' ? transfersTotal : gangsheetTotal
-  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges, taxRate: 0.07 }), [activeTotal, otherCharges])
+  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges }), [activeTotal, otherCharges])
 
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) => setApparelItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item))
   const updateGangsheetRow = (id: string, patch: Partial<GangsheetRow>) => setGangsheetRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
@@ -1082,8 +1074,6 @@ export function NewQuotationPage() {
       })
     }
 
-    const taxEnabled      = otherCharges.find(c => c.key === 'tax')?.enabled ?? false
-    const taxPct          = taxEnabled ? 7 : 0
     const discountCharge  = otherCharges.find(c => c.key === 'discount')
     const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
     const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
@@ -1105,7 +1095,6 @@ export function NewQuotationPage() {
       shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
       internal_notes:               internalNotes || undefined,
       discount_pct:                 discountPct,
-      tax_pct:                      taxPct,
       items:                        allItems,
       estimated_shipping:           estimatedShipping,
       rush_services:                rushServices,

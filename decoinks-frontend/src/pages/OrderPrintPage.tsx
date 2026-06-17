@@ -18,8 +18,6 @@ interface Order {
   subtotal: number
   discount_pct: number
   discount_amt: number
-  tax_pct: number
-  tax_amt: number
   rush_services: number
   shipping_charges: number
   notes: string | null
@@ -489,12 +487,6 @@ export function OrderPrintPage() {
                       <tr>
                         <td className="ol">Bulk Discount</td>
                         <td className="ov neg">-{fmt(order.discount_amt)}</td>
-                      </tr>
-                    )}
-                    {Number(order.tax_amt) > 0 && (
-                      <tr>
-                        <td className="ol">Tax</td>
-                        <td className="ov">{fmt(order.tax_amt)}</td>
                       </tr>
                     )}
                   </tbody>

@@ -9,7 +9,7 @@ interface Invoice {
   supplier_name: string | null; contact_name: string | null; contact_email: string | null
   contact_phone: string | null; shipping_name: string | null; shipping_address: string | null
   subtotal: number; discount_pct: number; discount_amt: number
-  tax_pct: number; tax_amt: number; rush_services: number; shipping_charges: number
+  rush_services: number; shipping_charges: number
   total: number; notes: string | null; quote_id: string | null; order_type: string | null
   payments: any[]
 }
@@ -260,7 +260,6 @@ export function InvoiceReceiptPage() {
 
   const subtotal      = Number(invoice.subtotal)
   const discountAmt   = Number(invoice.discount_amt)
-  const taxAmt        = Number(invoice.tax_amt)
   const shippingAmt   = Number(invoice.shipping_charges ?? 0)
   const rushAmt       = Number(invoice.rush_services ?? 0)
   const total         = Number(invoice.total)
@@ -417,11 +416,6 @@ export function InvoiceReceiptPage() {
               <span className="val">{fmt(rushAmt)}</span>
             </div>
           )}
-
-          <div className="rc-row">
-            <span className="lbl">Taxes {invoice.tax_pct > 0 ? `(${invoice.tax_pct}%)` : ''}</span>
-            <span className="val">{fmt(taxAmt)}</span>
-          </div>
 
           <hr className="rc-totals-divider" />
 

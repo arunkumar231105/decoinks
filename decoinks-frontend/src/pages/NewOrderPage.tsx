@@ -130,7 +130,6 @@ export function NewOrderPage() {
   const [rushServices,    setRushServices]    = useState(0)
   const [shippingCharges, setShippingCharges] = useState(0)
   const [discountPct,     setDiscountPct]     = useState(0)
-  const [taxPct,          setTaxPct]          = useState(0)
 
   // Contact panel
   const [contactName,  setContactName]  = useState('')
@@ -195,7 +194,6 @@ export function NewOrderPage() {
     setRushServices(Number(existingOrder.rush_services ?? 0))
     setShippingCharges(Number(existingOrder.shipping_charges ?? 0))
     setDiscountPct(Number(existingOrder.discount_pct ?? 0))
-    setTaxPct(Number(existingOrder.tax_pct ?? 0))
     setContactName(existingOrder.contact_name ?? '')
     setContactEmail(existingOrder.contact_email ?? '')
     setContactPhone(existingOrder.contact_phone ?? '')
@@ -332,8 +330,7 @@ export function NewOrderPage() {
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
   const discountAmt = useMemo(() => +(subtotal * (discountPct / 100)).toFixed(2), [subtotal, discountPct])
-  const taxAmt      = useMemo(() => +((subtotal - discountAmt) * (taxPct / 100)).toFixed(2), [subtotal, discountAmt])
-  const total       = useMemo(() => +(subtotal - discountAmt + taxAmt).toFixed(2), [subtotal, discountAmt, taxAmt])
+  const total       = useMemo(() => +(subtotal - discountAmt).toFixed(2), [subtotal, discountAmt])
 
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
@@ -419,7 +416,6 @@ export function NewOrderPage() {
       rush_services:    rushServices,
       shipping_charges: shippingCharges,
       discount_pct:     discountPct,
-      tax_pct:          taxPct,
       notes:            orderNotes || null,
       assigned_to:      agentId || null,
       contact_name:     contactName || null,
@@ -907,14 +903,6 @@ export function NewOrderPage() {
                 <input type="number" className="no-pricing-input no-pricing-pct" min={0} max={100} value={discountPct} onFocus={e => e.target.select()} onChange={e => setDiscountPct(+e.target.value)} />
                 <span className="no-pricing-sym">%</span>
                 <span className="no-pricing-neg">-${fmt(discountAmt)}</span>
-              </div>
-            </div>
-            <div className="no-pricing-row">
-              <span>Tax</span>
-              <div className="no-pricing-input-group">
-                <input type="number" className="no-pricing-input no-pricing-pct" min={0} max={100} step={0.5} value={taxPct} onFocus={e => e.target.select()} onChange={e => setTaxPct(+e.target.value)} />
-                <span className="no-pricing-sym">%</span>
-                <span className="no-pricing-neg" style={{ color: '#374151' }}>${fmt(taxAmt)}</span>
               </div>
             </div>
             <div className="no-pricing-total-row">

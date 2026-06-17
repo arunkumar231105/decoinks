@@ -3,13 +3,12 @@ const { getNextNumber } = require('../../utils/counter')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
-function calcTotals(items, discountPct, taxPct, estimatedShipping = 0, rushServices = 0) {
+function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushServices = 0) {
   const itemsTotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
   const subtotal = +(itemsTotal + Number(estimatedShipping) + Number(rushServices)).toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
-  const tax_amt = +((subtotal - discount_amt) * (taxPct / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
-  return { subtotal, discount_amt, tax_amt, total }
+  const total = +(subtotal - discount_amt).toFixed(2)
+  return { subtotal, discount_amt, tax_amt: 0, total }
 }
 
 async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
@@ -54,7 +53,7 @@ async function getById(id) {
 }
 
 async function create({
-  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, tax_pct = 0, notes, items = [], created_by,
+  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items = [], created_by,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
@@ -62,7 +61,7 @@ async function create({
   estimated_shipping = 0, rush_services = 0, payment_terms, customer_notes,
 }) {
   const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, tax_pct, estimated_shipping, rush_services)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
 
   const client = await getClient()
   try {
@@ -81,7 +80,7 @@ async function create({
        RETURNING *`,
       [
         quote_number, lead_id || null, supplier_id || null, order_type || null, valid_until || null,
-        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, notes || null, created_by,
+        subtotal, discount_pct, discount_amt, 0, 0, total, notes || null, created_by,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
@@ -113,7 +112,7 @@ async function create({
 }
 
 async function update(id, {
-  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, tax_pct = 0, notes, items,
+  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
@@ -121,7 +120,7 @@ async function update(id, {
   estimated_shipping, rush_services, payment_terms, customer_notes,
 }, actorId) {
   const itemList = items ?? []
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, tax_pct, estimated_shipping, rush_services)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, 0, estimated_shipping, rush_services)
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -143,7 +142,7 @@ async function update(id, {
        RETURNING id`,
       [
         lead_id || null, supplier_id || null, order_type || null, valid_until || null,
-        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, notes || null,
+        subtotal, discount_pct, discount_amt, 0, 0, total, notes || null,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,

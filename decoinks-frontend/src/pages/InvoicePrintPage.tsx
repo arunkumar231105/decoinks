@@ -13,7 +13,7 @@ interface InvoiceItem {
 interface Invoice {
   id: string; invoice_number: string; status: string
   issue_date: string | null; due_date: string | null
-  subtotal: number; discount_amt: number; tax_amt: number
+  subtotal: number; discount_amt: number
   total: number
   shipping_charges?: number | null
   notes: string | null; supplier_name: string | null
@@ -455,12 +455,6 @@ export function InvoicePrintPage() {
                       <tr>
                         <td className="sl">Bulk Discount</td>
                         <td className="sv neg">-{fmt(invoice.discount_amt)}</td>
-                      </tr>
-                    )}
-                    {Number(invoice.tax_amt) > 0 && (
-                      <tr>
-                        <td className="sl">Tax</td>
-                        <td className="sv">{fmt(invoice.tax_amt)}</td>
                       </tr>
                     )}
                   </tbody>

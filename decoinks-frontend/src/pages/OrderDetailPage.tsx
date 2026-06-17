@@ -29,8 +29,7 @@ interface Order {
   subtotal: number
   discount_pct: number
   discount_amt: number
-  tax_pct: number
-  tax_amt: number
+
   rush_services: number
   shipping_charges: number
   notes: string | null
@@ -367,7 +366,6 @@ export function OrderDetailPage() {
             {Number(order.shipping_charges) > 0 && <div className="od-price-row"><span>Shipping</span><span>${fmt(order.shipping_charges)}</span></div>}
             <div className="od-price-row od-price-sub"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
             {Number(order.discount_pct) > 0 && <div className="od-price-row od-price-discount"><span>Discount ({order.discount_pct}%)</span><span>-${fmt(order.discount_amt)}</span></div>}
-            <div className="od-price-row"><span>Tax ({order.tax_pct}%)</span><span>${fmt(order.tax_amt)}</span></div>
             <div className="od-price-total"><span>Total</span><strong>${fmt(order.total)}</strong></div>
           </div>
 
