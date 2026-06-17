@@ -64,13 +64,17 @@ async function getById(id) {
     `SELECT * FROM payments WHERE invoice_id = $1 ORDER BY paid_at ASC`,
     [id]
   )
-  return { ...rows[0], payments: payments.rows }
+  const items = await query(
+    `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+    [id]
+  ).catch(() => ({ rows: [] }))
+  return { ...rows[0], payments: payments.rows, items: items.rows }
 }
 
 async function create(fields_in) {
   const { quote_id, order_id, supplier_id, issue_date, due_date,
           subtotal = 0, discount_amt = 0, tax_amt = 0,
-          notes, created_by } = fields_in
+          notes, created_by, order_type, items } = fields_in
   const fields = fields_in
   const invoice_number = await getNextNumber('INV', 'invoices', 'invoice_number')
 
@@ -113,8 +117,9 @@ async function create(fields_in) {
        (invoice_number, quote_id, order_id, supplier_id, issue_date, due_date,
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
         notes, created_by,
-        customer_name, billing_email, contact_number, billing_address, shipping_address)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        customer_name, billing_email, contact_number, billing_address, shipping_address,
+        order_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING *`,
     [
       invoice_number,
@@ -127,8 +132,30 @@ async function create(fields_in) {
       fields.customer_name || null, fields.billing_email || null,
       fields.contact_number || null, fields.billing_address || null,
       fields.shipping_address || null,
+      order_type || null,
     ]
   )
+
+  // Save line items when invoice is created directly (not from a quote/order)
+  if (!quote_id && !order_id && Array.isArray(items) && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      await query(
+        `INSERT INTO invoice_items
+           (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          rows[0].id,
+          it.description || null,
+          Number(it.qty) || 1,
+          Number(it.unit_price) || 0,
+          Number(it.amount) || 0,
+          Number(it.artwork_count) || 0,
+          it.sort_order ?? i,
+        ]
+      )
+    }
+  }
 
   if (quote_id) {
     await logPipelineEvent({

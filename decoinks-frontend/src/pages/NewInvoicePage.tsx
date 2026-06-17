@@ -476,6 +476,42 @@ export function NewInvoicePage() {
     setTransferItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeTransferItem = (id: string) => setTransferItems(prev => prev.filter(r => r.id !== id))
 
+  // Build items payload based on order type (only when no linked quote)
+  const buildItemsPayload = () => {
+    if (quoteId) return undefined
+    if (orderType === 'gangsheet') {
+      return gangsheetItems.map((row, i) => ({
+        description:   row.size,
+        qty:           row.qtySheets,
+        unit_price:    row.pricePerSheet,
+        amount:        row.qtySheets * row.pricePerSheet,
+        artwork_count: row.numArtworks,
+        sort_order:    i,
+      }))
+    }
+    if (orderType === 'apparel') {
+      return apparelItems.map((row, i) => ({
+        description:   row.description,
+        qty:           row.qty,
+        unit_price:    row.unitPrice,
+        amount:        row.qty * row.unitPrice,
+        artwork_count: 0,
+        sort_order:    i,
+      }))
+    }
+    if (orderType === 'dtf') {
+      return transferItems.map((row, i) => ({
+        description:   `${row.artworkName}${row.size ? ' (' + row.size + ')' : ''}`,
+        qty:           row.qty,
+        unit_price:    row.unitPrice,
+        amount:        row.qty * row.unitPrice,
+        artwork_count: 0,
+        sort_order:    i,
+      }))
+    }
+    return undefined
+  }
+
   const saveDraft = () => {
     if (!supplierId && !supplierText) {
       toast.error('Please select a supplier before saving')
@@ -496,6 +532,8 @@ export function NewInvoicePage() {
       contact_number:   contactNumber || null,
       billing_address:  billingAddress || null,
       shipping_address: shippingAddress || null,
+      order_type:       orderType,
+      items:            buildItemsPayload(),
     })
   }
 
@@ -515,6 +553,8 @@ export function NewInvoicePage() {
       contact_number:   contactNumber || null,
       billing_address:  billingAddress || null,
       shipping_address: shippingAddress || null,
+      order_type:       orderType,
+      items:            buildItemsPayload(),
     })
   }
 

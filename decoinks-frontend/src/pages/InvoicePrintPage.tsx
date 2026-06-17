@@ -5,14 +5,25 @@ import { usePrintAuth } from '../hooks/usePrintAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
+interface InvoiceItem {
+  id: string; description: string; qty: number
+  unit_price: number; amount: number; artwork_count: number
+  sizes?: string | null; colors?: string | null
+}
 interface Invoice {
   id: string; invoice_number: string; status: string
   issue_date: string | null; due_date: string | null
-  subtotal: number; discount_amt: number; tax_amt: number; total_amount: number
+  subtotal: number; discount_amt: number; tax_amt: number
+  total: number
   shipping_charges?: number | null
   notes: string | null; supplier_name: string | null
+  customer_name: string | null
+  billing_email: string | null; contact_number: string | null
+  billing_address: string | null; shipping_address: string | null
+  order_type: string | null
   quote_id: string | null; order_id: string | null
   payments: Payment[]
+  items: InvoiceItem[]
 }
 interface QuoteItem {
   id: string; description: string; qty: number
@@ -251,7 +262,7 @@ const CSS = `
 `
 
 // ── DTF group types ───────────────────────────────────────────────────────────
-interface DtfRow  { item: QuoteItem; art: Artwork | null; artNo: string; sizeStr: string }
+interface DtfRow  { item: QuoteItem | InvoiceItem; art: Artwork | null; artNo: string; sizeStr: string }
 interface DtfGroup { desc: string; rate: number; rowSpan: number; rows: DtfRow[] }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -295,10 +306,12 @@ export function InvoicePrintPage() {
     </div>
   )
 
-  const items       = quotation?.items ?? []
+  // Items: prefer quotation items, fall back to invoice's own items
+  const items       = (quotation?.items?.length ? quotation.items : invoice.items) ?? []
   const artworks    = artworkData?.artworks ?? []
-  const isDtf       = quotation?.order_type === 'dtf'
-  const isGangsheet = quotation?.order_type === 'gangsheet'
+  const effectiveOrderType = quotation?.order_type ?? invoice.order_type
+  const isDtf       = effectiveOrderType === 'dtf'
+  const isGangsheet = effectiveOrderType === 'gangsheet'
   const totalQty    = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
   const totalSheets = isGangsheet ? items.reduce((s, i) => s + (Number(i.qty) || 0), 0) : 0
   const totalArts   = isGangsheet ? items.reduce((s, i) => s + (Number(i.artwork_count) || 0), 0) : 0
@@ -306,10 +319,12 @@ export function InvoicePrintPage() {
   const payMethod = invoice.payments?.[0]?.method
     ?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) ?? '—'
 
-  const billName     = quotation?.customer_name || quotation?.company_name || invoice.supplier_name || '—'
-  const billAddr     = quotation?.billing_address || '—'
-  const billEmail    = quotation?.billing_email || ''
-  const shipAddr     = quotation?.shipping_address || '—'
+  // Bill To: prefer quotation data, fall back to invoice's own fields
+  const billName     = quotation?.customer_name || quotation?.company_name || invoice.customer_name || invoice.supplier_name || '—'
+  const billAddr     = quotation?.billing_address || invoice.billing_address || '—'
+  const billEmail    = quotation?.billing_email || invoice.billing_email || ''
+  const billPhone    = quotation?.contact_number || invoice.contact_number || ''
+  const shipAddr     = quotation?.shipping_address || invoice.shipping_address || '—'
   const shipCityLine = [quotation?.shipping_city, quotation?.shipping_state, quotation?.zip_code].filter(Boolean).join(', ')
   const shipCountry  = quotation?.shipping_country || ''
 
@@ -452,7 +467,7 @@ export function InvoicePrintPage() {
                   <tfoot>
                     <tr className="tr-total">
                       <td>TOTAL DUE</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(invoice.total_amount)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmt(invoice.total)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -475,7 +490,7 @@ export function InvoicePrintPage() {
               <p className="ic-name">{billName}</p>
               {billEmail && <p>{billEmail}</p>}
               {billAddr !== '—' && <p>{billAddr}</p>}
-              {quotation?.contact_number && <p>{quotation.contact_number}</p>}
+              {billPhone && <p>{billPhone}</p>}
             </div>
           </div>
 
@@ -638,7 +653,7 @@ export function InvoicePrintPage() {
                   const artBack = artworks[idx + items.length] ?? null
                   const artSz   = art?.width_inches && art?.height_inches ? `${art.width_inches} x ${art.height_inches}` : '—'
                   const artBSz  = artBack?.width_inches && artBack?.height_inches ? `${artBack.width_inches} x ${artBack.height_inches}` : '—'
-                  const dotColor = colorHex(item.colors)
+                  const dotColor = colorHex(item.colors ?? null)
                   const isWhite  = item.colors?.toLowerCase().includes('white')
                   return (
                     <tr key={item.id}>
@@ -726,7 +741,7 @@ export function InvoicePrintPage() {
                 Total Amount in Words
               </div>
               <div className="pay-words">
-                {numberToWords(Number(invoice.total_amount ?? 0))}
+                {numberToWords(Number(invoice.total ?? 0))}
               </div>
             </div>
 

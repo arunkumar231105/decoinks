@@ -23,11 +23,9 @@ async function list({ page = 1, limit = 20, search = '', status = '' }) {
   const { rows } = await query(
     `SELECT c.id, c.customer_number, c.name, c.email, c.phone, c.company,
             c.city, c.country, c.status, c.lead_id, c.created_at,
-            COUNT(q.id) AS quotes_count
+            0 AS quotes_count
      FROM customers c
-     LEFT JOIN quotations q ON q.customer_id = c.id AND q.deleted_at IS NULL
      ${where}
-     GROUP BY c.id
      ORDER BY c.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
@@ -37,24 +35,32 @@ async function list({ page = 1, limit = 20, search = '', status = '' }) {
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT c.*,
-            l.lead_number, l.source AS lead_source,
-            COUNT(q.id) AS quotes_count
+    `SELECT c.*, l.lead_number, l.source AS lead_source
      FROM customers c
      LEFT JOIN leads l ON l.id = c.lead_id
-     LEFT JOIN quotations q ON q.customer_id = c.id AND q.deleted_at IS NULL
-     WHERE c.id = $1 AND c.deleted_at IS NULL
-     GROUP BY c.id, l.lead_number, l.source`,
+     WHERE c.id = $1 AND c.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
 
-  const quotes = await query(
-    `SELECT id, quote_number, status, total, created_at FROM quotations
-     WHERE customer_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20`,
-    [id]
-  )
-  return { ...rows[0], quotes: quotes.rows }
+  // Fetch linked quotes — column may not exist yet, so fall back gracefully
+  let quotesRows = []
+  try {
+    const hasCol = await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_name='quotations' AND column_name='customer_id' LIMIT 1`
+    )
+    if (hasCol.rows.length > 0) {
+      const qRes = await query(
+        `SELECT id, quote_number, status, total, created_at FROM quotations
+         WHERE customer_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20`,
+        [id]
+      )
+      quotesRows = qRes.rows
+    }
+  } catch (_) {}
+
+  return { ...rows[0], quotes: quotesRows, quotes_count: quotesRows.length }
 }
 
 async function create({ lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,

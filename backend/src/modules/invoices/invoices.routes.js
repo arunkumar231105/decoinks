@@ -7,6 +7,15 @@ const controller = require('./invoices.controller')
 const router = Router()
 router.use(verifyToken)
 
+const itemSchema = z.object({
+  description:   z.string().optional().nullable(),
+  qty:           z.number().nonnegative().default(1),
+  unit_price:    z.number().nonnegative().default(0),
+  amount:        z.number().nonnegative().default(0),
+  artwork_count: z.number().int().nonnegative().default(0),
+  sort_order:    z.number().int().default(0),
+})
+
 const createSchema = z.object({
   quote_id:         z.string().uuid().optional().nullable(),
   order_id:         z.string().uuid().optional().nullable(),
@@ -22,6 +31,8 @@ const createSchema = z.object({
   contact_number:   z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
   shipping_address: z.string().optional().nullable(),
+  order_type:       z.enum(['apparel', 'gangsheet', 'dtf']).optional().nullable(),
+  items:            z.array(itemSchema).optional(),
 }).refine(
   (d) => d.quote_id || d.order_id || d.supplier_id || d.customer_name,
   { message: 'At least one of quote_id, order_id, supplier_id, or customer_name is required' }
