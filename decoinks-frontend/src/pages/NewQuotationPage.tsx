@@ -854,6 +854,8 @@ export function NewQuotationPage() {
     const q = quotationData as Record<string, any>
     setLeadId(q.lead_id ?? null)
     if (q.customer_id) { setCustomerId(q.customer_id as string); setCustomerText(q.customer_name ?? '') }
+    // When lead has customer name but no linked customer record, show name in main field
+    if (!q.customer_id && !q.supplier_id && q.customer_name) { setSupplierText(q.customer_name) }
     setCustomerSource(q.customer_source ?? '')
     setCustomerName(q.customer_name ?? '')
     setCompanyName(q.company_name ?? '')
@@ -1252,7 +1254,19 @@ export function NewQuotationPage() {
                 {gangsheetRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
-                    <td><select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })}>{GANGSHEET_SIZES.map(s => <option key={s}>{s}</option>)}</select></td>
+                    <td>
+                      {GANGSHEET_SIZES.includes(row.size) ? (
+                        <select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value === '__custom__' ? '' : e.target.value })}>
+                          {GANGSHEET_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                          <option value="__custom__">Custom...</option>
+                        </select>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input className="nq-table-input" style={{ width: 90 }} placeholder='e.g. 36" x 60"' value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })} autoFocus />
+                          <button type="button" title="Back to list" onClick={() => updateGangsheetRow(row.id, { size: '22" x 60"' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 13, lineHeight: 1 }}>✕</button>
+                        </div>
+                      )}
+                    </td>
                     <td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td>
                     <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
                     <td><ImageUploadCell imageUrl={row.front_image} label="File" uploading={uploadingImg[`${row.id}-front_image`]} onUpload={f => uploadItemImage(row.id, 'front_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { front_image: null })} /></td>

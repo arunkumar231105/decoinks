@@ -411,7 +411,7 @@ export function LeadBoardPage() {
                                   <span className="lb-timestamp">{lead.timestamp}</span>
                                 </div>
                                 <div className="lb-card-title-row">
-                                  <span className="lb-customer-name">{lead.customerName ?? lead.customer_name ?? lead.supplier_name ?? 'No customer'}</span>
+                                  <span className="lb-customer-name">{lead.customerName ?? 'No customer'}</span>
                                   <button className="lb-icon-btn" onClick={e => { e.stopPropagation(); setCardMenuAnchor({ el: e.currentTarget, leadId: lead.id, lead }) }}>
                                     <MoreHorizontal size={13} />
                                   </button>
@@ -557,7 +557,7 @@ export function LeadBoardPage() {
             <div className="lb-so-header">
               <div>
                 <span className="lb-lead-id">{selectedLead.lead.leadId}</span>
-                <h3 className="lb-so-customer">{selectedLead.lead.customerName ?? selectedLead.lead.customer_name ?? selectedLead.lead.supplier_name ?? 'No customer'}</h3>
+                <h3 className="lb-so-customer">{selectedLead.lead.customerName ?? 'No customer'}</h3>
               </div>
               <button className="lb-icon-btn" onClick={() => setSelectedLead(null)}><X size={18} /></button>
             </div>
