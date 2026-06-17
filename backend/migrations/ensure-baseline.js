@@ -37,7 +37,9 @@ const DOCKER_INIT_MIGRATIONS = [
   '009_create_vendors_table.sql',
   '010_create_payments_table.sql',
   '011_create_pipeline_events_table.sql',
-  '013_refresh_tokens.sql',
+  // NOTE: 013_refresh_tokens.sql is intentionally NOT listed here.
+  // db/init.sql does not create refresh_tokens, so migration 013 must
+  // run via run.js to actually create the table.
   '014_quotations_order_type.sql',
   '015_supplier_rename.sql',
 ]

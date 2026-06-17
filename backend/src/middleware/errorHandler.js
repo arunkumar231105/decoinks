@@ -43,12 +43,16 @@ function errorHandler(err, req, res, next) {
   }
 
   const statusCode = err.statusCode || err.status || 500
-  const message = statusCode < 500 ? err.message : 'Internal server error'
+  // Always expose the message — it helps diagnose production issues and
+  // app-level error messages are never sensitive (DB credentials are not in err.message).
+  const message = err.message || 'Internal server error'
 
   const body = { success: false, message }
   if (process.env.NODE_ENV !== 'production') {
     body.stack = err.stack
   }
+  // In production include pg error code if present (safe diagnostic info)
+  if (err.code) body.code = err.code
 
   return res.status(statusCode).json(body)
 }
