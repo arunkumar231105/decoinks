@@ -54,4 +54,53 @@ function hashCode(str) {
   return Math.abs(hash) % 2147483647
 }
 
-module.exports = { getNextNumber }
+/**
+ * Cleans a customer name into a short uppercase prefix for invoice numbers.
+ * e.g. "John Smith" → "JOHNSMITH", "María García" → "MARIAGARCIA"
+ */
+function buildInvoicePrefix(customerName) {
+  if (!customerName || !customerName.trim()) return 'CUST'
+  const cleaned = customerName
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')  // strip accent marks
+    .replace(/[^A-Z0-9 ]/g, '')       // keep only alphanumeric + space
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)                       // at most 2 words
+    .join('')
+    .slice(0, 12)                      // max 12 chars
+  return cleaned || 'CUST'
+}
+
+/**
+ * Generates the next sequential invoice number for a given customer.
+ * Format: CUSTOMERNAME-NNNN  e.g. JOHNSMITH-0001
+ */
+async function getNextInvoiceNumber(customerName) {
+  const prefix = buildInvoicePrefix(customerName)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const lockKey = hashCode('INV:' + prefix)
+    await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey])
+
+    const { rows } = await client.query(
+      `SELECT COUNT(*) AS cnt FROM invoices WHERE invoice_number LIKE $1`,
+      [prefix + '-%']
+    )
+    const next = parseInt(rows[0].cnt, 10) + 1
+    const result = `${prefix}-${String(next).padStart(4, '0')}`
+
+    await client.query('COMMIT')
+    return result
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+module.exports = { getNextNumber, getNextInvoiceNumber }

@@ -1,5 +1,5 @@
 const { query, getClient } = require('../../config/db')
-const { getNextNumber } = require('../../utils/counter')
+const { getNextNumber, getNextInvoiceNumber } = require('../../utils/counter')
 const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
@@ -76,17 +76,17 @@ async function create(fields_in) {
           subtotal = 0, discount_amt = 0, tax_amt = 0,
           notes, created_by, order_type, items } = fields_in
   const fields = fields_in
-  const invoice_number = await getNextNumber('INV', 'invoices', 'invoice_number')
 
   let resolvedSubtotal    = Number(subtotal)
   let resolvedDiscountAmt = Number(discount_amt)
   let resolvedTaxAmt      = Number(tax_amt)
   let resolvedSupplierId  = supplier_id || null
+  let resolvedCustomerName = fields.customer_name || null
 
-  // Pull totals from quotation when converting quote → invoice
+  // Pull totals (and customer name) from quotation when converting quote → invoice
   if (quote_id) {
     const { rows: qRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id FROM quotations WHERE id = $1`,
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_name FROM quotations WHERE id = $1`,
       [quote_id]
     )
     if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
@@ -95,6 +95,7 @@ async function create(fields_in) {
     resolvedDiscountAmt = Number(q.discount_amt)
     resolvedTaxAmt      = Number(q.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
+    if (!resolvedCustomerName) resolvedCustomerName = q.customer_name
   } else if (order_id) {
     const { rows: orderRows } = await query(
       `SELECT subtotal, discount_amt, tax_amt, total, supplier_id
@@ -108,6 +109,14 @@ async function create(fields_in) {
     resolvedTaxAmt      = Number(o.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
   }
+
+  // Also try to get customer name from linked supplier record if still missing
+  if (!resolvedCustomerName && resolvedSupplierId) {
+    const { rows: sRows } = await query(`SELECT name FROM suppliers WHERE id = $1`, [resolvedSupplierId]).catch(() => ({ rows: [] }))
+    if (sRows[0]) resolvedCustomerName = sRows[0].name
+  }
+
+  const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
 
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
   const balance_due = total
