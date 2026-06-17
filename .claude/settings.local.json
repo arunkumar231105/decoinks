@@ -53,7 +53,12 @@
       "Bash(Write-Host \"Done\")",
       "Bash(node -e \"const fs=require\\('fs'\\);const files=['src/pages/NewInvoicePage.tsx','src/pages/NewQuotationPage.tsx','src/pages/NewPurchaseOrderPage.tsx','src/pages/PurchaseOrderDetailPage.tsx','src/pages/OrderDetailPage.tsx'];files.forEach\\(f=>{let c=fs.readFileSync\\(f,'utf8'\\);const n=\\(c.match\\(/[“”‘’]/g\\)||[]\\).length;if\\(n>0\\){c=c.replace\\(/“/g,'\\\\\"'\\).replace\\(/”/g,'\\\\\"'\\).replace\\(/‘/g,\\\\\"'\\\\\"\\).replace\\(/’/g,\\\\\"'\\\\\"\\);fs.writeFileSync\\(f,c,'utf8'\\);console.log\\(f,'- fixed',n\\);}else{console.log\\(f,'- clean'\\);}}\\);\")",
       "Bash(docker version *)",
-      "PowerShell(cd \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"NewQuotation|NewInvoice\" })"
+      "PowerShell(cd \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"NewQuotation|NewInvoice\" })",
+      "Bash(npm init *)",
+      "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\e2e\\\\tests\" -Force)",
+      "PowerShell(Set-Location \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\e2e\"; $env:TEST_EMAIL = \"admin@decoinks.com\"; $env:TEST_PASSWORD = \"Admin@123\"; npx playwright test 01-auth.spec.ts --reporter=line 2>&1 | Select-Object -Last 20)",
+      "Bash(grep -v \"interface\\\\|type\\\\|function\\\\|const\\\\|//\\\\|items\\\\|Item\\\\|Amount\\\\|price\\\\|count\")",
+      "Bash(grep -v \"interface\\\\|const.*=\\\\|function\\\\|//\\\\|import\\\\|type\\\\|items\\\\|Item\\\\|Amount\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

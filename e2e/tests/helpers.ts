@@ -1,4 +1,4 @@
-import { Page, expect } from '@playwright/test'
+import { Page, Route, expect } from '@playwright/test'
 
 export const CREDS = {
   email:    process.env.TEST_EMAIL    || '',
@@ -6,8 +6,8 @@ export const CREDS = {
 }
 
 /**
- * Log in and wait for the app to fully load.
- * Uses the httpOnly refresh cookie flow — waits for /auth/refresh to complete.
+ * Log in via the login form.
+ * Waits until the URL leaves /login (SPA redirect to /dashboard).
  */
 export async function login(page: Page) {
   if (!CREDS.email || !CREDS.password) {
@@ -24,7 +24,7 @@ export async function login(page: Page) {
   await page.fill('input[type="password"]', CREDS.password)
   await page.click('button[type="submit"]')
 
-  // Wait until we are no longer on the /login page
+  // Wait until we leave the /login page (React Router SPA nav to /dashboard)
   await page.waitForFunction(
     () => !window.location.pathname.startsWith('/login'),
     { timeout: 15_000 }
@@ -32,34 +32,46 @@ export async function login(page: Page) {
 }
 
 /**
- * Navigate to a page and wait for:
- * 1. Network idle (auth/refresh XHR completes)
- * 2. Body has more than 15 chars (past "Loading..." spinner)
- * 3. We are NOT on the login page (auth succeeded)
+ * Navigate to a URL and wait until protected content is visible.
+ *
+ * Problem: Playwright headless Chromium does NOT send the httpOnly
+ * "decoinks_rt" cookie with the app's POST /api/auth/refresh XHR,
+ * even though the cookie is in the browser context. To work around
+ * this, we intercept /api/auth/refresh at the Playwright level and
+ * inject the cookie header manually before the request hits the server.
  */
 export async function gotoAndWait(page: Page, url: string) {
-  await page.goto(url)
+  // Grab the refresh-token cookie that was stored during login()
+  const cookies = await page.context().cookies()
+  const rt = cookies.find(c => c.name === 'decoinks_rt')
 
-  // Wait for auth refresh + API calls to settle
-  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {
-    // networkidle may timeout if there's long-polling — that's fine, continue
-  })
-
-  // Make sure we didn't end up on the login page
-  const currentUrl = page.url()
-  if (currentUrl.includes('/login')) {
-    // Try to log in again (token rotation edge case)
-    await login(page)
-    await page.goto(url)
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
+  // Intercept /api/auth/refresh and inject the cookie that Chromium omits
+  let handler: ((route: Route) => Promise<void>) | null = null
+  if (rt) {
+    handler = async (route: Route) => {
+      const existingCookie = route.request().headers()['cookie'] || ''
+      const injected = existingCookie
+        ? `${existingCookie}; decoinks_rt=${rt.value}`
+        : `decoinks_rt=${rt.value}`
+      await route.continue({ headers: { ...route.request().headers(), cookie: injected } })
+    }
+    await page.route('**/api/auth/refresh', handler)
   }
 
-  // Wait for actual content (not just loading spinner)
-  await page.waitForFunction(
-    () => (document.body.textContent?.trim().length ?? 0) > 15 &&
-          !window.location.pathname.startsWith('/login'),
-    { timeout: 15_000 }
-  )
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+
+    // Wait for real content to appear (past the "Loading…" spinner = 10 chars)
+    // AND confirm we're not stuck on the login page
+    await page.waitForFunction(
+      () =>
+        (document.body.textContent?.trim().length ?? 0) > 15 &&
+        !window.location.pathname.startsWith('/login'),
+      { timeout: 20_000 }
+    )
+  } finally {
+    if (handler) await page.unroute('**/api/auth/refresh', handler)
+  }
 }
 
 /** Wait for a toast notification containing `text` */
