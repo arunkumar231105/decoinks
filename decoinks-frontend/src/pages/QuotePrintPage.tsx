@@ -614,8 +614,10 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
             <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td>
           </tr>
         ) : items.map((item, idx) => {
-          const frontArt = artworks[idx * 2]     ?? null
-          const backArt  = artworks[idx * 2 + 1] ?? null
+          // Apparel front/back images are stored inline on the item row,
+          // not in the artworks table — use them directly.
+          const frontUrl = item.front_image ?? null
+          const backUrl  = item.back_image  ?? null
           const colors   = item.colors?.split(',').map(c => c.trim()).filter(Boolean) ?? []
 
           return (
@@ -642,13 +644,13 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
               </td>
               <td style={{ fontSize: 11, lineHeight: 1.6 }}>{item.sizes || '—'}</td>
               <td>
-                {frontArt?.file_url && frontArt.file_type !== 'pdf'
-                  ? <img src={frontArt.file_url} alt={frontArt.name} className="art-img" />
+                {frontUrl
+                  ? <img src={frontUrl} alt="front artwork" className="art-img" />
                   : <div className="art-empty">—</div>}
               </td>
               <td>
-                {backArt?.file_url && backArt.file_type !== 'pdf'
-                  ? <img src={backArt.file_url} alt={backArt.name} className="art-img" />
+                {backUrl
+                  ? <img src={backUrl} alt="back artwork" className="art-img" />
                   : <div className="art-empty">—</div>}
               </td>
               <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
