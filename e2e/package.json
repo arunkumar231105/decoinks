@@ -1,0 +1,17 @@
+{
+  "name": "decoinks-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test":         "playwright test",
+    "test:smoke":   "playwright test 07-smoke",
+    "test:auth":    "playwright test 01-auth",
+    "test:invoice": "playwright test 03-invoice 06-invoice-preview",
+    "test:headed":  "playwright test --headed",
+    "screenshots":  "playwright test 08-screenshots",
+    "report":       "playwright show-report playwright-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0"
+  }
+}
