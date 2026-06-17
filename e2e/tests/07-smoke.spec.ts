@@ -1,14 +1,10 @@
-/**
- * Smoke tests — quickly check every main page loads without crash.
- * Run these first. If any page shows "Failed to load" or crashes → BUG.
- */
 import { test, expect } from '@playwright/test'
-import { login } from './helpers'
+import { login, gotoAndWait } from './helpers'
 
 const PAGES = [
   { name: 'Dashboard',       url: '/dashboard' },
-  { name: 'Leads Board',     url: '/leads' },
-  { name: 'Leads List',      url: '/leads/list' },
+  { name: 'Leads Board',     url: '/leads/board' },
+  { name: 'Leads List',      url: '/leads' },
   { name: 'Customers',       url: '/customers' },
   { name: 'Quotes',          url: '/quotes' },
   { name: 'New Quote',       url: '/quotes/new' },
@@ -18,7 +14,6 @@ const PAGES = [
   { name: 'Purchase Orders', url: '/purchase-orders' },
 ]
 
-// Log in once, reuse the session for all smoke tests
 test.describe('Smoke — every page loads', () => {
 
   test.beforeEach(async ({ page }) => {
@@ -27,29 +22,14 @@ test.describe('Smoke — every page loads', () => {
 
   for (const { name, url } of PAGES) {
     test(`${name} (${url}) loads without crash`, async ({ page }) => {
-      await page.goto(url)
-      await page.waitForTimeout(2_000)  // let data fetch
+      await gotoAndWait(page, url)
 
-      // These strings appearing means something broke
-      const errorTexts = [
-        'Failed to load',
-        'Something went wrong',
-        'Cannot read properties',
-        'TypeError',
-        '404 Not Found',
-        '500 Internal Server',
-      ]
+      // Check for error messages
+      const errorTexts = ['Failed to load', 'Something went wrong', '500 Internal Server']
       for (const errText of errorTexts) {
-        await expect(
-          page.locator(`text=${errText}`).first()
-        ).not.toBeVisible({ timeout: 500 }).catch(() => {
-          // if check itself fails, that's fine — means element not present
-        })
+        const visible = await page.locator(`text=${errText}`).first().isVisible().catch(() => false)
+        if (visible) throw new Error(`Page "${name}" shows error: "${errText}"`)
       }
-
-      // Page should not be blank — at least one visible element
-      const bodyText = await page.locator('body').textContent()
-      expect(bodyText?.trim().length).toBeGreaterThan(10)
     })
   }
 

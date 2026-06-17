@@ -1229,7 +1229,23 @@ export function NewQuotationPage() {
                 {transferRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
-                    <td><select className="nq-table-select" value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })}>{TRANSFER_SIZES.map(size => <option key={size}>{size}</option>)}</select></td>
+                    <td>
+                      {TRANSFER_SIZES.includes(row.transferSize) ? (
+                        <select className="nq-table-select" value={row.transferSize}
+                          onChange={e => updateTransferRow(row.id, { transferSize: e.target.value === '__custom__' ? '' : e.target.value })}>
+                          {TRANSFER_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+                          <option value="__custom__">Custom...</option>
+                        </select>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input className="nq-table-input" style={{ width: 90 }} placeholder='e.g. 14" x 16"'
+                            value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })} autoFocus />
+                          <button type="button" title="Back to list"
+                            onClick={() => updateTransferRow(row.id, { transferSize: '12" x 12"' })}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 13, lineHeight: 1 }}>✕</button>
+                        </div>
+                      )}
+                    </td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={row.artwork_image} label="Art" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
                     <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td>

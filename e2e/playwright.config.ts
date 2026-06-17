@@ -15,19 +15,21 @@ const BASE_URL = process.env.BASE_URL || 'http://31.97.110.197'
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: false,       // run sequentially so shared DB state is predictable
-  retries: 1,                 // retry once on flake
-  timeout: 30_000,            // 30s per test
+  fullyParallel: false,       // sequential — shared DB + token rotation
+  retries: 1,
+  timeout: 45_000,            // 45s per test (remote server needs time)
   reporter: [
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['line'],
   ],
   use: {
     baseURL: BASE_URL,
-    screenshot: 'only-on-failure',   // screenshot on failure
-    video: 'retain-on-failure',      // video on failure
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
     trace: 'retain-on-failure',
     headless: true,
+    navigationTimeout: 30_000,
+    actionTimeout:    15_000,
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
