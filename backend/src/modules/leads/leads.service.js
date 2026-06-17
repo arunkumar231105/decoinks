@@ -382,6 +382,7 @@ function formatLead(r) {
     attachmentCount: r.attachment_count || 0,
     hasArtwork: r.has_artwork || false,
     stage: r.stage,
+    customer_id: r.customer_id ?? null,
   }
 }
 

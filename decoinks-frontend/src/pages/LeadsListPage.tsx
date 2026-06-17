@@ -12,12 +12,14 @@ interface Lead {
   id: string
   lead_number: string
   supplier_name: string
+  customer_name: string | null
   company_name: string | null
   source: string | null
   status: string
   stage: string
   created_at: string
   agent_name: string | null
+  customer_id: string | null
 }
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
@@ -63,22 +65,23 @@ export function LeadsListPage() {
     },
   })
 
+  // Converts lead to customer (if needed) then opens New Quotation form with customer pre-filled
   const convertMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-quote`),
+    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
     onSuccess: (res: any) => {
-      const quote = res.data?.data
-      toast.success(
-        quote?.quote_number
-          ? `Quote created from lead — ${quote.quote_number}`
-          : 'Quote created from lead',
-      )
+      const customer = res.data?.data
+      const existingId: string | undefined = res.data?.customer_id
       queryClient.invalidateQueries({ queryKey: ['leads', 'list'] })
-      queryClient.invalidateQueries({ queryKey: ['quotes'] })
-      if (quote?.id) navigate(`/quotes/${quote.id}`)
-      else navigate('/quotes')
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      const customerId = customer?.id ?? existingId
+      if (customerId) navigate('/quotes/new', { state: { fromCustomerId: customerId } })
+      else navigate('/quotes/new')
     },
-    onError: (err: any) =>
-      toast.error(err.response?.data?.message ?? 'Could not convert lead to quote'),
+    onError: (err: any) => {
+      const existingId: string | undefined = err.response?.data?.data?.customer_id
+      if (existingId) navigate('/quotes/new', { state: { fromCustomerId: existingId } })
+      else toast.error(err.response?.data?.message ?? 'Could not create quotation from lead')
+    },
   })
 
   const leads     = data?.rows ?? []
@@ -234,13 +237,19 @@ export function LeadsListPage() {
           onClick={() => {
             const lead = menuAnchor!.lead
             setMenuAnchor(null)
-            convertMutation.mutate(lead.id)
+            if (lead.customer_id) {
+              // Already a customer — go straight to new quote form with customer pre-filled
+              navigate('/quotes/new', { state: { fromCustomerId: lead.customer_id } })
+            } else {
+              // Convert to customer first, then open quote form
+              convertMutation.mutate(lead.id)
+            }
           }}
           disabled={convertMutation.isPending}
         >
           {convertMutation.isPending
             ? <><Loader2 size={14} style={{ marginRight: 8, animation: 'spin 1s linear infinite' }} /> Converting…</>
-            : <><Zap size={14} style={{ marginRight: 8, color: '#0d9488' }} /> Convert to Quote</>
+            : <><Zap size={14} style={{ marginRight: 8, color: '#0d9488' }} /> New Quotation</>
           }
         </MenuItem>
         <MuiDivider />

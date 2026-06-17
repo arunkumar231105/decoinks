@@ -41,6 +41,7 @@ interface Lead {
   attachmentCount: number
   hasArtwork: boolean
   stage: string
+  customer_id: string | null
 }
 
 interface KanbanColumn {
@@ -306,6 +307,32 @@ export function LeadBoardPage() {
         navigate(`/customers/${existingId}`)
       } else {
         toast.error(msg || 'Could not convert lead to customer')
+      }
+    },
+  })
+
+  // Converts lead to customer (if not already) then opens the New Quotation form
+  // with the customer pre-filled — so the user can set prices, upload artwork, etc.
+  const newQuoteFromLeadMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
+    onSuccess: (res: any) => {
+      const customer = res.data?.data
+      const existingId: string | undefined = res.data?.customer_id
+      queryClient.invalidateQueries({ queryKey: ['leads', 'kanban'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      const customerId = customer?.id ?? existingId
+      if (customerId) {
+        navigate('/quotes/new', { state: { fromCustomerId: customerId } })
+      } else {
+        navigate('/quotes/new')
+      }
+    },
+    onError: (err: any) => {
+      const existingId: string | undefined = err.response?.data?.data?.customer_id
+      if (existingId) {
+        navigate('/quotes/new', { state: { fromCustomerId: existingId } })
+      } else {
+        toast.error(err.response?.data?.message ?? 'Could not create quotation from lead')
       }
     },
   })
@@ -603,6 +630,24 @@ export function LeadBoardPage() {
             <div className="lb-so-actions">
               <button className="lb-action-btn lb-action-primary" style={{ flex: 1 }} onClick={() => { seteditingLead(selectedLead.lead); setSelectedLead(null) }}>
                 Edit Lead
+              </button>
+              <button
+                className="lb-action-btn"
+                style={{ flex: 1, background: '#16a34a', color: '#fff', border: 'none' }}
+                onClick={() => {
+                  const lead = selectedLead.lead
+                  setSelectedLead(null)
+                  if (lead.customer_id) {
+                    // Already a customer — go straight to quote form with customer pre-filled
+                    navigate('/quotes/new', { state: { fromCustomerId: lead.customer_id } })
+                  } else {
+                    // Convert to customer first, then open quote form with auto-fill
+                    newQuoteFromLeadMutation.mutate(lead.id)
+                  }
+                }}
+                disabled={newQuoteFromLeadMutation.isPending}
+              >
+                {newQuoteFromLeadMutation.isPending ? 'Creating...' : '+ New Quotation'}
               </button>
               <button
                 className="lb-action-btn"
