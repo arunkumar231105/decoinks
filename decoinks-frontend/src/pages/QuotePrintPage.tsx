@@ -8,6 +8,7 @@ import { usePrintAuth } from '../hooks/usePrintAuth'
 interface QuoteItem {
   id: string; description: string; qty: number; unit_price: number
   amount: number; sizes: string | null; colors: string | null; artwork_count: number
+  artwork_image: string | null; front_image: string | null; back_image: string | null
 }
 interface Artwork {
   id: string; artwork_no: string; name: string; file_url: string | null
@@ -433,9 +434,10 @@ export function QuotePrintPage() {
               <div className="ic-box">🚚</div>
               <span className="ic-label">Shipping Address</span>
             </div>
-            <div className="ship-name">{custName}</div>
             <div className="ship-line">
-              {shipLines.map((l, i) => <div key={i}>{l}</div>)}
+              {shipLines.length > 0
+                ? shipLines.map((l, i) => <div key={i}>{l}</div>)
+                : <span style={{ color: '#9ca3af', fontSize: 11 }}>—</span>}
             </div>
           </div>
 
@@ -709,9 +711,8 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
           {rows.map((r, ri) => {
             const rowQty = Math.ceil(r.item.qty / r.totalArtsForItem)
             const rowAmt = +(rowQty * r.item.unit_price).toFixed(2)
-            const artSize = r.art.width_inches && r.art.height_inches
-              ? `${r.art.width_inches} in x ${r.art.height_inches} in`
-              : r.art.name
+            // Use the transfer size stored in the item description (e.g. '12" x 12"')
+            const artSize = r.item.description || r.art.name
             return (
               <tr key={ri}>
                 {r.artIdxInItem === 0 && (
@@ -775,8 +776,12 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>
             <td style={{ color: '#9ca3af' }}>—</td>
-            <td><div className="art-empty">—</div></td>
-            <td style={{ color: '#9ca3af' }}>—</td>
+            <td>
+              {item.artwork_image
+                ? <img src={item.artwork_image} alt="artwork" className="art-img" />
+                : <div className="art-empty">—</div>}
+            </td>
+            <td style={{ fontWeight: 600, fontSize: 11 }}>{item.description}</td>
             <td style={{ fontWeight: 600 }}>{item.qty} pcs</td>
             <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
             <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
