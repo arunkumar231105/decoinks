@@ -10,7 +10,7 @@ router.use(verifyToken)
 const customerFields = {
   lead_id:          z.string().uuid().optional().nullable(),
   name:             z.string().min(1),
-  email:            z.string().email().optional().nullable(),
+  email:            z.string().optional().nullable(),   // no .email() — front-end shows UX hint
   phone:            z.string().optional().nullable(),
   whatsapp:         z.string().optional().nullable(),
   company:          z.string().optional().nullable(),
@@ -33,7 +33,7 @@ const createSchema = z.object(customerFields)
 const updateSchema = z.object({
   ...Object.fromEntries(Object.entries(customerFields).map(([k, v]) => [k, v.optional()])),
   status: z.enum(['Active', 'Inactive', 'Blocked']).optional(),
-}).strict()
+})  // no .strict() — unknown fields are safely stripped
 
 router.get('/',    controller.list)
 router.get('/:id', controller.getOne)

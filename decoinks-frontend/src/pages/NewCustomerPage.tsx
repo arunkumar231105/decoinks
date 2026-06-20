@@ -116,19 +116,24 @@ export function NewCustomerPage() {
         state: stateVal || undefined,
         zip: zip.trim() || undefined,
         country: country || undefined,
-        same_as_billing: sameAsBilling,
+        same_as_shipping: sameAsBilling,
         billing_address: sameAsBilling ? undefined : (billingAddress.trim() || undefined),
         buyer_type: buyerType,
         source: source || undefined,
-        notes: notes.trim() || undefined,
+        internal_notes: notes.trim() || undefined,
       }
       const res = await api.post('/customers', payload)
       const newId: string = res.data.data?.id ?? res.data.id
       toast.success('Customer created')
       navigate(`/customers/${newId}`)
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string; error?: string } } }
-      toast.error(e.response?.data?.message ?? e.response?.data?.error ?? 'Failed to save customer')
+      const e = err as { response?: { data?: { message?: string; error?: string; details?: { field: string; message: string }[] } } }
+      const details = e.response?.data?.details
+      const firstDetail = details?.[0]
+      const msg = firstDetail
+        ? `${firstDetail.field}: ${firstDetail.message}`
+        : (e.response?.data?.message ?? e.response?.data?.error ?? 'Failed to save customer')
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
