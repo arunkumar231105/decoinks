@@ -35,7 +35,6 @@ import {
   ShipWheel,
   Sliders,
   ShoppingCart,
-  Sparkles,
   Truck,
   User,
   UserCheck,
@@ -182,15 +181,10 @@ export function AppLayout() {
       >
         <div className="sidebar-head">
           <Link to="/dashboard" className="brand" onClick={() => setMobileOpen(false)}>
-            <span className="brand-mark">
-              <Sparkles size={22} />
-            </span>
-            {!collapsed && (
-              <span className="brand-copy">
-                <span className="brand-name">Decoinks</span>
-                <small>Printshop OS</small>
-              </span>
-            )}
+            <div className="brand-logo-wrap">
+              <img src="/decoinks-logo.jpg" alt="Decoinks" className="brand-logo-img" />
+              {!collapsed && <small className="brand-sub">Printshop OS</small>}
+            </div>
           </Link>
           <button className="sidebar-close" onClick={() => setMobileOpen(false)}>
             <ChevronLeft size={18} />

@@ -65,7 +65,11 @@
       "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'localhost',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
       "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'127.0.0.1',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
       "Bash(grep -v \"//\\\\|className\")",
-      "Bash(xargs grep -l \"purchase_order\\\\|purchase-order\")"
+      "Bash(xargs grep -l \"purchase_order\\\\|purchase-order\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\AppData\\\\Local\\\\Temp\\\\\" | Where-Object { $_.Name -match \"logo|decoinks|claude|img\" } | Select-Object Name, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 10)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\\" -Recurse | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp|\\\\.svg\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | Select-Object FullName, LastWriteTime)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\\" | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | Select-Object Name, LastWriteTime)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp Image 2026-06-22 at 10.42.11 PM.jpeg\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.jpg\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

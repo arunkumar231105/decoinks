@@ -166,11 +166,8 @@ const CSS = `
   .hdr-divider { background: #d1d5db; }
   .hdr-right { padding-left: 4px; display: flex; flex-direction: column; gap: 12px; }
 
-  .logo-row { display: flex; align-items: center; gap: 6px; }
-  .logo-name { font-size: 26px; font-weight: 900; color: #1a2b5c; letter-spacing: -0.5px; text-transform: lowercase; }
-  .logo-dots { display: flex; gap: 3px; align-items: center; }
-  .logo-dots span { width: 8px; height: 8px; border-radius: 50%; display: block; }
-  .logo-tag { font-size: 8.5px; font-weight: 700; letter-spacing: 2.5px; color: #6b7280; text-transform: uppercase; margin-top: -2px; }
+  .print-logo-img { height: 42px; width: auto; object-fit: contain; display: block; }
+  .logo-tag { font-size: 8.5px; font-weight: 700; letter-spacing: 2.5px; color: #6b7280; text-transform: uppercase; margin-top: 2px; }
   .co-info { display: flex; flex-direction: column; }
   .co-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #4b5563; line-height: 1.85; }
   .co-line svg { flex-shrink: 0; }
@@ -375,15 +372,7 @@ export function InvoicePrintPage() {
           {/* Left: Logo + Company info */}
           <div className="hdr-left">
             <div>
-              <div className="logo-row">
-                <span className="logo-name">decoinks</span>
-                <span className="logo-dots">
-                  <span style={{ background: '#06b6d4' }} />
-                  <span style={{ background: '#ec4899' }} />
-                  <span style={{ background: '#f97316' }} />
-                  <span style={{ background: '#111827' }} />
-                </span>
-              </div>
+              <img src="/decoinks-logo.jpg" alt="Decoinks" className="print-logo-img" />
               <div className="logo-tag">PRINTSHOP OS</div>
             </div>
             <div className="co-info">

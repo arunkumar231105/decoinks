@@ -93,15 +93,9 @@ const CSS = `
     padding-bottom: 18px; margin-bottom: 18px;
     border-bottom: 2px solid #e5e7eb;
   }
-  .logo-block { display: flex; flex-direction: column; padding-right: 24px; min-width: 180px; }
-  .logo-name {
-    font-size: 28px; font-weight: 900; color: #0f1f3d;
-    letter-spacing: -1px; text-transform: lowercase;
-    display: flex; align-items: center; gap: 2px;
-  }
-  .logo-dots { display: inline-flex; gap: 3px; align-items: center; margin-left: 3px; }
-  .logo-dots span { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .logo-tag { font-size: 9px; font-weight: 700; letter-spacing: 2.5px; color: #94a3b8; margin-top: 2px; text-transform: uppercase; }
+  .logo-block { display: flex; flex-direction: column; padding-right: 24px; min-width: 160px; }
+  .print-logo-img { height: 42px; width: auto; object-fit: contain; display: block; }
+  .logo-tag { font-size: 9px; font-weight: 700; letter-spacing: 2.5px; color: #94a3b8; margin-top: 4px; text-transform: uppercase; }
 
   .hdr-sep { width: 1.5px; background: #e5e7eb; align-self: stretch; margin: 0 24px; flex-shrink: 0; }
 
@@ -339,15 +333,7 @@ export function QuotePrintPage() {
         <div className="hdr">
           {/* Logo */}
           <div className="logo-block">
-            <div className="logo-name">
-              decoinks
-              <span className="logo-dots">
-                <span style={{ background: '#0ea5e9' }} />
-                <span style={{ background: '#f97316' }} />
-                <span style={{ background: '#1f2937' }} />
-                <span style={{ background: '#f97316' }} />
-              </span>
-            </div>
+            <img src="/decoinks-logo.jpg" alt="Decoinks" className="print-logo-img" />
             <div className="logo-tag">PRINTSHOP OS</div>
           </div>
 
