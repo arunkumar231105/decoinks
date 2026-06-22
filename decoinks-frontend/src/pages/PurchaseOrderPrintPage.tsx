@@ -40,12 +40,16 @@ interface PurchaseOrder {
   buyer_name: string | null
   shipping_method: string | null
   shipping_address: string | null
+  billing_address: string | null
+  payment_terms: string | null
+  payment_method: string | null
   notes: string | null
   terms_conditions: string | null
   subtotal: number
   total_discount: number
   total_tax: number
   freight_charges: number
+  other_charges: number
   grand_total: number
   items: POItem[]
 }
@@ -138,16 +142,10 @@ const CSS = `
 
   /* Left: Logo */
   .po-logo-col {}
-  .po-logo-name {
-    font-size: 26px; font-weight: 900; color: #0f1f3d;
-    letter-spacing: -1px; text-transform: lowercase;
-    display: flex; align-items: center; gap: 3px;
-  }
-  .logo-dots { display: flex; gap: 3px; align-items: center; }
-  .logo-dots span { width: 7px; height: 7px; border-radius: 50%; }
+  .print-logo-img { height: 42px; width: auto; object-fit: contain; display: block; }
   .po-logo-tag {
     font-size: 8px; font-weight: 700; letter-spacing: 2.5px;
-    color: #6b7280; text-transform: uppercase; margin-top: 1px;
+    color: #6b7280; text-transform: uppercase; margin-top: 6px;
   }
   .po-addr { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
   .po-addr-row { display: flex; align-items: flex-start; gap: 6px; font-size: 10px; color: #374151; }
@@ -471,15 +469,7 @@ export function PurchaseOrderPrintPage() {
 
           {/* Left — Logo + address */}
           <div className="po-logo-col">
-            <div className="po-logo-name">
-              decoinks
-              <span className="logo-dots" style={{ marginLeft: 4 }}>
-                <span style={{ background: '#06b6d4' }} />
-                <span style={{ background: '#ec4899' }} />
-                <span style={{ background: '#1f2937' }} />
-                <span style={{ background: '#f97316' }} />
-              </span>
-            </div>
+            <img src="/decoinks-logo.png" alt="Decoinks" className="print-logo-img" />
             <div className="po-logo-tag">PRINTSHOP OS</div>
             <div className="po-addr">
               <div className="po-addr-row">
@@ -541,6 +531,16 @@ export function PurchaseOrderPrintPage() {
                   <td className="pm-colon">:</td>
                   <td className="pm-value">{fmtDate(po.expected_date)}</td>
                 </tr>
+                <tr>
+                  <td className="pm-label">Currency</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value">{po.currency || 'USD'}</td>
+                </tr>
+                <tr>
+                  <td className="pm-label">Grand Total</td>
+                  <td className="pm-colon">:</td>
+                  <td className="pm-value" style={{ color: '#15803d' }}>{po.currency || 'USD'} {Number(po.grand_total ?? 0).toFixed(2)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -584,38 +584,68 @@ export function PurchaseOrderPrintPage() {
             )}
             {po.supplier_reference && (
               <div className="card-field">
-                <span className="card-field-label">WeChat</span>
+                <span className="card-field-label">Supplier Ref</span>
                 <span className="card-field-sep">:</span>
                 <span className="card-field-value">{po.supplier_reference}</span>
               </div>
             )}
+            {po.payment_terms && (
+              <div className="card-field">
+                <span className="card-field-label">Payment Terms</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.payment_terms}</span>
+              </div>
+            )}
+            {po.payment_method && (
+              <div className="card-field">
+                <span className="card-field-label">Payment Method</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">{po.payment_method}</span>
+              </div>
+            )}
           </div>
 
-          {/* Card 2 — Shipping Information */}
+          {/* Card 2 — Shipping & Billing */}
           <div className="info-card theme-blue">
             <div className="card-head">
               <div className="card-icon">🚚</div>
-              <div className="card-title">Shipping Information</div>
+              <div className="card-title">Shipping &amp; Billing</div>
             </div>
             {po.buyer_name && (
               <div className="card-field">
-                <span className="card-field-label">Name</span>
+                <span className="card-field-label">Attn</span>
                 <span className="card-field-sep">:</span>
                 <span className="card-field-value">{po.buyer_name}</span>
               </div>
             )}
             {po.shipping_address && (
               <div className="card-field">
-                <span className="card-field-label">Address</span>
+                <span className="card-field-label">Ship To</span>
                 <span className="card-field-sep">:</span>
                 <span className="card-field-value" style={{ whiteSpace: 'pre-line' }}>{po.shipping_address}</span>
               </div>
             )}
+            {po.billing_address && (
+              <div className="card-field">
+                <span className="card-field-label">Bill To</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value" style={{ whiteSpace: 'pre-line' }}>{po.billing_address}</span>
+              </div>
+            )}
             {po.shipping_method && (
               <div className="card-field">
-                <span className="card-field-label">Shipping Service</span>
+                <span className="card-field-label">Shipping Method</span>
                 <span className="card-field-sep">:</span>
                 <span className="card-field-value">{po.shipping_method}</span>
+              </div>
+            )}
+            {(po.freight_charges > 0 || po.other_charges > 0) && (
+              <div className="card-field">
+                <span className="card-field-label">Freight / Other</span>
+                <span className="card-field-sep">:</span>
+                <span className="card-field-value">
+                  {po.currency} {(Number(po.freight_charges) + Number(po.other_charges)).toFixed(2)}
+                </span>
               </div>
             )}
           </div>

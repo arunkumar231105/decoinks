@@ -19,8 +19,8 @@ async function getStats() {
     query(`SELECT COUNT(*) FROM leads WHERE DATE(created_at) = $1 AND deleted_at IS NULL`, [yesterday]),
     query(`SELECT COUNT(*) FROM quotations WHERE status IN ('Draft','Sent')`),
     query(`SELECT COUNT(*) FROM orders WHERE status IN ('Draft','Confirmed','In Production') AND deleted_at IS NULL`),
-    query(`SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status NOT IN ('Draft', 'Cancelled') AND COALESCE(issue_date, created_at::date) >= $1`, [monthStart]),
-    query(`SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status NOT IN ('Draft', 'Cancelled') AND COALESCE(issue_date, created_at::date) >= $1 AND COALESCE(issue_date, created_at::date) <= $2`, [prevMonthStart, prevMonthEnd]),
+    query(`SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status != 'Void'::invoice_status AND COALESCE(issue_date, created_at::date) >= $1`, [monthStart]),
+    query(`SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status != 'Void'::invoice_status AND COALESCE(issue_date, created_at::date) >= $1 AND COALESCE(issue_date, created_at::date) <= $2`, [prevMonthStart, prevMonthEnd]),
   ])
 
   const todayCount = parseInt(leadsToday.rows[0].count, 10)

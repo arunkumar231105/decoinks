@@ -188,27 +188,43 @@ export function NewPurchaseOrderPage() {
 
   useEffect(() => {
     if (!sourceOrder) return
-    if (sourceOrder.supplier_name) setSupplierSearch(sourceOrder.supplier_name)
+    const supplierDisplay = sourceOrder.supplier_name || sourceOrder.supplier_name_text || sourceOrder.contact_name || ''
+    if (supplierDisplay) setSupplierSearch(supplierDisplay)
+
+    const contactLines = [sourceOrder.contact_name, sourceOrder.contact_email, sourceOrder.contact_phone].filter(Boolean).join('\n')
+
     const srcItems: any[] = sourceOrder.items ?? []
     dispatch({
       type: 'INIT',
       payload: {
-        supplier_id:      sourceOrder.supplier_id   || '',
-        supplier_name:    sourceOrder.supplier_name || '',
-        shipping_address: sourceOrder.shipping_address || '',
+        supplier_id:      sourceOrder.supplier_id      || '',
+        supplier_name:    sourceOrder.supplier_name    || sourceOrder.supplier_name_text || '',
+        payment_terms:    sourceOrder.payment_terms    || '',
+        currency:         sourceOrder.currency         || 'USD',
         shipping_method:  sourceOrder.shipping_method  || '',
-        notes:            sourceOrder.notes || '',
-        order_id:         sourceOrder.id   || '',
+        shipping_address: sourceOrder.shipping_address || '',
+        billing_address:  sourceOrder.billing_address  || contactLines || '',
+        freight_charges:  Number(sourceOrder.shipping_charges) || 0,
+        other_charges:    Number(sourceOrder.rush_services)    || 0,
+        expected_date:    sourceOrder.due_date ? sourceOrder.due_date.split('T')[0] : '',
+        notes:            sourceOrder.notes  || '',
+        order_id:         sourceOrder.id     || '',
         items: srcItems.map((it: any, idx: number) => {
-          const itemName = it.item || it.artwork_name || it.description || it.size || ''
+          const itemName  = it.item_name || it.item || it.artwork_name || it.size || it.description || ''
+          const desc      = [it.color, it.size, it.description].filter(Boolean).join(' | ')
           const unitPrice = Number(it.unit_price ?? it.price_per_sheet) || 0
-          const qty = Number(it.qty) || 1
+          const qty       = Number(it.qty_ordered ?? it.qty) || 1
+          const discPct   = Number(it.discount_pct) || 0
+          const taxPct    = Number(it.tax_pct)      || 0
           return {
             ...newItem(idx),
             item_name:   itemName,
+            description: desc,
             qty_ordered: qty,
             unit_price:  unitPrice,
-            line_total:  calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: 0, tax_pct: 0 }),
+            discount_pct: discPct,
+            tax_pct:      taxPct,
+            line_total:   calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: discPct, tax_pct: taxPct }),
           }
         }),
       },
