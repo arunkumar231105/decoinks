@@ -839,7 +839,25 @@ export function NewQuotationPage() {
     setContactNumber(c.phone ?? '')
     setWhatsapp(c.whatsapp ?? '')
     if (c.lead_id) setLeadId(c.lead_id as string)
-    if (c.address_line1) setBillingAddress([c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', '))
+
+    // Address fields
+    setShippingCountry(c.country ?? '')
+    setShippingState(c.state ?? '')
+    setShippingCity(c.city ?? '')
+    setZipCode(c.zip ?? '')
+
+    // Billing address: prefer stored billing_address, else build from address parts
+    const builtAddress = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
+    const billingAddr = c.billing_address || builtAddress
+    if (billingAddr) setBillingAddress(billingAddr)
+
+    // Shipping address: if same_as_shipping is true, copy billing; else same built address
+    if (c.same_as_shipping && billingAddr) {
+      setShippingAddress(billingAddr)
+      setSameAsBilling(true)
+    } else if (builtAddress) {
+      setShippingAddress(builtAddress)
+    }
   }, [fromCustomerData, formInitialized])
 
   // ── Initialize form from quotation once loaded ──
