@@ -347,6 +347,8 @@ export function NewInvoicePage() {
     // Totals
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
+    if (sourceQuote.payment_method)   setPaymentMethod(sourceQuote.payment_method)
+    if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
     if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
       setDiscountType('fixed'); setDiscountValue(Number(sourceQuote.discount_amt))

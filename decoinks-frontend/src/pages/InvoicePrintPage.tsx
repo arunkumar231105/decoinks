@@ -16,6 +16,7 @@ interface Invoice {
   subtotal: number; discount_amt: number
   total: number
   shipping_charges?: number | null
+  payment_method?: string | null
   notes: string | null; supplier_name: string | null
   customer_name: string | null
   billing_email: string | null; contact_number: string | null
@@ -330,7 +331,7 @@ export function InvoicePrintPage() {
   const shipCountry  = quotation?.shipping_country || ''
 
   const shippingAmt = Number(invoice.shipping_charges ?? 0)
-  const subtotalPlus = Number(invoice.subtotal) + shippingAmt
+  const itemsOnly   = Number(invoice.subtotal) - shippingAmt
 
   // ── Build DTF groups — consecutive items sharing desc + rate ───────────────
   const dtfGroups: DtfGroup[] = []
@@ -440,7 +441,7 @@ export function InvoicePrintPage() {
                   <tbody>
                     <tr>
                       <td className="sl">Items Total</td>
-                      <td className="sv">{fmt(invoice.subtotal)}</td>
+                      <td className="sv">{fmt(itemsOnly)}</td>
                     </tr>
                     {shippingAmt > 0 && <>
                       <tr>
@@ -449,7 +450,7 @@ export function InvoicePrintPage() {
                       </tr>
                       <tr>
                         <td className="sl">Subtotal</td>
-                        <td className="sv">{fmt(subtotalPlus)}</td>
+                        <td className="sv">{fmt(invoice.subtotal)}</td>
                       </tr>
                     </>}
                     {Number(invoice.discount_amt) > 0 && (
@@ -512,7 +513,7 @@ export function InvoicePrintPage() {
               <span className="ic-label">Payment Method</span>
             </div>
             <div className="ic-body">
-              <p className="ic-name">{payMethod}</p>
+              <p className="ic-name">{invoice.payment_method || payMethod || '—'}</p>
               {invoice.payments?.[0]?.reference && <p>Ref: {invoice.payments[0].reference}</p>}
             </div>
           </div>

@@ -64,7 +64,8 @@
       "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({connectionString:'postgresql://postgres:decoinks_pass@localhost:5432/decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
       "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'localhost',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
       "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'127.0.0.1',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
-      "Bash(grep -v \"//\\\\|className\")"
+      "Bash(grep -v \"//\\\\|className\")",
+      "Bash(xargs grep -l \"purchase_order\\\\|purchase-order\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

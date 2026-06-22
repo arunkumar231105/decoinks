@@ -228,14 +228,15 @@ export function NewOrderPage() {
 
   useEffect(() => {
     if (!sourceInvoice) return
-    if (sourceInvoice.supplier_id)   setSupplierId(sourceInvoice.supplier_id)
-    if (sourceInvoice.supplier_name) setSupplierText(sourceInvoice.supplier_name)
-    if (sourceInvoice.contact_name)  setContactName(sourceInvoice.contact_name)
-    if (sourceInvoice.contact_email) setContactEmail(sourceInvoice.contact_email)
-    if (sourceInvoice.contact_phone) setContactPhone(sourceInvoice.contact_phone)
-    if (sourceInvoice.shipping_name)    setShippingName(sourceInvoice.shipping_name)
+    if (sourceInvoice.supplier_id) setSupplierId(sourceInvoice.supplier_id)
+    const custName = sourceInvoice.customer_name || sourceInvoice.supplier_name || ''
+    if (custName) { setSupplierText(custName); setContactName(custName); setShippingName(custName) }
+    if (sourceInvoice.billing_email)    setContactEmail(sourceInvoice.billing_email)
+    if (sourceInvoice.contact_number)   setContactPhone(sourceInvoice.contact_number)
     if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
-    if (sourceInvoice.notes)          setOrderNotes(sourceInvoice.notes)
+    if (sourceInvoice.payment_method)   setPaymentMethod(sourceInvoice.payment_method)
+    if (sourceInvoice.payment_terms)    setPaymentTerms(sourceInvoice.payment_terms)
+    if (sourceInvoice.notes)            setOrderNotes(sourceInvoice.notes)
     if (sourceInvoice.shipping_charges) setShippingCharges(Number(sourceInvoice.shipping_charges))
     if (sourceInvoice.rush_services)    setRushServices(Number(sourceInvoice.rush_services))
     if (sourceInvoice.discount_pct)     setDiscountPct(Number(sourceInvoice.discount_pct))
