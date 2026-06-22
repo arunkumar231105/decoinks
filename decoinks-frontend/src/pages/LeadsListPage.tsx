@@ -166,7 +166,7 @@ export function LeadsListPage() {
                     <span className="lb-lead-id">{lead.lead_number}</span>
                   </td>
                   <td className="cust-name-cell">
-                    <span>{lead.supplier_name}</span>
+                    <span>{lead.supplier_name ?? lead.customer_name ?? '—'}</span>
                     {lead.company_name && (
                       <span className="cust-muted">{lead.company_name}</span>
                     )}
