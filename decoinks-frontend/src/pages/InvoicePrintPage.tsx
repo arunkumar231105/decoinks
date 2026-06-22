@@ -372,7 +372,7 @@ export function InvoicePrintPage() {
           {/* Left: Logo + Company info */}
           <div className="hdr-left">
             <div>
-              <img src="/decoinks-logo.jpg" alt="Decoinks" className="print-logo-img" />
+              <img src="/decoinks-logo.png" alt="Decoinks" className="print-logo-img" />
               <div className="logo-tag">PRINTSHOP OS</div>
             </div>
             <div className="co-info">

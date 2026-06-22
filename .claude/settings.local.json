@@ -69,7 +69,9 @@
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\AppData\\\\Local\\\\Temp\\\\\" | Where-Object { $_.Name -match \"logo|decoinks|claude|img\" } | Select-Object Name, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 10)",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\\" -Recurse | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp|\\\\.svg\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | Select-Object FullName, LastWriteTime)",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\\" | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | Select-Object Name, LastWriteTime)",
-      "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp Image 2026-06-22 at 10.42.11 PM.jpeg\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.jpg\")"
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp Image 2026-06-22 at 10.42.11 PM.jpeg\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.jpg\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\\" | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 5 | Select-Object Name, LastWriteTime)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp_Image_2026-06-22_at_10.42.11_PM-removebg-preview.png\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.png\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

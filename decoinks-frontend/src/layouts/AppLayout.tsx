@@ -182,7 +182,7 @@ export function AppLayout() {
         <div className="sidebar-head">
           <Link to="/dashboard" className="brand" onClick={() => setMobileOpen(false)}>
             <div className="brand-logo-wrap">
-              <img src="/decoinks-logo.jpg" alt="Decoinks" className="brand-logo-img" />
+              <img src="/decoinks-logo.png" alt="Decoinks" className="brand-logo-img" />
               {!collapsed && <small className="brand-sub">Printshop OS</small>}
             </div>
           </Link>

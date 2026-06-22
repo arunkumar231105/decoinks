@@ -333,7 +333,7 @@ export function QuotePrintPage() {
         <div className="hdr">
           {/* Logo */}
           <div className="logo-block">
-            <img src="/decoinks-logo.jpg" alt="Decoinks" className="print-logo-img" />
+            <img src="/decoinks-logo.png" alt="Decoinks" className="print-logo-img" />
             <div className="logo-tag">PRINTSHOP OS</div>
           </div>
 
