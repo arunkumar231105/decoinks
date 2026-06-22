@@ -917,7 +917,7 @@ export function NewQuotationPage() {
         if (charge.key === 'shipping' && q.estimated_shipping > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.estimated_shipping) }
         if (charge.key === 'discount' && q.discount_pct > 0)
-          return { ...charge, enabled: true, quotedCost: Number(q.discount_pct) }
+          return { ...charge, enabled: true, quotedCost: -Number(q.discount_amt || 0) }
         if (charge.key === 'artwork' && q.rush_services > 0)
           return { ...charge, enabled: true, quotedCost: Number(q.rush_services) }
         return charge

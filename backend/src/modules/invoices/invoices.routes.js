@@ -33,6 +33,11 @@ const createSchema = z.object({
   shipping_address: z.string().optional().nullable(),
   order_type:       z.enum(['apparel', 'gangsheet', 'dtf']).optional().nullable(),
   items:            z.array(itemSchema).optional(),
+  payment_terms:    z.string().optional().nullable(),
+  payment_method:   z.string().optional().nullable(),
+  currency:         z.string().optional().nullable(),
+  rush_services:    z.number().nonnegative().default(0),
+  shipping_charges: z.number().nonnegative().default(0),
 }).refine(
   (d) => d.quote_id || d.order_id || d.supplier_id || d.customer_name,
   { message: 'At least one of quote_id, order_id, supplier_id, or customer_name is required' }
@@ -52,6 +57,11 @@ const updateSchema = z.object({
   contact_number:   z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
   shipping_address: z.string().optional().nullable(),
+  payment_terms:    z.string().optional().nullable(),
+  payment_method:   z.string().optional().nullable(),
+  currency:         z.string().optional().nullable(),
+  rush_services:    z.number().nonnegative().optional(),
+  shipping_charges: z.number().nonnegative().optional(),
 }).strict()
 
 const statusSchema = z.object({

@@ -124,8 +124,8 @@ async function create(fields_in) {
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
         notes, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
-        order_type)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+        order_type, payment_terms, payment_method, currency, rush_services, shipping_charges)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
      RETURNING *`,
     [
       invoice_number,
@@ -139,6 +139,11 @@ async function create(fields_in) {
       fields.contact_number || null, fields.billing_address || null,
       fields.shipping_address || null,
       order_type || null,
+      fields.payment_terms || 'Due on Receipt',
+      fields.payment_method || null,
+      fields.currency || 'USD',
+      Number(fields.rush_services) || 0,
+      Number(fields.shipping_charges) || 0,
     ]
   )
 

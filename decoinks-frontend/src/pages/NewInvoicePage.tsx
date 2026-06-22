@@ -380,27 +380,26 @@ export function NewInvoicePage() {
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
   const [sendAnchor, setSendAnchor] = useState<null | HTMLElement>(null)
 
+  // After save, navigate to print if preview was triggered — otherwise go to invoice detail
+  const navigateAfterSave = useRef<'print' | null>(null)
+
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
     onSuccess: (inv: any) => {
+      if (navigateAfterSave.current === 'print' && inv?.id) {
+        navigateAfterSave.current = null
+        navigate(`/invoices/${inv.id}/print`)
+        return
+      }
+      navigateAfterSave.current = null
       toast.success('Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save invoice'),
-  })
-
-  // Preview mutation — save draft then open professional print page in new tab
-  const previewMutation = useMutation({
-    mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
-    onSuccess: (inv: any) => {
-      if (inv?.id) {
-        navigate(`/invoices/${inv.id}/print`)
-      } else {
-        navigate('/invoices')
-      }
+    onError: (err: any) => {
+      navigateAfterSave.current = null
+      toast.error(err.response?.data?.message ?? 'Failed to save invoice')
     },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save invoice for preview'),
   })
 
   // â"€â"€ Compuoed totals â"€â"€
@@ -506,50 +505,44 @@ export function NewInvoicePage() {
     return undefined
   }
 
+  const buildPayload = () => ({
+    supplier_id:      supplierId || null,
+    quote_id:         quoteId || null,
+    notes:            internalNotes || null,
+    issue_date:       invoiceDate || null,
+    due_date:         dueDate || null,
+    subtotal:         subtotal,
+    discount_amt:     discountAmt,
+    tax_amt:          taxAmt,
+    customer_name:    supplierText || null,
+    billing_email:    billingEmail || null,
+    contact_number:   contactNumber || null,
+    billing_address:  billingAddress || null,
+    shipping_address: shippingAddress || null,
+    order_type:       orderType,
+    items:            buildItemsPayload(),
+    payment_terms:    paymentTerms || null,
+    payment_method:   paymentMethod || null,
+    currency:         currency.split(' - ')[0] || 'USD',
+    rush_services:    rushServices,
+    shipping_charges: shippingCharges + rushCharges,
+  })
+
   const saveDraft = () => {
     if (!supplierId && !supplierText) {
       toast.error('Please select a supplier before saving')
       return
     }
-    saveMutation.mutate({
-      supplier_id:      supplierId || null,
-      quote_id:         quoteId || null,
-      notes:            internalNotes || null,
-      issue_date:       invoiceDate || null,
-      due_date:         dueDate || null,
-      subtotal:         subtotal,
-      discount_amt:     discountAmt,
-      tax_amt:          taxAmt,
-      total:            total,
-      customer_name:    supplierText || null,
-      billing_email:    billingEmail || null,
-      contact_number:   contactNumber || null,
-      billing_address:  billingAddress || null,
-      shipping_address: shippingAddress || null,
-      order_type:       orderType,
-      items:            buildItemsPayload(),
-    })
+    saveMutation.mutate(buildPayload())
   }
 
   const previewInvoice = () => {
-    previewMutation.mutate({
-      supplier_id:      supplierId || null,
-      quote_id:         quoteId || null,
-      notes:            internalNotes || null,
-      issue_date:       invoiceDate || null,
-      due_date:         dueDate || null,
-      subtotal:         subtotal,
-      discount_amt:     discountAmt,
-      tax_amt:          taxAmt,
-      total:            total,
-      customer_name:    supplierText || null,
-      billing_email:    billingEmail || null,
-      contact_number:   contactNumber || null,
-      billing_address:  billingAddress || null,
-      shipping_address: shippingAddress || null,
-      order_type:       orderType,
-      items:            buildItemsPayload(),
-    })
+    if (!supplierId && !supplierText) {
+      toast.error('Please select a supplier before saving')
+      return
+    }
+    navigateAfterSave.current = 'print'
+    saveMutation.mutate(buildPayload())
   }
 
   const requestApproval = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
