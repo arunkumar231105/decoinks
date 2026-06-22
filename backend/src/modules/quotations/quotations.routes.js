@@ -85,6 +85,7 @@ const createSchema = z.object({
   estimated_shipping: z.number().nonnegative().optional().default(0),
   rush_services:      z.number().nonnegative().optional().default(0),
   payment_terms:      z.string().optional().nullable(),
+  payment_method:     z.string().optional().nullable(),
   customer_notes:     z.string().optional().nullable(),
   ...intakeFields,
 })
@@ -101,6 +102,7 @@ const updateSchema = z.object({
   estimated_shipping: z.number().nonnegative().optional(),
   rush_services:      z.number().nonnegative().optional(),
   payment_terms:      z.string().optional().nullable(),
+  payment_method:     z.string().optional().nullable(),
   customer_notes:     z.string().optional().nullable(),
   ...intakeFields,
 })

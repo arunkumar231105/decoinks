@@ -25,7 +25,7 @@ interface Quote {
   subtotal: number; discount_pct: number; discount_amt: number
   total: number; notes: string | null; customer_notes: string | null
   rush_services: number | null; estimated_shipping: number | null
-  payment_terms: string | null; items: QuoteItem[]
+  payment_terms: string | null; payment_method: string | null; items: QuoteItem[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -453,7 +453,7 @@ export function QuotePrintPage() {
               <div className="ic-box" style={{ background: '#0891b2', fontSize: 10 }}>💳</div>
               <span className="ic-label">Payment Method</span>
             </div>
-            <div className="pay-meth-val">Bank Transfer</div>
+            <div className="pay-meth-val">{quote.payment_method || 'Bank Transfer'}</div>
           </div>
 
         </div>
@@ -493,7 +493,7 @@ export function QuotePrintPage() {
             <div className="stat-icon-wrap">🧮</div>
             <div>
               <div className="stat-lbl">Total Amount</div>
-              <div className="stat-val blue">{fmt(quote.subtotal)}</div>
+              <div className="stat-val blue">{fmt(quote.total)}</div>
             </div>
           </div>
         </div>
@@ -504,12 +504,12 @@ export function QuotePrintPage() {
           {/* Pricing Summary */}
           <div>
             <div className="section-title">Pricing Summary</div>
-            <div className="pr-row"><span className="lbl">Items Total</span><span className="val">{fmt(quote.subtotal)}</span></div>
-            <div className="pr-row"><span className="lbl">Rush Services ⓘ</span><span className="val">{fmt(rushAmt)}</span></div>
-            <div className="pr-row"><span className="lbl">Estimated Shipping</span><span className="val">{fmt(shippingAmt)}</span></div>
+            <div className="pr-row"><span className="lbl">Items Total</span><span className="val">{fmt(quote.subtotal - rushAmt - shippingAmt)}</span></div>
+            {rushAmt > 0 && <div className="pr-row"><span className="lbl">Rush Services ⓘ</span><span className="val">{fmt(rushAmt)}</span></div>}
+            {shippingAmt > 0 && <div className="pr-row"><span className="lbl">Estimated Shipping</span><span className="val">{fmt(shippingAmt)}</span></div>}
             <hr className="pr-divider" />
-            <div className="pr-row"><span className="lbl">Subtotal</span><span className="val">{fmt(quote.subtotal + rushAmt + shippingAmt)}</span></div>
-            <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>
+            <div className="pr-row"><span className="lbl">Subtotal</span><span className="val">{fmt(quote.subtotal)}</span></div>
+            {Number(quote.discount_amt) > 0 && <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>}
             <div className="pr-row total"><span className="lbl">Total</span><span className="val">{fmt(quote.total)}</span></div>
           </div>
 

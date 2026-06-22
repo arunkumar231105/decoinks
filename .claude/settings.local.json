@@ -58,7 +58,13 @@
       "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\e2e\\\\tests\" -Force)",
       "PowerShell(Set-Location \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\e2e\"; $env:TEST_EMAIL = \"admin@decoinks.com\"; $env:TEST_PASSWORD = \"Admin@123\"; npx playwright test 01-auth.spec.ts --reporter=line 2>&1 | Select-Object -Last 20)",
       "Bash(grep -v \"interface\\\\|type\\\\|function\\\\|const\\\\|//\\\\|items\\\\|Item\\\\|Amount\\\\|price\\\\|count\")",
-      "Bash(grep -v \"interface\\\\|const.*=\\\\|function\\\\|//\\\\|import\\\\|type\\\\|items\\\\|Item\\\\|Amount\")"
+      "Bash(grep -v \"interface\\\\|const.*=\\\\|function\\\\|//\\\\|import\\\\|type\\\\|items\\\\|Item\\\\|Amount\")",
+      "Bash(grep -m3 \"DATABASE\\\\|POSTGRES\\\\|DB_\" .env)",
+      "Bash(grep -m3 \"DATABASE\\\\|POSTGRES\\\\|DB_\" ../.env)",
+      "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({connectionString:'postgresql://postgres:decoinks_pass@localhost:5432/decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
+      "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'localhost',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
+      "Bash(node -e \"const {Client}=require\\('pg'\\); const c=new Client\\({host:'127.0.0.1',port:5435,user:'postgres',password:'decoinks_pass',database:'decoinks_db'}\\); c.connect\\(\\).then\\(\\(\\)=>c.query\\('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS payment_method VARCHAR\\(50\\)'\\)\\).then\\(\\(\\)=>{console.log\\('Migration OK'\\);c.end\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\);c.end\\(\\)}\\)\")",
+      "Bash(grep -v \"//\\\\|className\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

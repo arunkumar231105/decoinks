@@ -443,12 +443,14 @@ function PricingSummary({ totals }: { totals: ReturnType<typeof calculateQuotati
   )
 }
 
-function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, setPaymentTerms, setProductionTime, setDeliveryMethod, setCurrency }: {
+function TermsSection({ paymentTerms, paymentMethod, productionTime, deliveryMethod, currency, setPaymentTerms, setPaymentMethod, setProductionTime, setDeliveryMethod, setCurrency }: {
   paymentTerms: string
+  paymentMethod: string
   productionTime: string
   deliveryMethod: string
   currency: string
   setPaymentTerms: (value: string) => void
+  setPaymentMethod: (value: string) => void
   setProductionTime: (value: string) => void
   setDeliveryMethod: (value: string) => void
   setCurrency: (value: string) => void
@@ -458,6 +460,7 @@ function TermsSection({ paymentTerms, productionTime, deliveryMethod, currency, 
       <div className="nq-sidebar-card-header"><span>Terms &amp; Conditions</span></div>
       <div className="nq-terms-grid">
         <div className="nq-terms-field"><label>Payment Terms</label><select className="nq-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}><option>Net 15</option><option>Net 30</option><option>Due on Receipt</option></select></div>
+        <div className="nq-terms-field"><label>Payment Method</label><select className="nq-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Bank Transfer</option><option>Zelle</option><option>PayPal</option><option>Cash App</option><option>Credit Card</option><option>Cash</option><option>Check</option></select></div>
         <div className="nq-terms-field"><label>Production Time</label><select className="nq-select" value={productionTime} onChange={e => setProductionTime(e.target.value)}><option>2 - 3 Business Days</option><option>3 - 5 Business Days</option><option>5 - 7 Business Days</option></select></div>
         <div className="nq-terms-field"><label>Delivery Method</label><select className="nq-select" value={deliveryMethod} onChange={e => setDeliveryMethod(e.target.value)}><option>Standard Shipping</option><option>Express Shipping</option><option>Local Pickup</option></select></div>
         <div className="nq-terms-field"><label>Currency</label><select className="nq-select" value={currency} onChange={e => setCurrency(e.target.value)}><option>USD - US Dollar</option><option>CAD - Canadian Dollar</option><option>GBP - Pound Sterling</option></select></div>
@@ -779,6 +782,7 @@ export function NewQuotationPage() {
   const [supplierNotes, setSupplierNotes] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
+  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer')
   const [productionTime, setProductionTime] = useState('2 - 3 Business Days')
   const [deliveryMethod, setDeliveryMethod] = useState('Standard Shipping')
   const [currency, setCurrency] = useState('USD - US Dollar')
@@ -942,6 +946,7 @@ export function NewQuotationPage() {
       }))
     }
     if (q.payment_terms) setPaymentTerms(q.payment_terms)
+    if (q.payment_method) setPaymentMethod(q.payment_method)
     if (q.customer_notes) setSupplierNotes(q.customer_notes)
 
     setFormInitialized(true)
@@ -1117,6 +1122,7 @@ export function NewQuotationPage() {
       estimated_shipping:           estimatedShipping,
       rush_services:                rushServices,
       payment_terms:                paymentTerms,
+      payment_method:               paymentMethod || undefined,
       customer_notes:               supplierNotes || undefined,
       // Customer intake fields
       company_name:                 companyName       || undefined,
@@ -1315,7 +1321,7 @@ export function NewQuotationPage() {
           <CRMSnapshotPanel lead={leadData ?? null} />
           <PreviousQuotesSection />
           <PricingSummary totals={totals} />
-          <TermsSection paymentTerms={paymentTerms} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
+          <TermsSection paymentTerms={paymentTerms} paymentMethod={paymentMethod} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setPaymentMethod={setPaymentMethod} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
         </aside>
       </div>
 

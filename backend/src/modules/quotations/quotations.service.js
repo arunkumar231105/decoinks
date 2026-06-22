@@ -58,7 +58,7 @@ async function create({
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
   due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
-  estimated_shipping = 0, rush_services = 0, payment_terms, customer_notes,
+  estimated_shipping = 0, rush_services = 0, payment_terms, payment_method, customer_notes,
 }) {
   const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
@@ -74,9 +74,9 @@ async function create({
          customer_category, customer_source,
          shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
          due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
-         estimated_shipping, rush_services, payment_terms, customer_notes
+         estimated_shipping, rush_services, payment_terms, payment_method, customer_notes
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
        RETURNING *`,
       [
         quote_number, lead_id || null, supplier_id || null, order_type || null, valid_until || null,
@@ -86,7 +86,8 @@ async function create({
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
         shipping_address || null, billing_address || null, due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
-        estimated_shipping || 0, rush_services || 0, payment_terms || 'Due on Receipt', customer_notes || null,
+        estimated_shipping || 0, rush_services || 0, payment_terms || 'Due on Receipt',
+        payment_method || null, customer_notes || null,
       ]
     )
     const qId = rows[0].id
@@ -117,7 +118,7 @@ async function update(id, {
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
   customer_requirement_summary, quote_estimate,
-  estimated_shipping, rush_services, payment_terms, customer_notes,
+  estimated_shipping, rush_services, payment_terms, payment_method, customer_notes,
 }, actorId) {
   const itemList = items ?? []
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, 0, estimated_shipping, rush_services)
@@ -136,9 +137,10 @@ async function update(id, {
            estimated_shipping=COALESCE($31, estimated_shipping),
            rush_services=COALESCE($32, rush_services),
            payment_terms=COALESCE($33, payment_terms),
-           customer_notes=COALESCE($34, customer_notes),
+           payment_method=COALESCE($34, payment_method),
+           customer_notes=COALESCE($35, customer_notes),
            updated_at=NOW()
-       WHERE id=$35
+       WHERE id=$36
        RETURNING id`,
       [
         lead_id || null, supplier_id || null, order_type || null, valid_until || null,
@@ -151,6 +153,7 @@ async function update(id, {
         estimated_shipping != null ? estimated_shipping : null,
         rush_services != null ? rush_services : null,
         payment_terms || null,
+        payment_method || null,
         customer_notes || null,
         id,
       ]

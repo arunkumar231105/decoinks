@@ -69,7 +69,8 @@ function numberToWords(amount: number): string {
   if (whole >= 1000000) r += below1000(Math.floor(whole / 1000000)) + 'Million '
   if (whole >= 1000)    r += below1000(Math.floor((whole % 1000000) / 1000)) + 'Thousand '
   r += below1000(whole % 1000)
-  return r.trim() + ` and ${cents.toString().padStart(2, '0')}/100 US Dollars Only`
+  const centsStr = cents > 0 ? ` and ${cents.toString().padStart(2, '0')}/100` : ''
+  return r.trim() + centsStr + ' US Dollars Only'
 }
 
 function colorHex(c: string | null) {
