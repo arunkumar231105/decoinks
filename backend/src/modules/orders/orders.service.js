@@ -34,16 +34,17 @@ async function insertItems(client, orderId, orderType, items) {
     } else if (orderType === 'gangsheet') {
       const amount = +(Number(item.price_per_sheet) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_gangsheet (order_id, size, no_artworks, qty, price_per_sheet, amount, front_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [orderId, item.size, item.no_artworks || 1, item.qty, item.price_per_sheet, amount, item.front_image || null, i]
+        `INSERT INTO order_items_gangsheet (order_id, size, no_artworks, qty, price_per_sheet, amount, front_image, back_image, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [orderId, item.size, item.no_artworks || 1, item.qty, item.price_per_sheet, amount, item.front_image || null, item.back_image || null, i]
       )
     } else if (orderType === 'dtf') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [orderId, item.artwork_name, item.size || null, item.qty, item.unit_price, amount, item.artwork_image || null, i]
+        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [orderId, item.artwork_name, item.size || null, item.qty, item.unit_price, amount,
+         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i]
       )
     }
   }

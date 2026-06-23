@@ -18,6 +18,8 @@ interface POItem {
   required_by_date: string | null
   sort_order: number
   artwork_count?: number
+  front_image?: string | null
+  back_image?: string | null
 }
 
 interface PurchaseOrder {
@@ -760,9 +762,56 @@ export function PurchaseOrderPrintPage() {
           </tfoot>
         </table>
 
-        {/* ══ SECTION 3: ARTWORKS ══ */}
+        {/* ══ SECTION 3: LINE ITEMS WITH ARTWORK ══ */}
+        {items.some(it => it.front_image || it.back_image) && (
+          <>
+            <div className="sec-hdr" style={{ marginTop: 2 }}>
+              <div className="sec-num">3</div>
+              <div className="sec-title">Line Items — Artwork Preview</div>
+            </div>
+            <table className="po-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>S.No</th>
+                  <th className="left">Item / Description</th>
+                  <th style={{ width: 68 }}>Front Art</th>
+                  <th style={{ width: 68 }}>Back Art</th>
+                  <th style={{ width: 60 }}>Qty</th>
+                  <th style={{ width: 76 }}>Unit Price</th>
+                  <th style={{ width: 80 }}>Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => (
+                  <tr key={it.id}>
+                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
+                    <td className="left">
+                      <div style={{ fontWeight: 600, fontSize: 11 }}>{it.item_name}</div>
+                      {it.description && <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{it.description}</div>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {it.front_image
+                        ? <img src={it.front_image} alt="front" className="art-thumb" />
+                        : <div className="art-empty-thumb">—</div>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {it.back_image
+                        ? <img src={it.back_image} alt="back" className="art-thumb" />
+                        : <div className="art-empty-thumb" style={{ color: '#d1d5db' }}>—</div>}
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{it.qty_ordered}</td>
+                    <td style={{ textAlign: 'right' }}>{Number(it.unit_price).toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{Number(it.line_total).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {/* ══ SECTION 4: ARTWORKS ══ */}
         <div className="sec-hdr" style={{ marginTop: 2 }}>
-          <div className="sec-num">3</div>
+          <div className="sec-num">{items.some(it => it.front_image || it.back_image) ? 4 : 3}</div>
           <div className="sec-title">Artworks ({totalArtworks} Artworks)</div>
         </div>
 

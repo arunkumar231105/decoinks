@@ -23,6 +23,8 @@ interface POLineItem {
   required_by_date: string
   remarks: string
   sort_order: number
+  front_image?: string | null
+  back_image?: string | null
 }
 
 interface POFormState {
@@ -218,13 +220,15 @@ export function NewPurchaseOrderPage() {
           const taxPct    = Number(it.tax_pct)      || 0
           return {
             ...newItem(idx),
-            item_name:   itemName,
-            description: desc,
-            qty_ordered: qty,
-            unit_price:  unitPrice,
+            item_name:    itemName,
+            description:  desc,
+            qty_ordered:  qty,
+            unit_price:   unitPrice,
             discount_pct: discPct,
             tax_pct:      taxPct,
             line_total:   calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: discPct, tax_pct: taxPct }),
+            front_image:  it.front_image ?? it.artwork_image ?? null,
+            back_image:   it.back_image  ?? null,
           }
         }),
       },

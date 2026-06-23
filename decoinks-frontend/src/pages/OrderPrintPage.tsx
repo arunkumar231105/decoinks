@@ -45,12 +45,12 @@ interface ApparelItem {
 interface DtfItem {
   id: string; artwork_name: string; size: string | null
   qty: number; unit_price: number; amount: number
-  artwork_image: string | null
+  artwork_image: string | null; front_image?: string | null; back_image?: string | null
 }
 
 interface GangsheetItem {
   id: string; size: string | null; no_artworks: number
-  qty: number; price_per_sheet: number; amount: number; front_image: string | null
+  qty: number; price_per_sheet: number; amount: number; front_image: string | null; back_image?: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -653,7 +653,8 @@ export function OrderPrintPage() {
                     Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 68 }}>Artwork<br />(Thumbnail)</th>
+                  <th style={{ width: 68 }}>Front Art</th>
+                  <th style={{ width: 68 }}>Back Art</th>
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 80 }}>Qty<br />(Transfers)</th>
                   <th style={{ width: 68 }}>Rate</th>
@@ -662,7 +663,7 @@ export function OrderPrintPage() {
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
                 ) : dtfFlat.map((r, sno) => (
                   <tr key={r.item.id}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
@@ -673,9 +674,14 @@ export function OrderPrintPage() {
                     )}
                     <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
                     <td>
-                      {r.item.artwork_image
-                        ? <img src={r.item.artwork_image} alt={r.artNo} className="art-img" />
+                      {(r.item.front_image ?? r.item.artwork_image)
+                        ? <img src={r.item.front_image ?? r.item.artwork_image!} alt={r.artNo} className="art-img" />
                         : <div className="art-empty">🖼</div>}
+                    </td>
+                    <td>
+                      {r.item.back_image
+                        ? <img src={r.item.back_image} alt={`${r.artNo}-back`} className="art-img" />
+                        : <div className="art-empty" style={{ color: '#d1d5db' }}>—</div>}
                     </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
@@ -702,12 +708,13 @@ export function OrderPrintPage() {
                   <th style={{ width: 70 }}>Qty</th>
                   <th style={{ width: 80 }}>Price/Sheet</th>
                   <th style={{ width: 80 }}>Amount</th>
-                  <th style={{ width: 68 }}>Preview</th>
+                  <th style={{ width: 68 }}>Front Art</th>
+                  <th style={{ width: 68 }}>Back Art</th>
                 </tr>
               </thead>
               <tbody>
                 {gsItems.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
                 ) : gsItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td>{idx + 1}</td>
@@ -718,8 +725,13 @@ export function OrderPrintPage() {
                     <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     <td>
                       {item.front_image
-                        ? <img src={item.front_image} alt="gs" className="art-img" />
+                        ? <img src={item.front_image} alt="front" className="art-img" />
                         : <div className="art-empty">—</div>}
+                    </td>
+                    <td>
+                      {item.back_image
+                        ? <img src={item.back_image} alt="back" className="art-img" />
+                        : <div className="art-empty" style={{ color: '#d1d5db' }}>—</div>}
                     </td>
                   </tr>
                 ))}

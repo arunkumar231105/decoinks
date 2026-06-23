@@ -25,8 +25,8 @@ interface ApparelItem {
   artworkNo: string; artworkSize: string; unitPrice: number
   frontImage?: string | null; backImage?: string | null
 }
-interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null }
-interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null }
+interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null; backImage?: string | null }
+interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Helpers
@@ -206,9 +206,9 @@ export function NewOrderPage() {
     if (existingOrder.order_type === 'apparel') {
       setApparel(items.map((r: any) => ({ id: uid(), item: r.item ?? '', color: r.color ?? 'Black', size: r.size ?? 'M', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
     } else if (existingOrder.order_type === 'gangsheet') {
-      setGangsheet(items.map((r: any) => ({ id: uid(), size: r.size ?? '', noArtworks: Number(r.no_artworks ?? 1), qty: Number(r.qty), pricePerSheet: Number(r.price_per_sheet), frontImage: r.front_image ?? null })))
+      setGangsheet(items.map((r: any) => ({ id: uid(), size: r.size ?? '', noArtworks: Number(r.no_artworks ?? 1), qty: Number(r.qty), pricePerSheet: Number(r.price_per_sheet), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
     } else {
-      setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null })))
+      setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null, frontImage: r.front_image ?? r.artwork_image ?? null, backImage: r.back_image ?? null })))
     }
   }, [existingOrder])
 
@@ -271,6 +271,7 @@ export function NewOrderPage() {
         qty:           Number(it.qty),
         pricePerSheet: Number(it.unit_price),
         frontImage:    (it as any).front_image ?? null,
+        backImage:     (it as any).back_image  ?? null,
       })))
     } else {
       setDtf(qItems.map(it => ({
@@ -279,7 +280,9 @@ export function NewOrderPage() {
         size:          it.sizes ?? '',
         qty:           Number(it.qty),
         unitPrice:     Number(it.unit_price),
-        artworkImage:  (it as any).artwork_image ?? null,
+        artworkImage:  (it as any).front_image ?? (it as any).artwork_image ?? null,
+        frontImage:    (it as any).front_image ?? (it as any).artwork_image ?? null,
+        backImage:     (it as any).back_image  ?? null,
       })))
     }
   }, [sourceQuote])
@@ -399,8 +402,8 @@ export function NewOrderPage() {
     const itemsPayload = orderType === 'apparel'
       ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null }))
       : orderType === 'gangsheet'
-        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: r.frontImage || null }))
-        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.artworkImage || null }))
+        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: r.frontImage || null, back_image: r.backImage || null }))
+        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
 
     return {
       supplier_id:        supplierId || null,
@@ -702,7 +705,8 @@ export function NewOrderPage() {
                         <th>Gangsheet Size</th>
                         <th>No. Artworks</th>
                         <th>Qty (Sheets)</th>
-                        <th>FR AW Image</th>
+                        <th>Front Art</th>
+                        <th>Back Art</th>
                         <th>Price/Sheet (USD)</th>
                         <th>Amount (USD)</th>
                         <th></th>
@@ -728,6 +732,7 @@ export function NewOrderPage() {
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
                           <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { backImage: null })} /></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -757,7 +762,8 @@ export function NewOrderPage() {
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
-                        <th>Artwork Image</th>
+                        <th>Front Art</th>
+                        <th>Back Art</th>
                         <th>Artwork Name</th>
                         <th>Size</th>
                         <th>Qty</th>
@@ -770,7 +776,8 @@ export function NewOrderPage() {
                       {dtf.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td><ImageUploadCell imageUrl={row.artworkImage} label="Art" uploading={uploadingImg[`${row.id}-artworkImage`]} onUpload={f => uploadItemImage(row.id, 'artworkImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { artworkImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { backImage: null })} /></td>
                           <td>
                             <input type="text" className="no-table-input no-table-input-wide" placeholder="Artwork name" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
