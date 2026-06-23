@@ -93,14 +93,15 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
   params.push(limit, offset)
   const { rows } = await query(
     `SELECT po.*,
-            COALESCE(po.vendor_name, s.name, o.supplier_name, o.contact_name) AS display_vendor_name,
+            COALESCE(po.vendor_name, s.name, os.name, o.contact_name) AS display_vendor_name,
             s.name      AS supplier_name,
             o.order_number,
             u.name      AS created_by_name
      FROM purchase_orders po
-     LEFT JOIN suppliers s ON s.id = po.supplier_id
-     LEFT JOIN orders   o ON o.id = po.order_id
-     LEFT JOIN users    u ON u.id = po.created_by
+     LEFT JOIN suppliers s  ON s.id  = po.supplier_id
+     LEFT JOIN orders   o  ON o.id  = po.order_id
+     LEFT JOIN suppliers os ON os.id = o.supplier_id
+     LEFT JOIN users    u  ON u.id  = po.created_by
      ${where}
      ORDER BY po.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
