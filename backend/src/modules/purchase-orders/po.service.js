@@ -41,8 +41,8 @@ async function insertItems(client, poId, items) {
          (po_id, item_name, description, qty_ordered, unit_price,
           discount_pct, discount_amt, tax_pct, tax_amt, line_total,
           hsn_code, uom, product_id, required_by_date, remarks, sort_order,
-          front_image, back_image)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          artwork_count, front_image, back_image)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
         poId,
         item.item_name,
@@ -60,6 +60,7 @@ async function insertItems(client, poId, items) {
         item.required_by_date || null,
         item.remarks || null,
         item.sort_order ?? i,
+        Number(item.artwork_count) || 0,
         item.front_image || null,
         item.back_image  || null,
       ]

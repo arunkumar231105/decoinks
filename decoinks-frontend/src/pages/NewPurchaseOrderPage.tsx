@@ -23,6 +23,7 @@ interface POLineItem {
   required_by_date: string
   remarks: string
   sort_order: number
+  artwork_count?: number
   front_image?: string | null
   back_image?: string | null
 }
@@ -104,6 +105,9 @@ function newItem(idx: number): POLineItem {
     required_by_date: '',
     remarks: '',
     sort_order: idx,
+    artwork_count: 0,
+    front_image: null,
+    back_image: null,
   }
 }
 
@@ -220,15 +224,16 @@ export function NewPurchaseOrderPage() {
           const taxPct    = Number(it.tax_pct)      || 0
           return {
             ...newItem(idx),
-            item_name:    itemName,
-            description:  desc,
-            qty_ordered:  qty,
-            unit_price:   unitPrice,
-            discount_pct: discPct,
-            tax_pct:      taxPct,
-            line_total:   calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: discPct, tax_pct: taxPct }),
-            front_image:  it.front_image ?? it.artwork_image ?? null,
-            back_image:   it.back_image  ?? null,
+            item_name:     itemName,
+            description:   desc,
+            qty_ordered:   qty,
+            unit_price:    unitPrice,
+            discount_pct:  discPct,
+            tax_pct:       taxPct,
+            line_total:    calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: discPct, tax_pct: taxPct }),
+            artwork_count: Number(it.no_artworks ?? it.artwork_count) || 0,
+            front_image:   it.front_image ?? it.artwork_image ?? null,
+            back_image:    it.back_image  ?? null,
           }
         }),
       },
@@ -305,6 +310,9 @@ export function NewPurchaseOrderPage() {
         remarks:          item.remarks || null,
         sort_order:       i,
         product_id:       item.product_id || null,
+        artwork_count:    Number(item.artwork_count) || 0,
+        front_image:      item.front_image || null,
+        back_image:       item.back_image  || null,
       })),
     }
   }
@@ -525,6 +533,9 @@ export function NewPurchaseOrderPage() {
                   <tr>
                     <th style={{ width: 36 }}>#</th>
                     <th style={{ minWidth: 160 }}>Item Name</th>
+                    <th style={{ width: 56 }}>Front Art</th>
+                    <th style={{ width: 56 }}>Back Art</th>
+                    <th style={{ width: 64 }}>No. AW</th>
                     <th style={{ width: 80 }}>HSN</th>
                     <th style={{ width: 64 }}>UOM</th>
                     <th style={{ width: 72 }}>Qty</th>
@@ -540,7 +551,7 @@ export function NewPurchaseOrderPage() {
                 <tbody>
                   {state.items.length === 0 && (
                     <tr>
-                      <td colSpan={12} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
+                      <td colSpan={15} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
                         No items yet — click "Add Item" below
                       </td>
                     </tr>
@@ -552,6 +563,21 @@ export function NewPurchaseOrderPage() {
                         <input className="np-table-input" placeholder="Item name..."
                           value={item.item_name}
                           onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { item_name: e.target.value } })} />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {item.front_image
+                          ? <img src={item.front_image} alt="front" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
+                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {item.back_image
+                          ? <img src={item.back_image} alt="back" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
+                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
+                      </td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0}
+                          value={item.artwork_count ?? 0}
+                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { artwork_count: +e.target.value || 0 } })} />
                       </td>
                       <td>
                         <input className="np-table-input" placeholder="HSN..."
