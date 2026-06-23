@@ -93,10 +93,9 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
   params.push(limit, offset)
   const { rows } = await query(
     `SELECT po.*,
-            COALESCE(po.vendor_name, s.name, o.supplier_name, o.supplier_name_text, o.contact_name) AS display_vendor_name,
+            COALESCE(po.vendor_name, s.name, o.supplier_name, o.contact_name) AS display_vendor_name,
             s.name      AS supplier_name,
             o.order_number,
-            COALESCE(o.supplier_name, o.supplier_name_text, o.contact_name) AS order_vendor_name,
             u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s ON s.id = po.supplier_id
@@ -126,10 +125,36 @@ async function getById(id) {
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
+  const po = rows[0]
+
   const items = await query(
     `SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY sort_order, created_at`, [id]
   )
-  return { ...rows[0], items: items.rows }
+
+  // Compute total artwork count from linked order's items (fallback when artwork_count column not yet migrated)
+  let order_total_artworks = 0
+  if (po.order_id) {
+    try {
+      // Try gangsheet first
+      const gsRes = await query(
+        `SELECT COALESCE(SUM(no_artworks),0) AS total FROM order_items_gangsheet WHERE order_id = $1`, [po.order_id]
+      )
+      const gsCount = parseInt(gsRes.rows[0]?.total ?? 0, 10)
+      // DTF
+      const dtfRes = await query(
+        `SELECT COUNT(*) AS total FROM order_items_dtf WHERE order_id = $1`, [po.order_id]
+      )
+      const dtfCount = parseInt(dtfRes.rows[0]?.total ?? 0, 10)
+      // Apparel
+      const appRes = await query(
+        `SELECT COUNT(*) AS total FROM order_items_apparel WHERE order_id = $1`, [po.order_id]
+      )
+      const appCount = parseInt(appRes.rows[0]?.total ?? 0, 10)
+      order_total_artworks = gsCount || dtfCount || appCount || 0
+    } catch (_) {}
+  }
+
+  return { ...po, items: items.rows, order_total_artworks }
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────

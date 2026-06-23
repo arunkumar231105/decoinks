@@ -54,6 +54,7 @@ interface PurchaseOrder {
   other_charges: number
   grand_total: number
   items: POItem[]
+  order_total_artworks?: number
 }
 
 interface Artwork {
@@ -412,7 +413,10 @@ export function PurchaseOrderPrintPage() {
   const artworks = artworkData?.artworks ?? []
 
   // Totals
-  const totalArtworks = artworks.length || items.reduce((s, it) => s + (it.artwork_count ?? 0), 0)
+  const totalArtworks = artworks.length
+    || items.reduce((s, it) => s + (it.artwork_count ?? 0), 0)
+    || po.order_total_artworks
+    || 0
   const totalQty      = items.reduce((s, it) => s + (it.qty_ordered ?? 0), 0)
 
   // Artwork range string e.g. "AW1001 – AW1076"
