@@ -40,6 +40,8 @@ interface ApparelItem {
   qty: number
   artworkNo: string
   unitPrice: number
+  front_image?: string | null
+  back_image?: string | null
 }
 
 interface GangsheetItem {
@@ -48,6 +50,8 @@ interface GangsheetItem {
   numArtworks: number
   qtySheets: number
   pricePerSheet: number
+  front_image?: string | null
+  back_image?: string | null
 }
 
 interface GangsheetArtwork {
@@ -66,6 +70,8 @@ interface TransferItem {
   size: string
   qty: number
   unitPrice: number
+  front_image?: string | null
+  back_image?: string | null
 }
 
 // â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -361,19 +367,25 @@ export function NewInvoicePage() {
         color: it.colors || it.color || '', size: it.size || 'M',
         qty: Number(it.qty) || 1, artworkNo: it.artwork_no || '',
         unitPrice: Number(it.unit_price) || 0,
+        front_image: it.front_image ?? null,
+        back_image:  it.back_image  ?? null,
       })))
     } else if (sourceQuote.order_type === 'dtf') {
       setTransferItems(items.map((it: any) => ({
         id: uid(), artworkName: it.artwork_name || it.description || '',
-        size: it.size || '', qty: Number(it.qty) || 1,
+        size: it.size || it.description || '', qty: Number(it.qty) || 1,
         unitPrice: Number(it.unit_price) || 0,
+        front_image: it.front_image ?? it.artwork_image ?? null,
+        back_image:  it.back_image  ?? null,
       })))
     } else if (sourceQuote.order_type === 'gangsheet') {
       setGangsheetItems(items.map((it: any) => ({
-        id: uid(), size: it.size || '22"x60"',
+        id: uid(), size: it.size || it.description || '22"x60"',
         numArtworks: Number(it.artwork_count) || 0,
         qtySheets: Number(it.qty) || 1,
         pricePerSheet: Number(it.unit_price) || 18,
+        front_image: it.front_image ?? null,
+        back_image:  it.back_image  ?? null,
       })))
     }
   }, [sourceQuote])
@@ -471,9 +483,8 @@ export function NewInvoicePage() {
     setTransferItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeTransferItem = (id: string) => setTransferItems(prev => prev.filter(r => r.id !== id))
 
-  // Build items payload based on order type (only when no linked quote)
+  // Build items payload based on order type (always — so images are stored)
   const buildItemsPayload = () => {
-    if (quoteId) return undefined
     if (orderType === 'gangsheet') {
       return gangsheetItems.map((row, i) => ({
         description:   row.size,
@@ -482,6 +493,8 @@ export function NewInvoicePage() {
         amount:        row.qtySheets * row.pricePerSheet,
         artwork_count: row.numArtworks,
         sort_order:    i,
+        front_image:   row.front_image || null,
+        back_image:    row.back_image  || null,
       }))
     }
     if (orderType === 'apparel') {
@@ -492,6 +505,8 @@ export function NewInvoicePage() {
         amount:        row.qty * row.unitPrice,
         artwork_count: 0,
         sort_order:    i,
+        front_image:   row.front_image || null,
+        back_image:    row.back_image  || null,
       }))
     }
     if (orderType === 'dtf') {
@@ -502,6 +517,8 @@ export function NewInvoicePage() {
         amount:        row.qty * row.unitPrice,
         artwork_count: 0,
         sort_order:    i,
+        front_image:   row.front_image || null,
+        back_image:    row.back_image  || null,
       }))
     }
     return undefined
@@ -1004,8 +1021,15 @@ export function NewInvoicePage() {
                       {transferItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                          <td data-label="Artwork Image">
-                            <ArtworkThumb60 name={row.artworkName || 'artwork.png'} />
+                          <td data-label="Front Art">
+                            {row.front_image
+                              ? <img src={row.front_image} alt="front" style={{ width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
+                              : <ArtworkThumb60 name={row.artworkName || 'artwork.png'} />}
+                          </td>
+                          <td data-label="Back Art">
+                            {row.back_image
+                              ? <img src={row.back_image} alt="back" style={{ width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
+                              : <div style={{ width: 50, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d1d5db', fontSize: 11, border: '1px dashed #e5e7eb', borderRadius: 4 }}>—</div>}
                           </td>
                           <td data-label="Artwork Name">
                             <input className="ni-table-input ni-wide-input" value={row.artworkName} onChange={e => updateTransferItem(row.id, { artworkName: e.target.value })} placeholder="Artwork file name" />

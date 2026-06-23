@@ -9,6 +9,7 @@ interface InvoiceItem {
   id: string; description: string; qty: number
   unit_price: number; amount: number; artwork_count: number
   sizes?: string | null; colors?: string | null
+  front_image?: string | null; back_image?: string | null; artwork_image?: string | null
 }
 interface Invoice {
   id: string; invoice_number: string; status: string
@@ -30,6 +31,7 @@ interface QuoteItem {
   id: string; description: string; qty: number
   unit_price: number; amount: number
   sizes: string | null; colors: string | null; artwork_count: number
+  front_image?: string | null; back_image?: string | null; artwork_image?: string | null
 }
 interface Quotation {
   id: string; order_type: string | null
@@ -519,16 +521,19 @@ export function InvoicePrintPage() {
                   <th style={{ minWidth: 120 }}>Gangsheet Size</th>
                   <th style={{ width: 100 }}>No. Artworks</th>
                   <th style={{ width: 90 }}>Qty Sheets</th>
-                  <th style={{ width: 80 }}>FR Image</th>
+                  <th style={{ width: 78 }}>Front Art</th>
+                  <th style={{ width: 78 }}>Back Art</th>
                   <th style={{ width: 90 }}>Price/Sheet<br />(USD)</th>
                   <th style={{ width: 90 }}>Amount<br />(USD)</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art = artworks[idx] ?? null
+                  const frontUrl = (art?.file_url && art.file_type !== 'pdf') ? art.file_url : (item.front_image ?? null)
+                  const backUrl  = item.back_image ?? null
                   return (
                     <tr key={item.id}>
                       <td style={{ fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
@@ -536,9 +541,14 @@ export function InvoicePrintPage() {
                       <td style={{ fontWeight: 600 }}>{item.artwork_count || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{item.qty}</td>
                       <td>
-                        {art?.file_url && art.file_type !== 'pdf'
-                          ? <img src={art.file_url} alt={art.name} className="art-thumb" />
+                        {frontUrl
+                          ? <img src={frontUrl} alt="front" className="art-thumb" />
                           : <div className="art-empty">🖼</div>}
+                      </td>
+                      <td>
+                        {backUrl
+                          ? <img src={backUrl} alt="back" className="art-thumb" />
+                          : <div className="art-empty">—</div>}
                       </td>
                       <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
@@ -558,7 +568,8 @@ export function InvoicePrintPage() {
                     <span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 70 }}>Artwork<br />(Thumbnail)</th>
+                  <th style={{ width: 70 }}>Front Art</th>
+                  <th style={{ width: 70 }}>Back Art</th>
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 82 }}>Qty<br />(Transfers)</th>
                   <th style={{ width: 68 }}>Rate</th>
@@ -567,45 +578,42 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
-                ) : dtfFlat.map((r, sno) => (
-                  <tr key={r.item.id}>
-                    {/* Sequential S.No — one per artwork row */}
+                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                ) : dtfFlat.map((r, sno) => {
+                  const frontUrl = (r.art?.file_url && r.art.file_type !== 'pdf') ? r.art.file_url : (r.item.front_image ?? r.item.artwork_image ?? null)
+                  const backUrl  = r.item.back_image ?? null
+                  return (
+                  <tr key={`${r.item.id}-${sno}`}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
-
-                    {/* Item Description — rowSpan first row of each group */}
                     {r.rowIdx === 0 && (
                       <td rowSpan={r.group.rowSpan} className="td-span td-desc">
                         {r.group.desc || 'DTF Transfers'}
                       </td>
                     )}
-
                     <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
-
                     <td>
-                      {r.art?.file_url && r.art.file_type !== 'pdf' ? (
-                        <img src={r.art.file_url} alt={r.art.name} className="art-thumb" />
-                      ) : (
-                        <div className="art-empty">🖼</div>
-                      )}
+                      {frontUrl
+                        ? <img src={frontUrl} alt="front" className="art-thumb" />
+                        : <div className="art-empty">🖼</div>}
                     </td>
-
+                    <td>
+                      {backUrl
+                        ? <img src={backUrl} alt="back" className="art-thumb" />
+                        : <div className="art-empty">—</div>}
+                    </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600, color: '#111827' }}>{r.item.qty}</td>
-
-                    {/* Rate — rowSpan first row of each group */}
                     {r.rowIdx === 0 && (
                       <td rowSpan={r.group.rowSpan} className="td-span" style={{ fontWeight: 700, color: '#111827' }}>
                         {r.group.rate.toFixed(2)}
                       </td>
                     )}
-
-                    {/* Amount — per row */}
                     <td style={{ fontWeight: 600, color: '#374151' }}>
                       {Number(r.item.amount).toFixed(2)}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           ) : (
@@ -636,6 +644,8 @@ export function InvoicePrintPage() {
                 ) : items.map((item, idx) => {
                   const art     = artworks[idx] ?? null
                   const artBack = artworks[idx + items.length] ?? null
+                  const frontUrl = (art?.file_url && art.file_type !== 'pdf') ? art.file_url : (item.front_image ?? null)
+                  const backUrl  = (artBack?.file_url && artBack.file_type !== 'pdf') ? artBack.file_url : (item.back_image ?? null)
                   const artSz   = art?.width_inches && art?.height_inches ? `${art.width_inches} x ${art.height_inches}` : '—'
                   const artBSz  = artBack?.width_inches && artBack?.height_inches ? `${artBack.width_inches} x ${artBack.height_inches}` : '—'
                   const dotColor = colorHex(item.colors ?? null)
@@ -650,14 +660,14 @@ export function InvoicePrintPage() {
                       </td>
                       <td style={{ fontSize: 10, lineHeight: 1.6, textAlign: 'left' }}>{item.sizes || '—'}</td>
                       <td>
-                        {art?.file_url && art.file_type !== 'pdf'
-                          ? <img src={art.file_url} alt={art.name} className="art-thumb" />
+                        {frontUrl
+                          ? <img src={frontUrl} alt="front" className="art-thumb" />
                           : <div className="art-empty">—</div>}
                       </td>
                       <td style={{ fontSize: 10 }}>{artSz}</td>
                       <td>
-                        {artBack?.file_url && artBack.file_type !== 'pdf'
-                          ? <img src={artBack.file_url} alt={artBack.name} className="art-thumb" />
+                        {backUrl
+                          ? <img src={backUrl} alt="back" className="art-thumb" />
                           : <div className="art-empty">—</div>}
                       </td>
                       <td style={{ fontSize: 10 }}>{artBSz}</td>

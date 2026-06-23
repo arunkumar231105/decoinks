@@ -147,14 +147,15 @@ async function create(fields_in) {
     ]
   )
 
-  // Save line items when invoice is created directly (not from a quote/order)
-  if (!quote_id && !order_id && Array.isArray(items) && items.length > 0) {
+  // Save line items (always — so images are stored even for quote-linked invoices)
+  if (Array.isArray(items) && items.length > 0) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
       await query(
         `INSERT INTO invoice_items
-           (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+           (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
+            front_image, back_image, artwork_image)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [
           rows[0].id,
           it.description || null,
@@ -163,6 +164,9 @@ async function create(fields_in) {
           Number(it.amount) || 0,
           Number(it.artwork_count) || 0,
           it.sort_order ?? i,
+          it.front_image || null,
+          it.back_image  || null,
+          it.artwork_image || null,
         ]
       )
     }
