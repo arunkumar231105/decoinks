@@ -702,7 +702,7 @@ export function PurchaseOrderPrintPage() {
                 </td>
                 <td>{parseGsWidth(item.item_name)}</td>
                 <td>{parseGsLength(item.item_name)}</td>
-                <td style={{ fontWeight: 700 }}>{item.artwork_count ?? totalArtworks}</td>
+                <td style={{ fontWeight: 700 }}>{item.artwork_count || totalArtworks}</td>
                 <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{item.qty_ordered}</td>
               </tr>
             ))}
@@ -742,7 +742,7 @@ export function PurchaseOrderPrintPage() {
             ) : items.map((item, idx) => {
               const gsNo = `GS-${po.po_number}-${String(idx + 1).padStart(2, '0')}`
               const gsSize = item.item_name || '—'
-              const artCount = item.artwork_count ?? 0
+              const artCount = item.artwork_count || totalArtworks
               return (
                 <tr key={item.id}>
                   <td className="td-sno left">{idx + 1}</td>
@@ -906,8 +906,8 @@ export function PurchaseOrderPrintPage() {
           <div className="stat-cell">
             <div className="stat-icon-box">🖼</div>
             <div className="stat-text">
-              <div className="stat-label">Total Artworks</div>
-              <div className="stat-value">{totalArtworks}</div>
+              <div className="stat-label">Total Gangsheets</div>
+              <div className="stat-value">{items.length}</div>
             </div>
           </div>
           <div className="stat-cell">
