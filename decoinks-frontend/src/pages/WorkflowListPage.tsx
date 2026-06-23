@@ -118,7 +118,7 @@ const KIND_CONFIGS: Record<WorkflowKind, KindConfig> = {
     mapRow: (r) => ({
       id: r.id,
       primaryId: r.po_number,
-      customer: r.vendor_name ?? r.supplier_name ?? '-',
+      customer: r.display_vendor_name ?? r.vendor_name ?? r.supplier_name ?? r.order_vendor_name ?? '-',
       linked: r.order_number ?? '-',
       owner: r.created_by_name ?? '-',
       status: r.status,

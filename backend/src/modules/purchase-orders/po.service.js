@@ -32,38 +32,46 @@ function calcTotals(items, freightCharges = 0, otherCharges = 0) {
 
 // ── Item insertion ────────────────────────────────────────────────────────────
 
+// Check once which optional columns exist so inserts don't crash before migrations run
+let _poItemCols = null
+async function getPoItemCols(client) {
+  if (_poItemCols) return _poItemCols
+  const { rows } = await client.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_name = 'purchase_order_items'
+       AND column_name IN ('artwork_count','front_image','back_image')`
+  )
+  _poItemCols = new Set(rows.map(r => r.column_name))
+  return _poItemCols
+}
+
 async function insertItems(client, poId, items) {
+  const cols = await getPoItemCols(client)
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const { line_total, discount_amt, tax_amt } = calcLineTotal(item)
+
+    const extraCols = []
+    const extraVals = []
+    if (cols.has('artwork_count')) { extraCols.push('artwork_count'); extraVals.push(Number(item.artwork_count) || 0) }
+    if (cols.has('front_image'))   { extraCols.push('front_image');   extraVals.push(item.front_image || null) }
+    if (cols.has('back_image'))    { extraCols.push('back_image');    extraVals.push(item.back_image  || null) }
+
+    const baseCols = ['po_id','item_name','description','qty_ordered','unit_price',
+                      'discount_pct','discount_amt','tax_pct','tax_amt','line_total',
+                      'hsn_code','uom','product_id','required_by_date','remarks','sort_order']
+    const baseVals = [poId, item.item_name, item.description || null, item.qty_ordered, item.unit_price,
+                      item.discount_pct || 0, discount_amt, item.tax_pct || 0, tax_amt, line_total,
+                      item.hsn_code || null, item.uom || 'pcs', item.product_id || null,
+                      item.required_by_date || null, item.remarks || null, item.sort_order ?? i]
+
+    const allCols = [...baseCols, ...extraCols]
+    const allVals = [...baseVals, ...extraVals]
+    const placeholders = allVals.map((_, idx) => `$${idx + 1}`).join(',')
+
     await client.query(
-      `INSERT INTO purchase_order_items
-         (po_id, item_name, description, qty_ordered, unit_price,
-          discount_pct, discount_amt, tax_pct, tax_amt, line_total,
-          hsn_code, uom, product_id, required_by_date, remarks, sort_order,
-          artwork_count, front_image, back_image)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-      [
-        poId,
-        item.item_name,
-        item.description || null,
-        item.qty_ordered,
-        item.unit_price,
-        item.discount_pct || 0,
-        discount_amt,
-        item.tax_pct || 0,
-        tax_amt,
-        line_total,
-        item.hsn_code || null,
-        item.uom || 'pcs',
-        item.product_id || null,
-        item.required_by_date || null,
-        item.remarks || null,
-        item.sort_order ?? i,
-        Number(item.artwork_count) || 0,
-        item.front_image || null,
-        item.back_image  || null,
-      ]
+      `INSERT INTO purchase_order_items (${allCols.join(',')}) VALUES (${placeholders})`,
+      allVals
     )
   }
 }
@@ -84,10 +92,16 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT po.*, s.name AS supplier_name, u.name AS created_by_name
+    `SELECT po.*,
+            COALESCE(po.vendor_name, s.name, o.supplier_name, o.supplier_name_text, o.contact_name) AS display_vendor_name,
+            s.name      AS supplier_name,
+            o.order_number,
+            COALESCE(o.supplier_name, o.supplier_name_text, o.contact_name) AS order_vendor_name,
+            u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s ON s.id = po.supplier_id
-     LEFT JOIN users u ON u.id = po.created_by
+     LEFT JOIN orders   o ON o.id = po.order_id
+     LEFT JOIN users    u ON u.id = po.created_by
      ${where}
      ORDER BY po.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,

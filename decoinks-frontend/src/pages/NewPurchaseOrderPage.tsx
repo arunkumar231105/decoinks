@@ -281,6 +281,7 @@ export function NewPurchaseOrderPage() {
   function buildPayload() {
     return {
       supplier_id:        state.supplier_id || null,
+      vendor_name:        state.supplier_name || supplierSearch || null,
       supplier_reference: state.supplier_reference || null,
       payment_terms:      state.payment_terms || null,
       currency:           state.currency,
