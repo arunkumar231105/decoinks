@@ -84,24 +84,31 @@ router.post('/:id/convert-to-customer', async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ success: false, message: 'Lead not found' })
     const lead = rows[0]
 
-    // Check if already converted
+    // Check if already converted — but verify the customer still exists (not soft-deleted)
     if (lead.customer_id) {
-      return res.json({ success: true, message: 'Already converted', customer_id: lead.customer_id })
+      const { rows: existingRows } = await db.query(
+        `SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL`, [lead.customer_id]
+      )
+      if (existingRows[0]) {
+        return res.json({ success: true, message: 'Already converted', data: { id: existingRows[0].id } })
+      }
+      // Customer was deleted — clear the stale reference and re-create below
+      await db.query(`UPDATE leads SET customer_id = NULL WHERE id = $1`, [lead.id])
     }
 
     const custSvc = require('../customers/customers.service')
     const customer = await custSvc.create({
-      lead_id: lead.id,
-      name: lead.customer_name || lead.supplier_name || lead.company_name || lead.email || 'Unknown',
-      email: lead.email || null,
-      phone: lead.phone || null,
-      whatsapp: lead.whatsapp || null,
-      company: lead.company_name || null,
-      address_line1: lead.shipping_address || null,
-      buyer_type: lead.buyer_type || null,
+      lead_id:        lead.id,
+      name:           lead.customer_name || lead.supplier_name || lead.company_name || lead.email || 'Unknown',
+      email:          lead.email          || null,
+      phone:          lead.phone          || null,
+      whatsapp:       lead.whatsapp       || null,
+      company:        lead.company_name   || null,
+      address_line1:  lead.shipping_address || null,
+      buyer_type:     lead.buyer_type     || null,
       internal_notes: lead.internal_notes || null,
-      source: lead.source || null,
-      created_by: req.user.id,
+      source:         lead.source         || null,
+      created_by:     req.user.id,
     })
     res.status(201).json({ success: true, data: customer })
   } catch (err) { next(err) }

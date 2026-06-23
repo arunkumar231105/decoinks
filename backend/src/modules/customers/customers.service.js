@@ -34,6 +34,10 @@ async function list({ page = 1, limit = 20, search = '', status = '' }) {
 }
 
 async function getById(id) {
+  // Guard against non-UUID ids causing PostgreSQL cast errors
+  if (!/^[0-9a-f-]{36}$/i.test(id ?? '')) {
+    throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+  }
   const { rows } = await query(
     `SELECT c.*, l.lead_number, l.source AS lead_source
      FROM customers c
