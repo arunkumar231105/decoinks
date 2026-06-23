@@ -746,9 +746,9 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
         <tr>
           <th style={{ width: 40 }}>S.No</th>
           <th className="left">Item Description <span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
-          <th style={{ width: 80 }}>Artwork No</th>
-          <th style={{ width: 78 }}>Artwork Thumbnail</th>
-          <th style={{ width: 120 }}>Artwork Size</th>
+          <th style={{ width: 78 }}>Front Art</th>
+          <th style={{ width: 78 }}>Back Art</th>
+          <th style={{ width: 120 }}>Size</th>
           <th style={{ width: 70 }}>QTY</th>
           <th style={{ width: 80 }}>Rate (USD)</th>
           <th style={{ width: 90 }}>Amount (USD)</th>
@@ -762,10 +762,14 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
               <div className="item-main">{item.description}</div>
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>
-            <td style={{ color: '#9ca3af' }}>—</td>
             <td>
-              {item.artwork_image
-                ? <img src={item.artwork_image} alt="artwork" className="art-img" />
+              {item.front_image
+                ? <img src={item.front_image} alt="front" className="art-img" />
+                : <div className="art-empty">—</div>}
+            </td>
+            <td>
+              {item.back_image
+                ? <img src={item.back_image} alt="back" className="art-img" />
                 : <div className="art-empty">—</div>}
             </td>
             <td style={{ fontWeight: 600, fontSize: 11 }}>{item.description}</td>
@@ -790,6 +794,8 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
           <th className="left">Gangsheet Size</th>
           <th style={{ width: 100 }}>No. of Artworks</th>
           <th style={{ width: 90 }}>Qty Sheets</th>
+          <th style={{ width: 78 }}>Front Art</th>
+          <th style={{ width: 78 }}>Back Art</th>
           <th style={{ width: 110 }}>Price / Sheet (USD)</th>
           <th style={{ width: 100 }}>Total (USD)</th>
         </tr>
@@ -801,6 +807,16 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
             <td className="left"><div className="item-main">{item.description}</div></td>
             <td>{item.artwork_count || 1}</td>
             <td style={{ fontWeight: 600 }}>{item.qty}</td>
+            <td>
+              {item.front_image
+                ? <img src={item.front_image} alt="front" className="art-img" />
+                : <div className="art-empty">—</div>}
+            </td>
+            <td>
+              {item.back_image
+                ? <img src={item.back_image} alt="back" className="art-img" />
+                : <div className="art-empty">—</div>}
+            </td>
             <td>$ {item.unit_price.toFixed(2)}</td>
             <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
           </tr>
