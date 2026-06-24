@@ -18,6 +18,7 @@ interface POItem {
   required_by_date: string | null
   sort_order: number
   artwork_count?: number
+  artwork_size?: string | null
   front_image?: string | null
   back_image?: string | null
 }
@@ -791,6 +792,7 @@ export function PurchaseOrderPrintPage() {
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
                     <td className="left">
                       <div style={{ fontWeight: 600, fontSize: 11 }}>{it.item_name}</div>
+                      {it.artwork_size && <div style={{ fontSize: 10, color: '#0f1f3d', fontWeight: 600, marginTop: 2 }}>Size: {it.artwork_size}</div>}
                       {it.description && <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{it.description}</div>}
                     </td>
                     <td style={{ textAlign: 'center' }}>

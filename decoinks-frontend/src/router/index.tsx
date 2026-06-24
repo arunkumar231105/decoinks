@@ -186,6 +186,11 @@ export const router = createBrowserRouter([
                 handle: { title: 'Purchase Order Details', subtitle: 'Review vendor order status and materials.' },
               },
               {
+                path: '/purchase-orders/:id/edit',
+                element: <NewPurchaseOrderPage />,
+                handle: { title: 'Edit Purchase Order', subtitle: 'Update vendor order details.' },
+              },
+              {
                 path: '/shipments',
                 element: <ShipmentsPage />,
                 handle: { title: 'Shipments', subtitle: 'Monitor outgoing packages and pickups.' },

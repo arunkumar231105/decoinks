@@ -22,6 +22,10 @@ const itemSchema = z.object({
   remarks:          z.string().optional().nullable(),
   sort_order:       z.number().int().min(0).optional(),
   product_id:       z.string().uuid().optional().nullable(),
+  artwork_count:    z.number().int().min(0).optional().nullable(),
+  artwork_size:     z.string().optional().nullable(),
+  front_image:      z.string().optional().nullable(),
+  back_image:       z.string().optional().nullable(),
 })
 
 const createSchema = z.object({

@@ -1,5 +1,5 @@
 import { useReducer, useMemo, useState, useEffect } from 'react'
-import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
@@ -24,6 +24,7 @@ interface POLineItem {
   remarks: string
   sort_order: number
   artwork_count?: number
+  artwork_size?: string
   front_image?: string | null
   back_image?: string | null
 }
@@ -106,6 +107,7 @@ function newItem(idx: number): POLineItem {
     remarks: '',
     sort_order: idx,
     artwork_count: 0,
+    artwork_size: '',
     front_image: null,
     back_image: null,
   }
@@ -175,12 +177,70 @@ const SHIPPING_METHODS = ['Standard', 'Express', 'Air Freight', 'Sea Freight', '
 export function NewPurchaseOrderPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { id: editId } = useParams<{ id: string }>()
+  const isEdit = !!editId
   const [state, dispatch] = useReducer(reducer, initialState)
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierOpen, setSupplierOpen] = useState(false)
 
   // Convert-from-order context (set when navigated from OrderDetailPage)
   const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
+
+  // Load existing PO for edit mode
+  const { data: existingPO } = useQuery({
+    queryKey: ['po-edit', editId],
+    queryFn: () => api.get(`/purchase-orders/${editId}`).then(r => r.data.data ?? r.data),
+    enabled: isEdit,
+  })
+
+  useEffect(() => {
+    if (!existingPO) return
+    const supplierDisplay = existingPO.vendor_name || existingPO.supplier_name || ''
+    if (supplierDisplay) setSupplierSearch(supplierDisplay)
+    const srcItems: any[] = existingPO.items ?? []
+    dispatch({
+      type: 'INIT',
+      payload: {
+        supplier_id:        existingPO.supplier_id      || '',
+        supplier_name:      supplierDisplay,
+        supplier_reference: existingPO.supplier_reference || '',
+        payment_terms:      existingPO.payment_terms    || '',
+        currency:           existingPO.currency         || 'USD',
+        priority:           existingPO.priority         || 'Medium',
+        order_date:         existingPO.order_date       ? existingPO.order_date.split('T')[0] : todayISO(),
+        expected_date:      existingPO.expected_date    ? existingPO.expected_date.split('T')[0] : '',
+        buyer_id:           existingPO.buyer_id         || '',
+        department:         existingPO.department       || '',
+        shipping_method:    existingPO.shipping_method  || '',
+        shipping_address:   existingPO.shipping_address || '',
+        billing_address:    existingPO.billing_address  || '',
+        freight_charges:    Number(existingPO.freight_charges) || 0,
+        other_charges:      Number(existingPO.other_charges)   || 0,
+        notes:              existingPO.notes            || '',
+        terms_conditions:   existingPO.terms_conditions || '',
+        order_id:           existingPO.order_id         || '',
+        items: srcItems.map((it: any, idx: number) => ({
+          ...newItem(idx),
+          item_name:     it.item_name    || '',
+          description:   it.description || '',
+          hsn_code:      it.hsn_code    || '',
+          uom:           it.uom         || 'pcs',
+          qty_ordered:   Number(it.qty_ordered)   || 1,
+          unit_price:    Number(it.unit_price)    || 0,
+          discount_pct:  Number(it.discount_pct)  || 0,
+          tax_pct:       Number(it.tax_pct)       || 0,
+          line_total:    Number(it.line_total)    || 0,
+          required_by_date: it.required_by_date ? it.required_by_date.split('T')[0] : '',
+          remarks:       it.remarks      || '',
+          artwork_count: Number(it.artwork_count) || 0,
+          artwork_size:  it.artwork_size  || '',
+          front_image:   it.front_image   || null,
+          back_image:    it.back_image    || null,
+          product_id:    it.product_id    || null,
+        })),
+      },
+    })
+  }, [existingPO])
 
   const set = (field: keyof Omit<POFormState, 'items'>, value: string | number) =>
     dispatch({ type: 'SET', field, value })
@@ -278,6 +338,15 @@ export function NewPurchaseOrderPage() {
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to create PO'),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: object) => api.put(`/purchase-orders/${editId}`, payload),
+    onSuccess: () => {
+      toast.success('Purchase order updated')
+      navigate(`/purchase-orders/${editId}`)
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to update PO'),
+  })
+
   function buildPayload() {
     return {
       supplier_id:        state.supplier_id || null,
@@ -312,6 +381,7 @@ export function NewPurchaseOrderPage() {
         sort_order:       i,
         product_id:       item.product_id || null,
         artwork_count:    Number(item.artwork_count) || 0,
+        artwork_size:     item.artwork_size || null,
         front_image:      item.front_image || null,
         back_image:       item.back_image  || null,
       })),
@@ -328,7 +398,8 @@ export function NewPurchaseOrderPage() {
       toast.error('All line items require a name')
       return
     }
-    createMutation.mutate(buildPayload())
+    if (isEdit) updateMutation.mutate(buildPayload())
+    else createMutation.mutate(buildPayload())
   }
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
@@ -342,18 +413,18 @@ export function NewPurchaseOrderPage() {
           <div className="np-breadcrumb">
             <Link to="/purchase-orders" className="hover:text-gray-700">Purchase Orders</Link>
             <ChevronRight size={13} />
-            <strong>New</strong>
+            <strong>{isEdit ? 'Edit' : 'New'}</strong>
           </div>
-          <h2 className="np-page-title">New Purchase Order</h2>
+          <h2 className="np-page-title">{isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
         </div>
         <div className="np-header-actions">
           <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
           <button
             className="lb-action-btn lb-action-primary"
             onClick={handleSave}
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || updateMutation.isPending}
           >
-            <Save size={13} /> Save PO
+            <Save size={13} /> {isEdit ? 'Update PO' : 'Save PO'}
           </button>
         </div>
       </div>
@@ -537,6 +608,7 @@ export function NewPurchaseOrderPage() {
                     <th style={{ width: 56 }}>Front Art</th>
                     <th style={{ width: 56 }}>Back Art</th>
                     <th style={{ width: 64 }}>No. AW</th>
+                    <th style={{ width: 100 }}>AW Size</th>
                     <th style={{ width: 80 }}>HSN</th>
                     <th style={{ width: 64 }}>UOM</th>
                     <th style={{ width: 72 }}>Qty</th>
@@ -552,7 +624,7 @@ export function NewPurchaseOrderPage() {
                 <tbody>
                   {state.items.length === 0 && (
                     <tr>
-                      <td colSpan={15} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
+                      <td colSpan={16} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
                         No items yet — click "Add Item" below
                       </td>
                     </tr>
@@ -579,6 +651,11 @@ export function NewPurchaseOrderPage() {
                         <input type="number" className="np-table-input np-num-input" min={0}
                           value={item.artwork_count ?? 0}
                           onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { artwork_count: +e.target.value || 0 } })} />
+                      </td>
+                      <td>
+                        <input className="np-table-input" placeholder='e.g. 12"x16"'
+                          value={item.artwork_size ?? ''}
+                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { artwork_size: e.target.value } })} />
                       </td>
                       <td>
                         <input className="np-table-input" placeholder="HSN..."

@@ -39,7 +39,7 @@ async function getPoItemCols(client) {
   const { rows } = await client.query(
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'purchase_order_items'
-       AND column_name IN ('artwork_count','front_image','back_image')`
+       AND column_name IN ('artwork_count','front_image','back_image','artwork_size')`
   )
   _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
@@ -54,6 +54,7 @@ async function insertItems(client, poId, items) {
     const extraCols = []
     const extraVals = []
     if (cols.has('artwork_count')) { extraCols.push('artwork_count'); extraVals.push(Number(item.artwork_count) || 0) }
+    if (cols.has('artwork_size'))  { extraCols.push('artwork_size');  extraVals.push(item.artwork_size  || null) }
     if (cols.has('front_image'))   { extraCols.push('front_image');   extraVals.push(item.front_image || null) }
     if (cols.has('back_image'))    { extraCols.push('back_image');    extraVals.push(item.back_image  || null) }
 
