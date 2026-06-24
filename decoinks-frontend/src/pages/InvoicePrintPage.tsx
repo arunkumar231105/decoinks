@@ -532,23 +532,20 @@ export function InvoicePrintPage() {
             </div>
           </div>
 
-          {/* Paid / Unpaid stamp */}
-          <div className="ic" style={{ flex: '0 0 auto' }}>
-            <div className="ic-head" style={{ background: invoice.status === 'Paid' ? '#16a34a' : '#dc2626' }}>
-              <div className="ic-icon" style={{ background: 'transparent' }}>
-                {invoice.status === 'Paid'
-                  ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                }
+          {/* Show Paid stamp only when invoice is actually Paid */}
+          {invoice.status === 'Paid' && (
+            <div className="ic" style={{ flex: '0 0 auto' }}>
+              <div className="ic-head" style={{ background: '#16a34a' }}>
+                <div className="ic-icon" style={{ background: 'transparent' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <span className="ic-label">Status</span>
               </div>
-              <span className="ic-label">Status</span>
+              <div className="ic-body">
+                <p className="ic-name" style={{ color: '#16a34a', fontWeight: 700 }}>Paid</p>
+              </div>
             </div>
-            <div className="ic-body">
-              <p className="ic-name" style={{ color: invoice.status === 'Paid' ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
-                {invoice.status}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* ══ ARTWORKS SECTION ══ */}
