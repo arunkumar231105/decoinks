@@ -132,17 +132,32 @@ function parseCsv(text: string): ParsedRow[] {
   return rows
 }
 
+function detectOrderType(printType: string): 'dtf' | 'gangsheet' | 'apparel' {
+  const pt = printType.toLowerCase().replace(/\s+/g, '')
+  if (pt.includes('dtf') || pt.includes('transfer')) return 'dtf'
+  if (pt.includes('gang') || pt.includes('sheet')) return 'gangsheet'
+  return 'apparel'
+}
+
 function buildQuotePayload(row: ParsedRow) {
-  const ptMap: Record<string, string> = {
+  const paymentTermsMap: Record<string, string> = {
     'Advance': 'Due on Receipt',
     'advance': 'Due on Receipt',
   }
+  const orderType = detectOrderType(row.print_type)
+
+  let itemDesc = ''
+  if (orderType === 'dtf') itemDesc = row.size_desc
+  else if (orderType === 'gangsheet') itemDesc = `${row.size_desc} Gangsheet`
+  else itemDesc = `${row.size_desc} (${row.print_type})`
+
   return {
+    order_type: orderType,
     customer_name: row.client_name || null,
     shipping_address: row.ship_to || null,
     due_date: parseDateStr(row.dispatch_date),
     estimated_shipping: row.shipping_charge,
-    payment_terms: ptMap[row.payment_terms] || 'Due on Receipt',
+    payment_terms: paymentTermsMap[row.payment_terms] || 'Due on Receipt',
     internal_notes: [
       row.po_number ? `PO: ${row.po_number}` : '',
       row.vendor    ? `Vendor: ${row.vendor}` : '',
@@ -150,7 +165,7 @@ function buildQuotePayload(row: ParsedRow) {
     ].filter(Boolean).join(' | ') || null,
     notes: row.notes || null,
     items: [{
-      description: `${row.size_desc} Gangsheet (${row.print_type || 'DTF'})`,
+      description: itemDesc,
       qty: row.total_gangsheets,
       unit_price: row.unit_price,
       artwork_count: row.total_artworks,
@@ -264,7 +279,7 @@ export function CsvImportQuotesModal({ onClose }: Props) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ position: 'sticky', top: 0, background: '#f9fafb' }}>
-                  {['#', 'PO No.', 'Client', 'Ship To', 'Due Date', 'Gangsheets', 'Artworks', 'Size', 'Net Amt', 'Shipping'].map(h => (
+                  {['#', 'PO No.', 'Client', 'Type', 'Ship To', 'Due Date', 'Gangsheets', 'Artworks', 'Size', 'Net Amt', 'Shipping'].map(h => (
                     <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: '#6b7280', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -275,6 +290,14 @@ export function CsvImportQuotesModal({ onClose }: Props) {
                     <td style={{ padding: '6px 10px', color: '#9ca3af' }}>{i + 1}</td>
                     <td style={{ padding: '6px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.po_number}</td>
                     <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{r.client_name}</td>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                      {(() => {
+                        const t = detectOrderType(r.print_type)
+                        const colors: Record<string, string> = { dtf: '#f97316', gangsheet: '#8b5cf6', apparel: '#0ea5e9' }
+                        const labels: Record<string, string> = { dtf: 'DTF', gangsheet: 'Gangsheet', apparel: 'Apparel' }
+                        return <span style={{ background: colors[t] + '20', color: colors[t], borderRadius: 4, padding: '2px 6px', fontWeight: 600, fontSize: 11 }}>{labels[t]}</span>
+                      })()}
+                    </td>
                     <td style={{ padding: '6px 10px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.ship_to}>{r.ship_to || '—'}</td>
                     <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{parseDateStr(r.dispatch_date) || r.dispatch_date}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>{r.total_gangsheets}</td>
