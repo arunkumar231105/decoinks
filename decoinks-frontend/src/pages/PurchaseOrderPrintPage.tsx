@@ -64,8 +64,8 @@ interface Artwork {
   name: string
   file_url: string | null
   file_type: string | null
-  width?: number | null
-  height?: number | null
+  width_inches?: number | null
+  height_inches?: number | null
   location: string | null
 }
 
@@ -454,8 +454,8 @@ export function PurchaseOrderPrintPage() {
   }
 
   const artSize = (art: Artwork) => {
-    if (art.width && art.height) return `${art.width} × ${art.height}`
-    return art.name || '—'
+    if (art.width_inches && art.height_inches) return `${art.width_inches}" × ${art.height_inches}"`
+    return '—'
   }
 
   return (
