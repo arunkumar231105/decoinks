@@ -1181,16 +1181,27 @@ export function NewInvoicePage() {
             </div>
           </div>
 
-          {/* Payment Informaoion */}
+          {/* Payment Information */}
           <div className="ni-card ni-payment-card">
-            <h3 className="ni-sidebar-title">Payment Informaoion</h3>
+            <h3 className="ni-sidebar-title">Payment Information</h3>
             <div className="ni-payment-fields">
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Terms</label>
-                <select className="ni-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
+                <select className="ni-select" value={paymentTerms} onChange={e => {
+                  const val = e.target.value
+                  setPaymentTerms(val)
+                  if (val === 'Paid') {
+                    setIsPaid(true)
+                    setInvoiceStatus('Paid')
+                  } else if (isPaid) {
+                    setIsPaid(false)
+                    setInvoiceStatus('Sent')
+                  }
+                }}>
                   <option>Net 15</option>
                   <option>Net 30</option>
                   <option>Due on Receipt</option>
+                  <option>Paid</option>
                 </select>
               </div>
               <div className="ni-payment-field">

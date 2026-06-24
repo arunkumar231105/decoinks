@@ -18,6 +18,7 @@ interface Invoice {
   total: number
   shipping_charges?: number | null
   payment_method?: string | null
+  payment_terms?: string | null
   notes: string | null; supplier_name: string | null
   customer_name: string | null
   billing_email: string | null; contact_number: string | null
@@ -501,11 +502,30 @@ export function InvoicePrintPage() {
               <div className="ic-icon">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
               </div>
-              <span className="ic-label">Payment Method</span>
+              <span className="ic-label">Payment</span>
             </div>
             <div className="ic-body">
               <p className="ic-name">{invoice.payment_method || payMethod || '—'}</p>
+              {invoice.payment_terms && <p style={{ color: '#6b7280', fontSize: 11 }}>{invoice.payment_terms}</p>}
               {invoice.payments?.[0]?.reference && <p>Ref: {invoice.payments[0].reference}</p>}
+            </div>
+          </div>
+
+          {/* Paid / Unpaid stamp */}
+          <div className="ic" style={{ flex: '0 0 auto' }}>
+            <div className="ic-head" style={{ background: invoice.status === 'Paid' ? '#16a34a' : '#dc2626' }}>
+              <div className="ic-icon" style={{ background: 'transparent' }}>
+                {invoice.status === 'Paid'
+                  ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                }
+              </div>
+              <span className="ic-label">Status</span>
+            </div>
+            <div className="ic-body">
+              <p className="ic-name" style={{ color: invoice.status === 'Paid' ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
+                {invoice.status}
+              </p>
             </div>
           </div>
         </div>
