@@ -72,7 +72,10 @@
       "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp Image 2026-06-22 at 10.42.11 PM.jpeg\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.jpg\")",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\\" | Where-Object { $_.Extension -match \"\\\\.png|\\\\.jpg|\\\\.jpeg|\\\\.webp\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 5 | Select-Object Name, LastWriteTime)",
       "PowerShell(Copy-Item \"C:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Downloads\\\\WhatsApp_Image_2026-06-22_at_10.42.11_PM-removebg-preview.png\" \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\public\\\\decoinks-logo.png\")",
-      "Bash(xargs grep -l \"po_items\\\\|purchase_order\")"
+      "Bash(xargs grep -l \"po_items\\\\|purchase_order\")",
+      "Bash(git mv *)",
+      "Bash(sed -i 's/customer portal origins/supplier portal origins/' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\backend\\\\.env\")",
+      "Bash(sed -i 's/sent to customer portal!/sent to supplier portal!/' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\\\\NewOrderPage.tsx\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",

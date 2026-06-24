@@ -100,11 +100,11 @@ services:
     depends_on: [backend]
     networks: [decoinks_net]
 
-  customer_portal:
+  supplier_portal:
     build:
-      context: ./customer-portal
+      context: ./supplier-portal
       dockerfile: Dockerfile.portal
-    container_name: decoinks_customer_portal
+    container_name: decoinks_supplier_portal
     restart: unless-stopped
     ports:
       - '3001:80'

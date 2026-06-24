@@ -360,7 +360,7 @@ export function NewOrderPage() {
       if (sendToPortalAfterSave && order.supplier_id) {
         try {
           await api.post(`/orders/${order.id}/send-to-portal`)
-          toast.success(`Order ${order.order_number ?? ''} created and sent to customer portal!`)
+          toast.success(`Order ${order.order_number ?? ''} created and sent to supplier portal!`)
         } catch {
           toast.success(`Order ${order.order_number ?? ''} created!`)
           toast.error('Could not send to portal - open the order and try again')
