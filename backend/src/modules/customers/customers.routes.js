@@ -32,7 +32,7 @@ const customerFields = {
 const createSchema = z.object(customerFields)
 const updateSchema = z.object({
   ...Object.fromEntries(Object.entries(customerFields).map(([k, v]) => [k, v.optional()])),
-  status: z.enum(['Active', 'Inactive', 'Blocked']).optional(),
+  status: z.enum(['Active', 'Inactive']).optional(),
 })  // no .strict() — unknown fields are safely stripped
 
 router.get('/',    controller.list)

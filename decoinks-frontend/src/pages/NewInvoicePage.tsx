@@ -315,7 +315,7 @@ export function NewInvoicePage() {
 
   // Payment
   const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
-  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
   const [currency, setCurrency] = useState('USD - US Dollar')
   const [sendPaymentLink, setSendPaymentLink] = useState(false)
   const [isPaid, setIsPaid] = useState(false)
