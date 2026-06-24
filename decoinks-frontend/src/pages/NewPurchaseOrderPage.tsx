@@ -300,6 +300,34 @@ export function NewPurchaseOrderPage() {
     })
   }, [sourceOrder])
 
+  // ── Artwork details (size + qty per artwork) ──
+  const orderId = state.order_id || fromOrderId || (existingPO?.order_id ?? '')
+  const { data: artworkData } = useQuery({
+    queryKey: ['po-artworks', orderId],
+    queryFn: () => api.get(`/orders/${orderId}/artworks`).then(r => r.data),
+    enabled: !!orderId,
+  })
+  const linkedArtworks: any[] = artworkData?.artworks ?? []
+
+  const [artSizes, setArtSizes] = useState<Record<string, { width: string; height: string; qty: string }>>({})
+
+  useEffect(() => {
+    if (!linkedArtworks.length) return
+    setArtSizes(prev => {
+      const next = { ...prev }
+      linkedArtworks.forEach(a => {
+        if (!next[a.id]) {
+          next[a.id] = {
+            width:  a.width_inches  ? String(a.width_inches)  : '',
+            height: a.height_inches ? String(a.height_inches) : '',
+            qty:    a.qty           ? String(a.qty)           : '1',
+          }
+        }
+      })
+      return next
+    })
+  }, [linkedArtworks.length])
+
   // ── Data fetching ──
 
   const { data: suppliersData } = useQuery({
@@ -329,18 +357,33 @@ export function NewPurchaseOrderPage() {
 
   // ── Mutation ──
 
+  const saveArtworkSizes = async (oid: string) => {
+    const entries = Object.entries(artSizes)
+    await Promise.all(entries.map(([id, v]) => {
+      if (!v.width && !v.height && v.qty === '1') return Promise.resolve()
+      return api.patch(`/orders/${oid}/artworks/${id}/size`, {
+        width_inches:  v.width  ? parseFloat(v.width)  : null,
+        height_inches: v.height ? parseFloat(v.height) : null,
+        qty:           v.qty    ? parseInt(v.qty)       : 1,
+      }).catch(() => {})
+    }))
+  }
+
   const createMutation = useMutation({
     mutationFn: (payload: object) => api.post('/purchase-orders', payload),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
+      const newId = res.data.data?.id ?? ''
+      if (orderId) await saveArtworkSizes(orderId)
       toast.success('Purchase order created')
-      navigate(`/purchase-orders/${res.data.data?.id ?? ''}`)
+      navigate(`/purchase-orders/${newId}`)
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to create PO'),
   })
 
   const updateMutation = useMutation({
     mutationFn: (payload: object) => api.put(`/purchase-orders/${editId}`, payload),
-    onSuccess: () => {
+    onSuccess: async () => {
+      if (orderId) await saveArtworkSizes(orderId)
       toast.success('Purchase order updated')
       navigate(`/purchase-orders/${editId}`)
     },
@@ -715,10 +758,65 @@ export function NewPurchaseOrderPage() {
             </button>
           </div>
 
-          {/* Section 4: Notes & T&C */}
+          {/* Section 4: Artwork Details */}
+          {linkedArtworks.length > 0 && (
+            <div className="np-card">
+              <div className="np-card-header">
+                <span className="np-section-num">4</span>
+                <h3>Artwork Sizes &amp; Qty ({linkedArtworks.length} Artworks)</h3>
+              </div>
+              <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+                <table className="np-table" style={{ minWidth: 600 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}>#</th>
+                      <th style={{ width: 56 }}>Thumb</th>
+                      <th className="left">Artwork No</th>
+                      <th style={{ width: 110 }}>Width (inch)</th>
+                      <th style={{ width: 110 }}>Height (inch)</th>
+                      <th style={{ width: 80 }}>Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linkedArtworks.map((art, i) => {
+                      const v = artSizes[art.id] ?? { width: '', height: '', qty: '1' }
+                      return (
+                        <tr key={art.id}>
+                          <td className="np-td-num">{i + 1}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            {art.file_url
+                              ? <img src={art.file_url} alt={art.artwork_no} style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
+                              : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
+                          </td>
+                          <td style={{ fontWeight: 600, fontSize: 12 }}>{art.artwork_no}</td>
+                          <td>
+                            <input type="number" className="np-table-input np-num-input" placeholder='e.g. 12'
+                              value={v.width}
+                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, width: e.target.value } }))} />
+                          </td>
+                          <td>
+                            <input type="number" className="np-table-input np-num-input" placeholder='e.g. 16'
+                              value={v.height}
+                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, height: e.target.value } }))} />
+                          </td>
+                          <td>
+                            <input type="number" className="np-table-input np-num-input" min={1}
+                              value={v.qty}
+                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, qty: e.target.value } }))} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Section 5: Notes & T&C */}
           <div className="np-card">
             <div className="np-card-header">
-              <span className="np-section-num">4</span>
+              <span className="np-section-num">{linkedArtworks.length > 0 ? 5 : 4}</span>
               <h3>Notes &amp; Terms</h3>
             </div>
             <div className="np-vendor-grid">

@@ -66,6 +66,7 @@ interface Artwork {
   file_type: string | null
   width_inches?: number | null
   height_inches?: number | null
+  qty?: number | null
   location: string | null
 }
 
@@ -845,11 +846,7 @@ export function PurchaseOrderPrintPage() {
                     <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
                     <td>{renderArtThumb(art)}</td>
                     <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
-                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>
-                      {items[0]?.qty_ordered
-                        ? Math.round(items[0].qty_ordered / Math.max(totalArtworks, 1))
-                        : 5}
-                    </td>
+                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{art.qty ?? 1}</td>
                   </tr>
                 ))}
               </tbody>
@@ -873,11 +870,7 @@ export function PurchaseOrderPrintPage() {
                     <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
                     <td>{renderArtThumb(art)}</td>
                     <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
-                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>
-                      {items[0]?.qty_ordered
-                        ? Math.round(items[0].qty_ordered / Math.max(totalArtworks, 1))
-                        : 5}
-                    </td>
+                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{art.qty ?? 1}</td>
                   </tr>
                 ))}
                 {rightArtworks.length < leftArtworks.length && (

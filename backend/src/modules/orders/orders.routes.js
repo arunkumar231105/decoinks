@@ -175,7 +175,7 @@ router.get('/:id/artworks', async (req, res) => {
   try {
     const { rows } = await require('../../config/db').query(
       `SELECT id, artwork_no, name, file_url, file_type, status,
-              width_inches, height_inches, location_on_product, created_at
+              width_inches, height_inches, qty, location_on_product, created_at
        FROM artworks WHERE order_id = $1 ORDER BY created_at`,
       [req.params.id]
     )
@@ -230,6 +230,24 @@ router.delete('/:id/artworks/:artworkId', async (req, res) => {
     res.json({ success: true })
   } catch (e) {
     res.status(e.statusCode ?? 400).json({ error: e.message })
+  }
+})
+
+router.patch('/:id/artworks/:artworkId/size', async (req, res) => {
+  try {
+    const { width_inches, height_inches, qty } = req.body
+    const db = require('../../config/db')
+    await db.query(
+      `UPDATE artworks SET
+        width_inches  = COALESCE($1::numeric, width_inches),
+        height_inches = COALESCE($2::numeric, height_inches),
+        qty           = COALESCE($3::integer, qty)
+       WHERE id = $4`,
+      [width_inches || null, height_inches || null, qty || null, req.params.artworkId]
+    )
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
   }
 })
 
