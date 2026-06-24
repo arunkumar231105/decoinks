@@ -226,20 +226,11 @@ async function move(id, { stage, position = 0, user_id }) {
 }
 
 async function remove(id) {
-  // Block if the lead has any linked quotation (pipeline in progress)
-  const { rows: linked } = await query(
-    `SELECT id FROM quotations WHERE lead_id = $1 LIMIT 1`, [id]
-  )
-  if (linked[0]) {
-    throw Object.assign(
-      new Error('This lead has a linked quotation and cannot be deleted. Delete the quotation first.'),
-      { statusCode: 409 }
-    )
-  }
-
   const client = await getClient()
   try {
     await client.query('BEGIN')
+    // Unlink quotations (no CASCADE on quotations.lead_id FK)
+    await client.query(`UPDATE quotations SET lead_id = NULL WHERE lead_id = $1`, [id])
     // lead_comments, lead_attachments, lead_product_interest all ON DELETE CASCADE
     const { rows } = await client.query(
       `DELETE FROM leads WHERE id = $1 RETURNING id`, [id]

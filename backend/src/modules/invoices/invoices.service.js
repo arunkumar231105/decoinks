@@ -448,17 +448,6 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
 }
 
 async function remove(id, actorId) {
-  // Block if any order is linked to this invoice (ON DELETE RESTRICT on orders.invoice_id)
-  const { rows: linkedOrders } = await query(
-    `SELECT order_number FROM orders WHERE invoice_id = $1 LIMIT 1`, [id]
-  )
-  if (linkedOrders[0]) {
-    throw Object.assign(
-      new Error(`This invoice is linked to order ${linkedOrders[0].order_number} and cannot be deleted. Unlink the order first.`),
-      { statusCode: 409 }
-    )
-  }
-
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -466,7 +455,10 @@ async function remove(id, actorId) {
       `SELECT id, invoice_number FROM invoices WHERE id = $1`, [id]
     )
     if (!inv[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-    // payments table has ON DELETE CASCADE so no manual cleanup needed
+    // Unlink orders and delete payments before deleting invoice (RESTRICT FK)
+    await client.query(`UPDATE orders SET invoice_id = NULL WHERE invoice_id = $1`, [id])
+    await client.query(`DELETE FROM payments WHERE invoice_id = $1`, [id])
+    await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [id])
     await client.query(`DELETE FROM invoices WHERE id = $1`, [id])
     await client.query('COMMIT')
     await logActivity(actorId, id, 'deleted', `Invoice ${inv[0].invoice_number} permanently deleted`).catch(() => {})

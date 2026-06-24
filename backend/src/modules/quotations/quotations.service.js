@@ -268,21 +268,6 @@ async function updateStatus(id, status, actor) {
 }
 
 async function remove(id) {
-  // Block if an invoice or order has been generated from this quotation
-  const { rows: downstream } = await query(
-    `SELECT 'invoice' AS kind FROM invoices WHERE quote_id = $1
-     UNION ALL
-     SELECT 'order'   AS kind FROM orders   WHERE quotation_id = $1
-     LIMIT 1`,
-    [id]
-  )
-  if (downstream[0]) {
-    throw Object.assign(
-      new Error(`This quotation has a linked ${downstream[0].kind} and cannot be deleted. Delete the ${downstream[0].kind} first.`),
-      { statusCode: 409 }
-    )
-  }
-
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -291,6 +276,9 @@ async function remove(id) {
     )
     if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
+    // Unlink orders and invoices that reference this quotation (no CASCADE on their FKs)
+    await client.query(`UPDATE orders   SET quotation_id = NULL WHERE quotation_id = $1`, [id])
+    await client.query(`UPDATE invoices SET quote_id     = NULL WHERE quote_id     = $1`, [id])
     await client.query(`DELETE FROM quotation_items WHERE quotation_id = $1`, [id])
     await client.query(`DELETE FROM quotations WHERE id = $1`, [id])
     await client.query('COMMIT')

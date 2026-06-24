@@ -30,9 +30,12 @@ function errorHandler(err, req, res, next) {
 
   // PostgreSQL foreign key violation
   if (err.code === '23503') {
+    const isDelete = req.method === 'DELETE'
     return res.status(409).json({
       success: false,
-      message: 'Referenced record does not exist',
+      message: isDelete
+        ? 'Cannot delete — this record is still referenced by another record'
+        : 'Referenced record does not exist',
       detail: err.detail,
     })
   }

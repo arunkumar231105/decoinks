@@ -341,6 +341,9 @@ async function remove(id) {
       `SELECT id FROM orders WHERE id = $1`, [id]
     )
     if (!ord[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+    // Unlink artworks and shipments (no CASCADE on their order_id FK)
+    await client.query(`UPDATE artworks  SET order_id = NULL WHERE order_id = $1`, [id])
+    await client.query(`UPDATE shipments SET order_id = NULL WHERE order_id = $1`, [id])
     // order_items_apparel/gangsheet/dtf, portal_order_visibility, portal_status_updates all CASCADE
     await client.query(`DELETE FROM orders WHERE id = $1`, [id])
     await client.query('COMMIT')
