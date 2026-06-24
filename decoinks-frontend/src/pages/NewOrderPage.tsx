@@ -41,7 +41,7 @@ const COLORS = ['White', 'Black', 'Navy Blue', 'Grey', 'Red', 'Forest Green']
 const SIZES = ['S', 'M', 'L', 'XL', '2XL', 'One Size']
 const GS_SIZES = ['22" x 60"', '22" x 120"', '13" x 19"', '22" x 36"']
 const DTF_SIZES = ['4 x 4 in', '6 x 6 in', '8 x 10 in', '10 x 12 in', '12 x 16 in', '13 x 17 in']
-const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60']
+const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
 const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }> = {
@@ -925,7 +925,11 @@ export function NewOrderPage() {
 
             <div className="no-payment-field">
               <label className="no-payment-label">Payment Terms</label>
-              <select className="no-info-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
+              <select className="no-info-select" value={paymentTerms} onChange={e => {
+                const val = e.target.value
+                setPaymentTerms(val)
+                if (val === 'Paid') setPaymentStatus('Paid')
+              }}>
                 {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
