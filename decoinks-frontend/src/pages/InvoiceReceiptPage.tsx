@@ -346,13 +346,6 @@ export function InvoiceReceiptPage() {
 
             return (
               <div className="rc-item" key={item.id}>
-                {/* Thumbnail */}
-                {img
-                  ? <img src={img} alt={itemLabel(item)} className="rc-item-img" />
-                  : <div className="rc-item-img-placeholder">
-                      {isDtf ? '🖼' : '👕'}
-                    </div>
-                }
 
                 {/* Info */}
                 <div className="rc-item-body">
