@@ -52,8 +52,11 @@ export function QuotesListPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('All')
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; number: string } | null>(null)
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false)
   const [csvImportOpen, setCsvImportOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/quotations/${id}`),
@@ -68,7 +71,6 @@ export function QuotesListPage() {
     },
   })
 
-  // Navigate to invoice form with quote pre-populated instead of direct API call
   const handleConvertToInvoice = (quoteId: string) => {
     navigate('/invoices/new', { state: { fromQuoteId: quoteId } })
   }
@@ -76,7 +78,7 @@ export function QuotesListPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['quotations', { search, statusFilter }],
     queryFn: async () => {
-      const params: Record<string, any> = { page: 1, limit: 50 }
+      const params: Record<string, any> = { page: 1, limit: 200 }
       if (statusFilter !== 'All') params.status = statusFilter
       const { data } = await api.get('/quotations', { params })
       const rows: Quote[] = data.data.rows
@@ -94,6 +96,45 @@ export function QuotesListPage() {
 
   const quotes: Quote[] = data?.rows ?? []
   const total: number = data?.total ?? 0
+
+  const allSelected = quotes.length > 0 && quotes.every(q => selected.has(q.id))
+  const someSelected = selected.size > 0
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(quotes.map(q => q.id)))
+    }
+  }
+
+  function toggleOne(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    setConfirmBulkDelete(false)
+    const ids = [...selected]
+    let ok = 0, fail = 0
+    for (const id of ids) {
+      try {
+        await api.delete(`/quotations/${id}`)
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    setBulkDeleting(false)
+    setSelected(new Set())
+    queryClient.invalidateQueries({ queryKey: ['quotations'] })
+    if (ok > 0) toast.success(`${ok} quote${ok > 1 ? 's' : ''} deleted`)
+    if (fail > 0) toast.error(`${fail} could not be deleted`)
+  }
 
   return (
     <div className="ql-page">
@@ -120,6 +161,17 @@ export function QuotesListPage() {
         </div>
 
         <div className="ql-toolbar-right">
+          {someSelected ? (
+            <button
+              className="lb-action-btn"
+              style={{ color: '#dc2626', borderColor: '#fca5a5', gap: 6, fontWeight: 600 }}
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={bulkDeleting}
+            >
+              <Trash2 size={13} />
+              {bulkDeleting ? 'Deleting...' : `Delete Selected (${selected.size})`}
+            </button>
+          ) : null}
           <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'Draft' : 'All')}><Filter size={13} /> Filter</button>
           <button className="lb-action-btn" onClick={() => downloadCsv('quotations.csv', quotes as unknown as Record<string, unknown>[])}><Download size={13} /> Export<ChevronDown size={12} /></button>
           <button className="lb-action-btn" onClick={() => setBulkUploadOpen(true)} style={{ gap: 6 }}>
@@ -138,7 +190,14 @@ export function QuotesListPage() {
         <table className="ql-table">
           <thead>
             <tr>
-              <th><input type="checkbox" /></th>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={el => { if (el) el.indeterminate = someSelected && !allSelected }}
+                  onChange={toggleAll}
+                />
+              </th>
               <th>Quote No.</th>
               <th>Customer</th>
               <th>Agent</th>
@@ -153,8 +212,19 @@ export function QuotesListPage() {
             {isLoading && <tr><td colSpan={9} className="ql-empty">Loading…</td></tr>}
             {!isLoading && quotes.length === 0 && <tr><td colSpan={9} className="ql-empty">No quotations found.</td></tr>}
             {!isLoading && quotes.map(q => (
-              <tr key={q.id} className="ql-row" onClick={() => navigate(`/quotes/${q.id}`)}>
-                <td onClick={e => e.stopPropagation()}><input type="checkbox" /></td>
+              <tr
+                key={q.id}
+                className="ql-row"
+                onClick={() => navigate(`/quotes/${q.id}`)}
+                style={selected.has(q.id) ? { background: '#f0fdfa' } : undefined}
+              >
+                <td onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(q.id)}
+                    onChange={() => toggleOne(q.id)}
+                  />
+                </td>
                 <td>
                   <button className="ql-quote-link" onClick={e => { e.stopPropagation(); navigate(`/quotes/${q.id}`) }}>
                     {q.quote_number}
@@ -209,12 +279,17 @@ export function QuotesListPage() {
       </div>
 
       <div className="ql-footer">
-        <span>Showing {quotes.length} of {total} quotations</span>
+        <span>
+          {someSelected
+            ? `${selected.size} selected of ${quotes.length} quotes`
+            : `Showing ${quotes.length} of ${total} quotations`}
+        </span>
       </div>
 
       {bulkUploadOpen && <BulkUploadModal onClose={() => setBulkUploadOpen(false)} />}
       {csvImportOpen && <CsvImportQuotesModal onClose={() => setCsvImportOpen(false)} />}
 
+      {/* Single delete */}
       <Dialog open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}>
         <DialogTitle>Delete Quotation</DialogTitle>
         <DialogContent>
@@ -231,6 +306,26 @@ export function QuotesListPage() {
             onClick={() => confirmDelete && deleteMutation.mutate(confirmDelete.id)}
           >
             {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+          </button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk delete confirm */}
+      <Dialog open={confirmBulkDelete} onClose={() => setConfirmBulkDelete(false)}>
+        <DialogTitle>Delete {selected.size} Quotes</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Permanently delete <strong>{selected.size} selected quote{selected.size > 1 ? 's' : ''}</strong>? This cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <button className="lb-action-btn" onClick={() => setConfirmBulkDelete(false)}>Cancel</button>
+          <button
+            className="lb-action-btn"
+            style={{ color: '#dc2626', borderColor: '#fca5a5', fontWeight: 600 }}
+            onClick={handleBulkDelete}
+          >
+            Delete {selected.size} Quotes
           </button>
         </DialogActions>
       </Dialog>
