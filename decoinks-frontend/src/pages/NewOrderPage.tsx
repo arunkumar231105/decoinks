@@ -413,7 +413,7 @@ export function NewOrderPage() {
       order_type:       orderType,
       order_date:       orderDate,
       due_date:         dueDate || null,
-      payment_terms:    paymentTerms,
+      payment_terms:    paymentTerms === 'Paid' ? 'Due on Receipt' : paymentTerms,
       payment_method:   paymentMethod,
       payment_status:   paymentStatus,
       currency:         currency,
