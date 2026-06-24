@@ -76,6 +76,28 @@ const paymentSchema = z.object({
 })
 
 router.get('/',                 controller.list)
+
+// ── Artworks for an invoice (union of quote + order artworks) ─────────────────
+router.get('/:id/artworks', async (req, res) => {
+  try {
+    const db = require('../../config/db')
+    const inv = await db.query('SELECT quote_id, order_id FROM invoices WHERE id=$1', [req.params.id])
+    if (!inv.rows[0]) return res.json({ artworks: [] })
+    const { quote_id, order_id } = inv.rows[0]
+    const conditions = []
+    const params = []
+    if (quote_id) { params.push(quote_id); conditions.push(`quotation_id = $${params.length}`) }
+    if (order_id) { params.push(order_id); conditions.push(`order_id = $${params.length}`) }
+    if (!conditions.length) return res.json({ artworks: [] })
+    const { rows } = await db.query(
+      `SELECT id, artwork_no, name, file_url, file_type, status, created_at
+       FROM artworks WHERE (${conditions.join(' OR ')}) ORDER BY created_at`,
+      params
+    )
+    res.json({ artworks: rows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.get('/:id',              controller.getOne)
 router.post('/',                validate(createSchema),  controller.create)
 router.post('/:id/convert-to-order',

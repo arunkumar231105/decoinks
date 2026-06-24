@@ -258,6 +258,54 @@ const CSS = `
     font-size: 11.5px; color: #374151; line-height: 1.6;
   }
   .page-count { font-size: 10px; color: #9ca3af; text-align: right; margin-top: 4px; }
+
+  /* ── ARTWORKS SECTION ── */
+  .aw-section { margin-bottom: 20px; }
+  .aw-section-hdr {
+    display: flex; align-items: center; gap: 10px;
+    background: #0f1f3d; color: #fff;
+    padding: 10px 16px; border-radius: 8px 8px 0 0;
+  }
+  .aw-section-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; flex-shrink: 0;
+  }
+  .aw-section-title {
+    font-size: 11px; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .aw-grid {
+    border: 1.5px solid #e5e7eb; border-top: none;
+    border-radius: 0 0 8px 8px; background: #fff;
+  }
+  .aw-card {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 8px; padding: 8px; overflow: hidden;
+  }
+  .aw-img-wrap {
+    width: 100%; background: #f8fafc;
+    border-radius: 6px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 6px;
+  }
+  .aw-img {
+    width: 100%; object-fit: contain; display: block;
+  }
+  .aw-no-img {
+    width: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #9ca3af; font-style: italic;
+  }
+  .aw-meta { text-align: center; }
+  .aw-no {
+    font-size: 10px; font-weight: 700; color: #1a2b5c;
+    letter-spacing: 0.3px; margin-bottom: 2px;
+  }
+  .aw-name {
+    font-size: 10px; color: #6b7280; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 `
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -483,6 +531,40 @@ export function QuotePrintPage() {
             </div>
           </div>
         </div>
+
+        {/* ── ARTWORKS SECTION ── */}
+        {artworks.length > 0 && (
+          <div className="aw-section">
+            <div className="aw-section-hdr">
+              <div className="aw-section-num">★</div>
+              <div className="aw-section-title">ARTWORKS ({artworks.length})</div>
+            </div>
+            <div className="aw-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${artworks.length <= 2 ? 2 : artworks.length <= 6 ? 3 : artworks.length <= 12 ? 4 : 5}, 1fr)`,
+              gap: 8,
+              padding: '12px',
+            }}>
+              {artworks.slice(0, 20).map((aw) => {
+                const imgHeight = artworks.length <= 2 ? 120 : artworks.length <= 6 ? 90 : artworks.length <= 12 ? 70 : 55
+                return (
+                  <div key={aw.id} className="aw-card">
+                    <div className="aw-img-wrap" style={{ height: imgHeight }}>
+                      {aw.file_url && aw.file_type !== 'pdf'
+                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
+                        : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
+                      }
+                    </div>
+                    <div className="aw-meta">
+                      <div className="aw-no">{aw.artwork_no}</div>
+                      <div className="aw-name">{aw.name}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── BOTTOM GRID ── */}
         <div className="bottom-grid">

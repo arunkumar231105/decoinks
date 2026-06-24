@@ -53,6 +53,11 @@ interface GangsheetItem {
   qty: number; price_per_sheet: number; amount: number; front_image: string | null; back_image?: string | null
 }
 
+interface ArtworkItem {
+  id: string; artwork_no: string; name: string
+  file_url: string | null; file_type: string | null
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n: number | string | null | undefined) =>
   '$' + Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -258,6 +263,20 @@ const CSS = `
   .print-btn:hover { background: #243d82; }
   .back-btn { position: fixed; top: 16px; left: 16px; background: #fff; color: #374151; border: 1.5px solid #d1d5db; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 999; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .back-btn:hover { background: #f9fafb; }
+
+  /* ── Artworks section ── */
+  .aw-section { margin-top: 16px; margin-bottom: 0; }
+  .aw-section-hdr { display: flex; align-items: center; gap: 10px; background: #0f1f3d; color: #fff; padding: 10px 16px; border-radius: 8px 8px 0 0; }
+  .aw-section-num { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .aw-section-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+  .aw-grid { border: 1.5px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; background: #fff; }
+  .aw-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; overflow: hidden; }
+  .aw-img-wrap { width: 100%; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
+  .aw-img { width: 100%; object-fit: contain; display: block; }
+  .aw-no-img { width: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #9ca3af; font-style: italic; }
+  .aw-meta { text-align: center; }
+  .aw-no { font-size: 10px; font-weight: 700; color: #1a2b5c; letter-spacing: 0.3px; margin-bottom: 2px; }
+  .aw-name { font-size: 10px; color: #6b7280; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `
 
 // ── DTF group types ───────────────────────────────────────────────────────────
@@ -275,6 +294,13 @@ export function OrderPrintPage() {
     queryFn:  () => api.get(`/orders/${id}`).then(r => r.data.data ?? r.data.order ?? r.data),
     enabled: !!id && authReady,
   })
+
+  const { data: artworkData } = useQuery<{ artworks: ArtworkItem[] }>({
+    queryKey: ['order-artworks-print', id],
+    queryFn:  () => api.get(`/orders/${id}/artworks`).then(r => r.data),
+    enabled:  !!id && authReady,
+  })
+  const orderArtworks = artworkData?.artworks ?? []
 
   if (authFailed) return (
     <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
@@ -785,6 +811,40 @@ export function OrderPrintPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ══ ARTWORKS SECTION ══ */}
+        {orderArtworks.length > 0 && (
+          <div className="aw-section">
+            <div className="aw-section-hdr">
+              <div className="aw-section-num">★</div>
+              <div className="aw-section-title">ARTWORKS ({orderArtworks.length})</div>
+            </div>
+            <div className="aw-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${orderArtworks.length <= 2 ? 2 : orderArtworks.length <= 6 ? 3 : orderArtworks.length <= 12 ? 4 : 5}, 1fr)`,
+              gap: 8,
+              padding: '12px',
+            }}>
+              {orderArtworks.slice(0, 20).map((aw) => {
+                const imgHeight = orderArtworks.length <= 2 ? 120 : orderArtworks.length <= 6 ? 90 : orderArtworks.length <= 12 ? 70 : 55
+                return (
+                  <div key={aw.id} className="aw-card">
+                    <div className="aw-img-wrap" style={{ height: imgHeight }}>
+                      {aw.file_url && aw.file_type !== 'pdf'
+                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
+                        : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
+                      }
+                    </div>
+                    <div className="aw-meta">
+                      <div className="aw-no">{aw.artwork_no}</div>
+                      <div className="aw-name">{aw.name}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ══ FOOTER ══ */}
         <div className="footer-section">

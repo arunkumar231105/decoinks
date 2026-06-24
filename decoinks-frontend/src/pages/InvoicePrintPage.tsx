@@ -261,6 +261,20 @@ const CSS = `
   .print-btn:hover { background: #243d82; }
   .back-btn { position: fixed; top: 16px; left: 16px; background: #fff; color: #374151; border: 1.5px solid #d1d5db; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 999; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .back-btn:hover { background: #f9fafb; }
+
+  /* ── Artworks section ── */
+  .aw-section { margin-bottom: 18px; }
+  .aw-section-hdr { display: flex; align-items: center; gap: 10px; background: #0f1f3d; color: #fff; padding: 10px 16px; border-radius: 8px 8px 0 0; }
+  .aw-section-num { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .aw-section-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+  .aw-grid { border: 1.5px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; background: #fff; }
+  .aw-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; overflow: hidden; }
+  .aw-img-wrap { width: 100%; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
+  .aw-img { width: 100%; object-fit: contain; display: block; }
+  .aw-no-img { width: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #9ca3af; font-style: italic; }
+  .aw-meta { text-align: center; }
+  .aw-no { font-size: 10px; font-weight: 700; color: #1a2b5c; letter-spacing: 0.3px; margin-bottom: 2px; }
+  .aw-name { font-size: 10px; color: #6b7280; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `
 
 // ── DTF group types ───────────────────────────────────────────────────────────
@@ -291,6 +305,12 @@ export function InvoicePrintPage() {
     enabled:  !!invoice?.quote_id && authReady,
   })
 
+  const { data: invoiceArtworkData } = useQuery<{ artworks: Artwork[] }>({
+    queryKey: ['invoice-artworks-print', id],
+    queryFn:  () => api.get(`/invoices/${id}/artworks`).then(r => r.data),
+    enabled:  !!id && authReady,
+  })
+
   if (authFailed) return (
     <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
       <span style={{ fontSize:15, color:'#ef4444' }}>Session expired.</span>
@@ -310,6 +330,7 @@ export function InvoicePrintPage() {
 
   // Items: prefer quotation items, fall back to invoice's own items
   const items       = (quotation?.items?.length ? quotation.items : invoice.items) ?? []
+  const invoiceArtworks = invoiceArtworkData?.artworks ?? artworkData?.artworks ?? []
   const artworks    = artworkData?.artworks ?? []
   const effectiveOrderType = quotation?.order_type ?? invoice.order_type
   const isDtf       = effectiveOrderType === 'dtf'
@@ -529,6 +550,40 @@ export function InvoicePrintPage() {
             </div>
           </div>
         </div>
+
+        {/* ══ ARTWORKS SECTION ══ */}
+        {invoiceArtworks.length > 0 && (
+          <div className="aw-section">
+            <div className="aw-section-hdr">
+              <div className="aw-section-num">★</div>
+              <div className="aw-section-title">ARTWORKS ({invoiceArtworks.length})</div>
+            </div>
+            <div className="aw-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${invoiceArtworks.length <= 2 ? 2 : invoiceArtworks.length <= 6 ? 3 : invoiceArtworks.length <= 12 ? 4 : 5}, 1fr)`,
+              gap: 8,
+              padding: '12px',
+            }}>
+              {invoiceArtworks.slice(0, 20).map((aw) => {
+                const imgHeight = invoiceArtworks.length <= 2 ? 120 : invoiceArtworks.length <= 6 ? 90 : invoiceArtworks.length <= 12 ? 70 : 55
+                return (
+                  <div key={aw.id} className="aw-card">
+                    <div className="aw-img-wrap" style={{ height: imgHeight }}>
+                      {aw.file_url && aw.file_type !== 'pdf'
+                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
+                        : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
+                      }
+                    </div>
+                    <div className="aw-meta">
+                      <div className="aw-no">{aw.artwork_no}</div>
+                      <div className="aw-name">{aw.name}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ══ ITEMS TABLE ══ */}
         <div className="tbl-wrap">

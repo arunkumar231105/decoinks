@@ -175,6 +175,14 @@ async function create(data) {
     )
     await client.query('COMMIT')
 
+    // Link quote artworks to this order
+    if (quotation_id) {
+      await query(
+        `UPDATE artworks SET order_id = $1 WHERE quotation_id = $2 AND order_id IS NULL`,
+        [order.id, quotation_id]
+      ).catch(() => {}) // non-fatal: artworks table may not exist yet
+    }
+
     if (invoice_id) {
       await logPipelineEvent({
         event_type: 'order_created_from_invoice',
