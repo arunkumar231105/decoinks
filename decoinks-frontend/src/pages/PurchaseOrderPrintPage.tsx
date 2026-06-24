@@ -454,8 +454,11 @@ export function PurchaseOrderPrintPage() {
     return <div className="art-empty-thumb">🖼</div>
   }
 
+  const itemArtworkSize = items.find(it => it.artwork_size)?.artwork_size ?? null
+
   const artSize = (art: Artwork) => {
     if (art.width_inches && art.height_inches) return `${art.width_inches}" × ${art.height_inches}"`
+    if (itemArtworkSize) return itemArtworkSize
     return '—'
   }
 
