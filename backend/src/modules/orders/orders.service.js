@@ -377,19 +377,60 @@ async function getBoard() {
 async function convertToPO(orderId, actorId) {
   // Multiple POs per order are allowed (e.g. different suppliers)
   const { rows: orderRows } = await query(
-    `SELECT id, order_number, supplier_id, shipping_address FROM orders WHERE id = $1`,
+    `SELECT id, order_number, order_type, supplier_id, shipping_address, due_date
+     FROM orders WHERE id = $1`,
     [orderId]
   )
   if (!orderRows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
   const order = orderRows[0]
 
+  const po_type = order.order_type === 'gangsheet' ? 'gangsheet' : 'apparel'
+
+  // Apparel: pre-populate PO line items from the order's items, resolving
+  // each artwork_no to its artworks row so previews join instead of copy.
+  let items = []
+  if (po_type === 'apparel') {
+    const { rows: orderItems } = await query(
+      `SELECT oi.item, oi.color, oi.size, oi.qty, oi.artwork_no, oi.artwork_size,
+              oi.unit_price, oi.front_image, oi.back_image, oi.sort_order,
+              a.id AS artwork_id
+       FROM order_items_apparel oi
+       LEFT JOIN artworks a ON a.artwork_no = oi.artwork_no
+       WHERE oi.order_id = $1
+       ORDER BY oi.sort_order`,
+      [orderId]
+    )
+    items = orderItems.map((oi, i) => ({
+      item_name:          oi.item,
+      color:              oi.color || null,
+      size:               oi.size || null,
+      qty_ordered:        Number(oi.qty) || 1,
+      unit_price:         Number(oi.unit_price) || 0,
+      artwork_id:         oi.artwork_id || null,
+      artwork_size_front: oi.artwork_size || null,
+      artwork_size_back:  oi.artwork_size || null,
+      front_image:        oi.front_image || null,
+      back_image:         oi.back_image || null,
+      sort_order:         oi.sort_order ?? i,
+    }))
+  }
+
+  // Attach the order's artworks to the PO
+  const { rows: artRows } = await query(
+    `SELECT id FROM artworks WHERE order_id = $1 ORDER BY created_at`,
+    [orderId]
+  )
+
   const poSvc = require('../purchase-orders/po.service')
   const po = await poSvc.create({
-    order_id:        orderId,
-    supplier_id:     order.supplier_id || null,
+    po_type,
+    order_ids:        [orderId],
+    supplier_id:      order.supplier_id || null,
     shipping_address: order.shipping_address || null,
-    items:           [],
-    created_by:      actorId,
+    expected_date:    order.due_date || null,
+    items,
+    artwork_ids:      artRows.map(r => r.id),
+    created_by:       actorId,
   })
   return { po }
 }

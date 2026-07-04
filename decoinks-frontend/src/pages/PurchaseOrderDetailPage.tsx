@@ -56,6 +56,41 @@ interface PurchaseOrder {
   other_charges: number
   grand_total: number
   items: POItem[]
+  po_type?: 'gangsheet' | 'apparel'
+  payment_status?: string
+  communication_method?: string
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  orders?: {
+    id: string
+    order_number: string
+    status: string
+    order_date: string | null
+    due_date: string | null
+    agent_name: string | null
+    no_artworks: number
+    qty: number
+    gangsheet_sizes: string | null
+  }[]
+  fragments?: {
+    id: string
+    fragment_no: string
+    covers_order_number: string | null
+    width_inches: number | null
+    length_inches: number | null
+    artworks_count: number
+    qty: number
+    file_url: string | null
+  }[]
+  artworks?: {
+    id: string
+    artwork_no: string
+    name: string
+    file_url: string | null
+    thumbnail_url: string | null
+    file_type: string | null
+  }[]
 }
 
 interface HistoryEntry {
@@ -350,6 +385,119 @@ export function PurchaseOrderDetailPage() {
               </table>
             </div>
           </div>
+
+          {/* Covered Orders (gangsheet POs) */}
+          {(po.orders ?? []).length > 0 && (
+            <div className="np-card">
+              <div className="np-card-header">
+                <h3>Gangsheet Orders Covered</h3>
+              </div>
+              <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+                <table className="np-table" style={{ minWidth: '700px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}>#</th>
+                      <th>Order No</th>
+                      <th style={{ width: 100 }}>No. of Artworks</th>
+                      <th style={{ width: 70 }}>Qty</th>
+                      <th style={{ width: 120 }}>Gangsheet (W x L)</th>
+                      <th style={{ width: 100 }}>Status</th>
+                      <th style={{ width: 100 }}>Due</th>
+                      <th style={{ width: 110 }}>Agent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(po.orders ?? []).map((o, i) => (
+                      <tr key={o.id} className="hover:bg-gray-50">
+                        <td className="np-od-num">{i + 1}</td>
+                        <td style={{ padding: '8px' }}>
+                          <Link to={`/orders/${o.id}`} style={{ color: '#0d9488', fontWeight: 600, fontSize: '12.5px' }}>
+                            {o.order_number}
+                          </Link>
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>{o.no_artworks}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>{o.qty}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '12px' }}>{o.gangsheet_sizes ?? '-'}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span className={cn('px-2 py-0.5 rounded text-xs font-medium', STATUS_BADGE[o.status] ?? 'bg-gray-100 text-gray-600')}>
+                            {o.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{fmtDate(o.due_date)}</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#374151' }}>{o.agent_name ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Master Gangsheets (Fragments) */}
+          {(po.fragments ?? []).length > 0 && (
+            <div className="np-card">
+              <div className="np-card-header">
+                <h3>Master Gangsheets (Fragments)</h3>
+              </div>
+              <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+                <table className="np-table" style={{ minWidth: '700px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}>#</th>
+                      <th>Gangsheet No</th>
+                      <th style={{ width: 130 }}>Order No Covers</th>
+                      <th style={{ width: 120 }}>Gangsheet (W x L)</th>
+                      <th style={{ width: 100 }}>Artworks (No)</th>
+                      <th style={{ width: 80 }}>Qty</th>
+                      <th style={{ width: 130 }}>Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(po.fragments ?? []).map((f, i) => (
+                      <tr key={f.id} className="hover:bg-gray-50">
+                        <td className="np-od-num">{i + 1}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600 }}>{f.fragment_no}</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#374151' }}>{f.covers_order_number ?? '-'}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '12px' }}>
+                          {f.width_inches != null && f.length_inches != null
+                            ? `${f.width_inches}" x ${f.length_inches}"` : '-'}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>{f.artworks_count}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>{f.qty}</td>
+                        <td style={{ padding: '8px' }}>
+                          {f.file_url
+                            ? <a href={f.file_url} target="_blank" rel="noreferrer" style={{ color: '#0d9488', fontWeight: 600, fontSize: '12px' }}>View Gangsheet</a>
+                            : <span style={{ color: '#9ca3af', fontSize: '12px' }}>-</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Attached Artworks */}
+          {(po.artworks ?? []).length > 0 && (
+            <div className="np-card">
+              <div className="np-card-header">
+                <h3>Artwork Attachments ({(po.artworks ?? []).length})</h3>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0 18px' }}>
+                {(po.artworks ?? []).map(a => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 4px', borderBottom: '1px solid #f3f4f6', fontSize: '12.5px' }}>
+                    <span style={{ fontWeight: 600, minWidth: '74px' }}>{a.artwork_no}</span>
+                    {(a.thumbnail_url || a.file_url) && (a.thumbnail_url || a.file_url)!.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i)
+                      ? <img src={a.thumbnail_url || a.file_url!} alt={a.artwork_no} style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
+                      : <span style={{ width: 40, height: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', borderRadius: 4, border: '1px dashed #d1d5db', color: '#9ca3af', fontSize: 10 }}>{(a.file_type || 'file').toUpperCase()}</span>}
+                    {a.file_url
+                      ? <a href={a.file_url} target="_blank" rel="noreferrer" style={{ color: '#0d9488', fontWeight: 600, flex: 1 }}>View / Download</a>
+                      : <span style={{ flex: 1, color: '#9ca3af' }}>no file</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Notes & T&C */}
           {(po.notes || po.terms_conditions) && (

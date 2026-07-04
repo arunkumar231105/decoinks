@@ -43,6 +43,85 @@ router.post('/',          validate(createSchema), controller.create)
 router.put('/:id',        validate(updateSchema), controller.update)
 router.delete('/:id',     controller.remove)
 
+// ── Supplier Contacts (contact persons used on Purchase Orders) ──────────────
+
+const contactSchema = z.object({
+  name:       z.string().min(1),
+  email:      z.string().email().optional().nullable(),
+  phone:      z.string().optional().nullable(),
+  wechat_id:  z.string().optional().nullable(),
+  is_primary: z.boolean().optional(),
+})
+
+router.get('/:id/contacts', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, supplier_id, name, email, phone, wechat_id, is_primary, created_at
+       FROM supplier_contacts WHERE supplier_id = $1
+       ORDER BY is_primary DESC, name`,
+      [req.params.id]
+    )
+    res.json({ success: true, data: rows })
+  } catch (e) { next(e) }
+})
+
+router.post('/:id/contacts', validate(contactSchema), async (req, res, next) => {
+  try {
+    const { name, email, phone, wechat_id, is_primary } = req.body
+    if (is_primary) {
+      await db.query(
+        `UPDATE supplier_contacts SET is_primary = FALSE WHERE supplier_id = $1`,
+        [req.params.id]
+      )
+    }
+    const { rows } = await db.query(
+      `INSERT INTO supplier_contacts (supplier_id, name, email, phone, wechat_id, is_primary)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [req.params.id, name, email || null, phone || null, wechat_id || null, !!is_primary]
+    )
+    res.status(201).json({ success: true, data: rows[0] })
+  } catch (e) { next(e) }
+})
+
+router.put('/:id/contacts/:cid', validate(contactSchema.partial()), async (req, res, next) => {
+  try {
+    const { name, email, phone, wechat_id, is_primary } = req.body
+    if (is_primary) {
+      await db.query(
+        `UPDATE supplier_contacts SET is_primary = FALSE WHERE supplier_id = $1`,
+        [req.params.id]
+      )
+    }
+    const { rows } = await db.query(
+      `UPDATE supplier_contacts SET
+         name       = COALESCE($1, name),
+         email      = COALESCE($2, email),
+         phone      = COALESCE($3, phone),
+         wechat_id  = COALESCE($4, wechat_id),
+         is_primary = COALESCE($5, is_primary),
+         updated_at = NOW()
+       WHERE id = $6 AND supplier_id = $7
+       RETURNING *`,
+      [name ?? null, email ?? null, phone ?? null, wechat_id ?? null,
+       typeof is_primary === 'boolean' ? is_primary : null,
+       req.params.cid, req.params.id]
+    )
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Contact not found' })
+    res.json({ success: true, data: rows[0] })
+  } catch (e) { next(e) }
+})
+
+router.delete('/:id/contacts/:cid', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `DELETE FROM supplier_contacts WHERE id = $1 AND supplier_id = $2 RETURNING id`,
+      [req.params.cid, req.params.id]
+    )
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Contact not found' })
+    res.json({ success: true, data: null })
+  } catch (e) { next(e) }
+})
+
 // ── Supplier Portal Access Management ────────────────────────────────────────
 
 router.get('/:id/portal-access', async (req, res) => {

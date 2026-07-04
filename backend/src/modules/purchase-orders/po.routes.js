@@ -26,12 +26,34 @@ const itemSchema = z.object({
   artwork_size:     z.string().optional().nullable(),
   front_image:      z.string().optional().nullable(),
   back_image:       z.string().optional().nullable(),
+  // Apparel PO grid fields
+  brand:              z.string().optional().nullable(),
+  color:              z.string().optional().nullable(),
+  size:               z.string().optional().nullable(),
+  artwork_id:         z.string().uuid().optional().nullable(),
+  artwork_size_front: z.string().optional().nullable(),
+  artwork_size_back:  z.string().optional().nullable(),
+})
+
+const fragmentSchema = z.object({
+  fragment_no:    z.string().optional().nullable(),
+  order_id:       z.string().uuid().optional().nullable(),
+  width_inches:   z.number().nonnegative().optional().nullable(),
+  length_inches:  z.number().nonnegative().optional().nullable(),
+  artworks_count: z.number().int().min(0).optional().default(0),
+  qty:            z.number().int().min(0).optional().default(0),
+  file_url:       z.string().optional().nullable(),
+  sort_order:     z.number().int().min(0).optional(),
 })
 
 const createSchema = z.object({
+  po_type:            z.enum(['gangsheet', 'apparel']).optional().default('apparel'),
   vendor_name:        z.string().optional().nullable(),
   vendor_id:          z.string().uuid().optional().nullable(),
   supplier_id:        z.string().uuid().optional().nullable(),
+  supplier_contact_id: z.string().uuid().optional().nullable(),
+  communication_method: z.enum(['email', 'wechat']).optional().default('email'),
+  payment_status:     z.enum(['Unpaid', 'Partial', 'Paid']).optional().default('Unpaid'),
   supplier_reference: z.string().optional().nullable(),
   payment_terms:      z.string().optional().nullable(),
   currency:           z.string().max(3).optional().default('USD'),
@@ -49,11 +71,17 @@ const createSchema = z.object({
   freight_charges:    z.number().nonnegative().optional().default(0),
   other_charges:      z.number().nonnegative().optional().default(0),
   order_id:           z.string().uuid().optional().nullable(),
-  items:              z.array(itemSchema).min(1, 'At least one item required'),
+  order_ids:          z.array(z.string().uuid()).optional(),
+  fragments:          z.array(fragmentSchema).optional(),
+  artwork_ids:        z.array(z.string().uuid()).optional(),
+  items:              z.array(itemSchema).optional().default([]),
 })
 
 const updateSchema = createSchema.partial().extend({
-  items: z.array(itemSchema).min(1).optional(),
+  items:       z.array(itemSchema).optional(),
+  order_ids:   z.array(z.string().uuid()).optional(),
+  fragments:   z.array(fragmentSchema).optional(),
+  artwork_ids: z.array(z.string().uuid()).optional(),
 })
 
 const statusSchema = z.object({

@@ -39,7 +39,8 @@ async function getPoItemCols(client) {
   const { rows } = await client.query(
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'purchase_order_items'
-       AND column_name IN ('artwork_count','front_image','back_image','artwork_size')`
+       AND column_name IN ('artwork_count','front_image','back_image','artwork_size',
+                           'brand','color','size','artwork_id','artwork_size_front','artwork_size_back')`
   )
   _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
@@ -57,6 +58,12 @@ async function insertItems(client, poId, items) {
     if (cols.has('artwork_size'))  { extraCols.push('artwork_size');  extraVals.push(item.artwork_size  || null) }
     if (cols.has('front_image'))   { extraCols.push('front_image');   extraVals.push(item.front_image || null) }
     if (cols.has('back_image'))    { extraCols.push('back_image');    extraVals.push(item.back_image  || null) }
+    if (cols.has('brand'))              { extraCols.push('brand');              extraVals.push(item.brand || null) }
+    if (cols.has('color'))              { extraCols.push('color');              extraVals.push(item.color || null) }
+    if (cols.has('size'))               { extraCols.push('size');               extraVals.push(item.size  || null) }
+    if (cols.has('artwork_id'))         { extraCols.push('artwork_id');         extraVals.push(item.artwork_id || null) }
+    if (cols.has('artwork_size_front')) { extraCols.push('artwork_size_front'); extraVals.push(item.artwork_size_front || null) }
+    if (cols.has('artwork_size_back'))  { extraCols.push('artwork_size_back');  extraVals.push(item.artwork_size_back  || null) }
 
     const baseCols = ['po_id','item_name','description','qty_ordered','unit_price',
                       'discount_pct','discount_amt','tax_pct','tax_amt','line_total',
@@ -73,6 +80,69 @@ async function insertItems(client, poId, items) {
     await client.query(
       `INSERT INTO purchase_order_items (${allCols.join(',')}) VALUES (${placeholders})`,
       allVals
+    )
+  }
+}
+
+// ── Junction-table helpers (replace-all semantics inside a transaction) ──────
+
+// A gangsheet PO can cover many orders; an apparel PO covers exactly one.
+function assertOrderCount(poType, orderIds) {
+  if (poType === 'apparel' && orderIds.length > 1) {
+    throw Object.assign(
+      new Error('A Custom Printed Apparel PO can cover only one order'),
+      { statusCode: 400 }
+    )
+  }
+}
+
+async function replaceOrders(client, poId, orderIds) {
+  await client.query(`DELETE FROM po_orders WHERE po_id = $1`, [poId])
+  for (let i = 0; i < orderIds.length; i++) {
+    await client.query(
+      `INSERT INTO po_orders (po_id, order_id, sort_order)
+       VALUES ($1, $2, $3) ON CONFLICT (po_id, order_id) DO NOTHING`,
+      [poId, orderIds[i], i]
+    )
+  }
+  // Keep the legacy single-order FK pointing at the first covered order
+  await client.query(
+    `UPDATE purchase_orders SET order_id = $2 WHERE id = $1`,
+    [poId, orderIds[0] || null]
+  )
+}
+
+async function replaceFragments(client, poId, fragments) {
+  await client.query(`DELETE FROM po_gangsheet_fragments WHERE po_id = $1`, [poId])
+  for (let i = 0; i < fragments.length; i++) {
+    const f = fragments[i]
+    await client.query(
+      `INSERT INTO po_gangsheet_fragments
+         (po_id, fragment_no, order_id, width_inches, length_inches,
+          artworks_count, qty, file_url, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        poId,
+        f.fragment_no || `GS-${String(i + 1).padStart(2, '0')}`,
+        f.order_id || null,
+        f.width_inches ?? null,
+        f.length_inches ?? null,
+        Number(f.artworks_count) || 0,
+        Number(f.qty) || 0,
+        f.file_url || null,
+        f.sort_order ?? i,
+      ]
+    )
+  }
+}
+
+async function replaceArtworks(client, poId, artworkIds) {
+  await client.query(`DELETE FROM po_artworks WHERE po_id = $1`, [poId])
+  for (let i = 0; i < artworkIds.length; i++) {
+    await client.query(
+      `INSERT INTO po_artworks (po_id, artwork_id, sort_order)
+       VALUES ($1, $2, $3) ON CONFLICT (po_id, artwork_id) DO NOTHING`,
+      [poId, artworkIds[i], i]
     )
   }
 }
@@ -116,10 +186,13 @@ async function getById(id) {
     `SELECT po.*, s.name AS supplier_name, s.email AS supplier_email,
             s.phone AS supplier_phone, s.city AS supplier_city,
             s.company AS supplier_company,
+            sc.name AS contact_name, sc.email AS contact_email,
+            sc.phone AS contact_phone, sc.wechat_id AS contact_wechat,
             u.name AS created_by_name, b.name AS buyer_name,
             o.order_number AS order_number
      FROM purchase_orders po
-     LEFT JOIN suppliers s ON s.id = po.supplier_id
+     LEFT JOIN suppliers s          ON s.id  = po.supplier_id
+     LEFT JOIN supplier_contacts sc ON sc.id = po.supplier_contact_id
      LEFT JOIN users u ON u.id = po.created_by
      LEFT JOIN users b ON b.id = po.buyer_id
      LEFT JOIN orders o ON o.id = po.order_id
@@ -129,34 +202,71 @@ async function getById(id) {
   if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
   const po = rows[0]
 
+  // Apparel items — artwork preview joined from artworks, never copied
   const items = await query(
-    `SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY sort_order, created_at`, [id]
+    `SELECT poi.*,
+            a.artwork_no    AS artwork_no_ref,
+            a.name          AS artwork_name,
+            a.file_url      AS artwork_file_url,
+            a.thumbnail_url AS artwork_thumbnail_url
+     FROM purchase_order_items poi
+     LEFT JOIN artworks a ON a.id = poi.artwork_id
+     WHERE poi.po_id = $1
+     ORDER BY poi.sort_order, poi.created_at`,
+    [id]
   )
 
-  // Compute total artwork count from linked order's items (fallback when artwork_count column not yet migrated)
-  let order_total_artworks = 0
-  if (po.order_id) {
-    try {
-      // Try gangsheet first
-      const gsRes = await query(
-        `SELECT COALESCE(SUM(no_artworks),0) AS total FROM order_items_gangsheet WHERE order_id = $1`, [po.order_id]
-      )
-      const gsCount = parseInt(gsRes.rows[0]?.total ?? 0, 10)
-      // DTF
-      const dtfRes = await query(
-        `SELECT COUNT(*) AS total FROM order_items_dtf WHERE order_id = $1`, [po.order_id]
-      )
-      const dtfCount = parseInt(dtfRes.rows[0]?.total ?? 0, 10)
-      // Apparel
-      const appRes = await query(
-        `SELECT COUNT(*) AS total FROM order_items_apparel WHERE order_id = $1`, [po.order_id]
-      )
-      const appCount = parseInt(appRes.rows[0]?.total ?? 0, 10)
-      order_total_artworks = gsCount || dtfCount || appCount || 0
-    } catch (_) {}
-  }
+  // Orders this PO covers — all display data joined live from orders
+  const orders = await query(
+    `SELECT o.id, o.order_number, o.status, o.order_type, o.order_date, o.due_date,
+            ag.name AS agent_name,
+            COALESCE(gs.no_artworks, 0)::int AS no_artworks,
+            COALESCE(gs.qty, 0)::int         AS qty,
+            gs.sizes                          AS gangsheet_sizes
+     FROM po_orders poo
+     JOIN orders o ON o.id = poo.order_id
+     LEFT JOIN users ag ON ag.id = COALESCE(o.assigned_to, o.created_by)
+     LEFT JOIN LATERAL (
+       SELECT SUM(no_artworks) AS no_artworks,
+              SUM(qty)         AS qty,
+              STRING_AGG(DISTINCT size, ', ') AS sizes
+       FROM order_items_gangsheet g WHERE g.order_id = o.id
+     ) gs ON TRUE
+     WHERE poo.po_id = $1
+     ORDER BY poo.sort_order, poo.created_at`,
+    [id]
+  )
 
-  return { ...po, items: items.rows, order_total_artworks }
+  // Master gangsheet fragments
+  const fragments = await query(
+    `SELECT f.*, o.order_number AS covers_order_number
+     FROM po_gangsheet_fragments f
+     LEFT JOIN orders o ON o.id = f.order_id
+     WHERE f.po_id = $1
+     ORDER BY f.sort_order, f.created_at`,
+    [id]
+  )
+
+  // Attached artworks — thumbnail/link joined from artworks
+  const artworks = await query(
+    `SELECT a.id, a.artwork_no, a.name, a.file_url, a.thumbnail_url, a.file_type
+     FROM po_artworks pa
+     JOIN artworks a ON a.id = pa.artwork_id
+     WHERE pa.po_id = $1
+     ORDER BY pa.sort_order, pa.created_at`,
+    [id]
+  )
+
+  const order_total_artworks = orders.rows.reduce((sum, r) => sum + (r.no_artworks || 0), 0)
+
+  return {
+    ...po,
+    items: items.rows,
+    orders: orders.rows,
+    fragments: fragments.rows,
+    artworks: artworks.rows,
+    order_total_artworks,
+  }
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -167,9 +277,14 @@ async function create(data) {
     buyer_id, department, priority = 'Medium', shipping_method, shipping_address,
     billing_address, terms_conditions, order_date, expected_date, notes,
     freight_charges = 0, other_charges = 0, order_id,
+    po_type = 'apparel', supplier_contact_id = null,
+    communication_method = 'email', payment_status = 'Unpaid',
+    fragments = [], artwork_ids = [],
     items = [], created_by,
   } = data
   const supplier_id = data.supplier_id || vendor_id || null
+  const order_ids = data.order_ids || (order_id ? [order_id] : [])
+  assertOrderCount(po_type, order_ids)
 
   const po_number = await getNextNumber('PO', 'purchase_orders', 'po_number')
   const { subtotal, total_discount, total_tax, grand_total } = calcTotals(items, freight_charges, other_charges)
@@ -183,8 +298,10 @@ async function create(data) {
           supplier_id, supplier_reference, payment_terms, currency, exchange_rate,
           buyer_id, department, priority, shipping_method, shipping_address,
           billing_address, terms_conditions,
-          total_discount, total_tax, freight_charges, other_charges, grand_total, order_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+          total_discount, total_tax, freight_charges, other_charges, grand_total, order_id,
+          po_type, supplier_contact_id, communication_method, payment_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+               $21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
        RETURNING *`,
       [
         po_number,
@@ -212,11 +329,18 @@ async function create(data) {
         freight_charges,
         other_charges,
         grand_total,
-        order_id || null,
+        order_ids[0] || null,
+        po_type,
+        supplier_contact_id,
+        communication_method,
+        payment_status,
       ]
     )
     const po = rows[0]
     await insertItems(client, po.id, items)
+    if (order_ids.length)   await replaceOrders(client, po.id, order_ids)
+    if (fragments.length)   await replaceFragments(client, po.id, fragments)
+    if (artwork_ids.length) await replaceArtworks(client, po.id, artwork_ids)
 
     await client.query(
       `INSERT INTO po_status_history (po_id, from_status, to_status, changed_by, comment)
@@ -242,6 +366,10 @@ async function update(id, data) {
   const freight = data.freight_charges ?? existing.freight_charges ?? 0
   const other   = data.other_charges   ?? existing.other_charges   ?? 0
   const { subtotal, total_discount, total_tax, grand_total } = calcTotals(items, freight, other)
+
+  if (data.order_ids) {
+    assertOrderCount(data.po_type || existing.po_type, data.order_ids)
+  }
 
   const client = await getClient()
   try {
@@ -271,8 +399,12 @@ async function update(id, data) {
          freight_charges   = $21,
          other_charges     = $22,
          grand_total       = $23,
+         po_type              = COALESCE($24, po_type),
+         supplier_contact_id  = COALESCE($25, supplier_contact_id),
+         communication_method = COALESCE($26, communication_method),
+         payment_status       = COALESCE($27, payment_status),
          updated_at        = NOW()
-       WHERE id = $24 AND deleted_at IS NULL
+       WHERE id = $28 AND deleted_at IS NULL
        RETURNING *`,
       [
         data.vendor_name, data.order_date, data.expected_date,
@@ -281,6 +413,7 @@ async function update(id, data) {
         data.currency, data.exchange_rate, data.buyer_id, data.department, data.priority,
         data.shipping_method, data.shipping_address, data.billing_address, data.terms_conditions,
         total_discount, total_tax, freight, other, grand_total,
+        data.po_type, data.supplier_contact_id, data.communication_method, data.payment_status,
         id,
       ]
     )
@@ -290,6 +423,10 @@ async function update(id, data) {
       await client.query(`DELETE FROM purchase_order_items WHERE po_id = $1`, [id])
       await insertItems(client, id, data.items)
     }
+    if (data.order_ids)   await replaceOrders(client, id, data.order_ids)
+    if (data.fragments)   await replaceFragments(client, id, data.fragments)
+    if (data.artwork_ids) await replaceArtworks(client, id, data.artwork_ids)
+
     await client.query('COMMIT')
     return getById(id)
   } catch (err) {

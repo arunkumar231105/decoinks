@@ -1,61 +1,110 @@
-import { useReducer, useMemo, useState, useEffect } from 'react'
+import { useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useLocation, Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
-import { ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
+import {
+  ChevronRight, Plus, Save, Trash2, Info, Mail, MessageCircle,
+  ExternalLink, UploadCloud, Pencil, X, FileText,
+} from 'lucide-react'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+type POType = 'gangsheet' | 'apparel'
+
 interface POLineItem {
   id: string
-  product_id: string | null
   item_name: string
-  description: string
-  hsn_code: string
-  uom: string
+  brand: string
+  color: string
+  size: string
   qty_ordered: number
   unit_price: number
-  discount_pct: number
-  tax_pct: number
   line_total: number
-  required_by_date: string
-  remarks: string
+  artwork_id: string | null
+  artwork_no: string
+  artwork_url: string | null
+  artwork_size_front: string
+  artwork_size_back: string
   sort_order: number
-  artwork_count?: number
-  artwork_size?: string
-  front_image?: string | null
-  back_image?: string | null
+}
+
+interface CoveredOrder {
+  order_id: string
+  order_number: string
+  no_artworks: number
+  qty: number
+  width: string
+  length: string
+  status: string
+  order_date: string | null
+  due_date: string | null
+  agent_name: string
+}
+
+interface Fragment {
+  id: string
+  fragment_no: string
+  order_id: string
+  width: string
+  length: string
+  artworks_count: number
+  qty: number
+  file_url: string
+}
+
+interface AttachedArtwork {
+  id: string
+  artwork_no: string
+  name: string
+  file_url: string | null
+  thumbnail_url: string | null
+  file_type: string | null
+}
+
+interface SupplierContact {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  wechat_id: string | null
+  is_primary: boolean
 }
 
 interface POFormState {
+  po_type: POType
   order_date: string
   expected_date: string
-  currency: string
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent'
   supplier_id: string
   supplier_name: string
-  supplier_reference: string
-  payment_terms: string
-  order_id: string
+  supplier_contact_id: string
+  contact_name: string
+  contact_email: string
+  contact_phone: string
+  communication_method: 'email' | 'wechat'
+  payment_status: 'Unpaid' | 'Partial' | 'Paid'
   buyer_id: string
-  department: string
-  shipping_method: string
-  shipping_address: string
-  billing_address: string
-  freight_charges: number
-  other_charges: number
   notes: string
   terms_conditions: string
   items: POLineItem[]
+  orders: CoveredOrder[]
+  fragments: Fragment[]
+  artworks: AttachedArtwork[]
 }
 
 type Action =
-  | { type: 'SET'; field: keyof Omit<POFormState, 'items'>; value: string | number }
+  | { type: 'SET'; field: keyof POFormState; value: any }
   | { type: 'ADD_ITEM' }
   | { type: 'UPDATE_ITEM'; id: string; patch: Partial<POLineItem> }
   | { type: 'REMOVE_ITEM'; id: string }
+  | { type: 'ADD_ORDER'; order: CoveredOrder }
+  | { type: 'REMOVE_ORDER'; order_id: string }
+  | { type: 'ADD_FRAGMENT' }
+  | { type: 'UPDATE_FRAGMENT'; id: string; patch: Partial<Fragment> }
+  | { type: 'REMOVE_FRAGMENT'; id: string }
+  | { type: 'ADD_ARTWORK'; artwork: AttachedArtwork }
+  | { type: 'REMOVE_ARTWORK'; id: string }
   | { type: 'INIT'; payload: Partial<POFormState> }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -63,78 +112,57 @@ type Action =
 const uid = () => Math.random().toString(36).slice(2, 9)
 const todayISO = () => new Date().toISOString().split('T')[0]
 
-function calcLineTotal(item: Pick<POLineItem, 'qty_ordered' | 'unit_price' | 'discount_pct' | 'tax_pct'>): number {
-  const base      = item.qty_ordered * item.unit_price
-  const afterDisc = base * (1 - (item.discount_pct || 0) / 100)
-  const withTax   = afterDisc * (1 + (item.tax_pct || 0) / 100)
-  return +withTax.toFixed(2)
-}
+const lineTotal = (qty: number, price: number) => +(qty * price).toFixed(2)
 
-function calcTotals(items: POLineItem[], freight: number, other: number) {
-  let subtotal       = 0
-  let total_discount = 0
-  let total_tax      = 0
-  for (const it of items) {
-    const base       = it.qty_ordered * it.unit_price
-    const disc_amt   = +(base * (it.discount_pct / 100)).toFixed(2)
-    const after_disc = base - disc_amt
-    const tax_amt    = +(after_disc * (it.tax_pct / 100)).toFixed(2)
-    subtotal       += base
-    total_discount += disc_amt
-    total_tax      += tax_amt
-  }
-  subtotal       = +subtotal.toFixed(2)
-  total_discount = +total_discount.toFixed(2)
-  total_tax      = +total_tax.toFixed(2)
-  const grand_total = +(subtotal - total_discount + total_tax + Number(freight) + Number(other)).toFixed(2)
-  return { subtotal, total_discount, total_tax, grand_total }
+/** Parses '22x60', '22" x 60"', '22 X 60' → { width: '22', length: '60' } */
+function parseSheetSize(size?: string | null): { width: string; length: string } {
+  const m = /([\d.]+)\s*["']?\s*[x×]\s*([\d.]+)/i.exec(size ?? '')
+  return m ? { width: m[1], length: m[2] } : { width: '', length: '' }
 }
 
 function newItem(idx: number): POLineItem {
   return {
-    id: uid(),
-    product_id: null,
-    item_name: '',
-    description: '',
-    hsn_code: '',
-    uom: 'pcs',
-    qty_ordered: 1,
-    unit_price: 0,
-    discount_pct: 0,
-    tax_pct: 0,
-    line_total: 0,
-    required_by_date: '',
-    remarks: '',
+    id: uid(), item_name: '', brand: '', color: '', size: '',
+    qty_ordered: 1, unit_price: 0, line_total: 0,
+    artwork_id: null, artwork_no: '', artwork_url: null,
+    artwork_size_front: '', artwork_size_back: '',
     sort_order: idx,
-    artwork_count: 0,
-    artwork_size: '',
-    front_image: null,
-    back_image: null,
   }
+}
+
+function newFragment(): Fragment {
+  return {
+    id: uid(), fragment_no: '', order_id: '',
+    width: '', length: '', artworks_count: 0, qty: 0, file_url: '',
+  }
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  Draft: 'np-badge-yellow', Sent: 'np-badge-orange', Confirmed: 'np-badge-blue',
+  'In Production': 'np-badge-blue', Delivered: 'np-badge-green', Shipped: 'np-badge-blue',
 }
 
 // ── Reducer ────────────────────────────────────────────────────────────────────
 
 const initialState: POFormState = {
-  order_date:         todayISO(),
-  expected_date:      '',
-  currency:           'USD',
-  priority:           'Medium',
-  supplier_id:        '',
-  supplier_name:      '',
-  supplier_reference: '',
-  payment_terms:      '',
-  order_id:           '',
-  buyer_id:           '',
-  department:         '',
-  shipping_method:    '',
-  shipping_address:   '',
-  billing_address:    '',
-  freight_charges:    0,
-  other_charges:      0,
-  notes:              '',
-  terms_conditions:   '',
-  items:              [],
+  po_type: 'gangsheet',
+  order_date: todayISO(),
+  expected_date: '',
+  supplier_id: '',
+  supplier_name: '',
+  supplier_contact_id: '',
+  contact_name: '',
+  contact_email: '',
+  contact_phone: '',
+  communication_method: 'email',
+  payment_status: 'Unpaid',
+  buyer_id: '',
+  notes: '',
+  terms_conditions: '',
+  items: [],
+  orders: [],
+  fragments: [],
+  artworks: [],
 }
 
 function reducer(state: POFormState, action: Action): POFormState {
@@ -146,14 +174,34 @@ function reducer(state: POFormState, action: Action): POFormState {
     case 'UPDATE_ITEM': {
       const items = state.items.map(it => {
         if (it.id !== action.id) return it
-        const updated = { ...it, ...action.patch }
-        updated.line_total = calcLineTotal(updated)
-        return updated
+        const u = { ...it, ...action.patch }
+        u.line_total = lineTotal(u.qty_ordered, u.unit_price)
+        return u
       })
       return { ...state, items }
     }
     case 'REMOVE_ITEM':
       return { ...state, items: state.items.filter(it => it.id !== action.id) }
+    case 'ADD_ORDER':
+      if (state.orders.some(o => o.order_id === action.order.order_id)) return state
+      if (state.po_type === 'apparel' && state.orders.length >= 1) return state
+      return { ...state, orders: [...state.orders, action.order] }
+    case 'REMOVE_ORDER':
+      return { ...state, orders: state.orders.filter(o => o.order_id !== action.order_id) }
+    case 'ADD_FRAGMENT':
+      return { ...state, fragments: [...state.fragments, newFragment()] }
+    case 'UPDATE_FRAGMENT':
+      return {
+        ...state,
+        fragments: state.fragments.map(f => (f.id === action.id ? { ...f, ...action.patch } : f)),
+      }
+    case 'REMOVE_FRAGMENT':
+      return { ...state, fragments: state.fragments.filter(f => f.id !== action.id) }
+    case 'ADD_ARTWORK':
+      if (state.artworks.some(a => a.id === action.artwork.id)) return state
+      return { ...state, artworks: [...state.artworks, action.artwork] }
+    case 'REMOVE_ARTWORK':
+      return { ...state, artworks: state.artworks.filter(a => a.id !== action.id) }
     case 'INIT':
       return { ...state, ...action.payload }
     default:
@@ -163,17 +211,6 @@ function reducer(state: POFormState, action: Action): POFormState {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-const PRIORITY_COLORS: Record<string, string> = {
-  Low:    'bg-gray-100 text-gray-600',
-  Medium: 'bg-blue-50 text-blue-700',
-  High:   'bg-orange-50 text-orange-700',
-  Urgent: 'bg-red-50 text-red-700',
-}
-
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CNY', 'INR']
-const PAYMENT_TERMS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Due on Receipt', 'Prepaid', '50% Advance']
-const SHIPPING_METHODS = ['Standard', 'Express', 'Air Freight', 'Sea Freight', 'Courier', 'Pickup', 'Other']
-
 export function NewPurchaseOrderPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -182,11 +219,45 @@ export function NewPurchaseOrderPage() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierOpen, setSupplierOpen] = useState(false)
+  const [orderPickerOpen, setOrderPickerOpen] = useState(false)
+  const [artworkPickerOpen, setArtworkPickerOpen] = useState(false)
+  const [newContactMode, setNewContactMode] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Convert-from-order context (set when navigated from OrderDetailPage)
   const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
 
-  // Load existing PO for edit mode
+  const set = (field: keyof POFormState, value: any) => dispatch({ type: 'SET', field, value })
+
+  // ── Reference data ──────────────────────────────────────────────────────────
+
+  const { data: suppliersData } = useQuery({
+    queryKey: ['suppliers-for-po'],
+    queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data?.rows ?? []),
+  })
+  const suppliers: { id: string; name: string; email: string }[] = suppliersData ?? []
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-for-po'],
+    queryFn: () => api.get('/users', { params: { limit: 100 } }).then(r => r.data.data?.rows ?? r.data?.rows ?? []),
+  })
+  const users: { id: string; name: string }[] = usersData ?? []
+
+  const { data: contactsData, refetch: refetchContacts } = useQuery({
+    queryKey: ['supplier-contacts', state.supplier_id],
+    queryFn: () => api.get(`/suppliers/${state.supplier_id}/contacts`).then(r => r.data.data ?? []),
+    enabled: !!state.supplier_id,
+  })
+  const contacts: SupplierContact[] = contactsData ?? []
+
+  const filteredSuppliers = suppliers.filter(s =>
+    s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+    (s.email ?? '').toLowerCase().includes(supplierSearch.toLowerCase())
+  )
+
+  // ── Load existing PO (edit mode) ────────────────────────────────────────────
+
   const { data: existingPO } = useQuery({
     queryKey: ['po-edit', editId],
     queryFn: () => api.get(`/purchase-orders/${editId}`).then(r => r.data.data ?? r.data),
@@ -195,257 +266,327 @@ export function NewPurchaseOrderPage() {
 
   useEffect(() => {
     if (!existingPO) return
-    const supplierDisplay = existingPO.vendor_name || existingPO.supplier_name || ''
-    if (supplierDisplay) setSupplierSearch(supplierDisplay)
-    const srcItems: any[] = existingPO.items ?? []
+    if (existingPO.supplier_name) setSupplierSearch(existingPO.supplier_name)
     dispatch({
       type: 'INIT',
       payload: {
-        supplier_id:        existingPO.supplier_id      || '',
-        supplier_name:      supplierDisplay,
-        supplier_reference: existingPO.supplier_reference || '',
-        payment_terms:      existingPO.payment_terms    || '',
-        currency:           existingPO.currency         || 'USD',
-        priority:           existingPO.priority         || 'Medium',
-        order_date:         existingPO.order_date       ? existingPO.order_date.split('T')[0] : todayISO(),
-        expected_date:      existingPO.expected_date    ? existingPO.expected_date.split('T')[0] : '',
-        buyer_id:           existingPO.buyer_id         || '',
-        department:         existingPO.department       || '',
-        shipping_method:    existingPO.shipping_method  || '',
-        shipping_address:   existingPO.shipping_address || '',
-        billing_address:    existingPO.billing_address  || '',
-        freight_charges:    Number(existingPO.freight_charges) || 0,
-        other_charges:      Number(existingPO.other_charges)   || 0,
-        notes:              existingPO.notes            || '',
-        terms_conditions:   existingPO.terms_conditions || '',
-        order_id:           existingPO.order_id         || '',
-        items: srcItems.map((it: any, idx: number) => ({
-          ...newItem(idx),
-          item_name:     it.item_name    || '',
-          description:   it.description || '',
-          hsn_code:      it.hsn_code    || '',
-          uom:           it.uom         || 'pcs',
-          qty_ordered:   Number(it.qty_ordered)   || 1,
-          unit_price:    Number(it.unit_price)    || 0,
-          discount_pct:  Number(it.discount_pct)  || 0,
-          tax_pct:       Number(it.tax_pct)       || 0,
-          line_total:    Number(it.line_total)    || 0,
-          required_by_date: it.required_by_date ? it.required_by_date.split('T')[0] : '',
-          remarks:       it.remarks      || '',
-          artwork_count: Number(it.artwork_count) || 0,
-          artwork_size:  it.artwork_size  || '',
-          front_image:   it.front_image   || null,
-          back_image:    it.back_image    || null,
-          product_id:    it.product_id    || null,
+        po_type:              existingPO.po_type === 'gangsheet' ? 'gangsheet' : 'apparel',
+        order_date:           existingPO.order_date ? existingPO.order_date.split('T')[0] : todayISO(),
+        expected_date:        existingPO.expected_date ? existingPO.expected_date.split('T')[0] : '',
+        supplier_id:          existingPO.supplier_id || '',
+        supplier_name:        existingPO.supplier_name || existingPO.vendor_name || '',
+        supplier_contact_id:  existingPO.supplier_contact_id || '',
+        contact_name:         existingPO.contact_name || '',
+        contact_email:        existingPO.contact_email || '',
+        contact_phone:        existingPO.contact_phone || existingPO.contact_wechat || '',
+        communication_method: existingPO.communication_method === 'wechat' ? 'wechat' : 'email',
+        payment_status:       existingPO.payment_status || 'Unpaid',
+        buyer_id:             existingPO.buyer_id || '',
+        notes:                existingPO.notes || '',
+        terms_conditions:     existingPO.terms_conditions || '',
+        orders: (existingPO.orders ?? []).map((o: any): CoveredOrder => {
+          const sz = parseSheetSize(o.gangsheet_sizes)
+          return {
+            order_id: o.id, order_number: o.order_number,
+            no_artworks: Number(o.no_artworks) || 0, qty: Number(o.qty) || 0,
+            width: sz.width, length: sz.length,
+            status: o.status, order_date: o.order_date, due_date: o.due_date,
+            agent_name: o.agent_name || '',
+          }
+        }),
+        fragments: (existingPO.fragments ?? []).map((f: any): Fragment => ({
+          id: f.id || uid(),
+          fragment_no: f.fragment_no || '',
+          order_id: f.order_id || '',
+          width: f.width_inches != null ? String(f.width_inches) : '',
+          length: f.length_inches != null ? String(f.length_inches) : '',
+          artworks_count: Number(f.artworks_count) || 0,
+          qty: Number(f.qty) || 0,
+          file_url: f.file_url || '',
+        })),
+        artworks: (existingPO.artworks ?? []).map((a: any): AttachedArtwork => ({
+          id: a.id, artwork_no: a.artwork_no, name: a.name,
+          file_url: a.file_url, thumbnail_url: a.thumbnail_url, file_type: a.file_type,
+        })),
+        items: (existingPO.items ?? []).map((it: any, idx: number): POLineItem => ({
+          id: uid(),
+          item_name: it.item_name || '',
+          brand: it.brand || '',
+          color: it.color || '',
+          size: it.size || '',
+          qty_ordered: Number(it.qty_ordered) || 1,
+          unit_price: Number(it.unit_price) || 0,
+          line_total: Number(it.line_total) || 0,
+          artwork_id: it.artwork_id || null,
+          artwork_no: it.artwork_no_ref || '',
+          artwork_url: it.artwork_thumbnail_url || it.artwork_file_url || it.front_image || null,
+          artwork_size_front: it.artwork_size_front || it.artwork_size || '',
+          artwork_size_back: it.artwork_size_back || '',
+          sort_order: it.sort_order ?? idx,
         })),
       },
     })
   }, [existingPO])
 
-  const set = (field: keyof Omit<POFormState, 'items'>, value: string | number) =>
-    dispatch({ type: 'SET', field, value })
+  // ── Convert-from-order context ──────────────────────────────────────────────
 
-  // ── Fetch source order when converting from order ──────────────────────────
   const { data: sourceOrder } = useQuery({
     queryKey: ['convert-from-order', fromOrderId],
-    queryFn:  () => api.get(`/orders/${fromOrderId}`).then(r => r.data.data ?? r.data),
-    enabled:  !!fromOrderId,
+    queryFn: () => api.get(`/orders/${fromOrderId}`).then(r => r.data.data ?? r.data),
+    enabled: !!fromOrderId && !isEdit,
   })
 
   useEffect(() => {
     if (!sourceOrder) return
-    const supplierDisplay = sourceOrder.supplier_name || sourceOrder.supplier_name_text || sourceOrder.contact_name || ''
-    if (supplierDisplay) setSupplierSearch(supplierDisplay)
+    const poType: POType = sourceOrder.order_type === 'gangsheet' ? 'gangsheet' : 'apparel'
+    if (sourceOrder.supplier_name) setSupplierSearch(sourceOrder.supplier_name)
 
-    const contactLines = [sourceOrder.contact_name, sourceOrder.contact_email, sourceOrder.contact_phone].filter(Boolean).join('\n')
+    const payload: Partial<POFormState> = {
+      po_type: poType,
+      supplier_id: sourceOrder.supplier_id || '',
+      supplier_name: sourceOrder.supplier_name || '',
+      expected_date: sourceOrder.due_date ? sourceOrder.due_date.split('T')[0] : '',
+      orders: [orderToCovered(sourceOrder)],
+    }
 
-    const srcItems: any[] = sourceOrder.items ?? []
+    if (poType === 'apparel') {
+      payload.items = (sourceOrder.items ?? []).map((it: any, idx: number): POLineItem => ({
+        id: uid(),
+        item_name: it.item || '',
+        brand: '',
+        color: it.color || '',
+        size: it.size || '',
+        qty_ordered: Number(it.qty) || 1,
+        unit_price: Number(it.unit_price) || 0,
+        line_total: lineTotal(Number(it.qty) || 1, Number(it.unit_price) || 0),
+        artwork_id: null,
+        artwork_no: it.artwork_no || '',
+        artwork_url: it.front_image || null,
+        artwork_size_front: it.artwork_size || '',
+        artwork_size_back: it.artwork_size || '',
+        sort_order: idx,
+      }))
+    }
+    dispatch({ type: 'INIT', payload })
+  }, [sourceOrder])
+
+  function orderToCovered(o: any): CoveredOrder {
+    const gsItems: any[] = (o.items ?? []).filter((it: any) => it.no_artworks != null || it.price_per_sheet != null)
+    const noArtworks = gsItems.reduce((s, it) => s + (Number(it.no_artworks) || 0), 0)
+    const qty = (o.items ?? []).reduce((s: number, it: any) => s + (Number(it.qty) || 0), 0)
+    const sz = parseSheetSize(gsItems[0]?.size)
+    return {
+      order_id: o.id,
+      order_number: o.order_number,
+      no_artworks: noArtworks,
+      qty,
+      width: sz.width,
+      length: sz.length,
+      status: o.status,
+      order_date: o.order_date,
+      due_date: o.due_date,
+      agent_name: o.agent_name || o.assigned_to_name || o.created_by_name || '',
+    }
+  }
+
+  // ── Contact selection ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    // Auto-pick the primary contact when the supplier changes (create mode only)
+    if (!contacts.length || state.supplier_contact_id || isEdit) return
+    const primary = contacts.find(c => c.is_primary) ?? contacts[0]
+    selectContact(primary)
+  }, [contacts])
+
+  function selectContact(c: SupplierContact) {
     dispatch({
       type: 'INIT',
       payload: {
-        supplier_id:      sourceOrder.supplier_id      || '',
-        supplier_name:    sourceOrder.supplier_name    || sourceOrder.supplier_name_text || '',
-        payment_terms:    sourceOrder.payment_terms    || '',
-        currency:         sourceOrder.currency         || 'USD',
-        shipping_method:  sourceOrder.shipping_method  || '',
-        shipping_address: sourceOrder.shipping_address || '',
-        billing_address:  sourceOrder.billing_address  || contactLines || '',
-        freight_charges:  Number(sourceOrder.shipping_charges) || 0,
-        other_charges:    Number(sourceOrder.rush_services)    || 0,
-        expected_date:    sourceOrder.due_date ? sourceOrder.due_date.split('T')[0] : '',
-        notes:            sourceOrder.notes  || '',
-        order_id:         sourceOrder.id     || '',
-        items: srcItems.map((it: any, idx: number) => {
-          const itemName  = it.item_name || it.item || it.artwork_name || it.size || it.description || ''
-          const desc      = [it.color, it.size, it.description].filter(Boolean).join(' | ')
-          const unitPrice = Number(it.unit_price ?? it.price_per_sheet) || 0
-          const qty       = Number(it.qty_ordered ?? it.qty) || 1
-          const discPct   = Number(it.discount_pct) || 0
-          const taxPct    = Number(it.tax_pct)      || 0
-          return {
-            ...newItem(idx),
-            item_name:     itemName,
-            description:   desc,
-            qty_ordered:   qty,
-            unit_price:    unitPrice,
-            discount_pct:  discPct,
-            tax_pct:       taxPct,
-            line_total:    calcLineTotal({ qty_ordered: qty, unit_price: unitPrice, discount_pct: discPct, tax_pct: taxPct }),
-            artwork_count: Number(it.no_artworks ?? it.artwork_count) || 0,
-            front_image:   it.front_image ?? it.artwork_image ?? null,
-            back_image:    it.back_image  ?? null,
-          }
-        }),
+        supplier_contact_id: c.id,
+        contact_name: c.name,
+        contact_email: c.email || '',
+        contact_phone: (state.communication_method === 'wechat' ? c.wechat_id : c.phone) || c.phone || '',
       },
     })
-  }, [sourceOrder])
+    setNewContactMode(false)
+  }
 
-  // ── Artwork details (size + qty per artwork) ──
-  const orderId = state.order_id || fromOrderId || (existingPO?.order_id ?? '')
-  const { data: artworkData } = useQuery({
-    queryKey: ['po-artworks', orderId],
-    queryFn: () => api.get(`/orders/${orderId}/artworks`).then(r => r.data),
-    enabled: !!orderId,
-  })
-  const linkedArtworks: any[] = artworkData?.artworks ?? []
+  // ── Save ────────────────────────────────────────────────────────────────────
 
-  const [artSizes, setArtSizes] = useState<Record<string, { width: string; height: string; qty: string }>>({})
-
-  useEffect(() => {
-    if (!linkedArtworks.length) return
-    setArtSizes(prev => {
-      const next = { ...prev }
-      linkedArtworks.forEach(a => {
-        if (!next[a.id]) {
-          next[a.id] = {
-            width:  a.width_inches  ? String(a.width_inches)  : '',
-            height: a.height_inches ? String(a.height_inches) : '',
-            qty:    a.qty           ? String(a.qty)           : '1',
-          }
+  /** Creates or updates the supplier contact so the PO can reference it by id. */
+  async function resolveContactId(): Promise<string | null> {
+    if (!state.supplier_id) return null
+    const body = {
+      name: state.contact_name || state.supplier_name || 'Contact',
+      email: state.contact_email || null,
+      ...(state.communication_method === 'wechat'
+        ? { wechat_id: state.contact_phone || null }
+        : { phone: state.contact_phone || null }),
+    }
+    try {
+      if (state.supplier_contact_id && !newContactMode) {
+        const existing = contacts.find(c => c.id === state.supplier_contact_id)
+        const changed = existing && (
+          existing.name !== body.name ||
+          (existing.email || '') !== (state.contact_email || '') ||
+          (existing.phone || '') !== (state.contact_phone || '')
+        )
+        if (changed) {
+          await api.put(`/suppliers/${state.supplier_id}/contacts/${state.supplier_contact_id}`, body)
         }
-      })
-      return next
-    })
-  }, [linkedArtworks.length])
-
-  // ── Data fetching ──
-
-  const { data: suppliersData } = useQuery({
-    queryKey: ['suppliers-for-po'],
-    queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data?.rows ?? []),
-  })
-
-  const { data: usersData } = useQuery({
-    queryKey: ['users-for-po'],
-    queryFn: () => api.get('/users', { params: { limit: 100 } }).then(r => r.data.data?.rows ?? r.data?.rows ?? []),
-  })
-
-  const suppliers: { id: string; name: string; email: string }[] = suppliersData ?? []
-  const users: { id: string; name: string }[] = usersData ?? []
-
-  const filteredSuppliers = suppliers.filter(s =>
-    s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-    (s.email ?? '').toLowerCase().includes(supplierSearch.toLowerCase())
-  )
-
-  // ── Totals ──
-
-  const totals = useMemo(
-    () => calcTotals(state.items, state.freight_charges, state.other_charges),
-    [state.items, state.freight_charges, state.other_charges]
-  )
-
-  // ── Mutation ──
-
-  const saveArtworkSizes = async (oid: string) => {
-    const entries = Object.entries(artSizes)
-    await Promise.all(entries.map(([id, v]) => {
-      if (!v.width && !v.height && v.qty === '1') return Promise.resolve()
-      return api.patch(`/orders/${oid}/artworks/${id}/size`, {
-        width_inches:  v.width  ? parseFloat(v.width)  : null,
-        height_inches: v.height ? parseFloat(v.height) : null,
-        qty:           v.qty    ? parseInt(v.qty)       : 1,
-      }).catch(() => {})
-    }))
+        return state.supplier_contact_id
+      }
+      if (state.contact_name) {
+        const res = await api.post(`/suppliers/${state.supplier_id}/contacts`, body)
+        refetchContacts()
+        return res.data.data?.id ?? null
+      }
+    } catch { /* contact sync is best-effort; the PO itself must still save */ }
+    return state.supplier_contact_id || null
   }
 
-  const createMutation = useMutation({
-    mutationFn: (payload: object) => api.post('/purchase-orders', payload),
-    onSuccess: async (res) => {
-      const newId = res.data.data?.id ?? ''
-      if (orderId) await saveArtworkSizes(orderId)
-      toast.success('Purchase order created')
-      navigate(`/purchase-orders/${newId}`)
-    },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to create PO'),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: (payload: object) => api.put(`/purchase-orders/${editId}`, payload),
-    onSuccess: async () => {
-      if (orderId) await saveArtworkSizes(orderId)
-      toast.success('Purchase order updated')
-      navigate(`/purchase-orders/${editId}`)
-    },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to update PO'),
-  })
-
-  function buildPayload() {
+  async function buildPayload() {
+    const supplier_contact_id = await resolveContactId()
     return {
-      supplier_id:        state.supplier_id || null,
-      vendor_name:        state.supplier_name || supplierSearch || null,
-      supplier_reference: state.supplier_reference || null,
-      payment_terms:      state.payment_terms || null,
-      currency:           state.currency,
-      buyer_id:           state.buyer_id || null,
-      department:         state.department || null,
-      priority:           state.priority,
-      shipping_method:    state.shipping_method || null,
-      shipping_address:   state.shipping_address || null,
-      billing_address:    state.billing_address || null,
-      terms_conditions:   state.terms_conditions || null,
-      order_date:         state.order_date || null,
-      expected_date:      state.expected_date || null,
-      notes:              state.notes || null,
-      freight_charges:    state.freight_charges,
-      other_charges:      state.other_charges,
-      order_id:           state.order_id || null,
-      items: state.items.map((item, i) => ({
-        item_name:        item.item_name,
-        description:      item.description || null,
-        hsn_code:         item.hsn_code || null,
-        uom:              item.uom || 'pcs',
-        qty_ordered:      item.qty_ordered,
-        unit_price:       item.unit_price,
-        discount_pct:     item.discount_pct,
-        tax_pct:          item.tax_pct,
-        required_by_date: item.required_by_date || null,
-        remarks:          item.remarks || null,
-        sort_order:       i,
-        product_id:       item.product_id || null,
-        artwork_count:    Number(item.artwork_count) || 0,
-        artwork_size:     item.artwork_size || null,
-        front_image:      item.front_image || null,
-        back_image:       item.back_image  || null,
-      })),
+      po_type: state.po_type,
+      supplier_id: state.supplier_id || null,
+      vendor_name: state.supplier_name || supplierSearch || null,
+      supplier_contact_id,
+      communication_method: state.communication_method,
+      payment_status: state.payment_status,
+      buyer_id: state.buyer_id || null,
+      order_date: state.order_date || null,
+      expected_date: state.expected_date || null,
+      notes: state.notes || null,
+      terms_conditions: state.terms_conditions || null,
+      order_ids: state.orders.map(o => o.order_id),
+      artwork_ids: state.artworks.map(a => a.id),
+      fragments: state.po_type === 'gangsheet'
+        ? state.fragments.map((f, i) => ({
+            fragment_no: f.fragment_no || null,
+            order_id: f.order_id || null,
+            width_inches: f.width ? parseFloat(f.width) : null,
+            length_inches: f.length ? parseFloat(f.length) : null,
+            artworks_count: Number(f.artworks_count) || 0,
+            qty: Number(f.qty) || 0,
+            file_url: f.file_url || null,
+            sort_order: i,
+          }))
+        : [],
+      items: state.po_type === 'apparel'
+        ? state.items.map((it, i) => ({
+            item_name: it.item_name,
+            brand: it.brand || null,
+            color: it.color || null,
+            size: it.size || null,
+            qty_ordered: it.qty_ordered,
+            unit_price: it.unit_price,
+            artwork_id: it.artwork_id,
+            artwork_size_front: it.artwork_size_front || null,
+            artwork_size_back: it.artwork_size_back || null,
+            sort_order: i,
+          }))
+        : [],
     }
   }
 
-  function handleSave() {
-    if (state.items.length === 0) {
-      toast.error('Add at least one line item')
-      return
+  const saveMutation = useMutation({
+    mutationFn: async ({ thenView }: { thenView: boolean }) => {
+      const payload = await buildPayload()
+      const res = isEdit
+        ? await api.put(`/purchase-orders/${editId}`, payload)
+        : await api.post('/purchase-orders', payload)
+      return { res, thenView }
+    },
+    onSuccess: ({ res, thenView }) => {
+      const id = editId ?? res.data.data?.id
+      toast.success(isEdit ? 'Purchase order updated' : 'Purchase order saved')
+      if (thenView && id) navigate(`/purchase-orders/${id}`)
+      else if (!isEdit && id) navigate(`/purchase-orders/${id}/edit`, { replace: true })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save PO'),
+  })
+
+  function validate(): boolean {
+    if (!state.supplier_id && !supplierSearch) {
+      toast.error('Select a vendor / supplier')
+      return false
     }
-    const invalid = state.items.find(it => !it.item_name.trim())
-    if (invalid) {
-      toast.error('All line items require a name')
-      return
+    if (state.po_type === 'gangsheet' && state.orders.length === 0) {
+      toast.error('Add at least one gangsheet order')
+      return false
     }
-    if (isEdit) updateMutation.mutate(buildPayload())
-    else createMutation.mutate(buildPayload())
+    if (state.po_type === 'apparel') {
+      if (state.items.length === 0) { toast.error('Add at least one item'); return false }
+      if (state.items.some(it => !it.item_name.trim())) { toast.error('All items require a name'); return false }
+    }
+    return true
   }
+
+  const handleSaveDraft = () => { if (validate()) saveMutation.mutate({ thenView: false }) }
+  const handleSavePO = () => { if (validate()) saveMutation.mutate({ thenView: true }) }
+
+  // ── Delete (edit mode) ──────────────────────────────────────────────────────
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/purchase-orders/${editId}`),
+    onSuccess: () => { toast.success('Purchase order deleted'); navigate('/purchase-orders') },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to delete'),
+  })
+
+  // ── Artwork upload (drag-drop / browse) ─────────────────────────────────────
+
+  async function uploadArtworkFiles(files: FileList | File[]) {
+    const list = Array.from(files)
+    if (!list.length) return
+    setUploading(true)
+    try {
+      for (const file of list) {
+        if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name}: exceeds 50 MB`); continue }
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('name', file.name.replace(/\.[^.]+$/, ''))
+        const res = await api.post('/artworks', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+        const a = res.data.data ?? res.data
+        dispatch({
+          type: 'ADD_ARTWORK',
+          artwork: {
+            id: a.id, artwork_no: a.artwork_no, name: a.name,
+            file_url: a.file_url, thumbnail_url: a.thumbnail_url ?? null, file_type: a.file_type,
+          },
+        })
+      }
+      toast.success('Artwork uploaded')
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // ── Derived totals ──────────────────────────────────────────────────────────
+
+  const orderTotals = useMemo(() => ({
+    artworks: state.orders.reduce((s, o) => s + o.no_artworks, 0),
+    qty: state.orders.reduce((s, o) => s + o.qty, 0),
+  }), [state.orders])
+
+  const fragTotals = useMemo(() => ({
+    artworks: state.fragments.reduce((s, f) => s + (Number(f.artworks_count) || 0), 0),
+    qty: state.fragments.reduce((s, f) => s + (Number(f.qty) || 0), 0),
+  }), [state.fragments])
+
+  const itemsTotal = useMemo(
+    () => state.items.reduce((s, it) => s + it.line_total, 0),
+    [state.items]
+  )
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
+  const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-US') : '—')
+
+  const saving = saveMutation.isPending
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="np-page">
@@ -459,459 +600,773 @@ export function NewPurchaseOrderPage() {
             <strong>{isEdit ? 'Edit' : 'New'}</strong>
           </div>
           <h2 className="np-page-title">{isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
+          <p style={{ fontSize: 12, color: '#6b7280', margin: '2px 0 0' }}>
+            {state.po_type === 'gangsheet' ? 'Request materials from suppliers' : 'Create a purchase order for custom printed shirts.'}
+          </p>
         </div>
         <div className="np-header-actions">
           <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
-          <button
-            className="lb-action-btn lb-action-primary"
-            onClick={handleSave}
-            disabled={createMutation.isPending || updateMutation.isPending}
-          >
+          <button className="lb-action-btn" onClick={handleSaveDraft} disabled={saving}>
+            <FileText size={13} /> Save Draft
+          </button>
+          {isEdit && (
+            <>
+              <button className="lb-action-btn" onClick={() => navigate(`/purchase-orders/${editId}`)}>
+                <Pencil size={13} /> View
+              </button>
+              <button
+                className="lb-action-btn"
+                style={{ color: '#ef4444', borderColor: '#fecaca' }}
+                onClick={() => { if (window.confirm('Delete this purchase order?')) deleteMutation.mutate() }}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
+            </>
+          )}
+          <button className="lb-action-btn lb-action-primary" onClick={handleSavePO} disabled={saving}>
             <Save size={13} /> {isEdit ? 'Update PO' : 'Save PO'}
           </button>
         </div>
       </div>
 
-      {/* ── INFO BAR ── */}
-      <div className="np-info-bar">
-        <div className="np-info-cell">
-          <span className="np-info-label">PO Number</span>
-          <strong className="np-info-val np-teal">Auto-generated</strong>
+      {/* ── HEADER FIELDS ── */}
+      <div className="np-card">
+        <div className="np-vendor-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          <div className="np-field">
+            <label className="np-label">PO Number</label>
+            <input className="np-input" disabled
+              value={isEdit ? (existingPO?.po_number ?? '…') : 'Auto-generated'}
+              style={{ background: '#f9fafb', color: '#6b7280' }} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Order Date</label>
+            <input type="date" className="np-input" value={state.order_date}
+              onChange={e => set('order_date', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Due Date</label>
+            <input type="date" className="np-input" value={state.expected_date}
+              onChange={e => set('expected_date', e.target.value)} />
+          </div>
+          <div className="np-field" style={{ position: 'relative' }}>
+            <label className="np-label">Vendor / Supplier <span style={{ color: '#ef4444' }}>*</span></label>
+            <input className="np-select" placeholder="Search supplier..."
+              value={state.supplier_name || supplierSearch}
+              onFocus={() => { setSupplierOpen(true); setSupplierSearch('') }}
+              onChange={e => {
+                setSupplierSearch(e.target.value)
+                setSupplierOpen(true)
+                if (!e.target.value) {
+                  dispatch({ type: 'INIT', payload: { supplier_id: '', supplier_name: '', supplier_contact_id: '', contact_name: '', contact_email: '', contact_phone: '' } })
+                }
+              }}
+              onBlur={() => setTimeout(() => setSupplierOpen(false), 150)} />
+            {supplierOpen && filteredSuppliers.length > 0 && (
+              <div className="np-dropdown">
+                {filteredSuppliers.slice(0, 8).map(s => (
+                  <button key={s.id} className="np-dropdown-item"
+                    onMouseDown={() => {
+                      dispatch({ type: 'INIT', payload: { supplier_id: s.id, supplier_name: s.name, supplier_contact_id: '', contact_name: '', contact_email: '', contact_phone: '' } })
+                      setSupplierSearch('')
+                      setSupplierOpen(false)
+                    }}>
+                    <span className="np-dropdown-name">{s.name}</span>
+                    {s.email && <span className="np-dropdown-sub">{s.email}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="np-field">
+            <label className="np-label">Contact Person</label>
+            {newContactMode ? (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input className="np-input" placeholder="New contact name..."
+                  value={state.contact_name}
+                  onChange={e => set('contact_name', e.target.value)} autoFocus />
+                <button className="np-del-btn" title="Back to list" onClick={() => setNewContactMode(false)}><X size={13} /></button>
+              </div>
+            ) : (
+              <select className="np-select" value={state.supplier_contact_id}
+                disabled={!state.supplier_id}
+                onChange={e => {
+                  if (e.target.value === '__new__') {
+                    setNewContactMode(true)
+                    dispatch({ type: 'INIT', payload: { supplier_contact_id: '', contact_name: '', contact_email: '', contact_phone: '' } })
+                  } else {
+                    const c = contacts.find(x => x.id === e.target.value)
+                    if (c) selectContact(c)
+                  }
+                }}>
+                <option value="">— select contact —</option>
+                {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="__new__">+ Add new contact…</option>
+              </select>
+            )}
+          </div>
         </div>
-        <div className="np-info-divider" />
-        <div className="np-info-cell">
-          <span className="np-info-label">Order Date</span>
-          <input type="date" className="np-date-input" value={state.order_date}
-            onChange={e => set('order_date', e.target.value)} />
+
+        <div className="np-vendor-grid" style={{ gridTemplateColumns: 'auto 1fr 1fr 1.5fr', marginTop: 12, alignItems: 'end' }}>
+          <div className="np-field">
+            <label className="np-label">Communication Method</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button"
+                className={cn('lb-action-btn', state.communication_method === 'email' && 'lb-action-primary')}
+                onClick={() => set('communication_method', 'email')}>
+                <Mail size={13} /> Email
+              </button>
+              <button type="button"
+                className={cn('lb-action-btn', state.communication_method === 'wechat' && 'lb-action-primary')}
+                onClick={() => set('communication_method', 'wechat')}>
+                <MessageCircle size={13} /> WeChat
+              </button>
+            </div>
+          </div>
+          <div className="np-field">
+            <label className="np-label">Email</label>
+            <input className="np-input" type="email" placeholder="contact@vendor.com"
+              value={state.contact_email}
+              onChange={e => set('contact_email', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">{state.communication_method === 'wechat' ? 'Phone / WeChat ID' : 'Phone'}</label>
+            <input className="np-input" placeholder="+86 138 1234 5678"
+              value={state.contact_phone}
+              onChange={e => set('contact_phone', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Notes</label>
+            <input className="np-input" placeholder="Internal notes..."
+              value={state.notes}
+              onChange={e => set('notes', e.target.value)} />
+          </div>
         </div>
-        <div className="np-info-divider" />
-        <div className="np-info-cell">
-          <span className="np-info-label">Expected Date</span>
-          <input type="date" className="np-date-input" value={state.expected_date}
-            onChange={e => set('expected_date', e.target.value)} />
-        </div>
-        <div className="np-info-divider" />
-        <div className="np-info-cell">
-          <span className="np-info-label">Currency</span>
-          <select className="np-date-input" value={state.currency}
-            onChange={e => set('currency', e.target.value)}>
-            {CURRENCIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-        <div className="np-info-divider" />
-        <div className="np-info-cell">
-          <span className="np-info-label">Priority</span>
-          <select
-            className={cn('np-badge-select', PRIORITY_COLORS[state.priority])}
-            value={state.priority}
-            onChange={e => set('priority', e.target.value as POFormState['priority'])}
-          >
-            {['Low', 'Medium', 'High', 'Urgent'].map(p => <option key={p}>{p}</option>)}
-          </select>
-        </div>
-        <div className="np-info-divider" />
-        <div className="np-info-cell">
-          <span className="np-info-label">Status</span>
-          <span className="np-badge np-badge-yellow">Draft</span>
+
+        {state.po_type === 'apparel' && (
+          <div className="np-vendor-grid" style={{ gridTemplateColumns: '1fr 1fr 2fr', marginTop: 12 }}>
+            <div className="np-field">
+              <label className="np-label">Payment Status</label>
+              <select className="np-select" value={state.payment_status}
+                onChange={e => set('payment_status', e.target.value)}>
+                {['Unpaid', 'Partial', 'Paid'].map(p => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="np-field">
+              <label className="np-label">Sales Agent</label>
+              <select className="np-select" value={state.buyer_id}
+                onChange={e => set('buyer_id', e.target.value)}>
+                <option value="">— select —</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div />
+          </div>
+        )}
+      </div>
+
+      {/* ── INFO BANNER ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
+        padding: '10px 14px', margin: '12px 0', fontSize: 12.5, color: '#1e40af',
+      }}>
+        <Info size={15} style={{ flexShrink: 0 }} />
+        Purchase Order can be composed of multiple Orders if product is Gangsheet, however for
+        Custom Printed Apparel each Purchase Order will be composed of only one Order.
+      </div>
+
+      {/* ── ORDER TYPE ── */}
+      <div style={{ margin: '0 0 14px' }}>
+        <label className="np-label" style={{ display: 'block', marginBottom: 6 }}>
+          Order Type <span style={{ color: '#ef4444' }}>*</span>
+        </label>
+        <div style={{ display: 'inline-flex', gap: 4, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+          {([['gangsheet', 'Gangsheets'], ['apparel', 'Custom Printed Shirts']] as [POType, string][]).map(([val, label]) => (
+            <button key={val} type="button"
+              className={cn('lb-action-btn', state.po_type === val && 'lb-action-primary')}
+              style={{ border: 'none' }}
+              onClick={() => set('po_type', val)}>
+              <span style={{
+                display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+                border: state.po_type === val ? '4px solid currentColor' : '2px solid #d1d5db',
+                marginRight: 2,
+              }} />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── TWO-COLUMN LAYOUT ── */}
-      <div className="resp-two-col">
-
-        {/* ── MAIN CONTENT ── */}
-        <div className="resp-two-col-main">
-
-          {/* Section 1: Supplier */}
+      {/* ═══ GANGSHEET MODE ═══ */}
+      {state.po_type === 'gangsheet' && (
+        <>
+          {/* Section 1: Gangsheet Orders */}
           <div className="np-card">
-            <div className="np-card-header">
-              <span className="np-section-num">1</span>
-              <h3>Supplier</h3>
-            </div>
-            <div className="np-vendor-grid">
-              {/* Supplier search */}
-              <div className="np-field" style={{ position: 'relative' }}>
-                <label className="np-label">Supplier <span style={{ color: '#ef4444' }}>*</span></label>
-                <input
-                  className="np-select"
-                  placeholder="Search supplier..."
-                  value={state.supplier_name || supplierSearch}
-                  onFocus={() => { setSupplierOpen(true); setSupplierSearch('') }}
-                  onChange={e => {
-                    setSupplierSearch(e.target.value)
-                    setSupplierOpen(true)
-                    if (!e.target.value) {
-                      set('supplier_id', '')
-                      set('supplier_name', '')
-                    }
-                  }}
-                  onBlur={() => setTimeout(() => setSupplierOpen(false), 150)}
-                />
-                {supplierOpen && filteredSuppliers.length > 0 && (
-                  <div className="np-dropdown">
-                    {filteredSuppliers.slice(0, 8).map(s => (
-                      <button
-                        key={s.id}
-                        className="np-dropdown-item"
-                        onMouseDown={() => {
-                          set('supplier_id', s.id)
-                          set('supplier_name', s.name)
-                          setSupplierSearch('')
-                          setSupplierOpen(false)
-                        }}
-                      >
-                        <span className="np-dropdown-name">{s.name}</span>
-                        {s.email && <span className="np-dropdown-sub">{s.email}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
+            <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="np-section-num">1</span>
+                <h3>Gangsheet Orders</h3>
               </div>
-
-              <div className="np-field">
-                <label className="np-label">Supplier Reference</label>
-                <input className="np-input" placeholder="Vendor's own ref #..."
-                  value={state.supplier_reference}
-                  onChange={e => set('supplier_reference', e.target.value)} />
-              </div>
-
-              <div className="np-field">
-                <label className="np-label">Payment Terms</label>
-                <select className="np-select" value={state.payment_terms}
-                  onChange={e => set('payment_terms', e.target.value)}>
-                  <option value="">— select —</option>
-                  {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Fulfillment */}
-          <div className="np-card">
-            <div className="np-card-header">
-              <span className="np-section-num">2</span>
-              <h3>Fulfillment</h3>
-            </div>
-            <div className="np-vendor-grid">
-              <div className="np-field">
-                <label className="np-label">Buyer / Requested By</label>
-                <select className="np-select" value={state.buyer_id}
-                  onChange={e => set('buyer_id', e.target.value)}>
-                  <option value="">— select user —</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </div>
-
-              <div className="np-field">
-                <label className="np-label">Department</label>
-                <input className="np-input" placeholder="e.g. Production, Design..."
-                  value={state.department}
-                  onChange={e => set('department', e.target.value)} />
-              </div>
-
-              <div className="np-field">
-                <label className="np-label">Shipping Method</label>
-                <select className="np-select" value={state.shipping_method}
-                  onChange={e => set('shipping_method', e.target.value)}>
-                  <option value="">— select —</option>
-                  {SHIPPING_METHODS.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-
-              <div className="np-field np-field-full">
-                <label className="np-label">Shipping Address</label>
-                <textarea className="np-textarea" rows={2}
-                  placeholder="Delivery address..."
-                  value={state.shipping_address}
-                  onChange={e => set('shipping_address', e.target.value)} />
-              </div>
-
-              <div className="np-field np-field-full">
-                <label className="np-label">Billing Address</label>
-                <textarea className="np-textarea" rows={2}
-                  placeholder="Billing address..."
-                  value={state.billing_address}
-                  onChange={e => set('billing_address', e.target.value)} />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Line Items */}
-          <div className="np-card">
-            <div className="np-card-header">
-              <span className="np-section-num">3</span>
-              <h3>Line Items</h3>
+              <button className="lb-action-btn" onClick={() => setOrderPickerOpen(true)}>
+                <Plus size={13} /> Add Order
+              </button>
             </div>
             <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
-              <table className="np-table" style={{ minWidth: '900px' }}>
+              <table className="np-table" style={{ minWidth: 900 }}>
                 <thead>
                   <tr>
                     <th style={{ width: 36 }}>#</th>
-                    <th style={{ minWidth: 160 }}>Item Name</th>
-                    <th style={{ width: 56 }}>Front Art</th>
-                    <th style={{ width: 56 }}>Back Art</th>
-                    <th style={{ width: 64 }}>No. AW</th>
-                    <th style={{ width: 100 }}>AW Size</th>
-                    <th style={{ width: 80 }}>HSN</th>
-                    <th style={{ width: 64 }}>UOM</th>
-                    <th style={{ width: 72 }}>Qty</th>
-                    <th style={{ width: 96 }}>Unit Price</th>
-                    <th style={{ width: 64 }}>Disc%</th>
-                    <th style={{ width: 64 }}>Tax%</th>
-                    <th style={{ width: 96 }}>Line Total</th>
-                    <th style={{ width: 110 }}>Req By</th>
-                    <th style={{ minWidth: 120 }}>Remarks</th>
-                    <th style={{ width: 36 }} />
+                    <th style={{ minWidth: 130 }}>Order No</th>
+                    <th style={{ width: 100 }}>No. of Artworks</th>
+                    <th style={{ width: 70 }}>Qty</th>
+                    <th style={{ width: 110 }}>Gangsheet Width (inch)</th>
+                    <th style={{ width: 110 }}>Gangsheet Length (inch)</th>
+                    <th style={{ width: 90 }}>Status</th>
+                    <th style={{ width: 100 }}>Date</th>
+                    <th style={{ width: 100 }}>Due</th>
+                    <th style={{ minWidth: 110 }}>Agent</th>
+                    <th style={{ width: 40 }} />
                   </tr>
                 </thead>
                 <tbody>
-                  {state.items.length === 0 && (
-                    <tr>
-                      <td colSpan={16} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
-                        No items yet — click "Add Item" below
-                      </td>
-                    </tr>
+                  {state.orders.length === 0 && (
+                    <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                      No orders yet — click "Add Order"
+                    </td></tr>
                   )}
-                  {state.items.map((item, i) => (
-                    <tr key={item.id}>
+                  {state.orders.map((o, i) => (
+                    <tr key={o.order_id}>
                       <td className="np-td-num">{i + 1}</td>
                       <td>
-                        <input className="np-table-input" placeholder="Item name..."
-                          value={item.item_name}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { item_name: e.target.value } })} />
+                        <Link to={`/orders/${o.order_id}`} style={{ color: '#0d9488', fontWeight: 600, fontSize: 12.5 }}>
+                          {o.order_number}
+                        </Link>
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {item.front_image
-                          ? <img src={item.front_image} alt="front" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
-                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {item.back_image
-                          ? <img src={item.back_image} alt="back" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
-                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
-                      </td>
+                      <td style={{ textAlign: 'center' }}>{o.no_artworks}</td>
+                      <td style={{ textAlign: 'center' }}>{o.qty}</td>
+                      <td style={{ textAlign: 'center' }}>{o.width ? `${o.width}"` : '—'}</td>
+                      <td style={{ textAlign: 'center' }}>{o.length ? `${o.length}"` : '—'}</td>
                       <td>
-                        <input type="number" className="np-table-input np-num-input" min={0}
-                          value={item.artwork_count ?? 0}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { artwork_count: +e.target.value || 0 } })} />
+                        <span className={cn('np-badge', STATUS_BADGE[o.status] ?? 'np-badge-yellow')}>{o.status}</span>
                       </td>
+                      <td style={{ fontSize: 12 }}>{fmtDate(o.order_date)}</td>
+                      <td style={{ fontSize: 12 }}>{fmtDate(o.due_date)}</td>
+                      <td style={{ fontSize: 12 }}>{o.agent_name || '—'}</td>
                       <td>
-                        <input className="np-table-input" placeholder='e.g. 12"x16"'
-                          value={item.artwork_size ?? ''}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { artwork_size: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input className="np-table-input" placeholder="HSN..."
-                          value={item.hsn_code}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { hsn_code: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input className="np-table-input" placeholder="pcs"
-                          value={item.uom}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { uom: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={1}
-                          value={item.qty_ordered}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { qty_ordered: +e.target.value || 1 } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0} step={0.01}
-                          value={item.unit_price}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { unit_price: +e.target.value || 0 } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0} max={100} step={0.1}
-                          value={item.discount_pct}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { discount_pct: +e.target.value || 0 } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0} max={100} step={0.1}
-                          value={item.tax_pct}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { tax_pct: +e.target.value || 0 } })} />
-                      </td>
-                      <td style={{ textAlign: 'right', paddingRight: '8px', fontSize: '13px', fontWeight: 600 }}>
-                        {fmt(item.line_total)}
-                      </td>
-                      <td>
-                        <input type="date" className="np-table-input"
-                          value={item.required_by_date}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { required_by_date: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input className="np-table-input" placeholder="Remarks..."
-                          value={item.remarks}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { remarks: e.target.value } })} />
-                      </td>
-                      <td>
-                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ITEM', id: item.id })}>
+                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ORDER', order_id: o.order_id })}>
                           <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
+                {state.orders.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
+                      <td />
+                      <td>Total</td>
+                      <td style={{ textAlign: 'center' }}>{orderTotals.artworks}</td>
+                      <td style={{ textAlign: 'center' }}>{orderTotals.qty}</td>
+                      <td colSpan={7} />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
-            <button className="np-add-row-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}>
+          </div>
+
+          {/* Section 2: Master Gangsheets (Fragments) */}
+          <div className="np-card">
+            <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="np-section-num">2</span>
+                <h3>Master Gangsheets (Fragments)</h3>
+              </div>
+              <button className="lb-action-btn" onClick={() => dispatch({ type: 'ADD_FRAGMENT' })}>
+                <Plus size={13} /> Add Fragment
+              </button>
+            </div>
+            <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="np-table" style={{ minWidth: 860 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 36 }}>#</th>
+                    <th style={{ minWidth: 150 }}>Gangsheet No</th>
+                    <th style={{ minWidth: 140 }}>Order No Covers</th>
+                    <th style={{ width: 90 }}>Width (in)</th>
+                    <th style={{ width: 90 }}>Length (in)</th>
+                    <th style={{ width: 100 }}>Artworks (No)</th>
+                    <th style={{ width: 80 }}>Qty</th>
+                    <th style={{ minWidth: 140 }}>Link</th>
+                    <th style={{ width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.fragments.length === 0 && (
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                      No fragments yet — click "Add Fragment"
+                    </td></tr>
+                  )}
+                  {state.fragments.map((f, i) => (
+                    <tr key={f.id}>
+                      <td className="np-td-num">{i + 1}</td>
+                      <td>
+                        <input className="np-table-input" placeholder="GANGSHEET-860A"
+                          value={f.fragment_no}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { fragment_no: e.target.value } })} />
+                      </td>
+                      <td>
+                        <select className="np-table-input" value={f.order_id}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { order_id: e.target.value } })}>
+                          <option value="">— order —</option>
+                          {state.orders.map(o => <option key={o.order_id} value={o.order_id}>{o.order_number}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0} step={0.1}
+                          value={f.width}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { width: e.target.value } })} />
+                      </td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0} step={0.1}
+                          value={f.length}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { length: e.target.value } })} />
+                      </td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0}
+                          value={f.artworks_count}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { artworks_count: +e.target.value || 0 } })} />
+                      </td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0}
+                          value={f.qty}
+                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { qty: +e.target.value || 0 } })} />
+                      </td>
+                      <td>
+                        {f.file_url ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <a href={f.file_url} target="_blank" rel="noreferrer"
+                              style={{ color: '#0d9488', fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              View Gangsheet <ExternalLink size={11} />
+                            </a>
+                            <button className="np-del-btn" title="Remove link"
+                              onClick={() => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { file_url: '' } })}>
+                              <X size={11} />
+                            </button>
+                          </span>
+                        ) : (
+                          <input className="np-table-input" placeholder="Paste file URL..."
+                            value={f.file_url}
+                            onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { file_url: e.target.value } })} />
+                        )}
+                      </td>
+                      <td>
+                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_FRAGMENT', id: f.id })}>
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {state.fragments.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
+                      <td />
+                      <td>Total</td>
+                      <td /><td /><td />
+                      <td style={{ textAlign: 'center' }}>{fragTotals.artworks}</td>
+                      <td style={{ textAlign: 'center' }}>{fragTotals.qty}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ═══ APPAREL MODE ═══ */}
+      {state.po_type === 'apparel' && (
+        <div className="np-card">
+          <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="np-section-num">1</span>
+              <h3>Custom Printed Shirt Order Items</h3>
+            </div>
+            <button className="lb-action-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}>
               <Plus size={13} /> Add Item
             </button>
           </div>
-
-          {/* Section 4: Artwork Details */}
-          {linkedArtworks.length > 0 && (
-            <div className="np-card">
-              <div className="np-card-header">
-                <span className="np-section-num">4</span>
-                <h3>Artwork Sizes &amp; Qty ({linkedArtworks.length} Artworks)</h3>
-              </div>
-              <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
-                <table className="np-table" style={{ minWidth: 600 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 36 }}>#</th>
-                      <th style={{ width: 56 }}>Thumb</th>
-                      <th className="left">Artwork No</th>
-                      <th style={{ width: 110 }}>Width (inch)</th>
-                      <th style={{ width: 110 }}>Height (inch)</th>
-                      <th style={{ width: 80 }}>Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linkedArtworks.map((art, i) => {
-                      const v = artSizes[art.id] ?? { width: '', height: '', qty: '1' }
-                      return (
-                        <tr key={art.id}>
-                          <td className="np-td-num">{i + 1}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            {art.file_url
-                              ? <img src={art.file_url} alt={art.artwork_no} style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
-                              : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
-                          </td>
-                          <td style={{ fontWeight: 600, fontSize: 12 }}>{art.artwork_no}</td>
-                          <td>
-                            <input type="number" className="np-table-input np-num-input" placeholder='e.g. 12'
-                              value={v.width}
-                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, width: e.target.value } }))} />
-                          </td>
-                          <td>
-                            <input type="number" className="np-table-input np-num-input" placeholder='e.g. 16'
-                              value={v.height}
-                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, height: e.target.value } }))} />
-                          </td>
-                          <td>
-                            <input type="number" className="np-table-input np-num-input" min={1}
-                              value={v.qty}
-                              onChange={e => setArtSizes(prev => ({ ...prev, [art.id]: { ...v, qty: e.target.value } }))} />
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Section 5: Notes & T&C */}
-          <div className="np-card">
-            <div className="np-card-header">
-              <span className="np-section-num">{linkedArtworks.length > 0 ? 5 : 4}</span>
-              <h3>Notes &amp; Terms</h3>
-            </div>
-            <div className="np-vendor-grid">
-              <div className="np-field np-field-full">
-                <label className="np-label">Notes (internal)</label>
-                <textarea className="np-textarea" rows={3}
-                  placeholder="Internal notes..."
-                  value={state.notes}
-                  onChange={e => set('notes', e.target.value)} />
-              </div>
-              <div className="np-field np-field-full">
-                <label className="np-label">Terms &amp; Conditions</label>
-                <textarea className="np-textarea" rows={3}
-                  placeholder="Payment and delivery terms..."
-                  value={state.terms_conditions}
-                  onChange={e => set('terms_conditions', e.target.value)} />
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* ── SIDEBAR: Financial Summary ── */}
-        <div className="resp-sidebar-col">
-          <div className="np-card" style={{ position: 'sticky', top: '80px' }}>
-            <div className="np-card-header">
-              <h3>Financial Summary</h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>
-              <SummaryRow label="Subtotal" value={fmt(totals.subtotal)} currency={state.currency} />
-              <SummaryRow label="Total Discount" value={`− ${fmt(totals.total_discount)}`} currency={state.currency} dimmed />
-              <SummaryRow label="Total Tax" value={fmt(totals.total_tax)} currency={state.currency} />
-              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '8px' }}>
-                <label className="np-label">Freight Charges</label>
-                <input type="number" className="np-input" min={0} step={0.01}
-                  value={state.freight_charges}
-                  onChange={e => set('freight_charges', +e.target.value || 0)} />
-              </div>
-              <div>
-                <label className="np-label">Other Charges</label>
-                <input type="number" className="np-input" min={0} step={0.01}
-                  value={state.other_charges}
-                  onChange={e => set('other_charges', +e.target.value || 0)} />
-              </div>
-              <div style={{ borderTop: '2px solid #1a1a2e', paddingTop: '10px', marginTop: '2px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#111' }}>Grand Total</span>
-                  <span style={{ fontSize: '16px', fontWeight: 800, color: '#1a1a2e' }}>
-                    {state.currency} {fmt(totals.grand_total)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                className="lb-action-btn lb-action-primary"
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={handleSave}
-                disabled={createMutation.isPending}
-              >
-                <Save size={13} /> Save PO
-              </button>
-              <button className="lb-action-btn" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => navigate(-1)}>
-                Cancel
-              </button>
-            </div>
+          <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="np-table" style={{ minWidth: 1050 }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>#</th>
+                  <th style={{ minWidth: 160 }}>Item</th>
+                  <th style={{ width: 110 }}>Brand</th>
+                  <th style={{ width: 100 }}>Color</th>
+                  <th style={{ width: 80 }}>Size</th>
+                  <th style={{ width: 80 }}>Qty (Shirts)</th>
+                  <th style={{ width: 120 }}>Artwork No</th>
+                  <th style={{ width: 64 }}>Preview</th>
+                  <th style={{ width: 90 }}>FR Size</th>
+                  <th style={{ width: 90 }}>BK Size</th>
+                  <th style={{ width: 96 }}>Unit Price (USD)</th>
+                  <th style={{ width: 96 }}>Total (USD)</th>
+                  <th style={{ width: 40 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {state.items.length === 0 && (
+                  <tr><td colSpan={13} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                    No items yet — click "Add Item"
+                  </td></tr>
+                )}
+                {state.items.map((it, i) => (
+                  <tr key={it.id}>
+                    <td className="np-td-num">{i + 1}</td>
+                    <td>
+                      <input className="np-table-input" placeholder="100% Cotton S/s T-shirt..."
+                        value={it.item_name}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { item_name: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input className="np-table-input" placeholder="Gildan 5000"
+                        value={it.brand}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { brand: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input className="np-table-input" placeholder="Black"
+                        value={it.color}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { color: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input className="np-table-input" placeholder="L"
+                        value={it.size}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { size: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input type="number" className="np-table-input np-num-input" min={1}
+                        value={it.qty_ordered}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { qty_ordered: +e.target.value || 1 } })} />
+                    </td>
+                    <td>
+                      <ArtworkCellPicker
+                        value={it.artwork_no}
+                        attached={state.artworks}
+                        onPick={(a) => dispatch({
+                          type: 'UPDATE_ITEM', id: it.id,
+                          patch: { artwork_id: a?.id ?? null, artwork_no: a?.artwork_no ?? '', artwork_url: a?.thumbnail_url ?? a?.file_url ?? null },
+                        })} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {it.artwork_url && it.artwork_url.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i) !== null
+                        ? <img src={it.artwork_url} alt="" style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
+                        : it.artwork_no
+                          ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
+                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
+                    </td>
+                    <td>
+                      <input className="np-table-input" placeholder="12 x 16"
+                        value={it.artwork_size_front}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { artwork_size_front: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input className="np-table-input" placeholder="12 x 16"
+                        value={it.artwork_size_back}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { artwork_size_back: e.target.value } })} />
+                    </td>
+                    <td>
+                      <input type="number" className="np-table-input np-num-input" min={0} step={0.01}
+                        value={it.unit_price}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { unit_price: +e.target.value || 0 } })} />
+                    </td>
+                    <td style={{ textAlign: 'right', paddingRight: 8, fontWeight: 700, fontSize: 13 }}>
+                      ${fmt(it.line_total)}
+                    </td>
+                    <td>
+                      <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ITEM', id: it.id })}>
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {state.items.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
+                    <td />
+                    <td>Total</td>
+                    <td colSpan={3} />
+                    <td style={{ textAlign: 'center' }}>{state.items.reduce((s, it) => s + it.qty_ordered, 0)}</td>
+                    <td colSpan={4} />
+                    <td style={{ textAlign: 'right', paddingRight: 8 }}>${fmt(itemsTotal)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
           </div>
         </div>
+      )}
 
+      {/* ── ARTWORK ATTACHMENTS (both modes) ── */}
+      <div className="np-card">
+        <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="np-section-num">{state.po_type === 'gangsheet' ? 3 : 2}</span>
+            <h3>{state.po_type === 'gangsheet' ? 'Artwork Attachments' : 'Attach All Artworks / Files'}</h3>
+          </div>
+          <button className="lb-action-btn" onClick={() => setArtworkPickerOpen(true)}>
+            <Plus size={13} /> Add Artwork
+          </button>
+        </div>
+
+        {state.artworks.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0 18px' }}>
+            {state.artworks.map(a => (
+              <div key={a.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 4px', borderBottom: '1px solid #f3f4f6', fontSize: 12.5,
+              }}>
+                <span style={{ fontWeight: 600, minWidth: 74 }}>{a.artwork_no}</span>
+                {(a.thumbnail_url || a.file_url) && (a.thumbnail_url || a.file_url)!.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i)
+                  ? <img src={a.thumbnail_url || a.file_url!} alt={a.artwork_no}
+                      style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
+                  : <span style={{
+                      width: 40, height: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#f9fafb', borderRadius: 4, border: '1px dashed #d1d5db', color: '#9ca3af', fontSize: 10,
+                    }}>{(a.file_type || 'file').toUpperCase()}</span>}
+                {a.file_url ? (
+                  <a href={a.file_url} target="_blank" rel="noreferrer"
+                    style={{ color: '#0d9488', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3, flex: 1 }}>
+                    View / Download <ExternalLink size={11} />
+                  </a>
+                ) : <span style={{ flex: 1, color: '#9ca3af' }}>no file</span>}
+                <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ARTWORK', id: a.id })}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Drag & drop upload */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); uploadArtworkFiles(e.dataTransfer.files) }}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            marginTop: 14, padding: '22px 16px', textAlign: 'center', cursor: 'pointer',
+            border: `2px dashed ${dragOver ? '#0d9488' : '#d1d5db'}`, borderRadius: 8,
+            background: dragOver ? '#f0fdfa' : '#fafafa', transition: 'all .15s',
+          }}>
+          <UploadCloud size={22} style={{ color: '#9ca3af', margin: '0 auto 6px' }} />
+          <div style={{ fontSize: 13, color: '#374151' }}>
+            {uploading ? 'Uploading…' : <>Drag and drop files here or <span style={{ color: '#0d9488', fontWeight: 700 }}>Browse Files</span></>}
+          </div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+            Supported formats: PDF, JPG, PNG, AI, EPS (Max 50 MB each)
+          </div>
+          <input ref={fileInputRef} type="file" multiple hidden
+            accept=".pdf,.jpg,.jpeg,.png,.ai,.eps,.svg,.webp"
+            onChange={e => { if (e.target.files) uploadArtworkFiles(e.target.files); e.target.value = '' }} />
+        </div>
       </div>
+
+      {/* ── SPECIAL INSTRUCTIONS (apparel) ── */}
+      {state.po_type === 'apparel' && (
+        <div className="np-card">
+          <div className="np-card-header">
+            <span className="np-section-num">3</span>
+            <h3>Special Instructions for Fulfillment Partner</h3>
+          </div>
+          <textarea className="np-textarea" rows={4}
+            placeholder="Quality check requirements, packing instructions, ink specs..."
+            value={state.terms_conditions}
+            onChange={e => set('terms_conditions', e.target.value)} />
+        </div>
+      )}
+
+      {/* ── FOOTER ACTIONS ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', margin: '16px 0 32px' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
+          <button className="lb-action-btn" onClick={handleSaveDraft} disabled={saving}>
+            <FileText size={13} /> Save Draft
+          </button>
+        </div>
+        <button className="lb-action-btn lb-action-primary" onClick={handleSavePO} disabled={saving}>
+          <Save size={13} /> {isEdit ? 'Update PO' : state.po_type === 'gangsheet' ? 'Save PO' : 'Save Order'}
+        </button>
+      </div>
+
+      {/* ── MODALS ── */}
+      {orderPickerOpen && (
+        <OrderPickerModal
+          existing={state.orders.map(o => o.order_id)}
+          onClose={() => setOrderPickerOpen(false)}
+          onPick={async (orderId) => {
+            try {
+              const res = await api.get(`/orders/${orderId}`)
+              const order = res.data.data ?? res.data
+              dispatch({ type: 'ADD_ORDER', order: orderToCovered(order) })
+            } catch { toast.error('Failed to load order') }
+          }}
+        />
+      )}
+      {artworkPickerOpen && (
+        <ArtworkPickerModal
+          onClose={() => setArtworkPickerOpen(false)}
+          onPick={(a) => dispatch({ type: 'ADD_ARTWORK', artwork: a })}
+        />
+      )}
     </div>
   )
 }
 
-// ── Summary row helper ─────────────────────────────────────────────────────────
+// ── Order picker modal ─────────────────────────────────────────────────────────
 
-function SummaryRow({
-  label,
-  value,
-  currency,
-  dimmed,
-}: {
-  label: string
+function OrderPickerModal({ existing, onPick, onClose }: {
+  existing: string[]
+  onPick: (orderId: string) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const { data } = useQuery({
+    queryKey: ['gangsheet-orders-picker'],
+    queryFn: () => api.get('/orders', { params: { order_type: 'gangsheet', limit: 100 } })
+      .then(r => r.data.data?.rows ?? []),
+  })
+  const orders: any[] = (data ?? []).filter((o: any) =>
+    !existing.includes(o.id) &&
+    (o.order_number ?? '').toLowerCase().includes(search.toLowerCase())
+  )
+  return (
+    <ModalShell title="Add Gangsheet Order" onClose={onClose}>
+      <input className="np-input" placeholder="Search order number..." autoFocus
+        value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
+      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+        {orders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No gangsheet orders found</div>}
+        {orders.map((o: any) => (
+          <button key={o.id} className="np-dropdown-item" style={{ width: '100%' }}
+            onClick={() => { onPick(o.id); onClose() }}>
+            <span className="np-dropdown-name">{o.order_number}</span>
+            <span className="np-dropdown-sub">
+              {o.status} · {o.supplier_name ?? o.contact_name ?? '—'} · {o.order_date ? new Date(o.order_date).toLocaleDateString() : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </ModalShell>
+  )
+}
+
+// ── Artwork picker modal ───────────────────────────────────────────────────────
+
+function ArtworkPickerModal({ onPick, onClose }: {
+  onPick: (a: AttachedArtwork) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const { data } = useQuery({
+    queryKey: ['artworks-picker', search],
+    queryFn: () => api.get('/artworks', { params: { limit: 30, search } })
+      .then(r => r.data.data?.rows ?? r.data.data ?? []),
+  })
+  const artworks: any[] = data ?? []
+  return (
+    <ModalShell title="Add Artwork" onClose={onClose}>
+      <input className="np-input" placeholder="Search artwork no or name..." autoFocus
+        value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
+      <div style={{ maxHeight: 340, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        {artworks.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13, gridColumn: '1 / -1' }}>No artworks found</div>}
+        {artworks.map((a: any) => (
+          <button key={a.id} className="np-dropdown-item"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}
+            onClick={() => {
+              onPick({ id: a.id, artwork_no: a.artwork_no, name: a.name, file_url: a.file_url, thumbnail_url: a.thumbnail_url ?? null, file_type: a.file_type })
+              onClose()
+            }}>
+            {a.file_url && a.file_url.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i)
+              ? <img src={a.file_url} alt="" style={{ width: 34, height: 34, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb', flexShrink: 0 }} />
+              : <span style={{ width: 34, height: 34, background: '#f3f4f6', borderRadius: 3, flexShrink: 0 }} />}
+            <span style={{ overflow: 'hidden' }}>
+              <span className="np-dropdown-name">{a.artwork_no}</span>
+              <span className="np-dropdown-sub" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </ModalShell>
+  )
+}
+
+// ── Inline artwork cell picker (apparel items table) ───────────────────────────
+
+function ArtworkCellPicker({ value, attached, onPick }: {
   value: string
-  currency: string
-  dimmed?: boolean
+  attached: AttachedArtwork[]
+  onPick: (a: AttachedArtwork | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" className="np-table-input"
+        style={{ width: '100%', textAlign: 'left', color: value ? '#0d9488' : '#9ca3af', fontWeight: value ? 600 : 400, cursor: 'pointer' }}
+        onClick={() => setOpen(o => !o)}>
+        {value || 'Select…'}
+      </button>
+      {open && (
+        <div className="np-dropdown" style={{ minWidth: 200 }}>
+          {attached.length === 0 && (
+            <div style={{ padding: 10, fontSize: 12, color: '#9ca3af' }}>
+              Attach artworks below first
+            </div>
+          )}
+          {attached.map(a => (
+            <button key={a.id} className="np-dropdown-item"
+              onMouseDown={() => { onPick(a); setOpen(false) }}>
+              <span className="np-dropdown-name">{a.artwork_no}</span>
+              <span className="np-dropdown-sub">{a.name}</span>
+            </button>
+          ))}
+          {value && (
+            <button className="np-dropdown-item" style={{ color: '#ef4444' }}
+              onMouseDown={() => { onPick(null); setOpen(false) }}>
+              Clear selection
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Modal shell ────────────────────────────────────────────────────────────────
+
+function ModalShell({ title, children, onClose }: {
+  title: string
+  children: ReactNode
+  onClose: () => void
 }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: '12px', color: dimmed ? '#9ca3af' : '#6b7280' }}>{label}</span>
-      <span style={{ fontSize: '13px', fontWeight: 600, color: dimmed ? '#9ca3af' : '#374151' }}>
-        {currency} {value}
-      </span>
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 60,
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh',
+    }} onClick={onClose}>
+      <div style={{
+        background: '#fff', borderRadius: 12, width: 'min(520px, 92vw)',
+        padding: 18, boxShadow: '0 20px 50px rgba(0,0,0,.25)',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{title}</h3>
+          <button className="np-del-btn" onClick={onClose}><X size={15} /></button>
+        </div>
+        {children}
+      </div>
     </div>
   )
 }
