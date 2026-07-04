@@ -17,6 +17,17 @@
 --  object, it is a no-op.
 -- ============================================================
 
+-- ── 0. updated_at trigger function ───────────────────────────────────────────
+-- Some databases (created from an early db/init.sql) never got this
+-- function at all — meaning updated_at was never maintained anywhere.
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ── 1. vendors (migration 009 is pre-seeded on Docker-init DBs) ──────────────
 CREATE TABLE IF NOT EXISTS vendors (
   id                 UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
