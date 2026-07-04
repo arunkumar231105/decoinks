@@ -7,16 +7,22 @@ jest.mock('../../src/config/db', () => ({
 const { pool } = require('../../src/config/db')
 const { getNextNumber } = require('../../src/utils/counter')
 
+// Mocks the query sequence of the counters-table implementation:
+//   BEGIN → advisory lock → seed MAX → INSERT counter row →
+//   UPDATE counters RETURNING last_value → COMMIT
+// The counter row starts fresh, so the claimed value is maxSeq + 1.
 function makeClient(maxSeq) {
   const client = {
     query: jest.fn(),
     release: jest.fn(),
   }
   client.query
-    .mockResolvedValueOnce({})                           // BEGIN
-    .mockResolvedValueOnce({})                           // pg_advisory_xact_lock
-    .mockResolvedValueOnce({ rows: [{ max_seq: maxSeq }] }) // SELECT MAX
-    .mockResolvedValueOnce({})                           // COMMIT
+    .mockResolvedValueOnce({})                                    // BEGIN
+    .mockResolvedValueOnce({})                                    // pg_advisory_xact_lock
+    .mockResolvedValueOnce({ rows: [{ max_seq: maxSeq }] })       // SELECT MAX seed
+    .mockResolvedValueOnce({})                                    // INSERT counters
+    .mockResolvedValueOnce({ rows: [{ last_value: maxSeq + 1 }] }) // UPDATE counters
+    .mockResolvedValueOnce({})                                    // COMMIT
   return client
 }
 
@@ -78,6 +84,36 @@ describe('getNextNumber()', () => {
     expect(result2027).toBe('INV-2027-0001')
 
     jest.useRealTimers()
+  })
+
+  test('never goes backwards when the counter is ahead of the table MAX', async () => {
+    // Simulates rows being deleted: table MAX says 3 but the counter
+    // already handed out 7 — GREATEST keeps the counter authoritative.
+    const year = new Date().getFullYear()
+    const client = {
+      query: jest.fn(),
+      release: jest.fn(),
+    }
+    client.query
+      .mockResolvedValueOnce({})                              // BEGIN
+      .mockResolvedValueOnce({})                              // lock
+      .mockResolvedValueOnce({ rows: [{ max_seq: 3 }] })      // table MAX (after deletes)
+      .mockResolvedValueOnce({})                              // INSERT counters
+      .mockResolvedValueOnce({ rows: [{ last_value: 8 }] })   // counter was at 7
+      .mockResolvedValueOnce({})                              // COMMIT
+    pool.connect.mockResolvedValue(client)
+
+    const result = await getNextNumber('ORD', 'orders', 'order_number')
+
+    expect(result).toBe(`ORD-${year}-0008`)
+  })
+
+  test('rejects unsafe table/column identifiers', async () => {
+    await expect(
+      getNextNumber('ORD', 'orders; DROP TABLE users', 'order_number')
+    ).rejects.toThrow('Invalid identifier')
+
+    expect(pool.connect).not.toHaveBeenCalled()
   })
 
   test('executes BEGIN and COMMIT', async () => {

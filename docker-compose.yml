@@ -10,10 +10,11 @@ services:
       POSTGRES_DB: decoinks_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
-      - ./db/portal_migration.sql:/docker-entrypoint-initdb.d/02_portal.sql:ro
-      - ./db/002_supplier_rename.sql:/docker-entrypoint-initdb.d/03_supplier_rename.sql:ro
-      - ./db/003_artwork_quotation.sql:/docker-entrypoint-initdb.d/04_artwork_quotation.sql:ro
+      # The schema is owned entirely by backend/migrations (applied by the
+      # backend entrypoint on every start). The old db/*.sql init-script
+      # mounts were removed so there is a single source of truth — a fresh
+      # database is built by run.js from migration 001 upward, and existing
+      # databases are healed by 039_baseline_repair.sql.
     ports:
       - '5435:5432'
     networks: [decoinks_net]
