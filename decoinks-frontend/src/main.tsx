@@ -9,6 +9,7 @@ import { router } from './router'
 import { theme } from './utils/theme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
+import './styles/theme.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
