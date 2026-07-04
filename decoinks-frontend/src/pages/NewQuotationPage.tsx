@@ -4,7 +4,6 @@ import { Menu, MenuItem } from '@mui/material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import {
-  Bot,
   ChevronDown,
   Copy,
   Edit3,
@@ -402,16 +401,6 @@ function NotesSection({ customerNotes, internalNotes, setCustomerNotes, setInter
         <div className="nq-notes-col"><label>Internal Notes <small>(visible to team only)</small></label><textarea className="nq-textarea" rows={4} value={internalNotes} onChange={e => setInternalNotes(e.target.value)} /></div>
       </div>
     </section>
-  )
-}
-
-function AISection() {
-  return (
-    <div className="nq-sidebar-card">
-      <div className="nq-sidebar-card-header"><Bot size={14} className="nq-ai-icon" /><span>AI Extracted from Chat</span><span className="nq-badge nq-badge-ai">Auto-Filled</span></div>
-      <ul className="nq-ai-list">{[['Product', 'Hoodie'], ['Quantity', '50'], ['Print Type', 'DTF'], ['Locations', 'Front, Back'], ['Size', '12x16'], ['Urgency', 'Yes']].map(([label, value]) => <li key={label} className="nq-ai-item"><span className="nq-ai-check">âœ"</span><span className="nq-ai-label">{label}:</span><span className="nq-ai-value">{value}</span></li>)}</ul>
-      <button className="nq-link-btn nq-ai-edit">Edit Extracted Data</button>
-    </div>
   )
 }
 
@@ -1321,7 +1310,6 @@ export function NewQuotationPage() {
 
           <OtherChargesSection charges={otherCharges} toggleCharge={toggleCharge} updateCharge={updateCharge} />
           <NotesSection customerNotes={supplierNotes} internalNotes={internalNotes} setCustomerNotes={setSupplierNotes} setInternalNotes={setInternalNotes} />
-          <AISection />
           <ArtworkUploader quotationId={quoteId} />
         </main>
 
