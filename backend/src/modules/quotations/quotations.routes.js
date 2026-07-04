@@ -114,6 +114,7 @@ const statusSchema = z.object({
 router.get('/',                       controller.list)
 router.get('/csv-template',           controller.csvTemplate)
 router.get('/:id',                    controller.getOne)
+router.get('/:id/revisions',          controller.getRevisions)
 router.post('/',                      validate(createSchema),  controller.create)
 router.post('/bulk-upload',           uploadCsv, controller.bulkUpload)
 router.post('/:id/convert-to-invoice',             controller.convertToInvoice)

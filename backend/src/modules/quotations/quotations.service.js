@@ -307,6 +307,28 @@ async function updateStatus(id, status, actor) {
   }
 }
 
+// Returns the full revision family of a quotation (the quote itself plus every
+// other quote connected to it through parent_quote_id, in either direction),
+// newest revision first. Used by the "Previous / Revised Quotations" panel.
+async function getRevisions(id) {
+  const { rows } = await query(
+    `WITH RECURSIVE fam AS (
+       SELECT id, parent_quote_id FROM quotations WHERE id = $1
+       UNION
+       SELECT q.id, q.parent_quote_id
+       FROM quotations q
+       JOIN fam f ON q.id = f.parent_quote_id OR q.parent_quote_id = f.id
+     )
+     SELECT q.id, q.quote_number, q.revision_number, q.parent_quote_id,
+            q.status, q.total, q.created_at, q.updated_at
+     FROM quotations q
+     JOIN fam ON fam.id = q.id
+     ORDER BY q.revision_number DESC NULLS LAST, q.created_at DESC`,
+    [id]
+  )
+  return rows
+}
+
 async function remove(id) {
   const client = await getClient()
   try {
@@ -721,4 +743,4 @@ function getCsvTemplate() {
   return headers.join(',') + '\n' + example.join(',') + '\n'
 }
 
-module.exports = { list, getById, create, update, updateStatus, remove, convertToInvoice, bulkParseAndProcess, getCsvTemplate }
+module.exports = { list, getById, getRevisions, create, update, updateStatus, remove, convertToInvoice, bulkParseAndProcess, getCsvTemplate }

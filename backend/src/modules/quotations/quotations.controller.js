@@ -16,6 +16,13 @@ async function getOne(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function getRevisions(req, res, next) {
+  try {
+    const rows = await service.getRevisions(req.params.id)
+    return success(res, rows)
+  } catch (err) { next(err) }
+}
+
 async function create(req, res, next) {
   try {
     const q = await service.create({ ...req.body, created_by: req.user.id })
@@ -81,4 +88,4 @@ async function csvTemplate(_req, res) {
   res.send(csv)
 }
 
-module.exports = { list, getOne, create, update, updateStatus, remove, convertToInvoice, bulkUpload, csvTemplate }
+module.exports = { list, getOne, getRevisions, create, update, updateStatus, remove, convertToInvoice, bulkUpload, csvTemplate }

@@ -403,6 +403,14 @@
   letter-spacing: 0.01em;
 }
 
+/* Status badge variants used across quote/order/PO panels */
+.nq-badge-approved {
+  background: var(--success-bg); color: var(--success-fg);
+}
+.nq-badge-rejected {
+  background: var(--danger-bg); color: var(--danger-fg);
+}
+
 /* ── Scrollbars (content) ───────────────────────────────────────────────── */
 
 .content-area ::-webkit-scrollbar { width: 8px; height: 8px; }

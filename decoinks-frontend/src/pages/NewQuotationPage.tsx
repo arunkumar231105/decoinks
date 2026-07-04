@@ -404,15 +404,68 @@ function NotesSection({ customerNotes, internalNotes, setCustomerNotes, setInter
   )
 }
 
-function PreviousQuotesSection() {
+interface RevisionRow {
+  id: string
+  quote_number: string
+  revision_number: number | null
+  parent_quote_id: string | null
+  status: string
+  total: number | string
+  created_at: string
+}
+
+function PreviousQuotesSection({ quoteId }: { quoteId?: string }) {
+  const navigate = useNavigate()
+
+  const { data: revisions = [] } = useQuery({
+    queryKey: ['quote-revisions', quoteId],
+    queryFn: () => api.get(`/quotations/${quoteId}/revisions`).then(r => r.data.data ?? []),
+    enabled: !!quoteId,
+  })
+
+  // Nothing to show for a brand-new quote or a quote with no other revisions.
+  if (!quoteId || (revisions as RevisionRow[]).length <= 1) return null
+
+  const revLabel = (r: RevisionRow) =>
+    !r.revision_number || r.revision_number <= 1 || !r.parent_quote_id
+      ? 'Original'
+      : `Rev. ${r.revision_number - 1}`
+
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+  const badgeClass = (s: string) =>
+    s === 'Approved' ? 'nq-badge-approved'
+    : s === 'Rejected' || s === 'Expired' ? 'nq-badge-rejected'
+    : s === 'Sent' ? 'nq-badge-sent'
+    : 'nq-badge-draft'
+
   return (
     <div className="nq-sidebar-card">
-      <div className="nq-sidebar-card-header"><span>Previous / Revised Quotations</span><button className="nq-link-btn">View All</button></div>
-      <div className="nq-prev-quotes">{[
-        { id: 'QT-2026-0001 (Rev. 2)', status: 'Sent', date: 'May 1, 2026', amount: '$1,250.00' },
-        { id: 'QT-2026-0001 (Rev. 1)', status: 'Sent', date: 'Apr 30, 2026', amount: '$1,180.00' },
-        { id: 'QT-2026-0001 (Original)', status: 'Sent', date: 'Apr 28, 2026', amount: '$1,120.00' },
-      ].map(q => <div key={q.id} className="nq-prev-quote-row"><div className="nq-prev-quote-id"><button className="nq-link-btn nq-qt-link">{q.id}</button><span className="nq-badge nq-badge-sent">{q.status}</span></div><div className="nq-prev-quote-meta"><span>{q.date}</span><span className="nq-prev-amount">{q.amount}</span></div></div>)}</div>
+      <div className="nq-sidebar-card-header">
+        <span>Previous / Revised Quotations</span>
+        <button className="nq-link-btn" onClick={() => navigate('/quotes')}>View All</button>
+      </div>
+      <div className="nq-prev-quotes">
+        {(revisions as RevisionRow[]).map(q => (
+          <div key={q.id} className="nq-prev-quote-row">
+            <div className="nq-prev-quote-id">
+              <button
+                className="nq-link-btn nq-qt-link"
+                onClick={() => q.id !== quoteId && navigate(`/quotes/${q.id}`)}
+                disabled={q.id === quoteId}
+              >
+                {q.quote_number} ({revLabel(q)})
+              </button>
+              <span className={`nq-badge ${badgeClass(q.status)}`}>{q.status}</span>
+            </div>
+            <div className="nq-prev-quote-meta">
+              <span>{fmtDate(q.created_at)}</span>
+              <span className="nq-prev-amount">${fmt(Number(q.total) || 0)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -1315,7 +1368,7 @@ export function NewQuotationPage() {
 
         <aside className="nq-sidebar">
           <CRMSnapshotPanel lead={leadData ?? null} />
-          <PreviousQuotesSection />
+          <PreviousQuotesSection quoteId={quoteId} />
           <PricingSummary totals={totals} />
           <TermsSection paymentTerms={paymentTerms} paymentMethod={paymentMethod} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setPaymentMethod={setPaymentMethod} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
         </aside>
