@@ -97,6 +97,18 @@ const sendToPortalSchema = z.object({
   supplier_id: z.string().uuid().optional().nullable(),
 })
 
+const attachmentSchema = z.object({
+  filename:  z.string().min(1).max(255),
+  // Only http(s) links are stored — blocks javascript:/data:/file: URIs that
+  // would otherwise execute or exfiltrate when opened from the PO view.
+  file_url:  z.string().url().refine(
+    (u) => /^https?:\/\//i.test(u),
+    'file_url must be an http(s) URL'
+  ),
+  file_size: z.number().int().nonnegative().optional().nullable(),
+  mime_type: z.string().max(100).optional().nullable(),
+})
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get('/',                           controller.list)
@@ -107,7 +119,7 @@ router.patch('/:id/status',               validate(statusSchema),     controller
 router.delete('/:id',                     controller.remove)
 
 router.get('/:id/attachments',            controller.listAttachments)
-router.post('/:id/attachments',           controller.addAttachment)
+router.post('/:id/attachments',           validate(attachmentSchema), controller.addAttachment)
 router.delete('/:id/attachments/:aid',    controller.removeAttachment)
 
 router.get('/:id/history',               controller.getStatusHistory)

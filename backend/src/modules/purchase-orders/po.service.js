@@ -33,16 +33,16 @@ function calcTotals(items, freightCharges = 0, otherCharges = 0) {
 // ── Item insertion ────────────────────────────────────────────────────────────
 
 // Check once which optional columns exist so inserts don't crash before migrations run
-let _poItemCols = null
+// Queried per insert batch (cheap) rather than cached for the process lifetime,
+// so a migration that adds columns is picked up without a restart.
 async function getPoItemCols(client) {
-  if (_poItemCols) return _poItemCols
   const { rows } = await client.query(
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'purchase_order_items'
        AND column_name IN ('artwork_count','front_image','back_image','artwork_size',
                            'brand','color','size','artwork_id','artwork_size_front','artwork_size_back')`
   )
-  _poItemCols = new Set(rows.map(r => r.column_name))
+  const _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
 }
 
@@ -113,9 +113,22 @@ async function replaceOrders(client, poId, orderIds) {
 }
 
 async function replaceFragments(client, poId, fragments) {
+  // A fragment may only reference an order this PO actually covers; anything
+  // else is stored with a NULL order link rather than a dangling reference.
+  const { rows: coveredRows } = await client.query(
+    `SELECT order_id FROM po_orders WHERE po_id = $1`, [poId]
+  )
+  const covered = new Set(coveredRows.map(r => r.order_id))
+
   await client.query(`DELETE FROM po_gangsheet_fragments WHERE po_id = $1`, [poId])
+  const seenFragmentNos = new Set()
   for (let i = 0; i < fragments.length; i++) {
     const f = fragments[i]
+    // Guarantee a unique fragment_no within the PO (backstopped by 045 index).
+    let fragmentNo = f.fragment_no || `GS-${String(i + 1).padStart(2, '0')}`
+    while (seenFragmentNos.has(fragmentNo)) fragmentNo = `${fragmentNo}-${i + 1}`
+    seenFragmentNos.add(fragmentNo)
+
     await client.query(
       `INSERT INTO po_gangsheet_fragments
          (po_id, fragment_no, order_id, width_inches, length_inches,
@@ -123,8 +136,8 @@ async function replaceFragments(client, poId, fragments) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         poId,
-        f.fragment_no || `GS-${String(i + 1).padStart(2, '0')}`,
-        f.order_id || null,
+        fragmentNo,
+        f.order_id && covered.has(f.order_id) ? f.order_id : null,
         f.width_inches ?? null,
         f.length_inches ?? null,
         Number(f.artworks_count) || 0,
@@ -367,9 +380,14 @@ async function update(id, data) {
   const other   = data.other_charges   ?? existing.other_charges   ?? 0
   const { subtotal, total_discount, total_tax, grand_total } = calcTotals(items, freight, other)
 
-  if (data.order_ids) {
-    assertOrderCount(data.po_type || existing.po_type, data.order_ids)
-  }
+  // Enforce the apparel = one-order rule on EVERY update path, using the
+  // effective type after this update and the effective covered-order set
+  // (whether the caller resent order_ids or not).
+  const effectiveType = data.po_type || existing.po_type
+  const effectiveOrderIds = data.order_ids !== undefined
+    ? data.order_ids
+    : (existing.orders || []).map(o => o.id)
+  assertOrderCount(effectiveType, effectiveOrderIds)
 
   const client = await getClient()
   try {
@@ -423,9 +441,11 @@ async function update(id, data) {
       await client.query(`DELETE FROM purchase_order_items WHERE po_id = $1`, [id])
       await insertItems(client, id, data.items)
     }
-    if (data.order_ids)   await replaceOrders(client, id, data.order_ids)
-    if (data.fragments)   await replaceFragments(client, id, data.fragments)
-    if (data.artwork_ids) await replaceArtworks(client, id, data.artwork_ids)
+    // `!== undefined` so an explicit empty array clears the relation (matches
+    // "user removed everything"); an omitted key leaves it untouched.
+    if (data.order_ids   !== undefined) await replaceOrders(client, id, data.order_ids)
+    if (data.fragments   !== undefined) await replaceFragments(client, id, data.fragments)
+    if (data.artwork_ids !== undefined) await replaceArtworks(client, id, data.artwork_ids)
 
     await client.query('COMMIT')
     return getById(id)

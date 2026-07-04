@@ -28,6 +28,14 @@ interface POLineItem {
   artwork_size_front: string
   artwork_size_back: string
   sort_order: number
+  // Preserved fields (no UI column, but must survive an edit round-trip)
+  description: string
+  hsn_code: string
+  uom: string
+  discount_pct: number
+  tax_pct: number
+  remarks: string
+  required_by_date: string
 }
 
 interface CoveredOrder {
@@ -127,6 +135,8 @@ function newItem(idx: number): POLineItem {
     artwork_id: null, artwork_no: '', artwork_url: null,
     artwork_size_front: '', artwork_size_back: '',
     sort_order: idx,
+    description: '', hsn_code: '', uom: 'pcs',
+    discount_pct: 0, tax_pct: 0, remarks: '', required_by_date: '',
   }
 }
 
@@ -323,6 +333,14 @@ export function NewPurchaseOrderPage() {
           artwork_size_front: it.artwork_size_front || it.artwork_size || '',
           artwork_size_back: it.artwork_size_back || '',
           sort_order: it.sort_order ?? idx,
+          // Preserve fields that have no UI column so an edit-save doesn't zero them
+          description: it.description || '',
+          hsn_code: it.hsn_code || '',
+          uom: it.uom || 'pcs',
+          discount_pct: Number(it.discount_pct) || 0,
+          tax_pct: Number(it.tax_pct) || 0,
+          remarks: it.remarks || '',
+          required_by_date: it.required_by_date ? String(it.required_by_date).split('T')[0] : '',
         })),
       },
     })
@@ -365,6 +383,8 @@ export function NewPurchaseOrderPage() {
         artwork_size_front: it.artwork_size || '',
         artwork_size_back: it.artwork_size || '',
         sort_order: idx,
+        description: '', hsn_code: '', uom: 'pcs',
+        discount_pct: 0, tax_pct: 0, remarks: '', required_by_date: '',
       }))
     }
     dispatch({ type: 'INIT', payload })
@@ -438,8 +458,16 @@ export function NewPurchaseOrderPage() {
       }
       if (state.contact_name) {
         const res = await api.post(`/suppliers/${state.supplier_id}/contacts`, body)
+        const newId = res.data.data?.id ?? null
+        // Write the new id back into state and leave "new contact" mode so a
+        // repeat save (e.g. in edit mode) updates this contact instead of
+        // POSTing a fresh duplicate every time.
+        if (newId) {
+          dispatch({ type: 'SET', field: 'supplier_contact_id', value: newId })
+          setNewContactMode(false)
+        }
         refetchContacts()
-        return res.data.data?.id ?? null
+        return newId
       }
     } catch { /* contact sync is best-effort; the PO itself must still save */ }
     return state.supplier_contact_id || null
@@ -459,7 +487,11 @@ export function NewPurchaseOrderPage() {
       expected_date: state.expected_date || null,
       notes: state.notes || null,
       terms_conditions: state.terms_conditions || null,
-      order_ids: state.orders.map(o => o.order_id),
+      // Apparel PO may cover only one order — never send more, even if the
+      // orders list carried over from a gangsheet-mode edit before the switch.
+      order_ids: state.po_type === 'apparel'
+        ? state.orders.slice(0, 1).map(o => o.order_id)
+        : state.orders.map(o => o.order_id),
       artwork_ids: state.artworks.map(a => a.id),
       fragments: state.po_type === 'gangsheet'
         ? state.fragments.map((f, i) => ({
@@ -485,6 +517,14 @@ export function NewPurchaseOrderPage() {
             artwork_size_front: it.artwork_size_front || null,
             artwork_size_back: it.artwork_size_back || null,
             sort_order: i,
+            // Echo preserved fields so an edit-save keeps prior discount/tax/etc.
+            description: it.description || null,
+            hsn_code: it.hsn_code || null,
+            uom: it.uom || 'pcs',
+            discount_pct: it.discount_pct || 0,
+            tax_pct: it.tax_pct || 0,
+            remarks: it.remarks || null,
+            required_by_date: it.required_by_date || null,
           }))
         : [],
     }

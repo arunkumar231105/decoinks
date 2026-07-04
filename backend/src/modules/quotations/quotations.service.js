@@ -1,5 +1,5 @@
 const { query, getClient } = require('../../config/db')
-const { getNextNumber } = require('../../utils/counter')
+const { getNextNumber, getNextInvoiceNumber } = require('../../utils/counter')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
@@ -189,13 +189,19 @@ async function updateStatus(id, status, actor) {
   const actorId   = typeof actor === 'string' ? actor : actor.id
   const actorUser = typeof actor === 'string' ? null   : actor
 
-  // Fetch current status for transition validation
-  const { rows: cur } = await query(`SELECT status FROM quotations WHERE id = $1`, [id])
+  // Fetch current status + customer name for transition validation and numbering
+  const { rows: cur } = await query(
+    `SELECT status, customer_name FROM quotations WHERE id = $1`, [id]
+  )
   if (!cur[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
   if (actorUser) validateTransition('quotation', cur[0].status, status, actorUser)
 
-  // Generate invoice number outside the transaction (advisory-locked sequence, gaps are OK)
-  const invNumber = status === 'Approved' ? await getNextNumber('INV', 'invoices', 'invoice_number') : null
+  // Use the SAME numbering scheme as the manual invoice path (customer-name based)
+  // so both routes produce consistent invoice numbers. Generated outside the
+  // transaction (advisory-locked sequence, gaps are OK).
+  const invNumber = status === 'Approved'
+    ? await getNextInvoiceNumber(cur[0].customer_name)
+    : null
 
   const client = await getClient()
   try {
@@ -224,21 +230,55 @@ async function updateStatus(id, status, actor) {
 
       if (!existing[0]) {
         const total = +Number(quote.total).toFixed(2)
+        // Carry the customer identity + address snapshot and order_type across
+        // so the invoice isn't blank (previously these were dropped).
         const { rows: invRows } = await client.query(
           `INSERT INTO invoices
              (invoice_number, quote_id, supplier_id, issue_date, status,
               subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
-              notes, created_by)
-           VALUES ($1,$2,$3,$4,'Sent',$5,$6,$7,$8,0,$8,$9,$10)
+              notes, created_by,
+              customer_name, billing_email, contact_number, billing_address, shipping_address,
+              order_type, currency)
+           VALUES ($1,$2,$3,$4,'Sent',$5,$6,$7,$8,0,$8,$9,$10,
+                   $11,$12,$13,$14,$15,$16,$17)
            RETURNING id`,
           [
             invNumber, id, quote.supplier_id,
             new Date().toISOString().split('T')[0],
             quote.subtotal, quote.discount_amt, quote.tax_amt, total,
             quote.notes || null, actorId,
+            quote.customer_name || null, quote.billing_email || null,
+            quote.contact_number || null, quote.billing_address || null,
+            quote.shipping_address || null,
+            quote.order_type || null, quote.currency || 'USD',
           ]
         )
         autoInvoiceId = invRows[0].id
+
+        // Copy the quotation's line items into the invoice so it isn't a total
+        // with no detail lines.
+        const { rows: qItems } = await client.query(
+          `SELECT description, qty, unit_price, amount, artwork_count,
+                  front_image, back_image, artwork_image, sort_order
+           FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order, id`,
+          [id]
+        )
+        for (let i = 0; i < qItems.length; i++) {
+          const it = qItems[i]
+          await client.query(
+            `INSERT INTO invoice_items
+               (invoice_id, description, qty, unit_price, amount, artwork_count,
+                front_image, back_image, artwork_image, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            [
+              autoInvoiceId, it.description, Number(it.qty) || 1,
+              Number(it.unit_price) || 0, Number(it.amount) || 0,
+              Number(it.artwork_count) || 0,
+              it.front_image || null, it.back_image || null, it.artwork_image || null,
+              it.sort_order ?? i,
+            ]
+          )
+        }
 
         await client.query(
           `INSERT INTO pipeline_events

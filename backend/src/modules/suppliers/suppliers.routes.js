@@ -86,6 +86,16 @@ router.post('/:id/contacts', validate(contactSchema), async (req, res, next) => 
 router.put('/:id/contacts/:cid', validate(contactSchema.partial()), async (req, res, next) => {
   try {
     const { name, email, phone, wechat_id, is_primary } = req.body
+
+    // Verify the contact exists and belongs to this supplier BEFORE touching
+    // the existing primary flag — otherwise a wrong :cid would clear the real
+    // primary and then 404, leaving the supplier with no primary contact.
+    const { rows: existRows } = await db.query(
+      `SELECT id FROM supplier_contacts WHERE id = $1 AND supplier_id = $2`,
+      [req.params.cid, req.params.id]
+    )
+    if (!existRows[0]) return res.status(404).json({ success: false, message: 'Contact not found' })
+
     if (is_primary) {
       await db.query(
         `UPDATE supplier_contacts SET is_primary = FALSE WHERE supplier_id = $1`,
@@ -106,7 +116,6 @@ router.put('/:id/contacts/:cid', validate(contactSchema.partial()), async (req, 
        typeof is_primary === 'boolean' ? is_primary : null,
        req.params.cid, req.params.id]
     )
-    if (!rows[0]) return res.status(404).json({ success: false, message: 'Contact not found' })
     res.json({ success: true, data: rows[0] })
   } catch (e) { next(e) }
 })

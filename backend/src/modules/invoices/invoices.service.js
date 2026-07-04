@@ -203,13 +203,32 @@ async function update(id, fields) {
   const financialFields = ['subtotal', 'discount_amt']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
+
+    // A voided invoice must not have its money rewritten.
+    if (existing.status === 'Void') {
+      throw Object.assign(new Error('Cannot edit the amounts of a voided invoice'), { statusCode: 409 })
+    }
+
     const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
     const newTotal       = calcTotal(newSubtotal, newDiscountAmt)
-    const newBalanceDue  = +(Math.max(0, newTotal - Number(existing.amount_paid))).toFixed(2)
+    const amountPaid     = Number(existing.amount_paid) || 0
+    const newBalanceDue  = +(Math.max(0, newTotal - amountPaid)).toFixed(2)
+
+    // Re-derive status so it can't contradict the new balance (e.g. an invoice
+    // left 'Paid' while a raised total now leaves a balance owing).
+    let newStatus = existing.status
+    if (existing.status !== 'Draft') {
+      if (newBalanceDue <= 0 && amountPaid > 0)      newStatus = 'Paid'
+      else if (amountPaid > 0)                       newStatus = 'Partially Paid'
+      else if (existing.status === 'Paid')           newStatus = 'Sent'
+    }
 
     params.push(newTotal);     sets.push(`total = $${params.length}`)
     params.push(newBalanceDue);sets.push(`balance_due = $${params.length}`)
+    if (newStatus !== existing.status) {
+      params.push(newStatus);  sets.push(`status = $${params.length}`)
+    }
   }
 
   params.push(id)
@@ -366,6 +385,25 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
   if (inv.status === 'Void') {
     throw Object.assign(new Error('Cannot record payment on a voided invoice'), { statusCode: 409 })
   }
+  if (inv.status === 'Paid') {
+    throw Object.assign(new Error('This invoice is already fully paid'), { statusCode: 409 })
+  }
+
+  // Reject overpayment: a single payment cannot exceed what is still owed.
+  // Use the ledger sum (source of truth) rather than the cached amount_paid.
+  const { rows: paidRows } = await query(
+    `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = $1`,
+    [id]
+  )
+  const alreadyPaid = +Number(paidRows[0].paid).toFixed(2)
+  const outstanding = +(Number(inv.total) - alreadyPaid).toFixed(2)
+  // 0.01 tolerance for rounding; block anything meaningfully over the balance.
+  if (Number(amount) > outstanding + 0.01) {
+    throw Object.assign(
+      new Error(`Payment of ${Number(amount).toFixed(2)} exceeds the outstanding balance of ${outstanding.toFixed(2)}`),
+      { statusCode: 422 }
+    )
+  }
 
   const client = await getClient()
   try {
@@ -425,8 +463,16 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
         triggered_by: actorId,
         metadata: { total_paid, payment_method },
       })
-      // Best-effort auto-order creation (outside the payment transaction — payment must not fail due to order creation)
-      autoCreateOrder(id, rows[0], actorId, null).catch(() => {})
+      // Best-effort auto-order creation (outside the payment transaction — payment must not fail due to order creation).
+      // Failures are logged, not swallowed, so a broken pipeline is visible.
+      autoCreateOrder(id, rows[0], actorId, null).catch((err) => {
+        console.error(`[pipeline] auto-order creation failed for invoice ${inv.invoice_number} (${id}):`, err.message)
+        query(
+          `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
+           VALUES ($1, 'invoice', $2, 'auto_order_failed', $3)`,
+          [actorId || null, id, `Automatic order creation failed after payment: ${err.message}`]
+        ).catch(() => {})
+      })
     } else if (newStatus === 'Partially Paid') {
       await logPipelineEvent({
         event_type: 'invoice_partially_paid',
