@@ -67,7 +67,7 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: postgresql://postgres:decoinks_pass@postgres:5432/decoinks_db
       REDIS_URL: redis://redis:6379
-      CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094
+      CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094,http://31.97.110.197:3001
       JWT_SECRET: Decoinks2026SecretKeyPOSSoftwarePrintShop123XYZ
       UPLOAD_DIR: uploads
       MAX_FILE_SIZE_MB: "10"
