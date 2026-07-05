@@ -81,19 +81,25 @@ async function create(fields_in) {
   let resolvedDiscountAmt = Number(discount_amt)
   let resolvedSupplierId  = supplier_id || null
   let resolvedCustomerName = fields.customer_name || null
+  let quoteData = null   // full quotation row, used to backfill contact fields + line items
 
-  // Pull totals (and customer name) from quotation when converting quote → invoice
+  // Pull totals, customer identity and contact fields from the quotation
+  // when converting quote → invoice (so nothing is left blank on the invoice).
   if (quote_id) {
     const { rows: qRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_name FROM quotations WHERE id = $1`,
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, order_type, currency,
+              customer_name, company_name, billing_email, contact_number,
+              shipping_address, billing_address, payment_terms, payment_method
+       FROM quotations WHERE id = $1`,
       [quote_id]
     )
     if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
     const q = qRows[0]
+    quoteData = q
     resolvedSubtotal    = Number(q.subtotal)
     resolvedDiscountAmt = Number(q.discount_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
-    if (!resolvedCustomerName) resolvedCustomerName = q.customer_name
+    if (!resolvedCustomerName) resolvedCustomerName = q.customer_name || q.company_name
   } else if (order_id) {
     const { rows: orderRows } = await query(
       `SELECT subtotal, discount_amt, tax_amt, total, supplier_id
@@ -135,19 +141,23 @@ async function create(fields_in) {
       resolvedSubtotal, resolvedDiscountAmt, 0,
       total, 0, balance_due,
       notes || null, created_by,
-      fields.customer_name || null, fields.billing_email || null,
-      fields.contact_number || null, fields.billing_address || null,
-      fields.shipping_address || null,
-      order_type || null,
-      fields.payment_terms || 'Due on Receipt',
-      fields.payment_method || null,
-      fields.currency || 'USD',
+      // Contact fields: explicit value wins, otherwise fall back to the quotation's
+      resolvedCustomerName || null,
+      fields.billing_email   ?? quoteData?.billing_email   ?? null,
+      fields.contact_number  ?? quoteData?.contact_number  ?? null,
+      fields.billing_address ?? quoteData?.billing_address ?? null,
+      fields.shipping_address?? quoteData?.shipping_address?? null,
+      order_type || quoteData?.order_type || null,
+      fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+      fields.payment_method || quoteData?.payment_method || null,
+      fields.currency       || quoteData?.currency       || 'USD',
       Number(fields.rush_services) || 0,
       Number(fields.shipping_charges) || 0,
     ]
   )
 
-  // Save line items (always — so images are stored even for quote-linked invoices)
+  // Save line items. Explicit items win; otherwise, when converting from a
+  // quotation, copy the quotation's line items so the invoice is never blank.
   if (Array.isArray(items) && items.length > 0) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
@@ -170,6 +180,19 @@ async function create(fields_in) {
         ]
       )
     }
+  } else if (quote_id) {
+    // Copy quotation_items → invoice_items (description, qty, price, images, artwork count)
+    await query(
+      `INSERT INTO invoice_items
+         (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
+          front_image, back_image, artwork_image)
+       SELECT $1, description, qty, unit_price, amount,
+              COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
+              front_image, back_image, artwork_image
+       FROM quotation_items WHERE quotation_id = $2
+       ORDER BY sort_order, id`,
+      [rows[0].id, quote_id]
+    ).catch(() => {})
   }
 
   if (quote_id) {
