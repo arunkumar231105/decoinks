@@ -53,10 +53,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const res = await api.post('/auth/refresh')
-        const { token } = res.data.data
+        const { token, user } = res.data.data
         tokenMemory.set(token)
-        const meRes = await api.get('/auth/me')
-        set({ user: meRes.data.data, isAuthenticated: true, isLoading: false })
+        // Refresh now returns the user, so skip the extra /auth/me round-trip.
+        // Fall back to /auth/me only if an older backend didn't include it.
+        if (user) {
+          set({ user, isAuthenticated: true, isLoading: false })
+        } else {
+          const meRes = await api.get('/auth/me')
+          set({ user: meRes.data.data, isAuthenticated: true, isLoading: false })
+        }
         return
       } catch (err: any) {
         // 401/403 means the token itself is invalid — no point retrying

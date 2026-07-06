@@ -82,7 +82,7 @@ async function refresh(rawToken, ip, userAgent) {
   const hash = hashToken(rawToken)
   const { rows } = await query(
     `SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at,
-            u.id AS uid, u.name, u.email, u.role, u.is_active
+            u.id AS uid, u.name, u.email, u.role, u.is_active, u.avatar_url, u.phone
      FROM refresh_tokens rt
      JOIN users u ON u.id = rt.user_id
      WHERE rt.token_hash = $1
@@ -103,7 +103,13 @@ async function refresh(rawToken, ip, userAgent) {
   // No rotation — reuse the same refresh token so multiple tabs can refresh
   // simultaneously without revoking each other's tokens.
   // Token is only invalidated on explicit logout or expiry.
-  return { accessToken: newAccessToken, refreshToken: rawToken }
+  // Return the user too so the client can skip a separate /auth/me round-trip.
+  const user = {
+    id: record.uid, name: record.name, email: record.email,
+    role: record.role, avatar_url: record.avatar_url, phone: record.phone,
+    is_active: record.is_active,
+  }
+  return { accessToken: newAccessToken, refreshToken: rawToken, user }
 }
 
 // ── Logout (single device) ────────────────────────────────────────────────────

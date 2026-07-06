@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
 import { ThemeProvider } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import { RouterProvider } from 'react-router-dom'
@@ -17,8 +17,19 @@ installInspectDeterrent()
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      // Treat fetched data as fresh for 5 min → navigating back to a page
+      // you already visited is instant (no refetch, no blank screen).
+      staleTime: 5 * 60_000,
+      // Keep cached data around for 30 min after a page unmounts.
+      gcTime: 30 * 60_000,
+      // Show the previous data while a new query (filter/pagination) loads,
+      // so lists never flash empty.
+      placeholderData: keepPreviousData,
+      // Don't hang through 3 retries on a real failure; one quick retry.
+      retry: 1,
+      retryDelay: 800,
       refetchOnWindowFocus: false,
-      staleTime: 60_000,
+      refetchOnReconnect: true,
     },
   },
 })

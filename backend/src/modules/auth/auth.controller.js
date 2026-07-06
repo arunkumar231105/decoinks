@@ -45,7 +45,7 @@ async function refresh(req, res, next) {
     const rawToken = req.cookies?.[authService.COOKIE_NAME]
     const result = await authService.refresh(rawToken, req.ip, req.headers['user-agent'])
     setRefreshCookie(res, result.refreshToken)
-    return success(res, { token: result.accessToken }, 'Token refreshed')
+    return success(res, { token: result.accessToken, user: result.user }, 'Token refreshed')
   } catch (err) {
     // Clear cookie on any refresh failure so the client stops retrying with a bad token
     clearRefreshCookie(res)
