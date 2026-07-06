@@ -30,7 +30,6 @@ import {
   Palette,
   PlugZap,
   ReceiptText,
-  Search,
   Settings,
   ShipWheel,
   Sliders,
@@ -46,6 +45,7 @@ import { useAuthStore } from '../store/authStore'
 import { notReady } from '../utils/actions'
 import { cn } from '../utils/cn'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { GlobalSearch } from '../components/GlobalSearch'
 
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
@@ -268,11 +268,7 @@ export function AppLayout() {
           </div>
 
           <div className="topbar-actions">
-            <div className="global-search">
-              <Search size={18} />
-              <input placeholder="Search jobs, customers, products" />
-              <kbd>Ctrl+K</kbd>
-            </div>
+            <GlobalSearch />
             <Tooltip title="Notifications (Coming Soon)">
               <span>
                 <IconButton disabled sx={{ opacity: 0.4 }}>
