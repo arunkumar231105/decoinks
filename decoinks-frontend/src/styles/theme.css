@@ -420,3 +420,102 @@
 }
 .content-area ::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
 .content-area ::-webkit-scrollbar-track { background: transparent; }
+
+/* ==========================================================================
+   PROFESSIONAL POLISH — broad, safe overrides applied app-wide inside the
+   content area. These target generic elements / class-name patterns so every
+   screen benefits without touching per-page markup.
+   ========================================================================== */
+
+/* Crisper text everywhere */
+.content-area, .sidebar {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every form control gets the same calm focus ring + rounded corners */
+.content-area input:not([type="checkbox"]):not([type="radio"]):focus,
+.content-area select:focus,
+.content-area textarea:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.13);
+}
+.content-area input:not([type="checkbox"]):not([type="radio"]),
+.content-area select,
+.content-area textarea {
+  border-radius: var(--radius-md);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Smooth interactions on all buttons */
+.content-area button {
+  transition: background 120ms ease, border-color 120ms ease,
+              color 120ms ease, box-shadow 120ms ease, transform 60ms ease;
+}
+.content-area button:active { transform: translateY(0.5px); }
+
+/* Consistent card language for every "*-card" container */
+.content-area [class$="-card"],
+.content-area [class*="-card "] {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 140ms ease;
+}
+
+/* Tables: uppercase muted headers + gentle row hover, for any "*-table" */
+.content-area [class*="-table"] thead th {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  background: var(--gray-50);
+}
+.content-area [class*="-table"] tbody tr {
+  transition: background 100ms ease;
+}
+.content-area [class*="-table"] tbody tr:hover {
+  background: var(--gray-50);
+}
+
+/* Pill badges everywhere */
+.content-area [class*="-badge"] {
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Section headings a touch tighter/darker for a designed feel */
+.content-area h1 { letter-spacing: -0.015em; }
+.content-area h2, .content-area h3 {
+  letter-spacing: -0.01em;
+  color: var(--gray-900);
+}
+
+/* Links pick up the brand colour consistently */
+.content-area a:not([class]) { color: var(--brand-600); }
+.content-area a:not([class]):hover { color: var(--brand-700); }
+
+/* Primary action buttons across prefixes share the brand fill */
+.content-area .lb-action-primary,
+.content-area .aw-apply-btn,
+.content-area button[class*="-primary"] {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: #fff;
+}
+.content-area .lb-action-primary:hover,
+.content-area .aw-apply-btn:hover,
+.content-area button[class*="-primary"]:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+}
+
+/* Disabled controls read clearly */
+.content-area button:disabled,
+.content-area input:disabled,
+.content-area select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
