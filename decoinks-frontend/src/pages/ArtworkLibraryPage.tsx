@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
@@ -69,6 +69,7 @@ interface Artwork {
   version: number
   updatedAgo: string
   thumb: string
+  fileUrl: string | null
   leadNo: string
   orderNo: string
   folderId: string
@@ -124,12 +125,33 @@ const THUMB_COLORS: Record<string, [string, string]> = {
 }
 
 
-function ArtworkThumb({ thumb, filename }: { thumb: string; filename: string }) {
+function ArtworkThumb({ thumb, filename, fileUrl }: { thumb: string; filename: string; fileUrl?: string | null }) {
+  const [failed, setFailed] = useState(false)
+  const ext = (filename.split('.').pop() ?? '').toLowerCase()
+  const isImage = /^(png|jpe?g|webp|gif|svg)$/.test(ext) ||
+    /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(fileUrl ?? '')
+
+  // Render the real uploaded image when we have a URL and it's a viewable type
+  if (fileUrl && isImage && !failed) {
+    return (
+      <div className="aw-thumb" style={{ background: '#f1f5f9' }}>
+        <img
+          src={fileUrl}
+          alt={filename}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
+      </div>
+    )
+  }
+
+  // Fallback: coloured tile with initials (non-image files, or a broken URL)
   const [c1, c2] = THUMB_COLORS[thumb] ?? THUMB_COLORS.upload
-  const initials = filename.split('_').slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+  const initials = filename.split(/[_\s.]/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
   return (
     <div className="aw-thumb" style={{ background: `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)` }}>
-      <span className="aw-thumb-text">{initials}</span>
+      <span className="aw-thumb-text">{initials || (ext ? ext.toUpperCase() : 'FILE')}</span>
     </div>
   )
 }
@@ -219,6 +241,8 @@ export function ArtworkLibraryPage() {
   const [artworks, setArtworks] = useState<Artwork[]>([])
   const [folders, setFolders] = useState<ArtworkFolder[]>([])
   const [activities, setActivities] = useState<ActivityEntry[]>([])
+  const [uploading, setUploading] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data: artworkApiData } = useQuery({
     queryKey: ['artworks'],
@@ -238,6 +262,7 @@ export function ArtworkLibraryPage() {
         version: a.version ?? 1,
         updatedAgo: a.updated_at ? new Date(a.updated_at).toLocaleDateString() : '',
         thumb: a.thumb ?? 'upload',
+        fileUrl: a.thumbnail_url ?? a.file_url ?? null,
         leadNo: a.lead_no ?? a.leadNo ?? '',
         orderNo: a.order_no ?? a.orderNo ?? '',
         folderId: a.folder_id ?? a.folderId ?? 'fld-root',
@@ -403,10 +428,11 @@ export function ArtworkLibraryPage() {
     toast.info(`Download ready: ${prepared.fileName}`)
   }
 
-  const uploadArtworkFiles = (event: ChangeEvent<HTMLInputElement>) => {
+  const uploadArtworkFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
     const messages: string[] = []
-    const nextArtworks: Artwork[] = []
+    const valid: File[] = []
 
     files.forEach(file => {
       const validation = validateArtworkFile(file)
@@ -415,36 +441,37 @@ export function ArtworkLibraryPage() {
         return
       }
       messages.push(...validation.warnings.map(warning => `${file.name}: ${warning}`))
-      const id = uid()
-      const uploaded = nowStamp()
-      nextArtworks.push({
-        id,
-        filename: file.name,
-        status: 'Draft',
-        location: 'Front',
-        size: '12x16 in',
-        type: validation.fileType,
-        dimensions: validation.fileType === 'PDF' || validation.fileType === 'AI' || validation.fileType === 'PSD' ? 'Vector / layered file' : 'Pending image check',
-        uploaded,
-        uploadedBy: currentUser,
-        version: 1,
-        updatedAgo: 'just now',
-        thumb: 'upload',
-        leadNo: leadNo || 'LD-2026-0154',
-        orderNo: orderNo || 'ORD-2026-0158',
-        folderId: folderFilter === 'all' ? 'fld-root' : folderFilter,
-        versions: [{ id: uid(), version: 1, uploadedBy: currentUser, uploadedDate: uploaded, fileName: file.name, status: 'Draft', changeNotes: 'Initial upload.' }],
-        comments: [],
-      })
+      valid.push(file)
     })
 
-    if (nextArtworks.length) {
-      setArtworks(prev => [...nextArtworks, ...prev])
-      setActiveArtworkId(nextArtworks[0].id)
-      nextArtworks.forEach(artwork => logActivity('uploaded artwork', artwork.filename))
+    if (!valid.length) { setUploadMessages(messages); return }
+
+    // Actually upload each file to the server so it is stored in the artwork
+    // vault (MinIO + DB) and survives a refresh — not just kept in memory.
+    setUploading(true)
+    let uploaded = 0
+    for (const file of valid) {
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('name', file.name.replace(/\.[^.]+$/, ''))
+        if (leadNo) fd.append('lead_no', leadNo)
+        if (orderNo) fd.append('order_no', orderNo)
+        await api.post('/artworks', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+        uploaded++
+        logActivity('uploaded artwork', file.name)
+      } catch (err: any) {
+        messages.push(`${file.name}: upload failed${err?.response?.data?.message ? ` — ${err.response.data.message}` : ''}`)
+      }
+    }
+    setUploading(false)
+
+    if (uploaded > 0) {
+      messages.unshift(`${uploaded} artwork${uploaded > 1 ? 's' : ''} uploaded to the library.`)
+      // Refetch from the server so the new artworks appear from the DB
+      await queryClient.invalidateQueries({ queryKey: ['artworks'] })
     }
     setUploadMessages(messages)
-    event.target.value = ''
   }
 
   const uploadNewVersion = (id: string) => {
@@ -574,8 +601,8 @@ export function ArtworkLibraryPage() {
           </div>
         </div>
         <div className="aw-header-actions">
-          <button className="lb-action-btn lb-action-primary aw-upload-btn" onClick={() => uploadInputRef.current?.click()}>
-            <Upload size={14} /> Upload Artwork
+          <button className="lb-action-btn lb-action-primary aw-upload-btn" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
+            <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Artwork'}
           </button>
           <button className="lb-action-btn aw-folder-btn" onClick={createFolder}>
             <Plus size={14} /> New Folder
@@ -678,7 +705,7 @@ export function ArtworkLibraryPage() {
                   </label>
                   <span className="aw-version-badge">v{artwork.version}</span>
                 </div>
-                <ArtworkThumb thumb={artwork.thumb} filename={artwork.filename} />
+                <ArtworkThumb thumb={artwork.thumb} filename={artwork.filename} fileUrl={artwork.fileUrl} />
                 <div className="aw-card-body">
                   <p className="aw-card-name">{artwork.filename}</p>
                   <span className={cn('aw-status-badge', STATUS_STYLES[artwork.status])}>{artwork.status}</span>
@@ -713,7 +740,7 @@ export function ArtworkLibraryPage() {
 
         {activeArtwork && (
           <aside className="aw-sidebar">
-            <div className="aw-sidebar-preview"><ArtworkThumb thumb={activeArtwork.thumb} filename={activeArtwork.filename} /></div>
+            <div className="aw-sidebar-preview"><ArtworkThumb thumb={activeArtwork.thumb} filename={activeArtwork.filename} fileUrl={activeArtwork.fileUrl} /></div>
             <div className="aw-sidebar-card">
               <div className="aw-sidebar-title-row">
                 <span className="aw-sidebar-filename">{activeArtwork.filename}</span>
