@@ -140,7 +140,9 @@ function CustomerCombobox({ value, onChange }: { value: string; onChange: (text:
   const ref = useRef<HTMLDivElement>(null)
   const { data } = useQuery({
     queryKey: ['customers-suggest', value],
-    queryFn: () => api.get(`/customers?limit=20&search=${encodeURIComponent(value)}`).then(r => r.data.rows ?? []),
+    // list endpoint wraps rows as { success, data: { rows, total } }
+    queryFn: () => api.get(`/customers?limit=20&search=${encodeURIComponent(value)}`)
+      .then(r => r.data.data?.rows ?? r.data.rows ?? []),
     enabled: value.length > 0,
   })
   useEffect(() => {
@@ -575,38 +577,27 @@ function SummaryItem({ label, value }: { label: string; value?: string }) {
 function CustomerInfoSection({
   leadId, leadNumber, customerSource,
   customerId, customerText, onSelectCustomer, onClearCustomer,
-  customerName, setCustomerName,
-  companyName, setCompanyName,
-  billingEmail, setBillingEmail,
-  contactNumber, setContactNumber,
-  whatsapp, setWhatsapp,
-  wechat, setWechat,
-  customerCategory, setCustomerCategory,
-  shippingCountry, setShippingCountry,
-  shippingState, setShippingState,
-  shippingCity, setShippingCity,
-  zipCode, setZipCode,
-  customerReqSummary, setCustomerReqSummary,
-  quoteEstimate, setQuoteEstimate,
+  customerName, companyName, billingEmail, contactNumber,
+  whatsapp, wechat, customerCategory,
+  shippingCountry, shippingState, shippingCity, zipCode,
 }: {
   leadId: string | null; leadNumber: string; customerSource: string
   customerId: string | null; customerText: string
   onSelectCustomer: (text: string, id?: string, customer?: Record<string, any>) => void
   onClearCustomer: () => void
-  customerName: string; setCustomerName: (v: string) => void
-  companyName: string; setCompanyName: (v: string) => void
-  billingEmail: string; setBillingEmail: (v: string) => void
-  contactNumber: string; setContactNumber: (v: string) => void
-  whatsapp: string; setWhatsapp: (v: string) => void
-  wechat: string; setWechat: (v: string) => void
-  customerCategory: string; setCustomerCategory: (v: string) => void
-  shippingCountry: string; setShippingCountry: (v: string) => void
-  shippingState: string; setShippingState: (v: string) => void
-  shippingCity: string; setShippingCity: (v: string) => void
-  zipCode: string; setZipCode: (v: string) => void
-  customerReqSummary: string; setCustomerReqSummary: (v: string) => void
-  quoteEstimate: string; setQuoteEstimate: (v: string) => void
+  customerName: string
+  companyName: string
+  billingEmail: string
+  contactNumber: string
+  whatsapp: string
+  wechat: string
+  customerCategory: string
+  shippingCountry: string
+  shippingState: string
+  shippingCity: string
+  zipCode: string
 }) {
+  const navigate = useNavigate()
   const location = [shippingCity, shippingState, shippingCountry].filter(Boolean).join(', ')
   return (
     <section className="nq-card">
@@ -634,22 +625,25 @@ function CustomerInfoSection({
         </div>
       )}
 
-      {/* Customer selector — always available */}
-      <div className="nq-cinfo-field nq-cinfo-field-wide" style={{ marginBottom: 14 }}>
-        <label className="nq-field-label">Select Existing Customer</label>
+      {/* Customer selector — the only entry point; details live on the Customers record */}
+      <div className="nq-cinfo-field nq-cinfo-field-wide">
+        <label className="nq-field-label">Select Customer</label>
         <CustomerCombobox value={customerText} onChange={onSelectCustomer} />
         <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, display: 'block' }}>
-          Pick a saved customer to auto-fill their details — or enter a new customer below.
+          Search a saved customer — their details fill in automatically.{' '}
+          New customer?{' '}
+          <button type="button" className="nq-link-btn" style={{ padding: 0, fontSize: 11 }}
+            onClick={() => navigate('/customers')}>
+            Create one in Customers
+          </button>
         </span>
       </div>
 
-      {customerId ? (
-        /* A saved customer is linked — show a compact read-only summary instead of
-           re-asking for all the details (they live in the Customers record and
-           still flow through to the preview/print). */
+      {customerId && (
+        /* Linked customer — compact read-only summary; data flows to preview/print */
         <div style={{
           border: '1px solid var(--border-default, #e2e8f0)', borderRadius: 10,
-          padding: '14px 16px', background: '#f8fafc',
+          padding: '14px 16px', background: '#f8fafc', marginTop: 12,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{
@@ -669,77 +663,6 @@ function CustomerInfoSection({
             <button type="button" className="lb-action-btn" style={{ flexShrink: 0 }} onClick={onClearCustomer}>
               Change
             </button>
-          </div>
-
-          {/* These two are quote-specific (not stored on the customer), so keep them editable */}
-          <div className="nq-cinfo-grid" style={{ marginTop: 14 }}>
-            <div className="nq-cinfo-field nq-cinfo-field-wide">
-              <label className="nq-field-label">Customer Requirement Summary</label>
-              <textarea className="nq-textarea" rows={2} value={customerReqSummary} onChange={e => setCustomerReqSummary(e.target.value)} placeholder="Requirements specific to this quote..." />
-            </div>
-            <div className="nq-cinfo-field">
-              <label className="nq-field-label">Quote Estimate ($)</label>
-              <div className="nq-money-input"><span>$</span><input type="number" min={0} step={0.01} value={quoteEstimate} onChange={e => setQuoteEstimate(e.target.value)} /></div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* No customer linked — full manual entry for a new/one-off customer */
-        <div className="nq-cinfo-grid">
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Customer Name</label>
-            <input className="nq-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Contact person..." />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Company Name</label>
-            <input className="nq-input" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company..." />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Billing Email</label>
-            <input className="nq-input" type="email" value={billingEmail} onChange={e => setBillingEmail(e.target.value)} placeholder="billing@example.com" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Contact Number</label>
-            <input className="nq-input" value={contactNumber} onChange={e => setContactNumber(e.target.value)} placeholder="+1-555-0000" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">WhatsApp</label>
-            <input className="nq-input" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="+1-555-0000" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">WeChat</label>
-            <input className="nq-input" value={wechat} onChange={e => setWechat(e.target.value)} placeholder="WeChat ID" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Customer Category</label>
-            <select className="nq-select" value={customerCategory} onChange={e => setCustomerCategory(e.target.value)}>
-              <option value="">— Select —</option>
-              {['Wholesale', 'Retail', 'Reseller', 'Other'].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Shipping Country</label>
-            <input className="nq-input" value={shippingCountry} onChange={e => setShippingCountry(e.target.value)} placeholder="USA" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Shipping State</label>
-            <input className="nq-input" value={shippingState} onChange={e => setShippingState(e.target.value)} placeholder="TX" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Shipping City</label>
-            <input className="nq-input" value={shippingCity} onChange={e => setShippingCity(e.target.value)} placeholder="Dallas" />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">ZIP Code</label>
-            <input className="nq-input" value={zipCode} onChange={e => setZipCode(e.target.value)} placeholder="75201" />
-          </div>
-          <div className="nq-cinfo-field nq-cinfo-field-wide">
-            <label className="nq-field-label">Customer Requirement Summary</label>
-            <textarea className="nq-textarea" rows={2} value={customerReqSummary} onChange={e => setCustomerReqSummary(e.target.value)} placeholder="Customer's requirements from lead conversation..." />
-          </div>
-          <div className="nq-cinfo-field">
-            <label className="nq-field-label">Quote Estimate ($)</label>
-            <div className="nq-money-input"><span>$</span><input type="number" min={0} step={0.01} value={quoteEstimate} onChange={e => setQuoteEstimate(e.target.value)} /></div>
           </div>
         </div>
       )}
@@ -1340,19 +1263,17 @@ export function NewQuotationPage() {
             leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}
             customerId={customerId} customerText={customerText}
             onSelectCustomer={handleSelectCustomer} onClearCustomer={handleClearCustomer}
-            customerName={customerName} setCustomerName={setCustomerName}
-            companyName={companyName} setCompanyName={setCompanyName}
-            billingEmail={billingEmail} setBillingEmail={setBillingEmail}
-            contactNumber={contactNumber} setContactNumber={setContactNumber}
-            whatsapp={whatsapp} setWhatsapp={setWhatsapp}
-            wechat={wechat} setWechat={setWechat}
-            customerCategory={customerCategory} setCustomerCategory={setCustomerCategory}
-            shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
-            shippingState={shippingState} setShippingState={setShippingState}
-            shippingCity={shippingCity} setShippingCity={setShippingCity}
-            zipCode={zipCode} setZipCode={setZipCode}
-            customerReqSummary={customerReqSummary} setCustomerReqSummary={setCustomerReqSummary}
-            quoteEstimate={quoteEstimate} setQuoteEstimate={setQuoteEstimate}
+            customerName={customerName}
+            companyName={companyName}
+            billingEmail={billingEmail}
+            contactNumber={contactNumber}
+            whatsapp={whatsapp}
+            wechat={wechat}
+            customerCategory={customerCategory}
+            shippingCountry={shippingCountry}
+            shippingState={shippingState}
+            shippingCity={shippingCity}
+            zipCode={zipCode}
           />
 
           {(leadId || leadItems.length > 0) && (
