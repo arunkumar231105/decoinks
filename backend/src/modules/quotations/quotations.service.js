@@ -139,6 +139,9 @@ async function update(id, {
            payment_terms=COALESCE($33, payment_terms),
            payment_method=COALESCE($34, payment_method),
            customer_notes=COALESCE($35, customer_notes),
+           -- editing an already-saved quote bumps the revision so it is
+           -- visibly marked as revised (1 = original)
+           revision_number=COALESCE(revision_number, 1) + 1,
            updated_at=NOW()
        WHERE id=$36
        RETURNING id`,

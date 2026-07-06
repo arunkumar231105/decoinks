@@ -212,35 +212,40 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
 
 function QuoteHeader({
   status,
+  quoteNumber,
+  revisionNumber,
   quoteDate,
   validUntil,
   setValidUntil,
-  dueDate,
-  setDueDate,
   agent,
   setAgent,
 }: {
   status: QuoteStatus
+  quoteNumber: string
+  revisionNumber: number
   quoteDate: string
   validUntil: string
   setValidUntil: (v: string) => void
-  dueDate: string
-  setDueDate: (v: string) => void
   agent: string
   setAgent: (agent: string) => void
 }) {
+  const isRevised = revisionNumber > 1
   return (
     <section className="nq-info-bar">
       <div className="nq-info-field">
         <label>Quote #</label>
         <div className="nq-quote-num">
-          <input className="nq-input nq-input-readonly" value="AUTO-GENERATED" readOnly />
+          <input className="nq-input nq-input-readonly" value={quoteNumber || 'AUTO-GENERATED'} readOnly />
           <span className="nq-badge nq-badge-draft">{status}</span>
+          {isRevised && (
+            <span className="nq-badge nq-badge-approved" title={`This quote has been edited ${revisionNumber - 1} time(s)`}>
+              Revised · v{revisionNumber}
+            </span>
+          )}
         </div>
       </div>
       <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" value={quoteDate} readOnly /></div>
       <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
-      <div className="nq-info-field"><label>Due Date</label><input className="nq-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
       <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
       <div className="nq-info-field">
         <label>Sales Agent</label>
@@ -1319,7 +1324,12 @@ export function NewQuotationPage() {
         </div>
       </header>
 
-      <QuoteHeader status={status} quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil} dueDate={dueDate} setDueDate={setDueDate} agent={agent} setAgent={setAgent} />
+      <QuoteHeader
+        status={status}
+        quoteNumber={(quotationData as Record<string, any>)?.quote_number ?? ''}
+        revisionNumber={Number((quotationData as Record<string, any>)?.revision_number ?? 1)}
+        quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
+        agent={agent} setAgent={setAgent} />
 
       <div className="nq-body">
         <main className="nq-main">
