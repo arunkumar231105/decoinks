@@ -1,7 +1,21 @@
 ================================================================================
- DECOINKS POS - COMPLETE DATABASE SCHEMA
- PostgreSQL 15 | Schema state after migrations 001 - 044 | Date: 2026-07-04
+ DECOINKS POS - COMPLETE DATABASE SCHEMA (AFTER NORMALIZATION PHASE 1)
+ PostgreSQL 15 | Schema state after migrations 001 - 046 | Date: 2026-07-06
 ================================================================================
+
+ WHAT CHANGED SINCE THE PRE-NORMALIZATION VERSION (migrations 045-046):
+   045_integrity_backstops : two guarded UNIQUE indexes
+        - uq_invoices_quote_id  (one invoice per quotation)
+        - uq_po_fragment_no     (unique fragment_no within a PO)
+   046_normalized_master_layer : NEW additive ERP-style master tables
+        parties, party_roles, party_contacts, party_addresses,
+        files, file_links, status_history  (see SECTION 15 below).
+        These were BACKFILLED from suppliers/customers/vendors/artworks/
+        attachments. NOTHING was dropped or altered — the old tables and
+        columns are all still present and still used by the app. This is
+        Phase 1 (expand) of a phased normalization; later phases will move
+        the code onto these tables and only then retire duplicated columns.
+
 
  Conventions:
    PK  = Primary Key (all PKs are UUID, default uuid_generate_v4())
@@ -768,6 +782,95 @@ TABLE: _migrations          (migration tracker used by run.js)
   applied_at TIMESTAMPTZ NN DEFAULT NOW()
 
 ================================================================================
+ 15. NORMALIZATION MASTER LAYER  (Phase 1 — migration 046, NEW)
+================================================================================
+ These tables are the additive, normalized foundation. They are populated
+ (backfilled) from the existing data. The old tables/columns still exist and
+ are still what the application reads today; these are the target the code
+ will move onto in later phases. Every row carries source_table/source_id so
+ it can be traced back to its origin and the backfill stays idempotent.
+
+TABLE: parties              (one identity per company/person -
+                             replaces the customers+suppliers+vendors overlap)
+  id           UUID PK
+  party_code   VARCHAR(40) UQ               (e.g. PTY-XXXXXXXXXX, derived from id)
+  name         VARCHAR(255) NN
+  company_name VARCHAR(255)
+  website      VARCHAR(255)
+  tax_number   VARCHAR(50)
+  status       VARCHAR(20) NN DEFAULT 'Active'
+  notes        TEXT
+  source_table VARCHAR(30)                  ('suppliers' | 'customers' | 'vendors')
+  source_id    UUID                         (id of the origin row)
+  created_at / updated_at / deleted_at
+  UNIQUE (source_table, source_id)
+
+TABLE: party_roles          (a party can be Customer AND Supplier AND Vendor)
+  id         UUID PK
+  party_id   UUID NN FK -> parties(id) ON DELETE CASCADE
+  role_type  VARCHAR(30) NN                 (Customer|Supplier|Vendor|
+                                             Fulfillment Partner|Manufacturer|
+                                             Distributor|Sales Agent)
+  created_at
+  UNIQUE (party_id, role_type)
+
+TABLE: party_contacts       (central home for email/phone/whatsapp/wechat...)
+  id            UUID PK
+  party_id      UUID NN FK -> parties(id) ON DELETE CASCADE
+  contact_name  VARCHAR(150)
+  contact_type  VARCHAR(20) NN              (Email|Phone|WhatsApp|WeChat|
+                                             Facebook|Instagram|Website)
+  contact_value VARCHAR(255) NN
+  is_primary    BOOLEAN NN DEFAULT FALSE
+  created_at
+
+TABLE: party_addresses      (central home for all addresses)
+  id           UUID PK
+  party_id     UUID NN FK -> parties(id) ON DELETE CASCADE
+  address_type VARCHAR(20) NN DEFAULT 'Shipping'  (Billing|Shipping|Factory|Pickup|Other)
+  line1        VARCHAR(255)
+  line2        VARCHAR(255)
+  city         VARCHAR(100)
+  state        VARCHAR(100)
+  zip          VARCHAR(20)
+  country      VARCHAR(100)
+  is_default   BOOLEAN NN DEFAULT FALSE
+  created_at
+
+TABLE: files                (central file registry - replaces scattered
+                             file_url/image_url/thumbnail_url/front_image/back_image)
+  id           UUID PK
+  file_name    VARCHAR(255)
+  storage_path TEXT NN UQ                   (the URL / MinIO object key)
+  file_type    VARCHAR(30)
+  mime_type    VARCHAR(100)
+  file_size    INTEGER
+  checksum     VARCHAR(128)
+  uploaded_by  UUID FK -> users(id) ON DELETE SET NULL
+  created_at
+
+TABLE: file_links           (which entities a file belongs to; a file can be
+                             reused across many entities)
+  id          UUID PK
+  file_id     UUID NN FK -> files(id) ON DELETE CASCADE
+  entity_type VARCHAR(40) NN               (lead|quotation|invoice|order|artwork|po|shipment)
+  entity_id   UUID NN
+  purpose     VARCHAR(40)                  (original_artwork|thumbnail|mockup|front|back|attachment)
+  created_at
+  UNIQUE (file_id, entity_type, entity_id, purpose)
+
+TABLE: status_history       (unified workflow history for every module -
+                             replaces per-module status_history tables)
+  id          UUID PK
+  entity_type VARCHAR(40) NN               (quotation|invoice|order|purchase_order|shipment|artwork|lead)
+  entity_id   UUID NN
+  old_status  VARCHAR(50)
+  new_status  VARCHAR(50) NN
+  changed_by  UUID FK -> users(id) ON DELETE SET NULL
+  changed_at  TIMESTAMPTZ NN DEFAULT NOW()
+  notes       TEXT
+
+================================================================================
  FUNCTIONS & TRIGGERS
 ================================================================================
  set_updated_at()                : sets NEW.updated_at = NOW()
@@ -792,14 +895,24 @@ TABLE: _migrations          (migration tracker used by run.js)
  shipments.order_id       -> orders
  artworks: linked to supplier / order / quotation as work progresses
 
- KNOWN LEGACY DEBT (planned for a future phase, documented for reviewers):
- - Three party tables (suppliers / vendors / customers) still coexist;
-   a merge into one canonical party model is planned.
- - Contact/address snapshot columns are still duplicated on
-   leads / quotations / invoices / orders (historical design); new PO
-   module already uses the normalized join-based approach instead.
- - Three order_items_* tables (apparel/gangsheet/dtf) may be unified
-   into a single order_items table in a future migration.
+ NORMALIZED MASTER LAYER (target of the migration; populated, not yet primary):
+ parties(1) --< party_roles      (a party holds many roles)
+ parties(1) --< party_contacts   (all emails/phones/whatsapp/wechat)
+ parties(1) --< party_addresses  (all billing/shipping/factory addresses)
+ files(1)   --< file_links       (a file linked to many entities)
+ status_history                  (one history table for every module)
+
+ PHASED NORMALIZATION STATUS (see NORMALIZATION_PLAN.md):
+ - Phase 1 DONE (migration 046): master layer created + backfilled. Additive
+   only; the app still reads the old tables/columns, so behaviour is unchanged.
+ - REMAINING (future phases, per module, expand->migrate->contract):
+   * Point reads/writes at parties/party_contacts/party_addresses, then retire
+     the duplicated contact/address snapshot columns on
+     leads/quotations/invoices/orders (and merge suppliers/customers/vendors).
+   * Merge the three order_items_* tables (apparel/gangsheet/dtf) into one
+     order_items table (product_type + item_config JSONB).
+   * Route file URLs through files/file_links; drop scattered *_image/*_url cols.
+   * Drop invoices.amount_paid/balance_due (already trigger-synced from payments).
 ================================================================================
  END OF SCHEMA
 ================================================================================
