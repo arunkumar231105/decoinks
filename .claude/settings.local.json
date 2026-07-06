@@ -75,7 +75,11 @@
       "Bash(xargs grep -l \"po_items\\\\|purchase_order\")",
       "Bash(git mv *)",
       "Bash(sed -i 's/customer portal origins/supplier portal origins/' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\backend\\\\.env\")",
-      "Bash(sed -i 's/sent to customer portal!/sent to supplier portal!/' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\\\\NewOrderPage.tsx\")"
+      "Bash(sed -i 's/sent to customer portal!/sent to supplier portal!/' \"c:\\\\Users\\\\Arun Kumar.DESKTOP-1NHQSUD\\\\Desktop\\\\POS Software\\\\decoinks-frontend\\\\src\\\\pages\\\\NewOrderPage.tsx\")",
+      "Bash(tasklist //FI \"IMAGENAME eq Docker Desktop.exe\")",
+      "PowerShell(Start-Process -FilePath \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\" -WindowStyle Minimized)",
+      "PowerShell(Get-Process \"Docker Desktop\" -ErrorAction SilentlyContinue)",
+      "Bash(npx jest *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Arun Kumar.DESKTOP-1NHQSUD\\Desktop\\POS Software\\decoinks-frontend\\.git",
