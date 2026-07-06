@@ -1,50 +1,59 @@
+import { lazy, type ComponentType } from 'react'
 import { Navigate, createBrowserRouter } from 'react-router-dom'
 import App from '../App'
 import { AppLayout } from '../layouts/AppLayout'
 import { ProtectedRoute } from '../layouts/ProtectedRoute'
-import { ArtworkFormPage } from '../pages/ArtworkFormPage'
-import { BoardPage } from '../pages/BoardPage'
-import { DashboardPage } from '../pages/DashboardPage'
-import { ForgotPasswordPage } from '../pages/ForgotPasswordPage'
-import { AddLeadPage } from '../pages/AddLeadPage'
-import { LeadBoardPage } from '../pages/LeadBoardPage'
-import { LeadsListPage } from '../pages/LeadsListPage'
-import { LoginPage } from '../pages/LoginPage'
-import { NewInvoicePage } from '../pages/NewInvoicePage'
-import { SuppliersPage } from '../pages/SuppliersPage'
-import { FulfillmentBoardPage } from '../pages/FulfillmentBoardPage'
-import { NewSupplierPage } from '../pages/NewSupplierPage'
-import { NewOrderPage } from '../pages/NewOrderPage'
-import { OrderDetailPage } from '../pages/OrderDetailPage'
-import { NewShipmentPage } from '../pages/NewShipmentPage'
-import { NewPurchaseOrderPage } from '../pages/NewPurchaseOrderPage'
-import { PurchaseOrderDetailPage } from '../pages/PurchaseOrderDetailPage'
-import { ProductsPage } from '../pages/ProductsPage'
-import { ResetPasswordPage } from '../pages/ResetPasswordPage'
-import { SettingsGeneralPage } from '../pages/SettingsGeneralPage'
-import { SettingsUsersPage } from '../pages/SettingsUsersPage'
-import { UserEditPage } from '../pages/UserEditPage'
-import { WorkflowListPage } from '../pages/WorkflowListPage'
-import { QuotesListPage } from '../pages/QuotesListPage'
-import { NewQuotationPage } from '../pages/NewQuotationPage'
-import { ShipmentsPage } from '../pages/ShipmentsPage'
-import { ArtworkLibraryPage } from '../pages/ArtworkLibraryPage'
-import { AIAutomationsPage } from '../pages/AIAutomationsPage'
-import { SettingsWorkflowPage } from '../pages/SettingsWorkflowPage'
-import { SettingsIntegrationsPage } from '../pages/SettingsIntegrationsPage'
-import { SettingsBillingPage } from '../pages/SettingsBillingPage'
-import { SetupPage } from '../pages/SetupPage'
-import { SupplierDetailPage } from '../pages/SupplierDetailPage'
-import { SettingsCustomFieldsPage } from '../pages/SettingsCustomFieldsPage'
-import { InvoiceDetailPage } from '../pages/InvoiceDetailPage'
-import { QuotePrintPage } from '../pages/QuotePrintPage'
-import { InvoicePrintPage } from '../pages/InvoicePrintPage'
-import { PurchaseOrderPrintPage } from '../pages/PurchaseOrderPrintPage'
-import { OrderPrintPage } from '../pages/OrderPrintPage'
-import { InvoiceReceiptPage } from '../pages/InvoiceReceiptPage'
-import { CustomersPage } from '../pages/CustomersPage'
-import { NewCustomerPage } from '../pages/NewCustomerPage'
-import { CustomerDetailPage } from '../pages/CustomerDetailPage'
+
+// Pages are code-split: each becomes its own chunk loaded on demand, so the
+// initial download is just the shell + the first page, not all ~45 screens.
+// (React.lazy needs a default export; pages use named exports, hence the map.)
+const page = <T extends ComponentType<any> = ComponentType<any>>(
+  loader: () => Promise<Record<string, unknown>>, name: string,
+) => lazy(() => loader().then((m) => ({ default: m[name] as T })))
+
+const ArtworkFormPage        = page(() => import('../pages/ArtworkFormPage'), 'ArtworkFormPage')
+const BoardPage              = page(() => import('../pages/BoardPage'), 'BoardPage')
+const DashboardPage          = page(() => import('../pages/DashboardPage'), 'DashboardPage')
+const ForgotPasswordPage     = page(() => import('../pages/ForgotPasswordPage'), 'ForgotPasswordPage')
+const AddLeadPage            = page(() => import('../pages/AddLeadPage'), 'AddLeadPage')
+const LeadBoardPage          = page(() => import('../pages/LeadBoardPage'), 'LeadBoardPage')
+const LeadsListPage          = page(() => import('../pages/LeadsListPage'), 'LeadsListPage')
+const LoginPage              = page(() => import('../pages/LoginPage'), 'LoginPage')
+const NewInvoicePage         = page(() => import('../pages/NewInvoicePage'), 'NewInvoicePage')
+const SuppliersPage          = page(() => import('../pages/SuppliersPage'), 'SuppliersPage')
+const FulfillmentBoardPage   = page(() => import('../pages/FulfillmentBoardPage'), 'FulfillmentBoardPage')
+const NewSupplierPage        = page(() => import('../pages/NewSupplierPage'), 'NewSupplierPage')
+const NewOrderPage           = page(() => import('../pages/NewOrderPage'), 'NewOrderPage')
+const OrderDetailPage        = page(() => import('../pages/OrderDetailPage'), 'OrderDetailPage')
+const NewShipmentPage        = page(() => import('../pages/NewShipmentPage'), 'NewShipmentPage')
+const NewPurchaseOrderPage   = page(() => import('../pages/NewPurchaseOrderPage'), 'NewPurchaseOrderPage')
+const PurchaseOrderDetailPage= page(() => import('../pages/PurchaseOrderDetailPage'), 'PurchaseOrderDetailPage')
+const ProductsPage           = page(() => import('../pages/ProductsPage'), 'ProductsPage')
+const ResetPasswordPage      = page(() => import('../pages/ResetPasswordPage'), 'ResetPasswordPage')
+const SettingsGeneralPage    = page(() => import('../pages/SettingsGeneralPage'), 'SettingsGeneralPage')
+const SettingsUsersPage      = page(() => import('../pages/SettingsUsersPage'), 'SettingsUsersPage')
+const UserEditPage           = page(() => import('../pages/UserEditPage'), 'UserEditPage')
+const WorkflowListPage       = page(() => import('../pages/WorkflowListPage'), 'WorkflowListPage')
+const QuotesListPage         = page(() => import('../pages/QuotesListPage'), 'QuotesListPage')
+const NewQuotationPage       = page(() => import('../pages/NewQuotationPage'), 'NewQuotationPage')
+const ShipmentsPage          = page(() => import('../pages/ShipmentsPage'), 'ShipmentsPage')
+const ArtworkLibraryPage     = page(() => import('../pages/ArtworkLibraryPage'), 'ArtworkLibraryPage')
+const AIAutomationsPage      = page(() => import('../pages/AIAutomationsPage'), 'AIAutomationsPage')
+const SettingsWorkflowPage   = page(() => import('../pages/SettingsWorkflowPage'), 'SettingsWorkflowPage')
+const SettingsIntegrationsPage = page(() => import('../pages/SettingsIntegrationsPage'), 'SettingsIntegrationsPage')
+const SettingsBillingPage    = page(() => import('../pages/SettingsBillingPage'), 'SettingsBillingPage')
+const SetupPage              = page(() => import('../pages/SetupPage'), 'SetupPage')
+const SupplierDetailPage     = page(() => import('../pages/SupplierDetailPage'), 'SupplierDetailPage')
+const SettingsCustomFieldsPage = page(() => import('../pages/SettingsCustomFieldsPage'), 'SettingsCustomFieldsPage')
+const InvoiceDetailPage      = page(() => import('../pages/InvoiceDetailPage'), 'InvoiceDetailPage')
+const QuotePrintPage         = page(() => import('../pages/QuotePrintPage'), 'QuotePrintPage')
+const InvoicePrintPage       = page(() => import('../pages/InvoicePrintPage'), 'InvoicePrintPage')
+const PurchaseOrderPrintPage = page(() => import('../pages/PurchaseOrderPrintPage'), 'PurchaseOrderPrintPage')
+const OrderPrintPage         = page(() => import('../pages/OrderPrintPage'), 'OrderPrintPage')
+const InvoiceReceiptPage     = page(() => import('../pages/InvoiceReceiptPage'), 'InvoiceReceiptPage')
+const CustomersPage          = page(() => import('../pages/CustomersPage'), 'CustomersPage')
+const NewCustomerPage        = page(() => import('../pages/NewCustomerPage'), 'NewCustomerPage')
+const CustomerDetailPage     = page(() => import('../pages/CustomerDetailPage'), 'CustomerDetailPage')
 
 export const router = createBrowserRouter([
   {
