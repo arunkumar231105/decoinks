@@ -485,18 +485,21 @@ const ORDER_HEADER_MAP = {
   paymentstatus: 'payment_status',
   notes: 'notes', internalnotes: 'notes',
   contactname: 'contact_name', contact: 'contact_name',
-  contactemail: 'contact_email', email: 'contact_email',
+  customername: 'contact_name', customer: 'contact_name',   // shared master CSV
+  contactemail: 'contact_email', email: 'contact_email', billingemail: 'contact_email',
   contactphone: 'contact_phone', phone: 'contact_phone',
   shippingname: 'shipping_name', shipname: 'shipping_name',
   shippingaddress: 'shipping_address', address: 'shipping_address',
   // item fields (prefix li_)
-  item: 'li_item', product: 'li_item', artworkname: 'li_item',
-  color: 'li_color', colour: 'li_color',
-  size: 'li_size', artworksize: 'li_size',
+  item: 'li_item', product: 'li_item', artworkname: 'li_item', description: 'li_item',
+  color: 'li_color', colour: 'li_color', colors: 'li_color',
+  size: 'li_size', sizes: 'li_size', artworksize: 'li_size',
   qty: 'li_qty', quantity: 'li_qty',
   unitprice: 'li_unit_price', price: 'li_unit_price', rate: 'li_unit_price',
   pricepersheet: 'li_price_per_sheet', sheetprice: 'li_price_per_sheet',
-  noartworks: 'li_no_artworks', artworks: 'li_no_artworks',
+  noartworks: 'li_no_artworks', artworks: 'li_no_artworks', artworkcount: 'li_no_artworks',
+  // Quote/invoice-only columns (company, whatsapp, city, state, zip, estimate,
+  // status...) are not listed, so they are ignored on an order import.
 }
 
 const VALID_ORDER_TYPES = ['apparel', 'gangsheet', 'dtf']

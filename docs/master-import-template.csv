@@ -1,0 +1,3 @@
+customer_name,company,email,phone,whatsapp,wechat,category,source,country,state,city,zip,shipping_address,billing_address,order_type,product,qty,unit_price,size,color,no_artworks,price_per_sheet,payment_terms,due_date,notes,estimate,status
+John Smith,Acme Corp,john@acme.com,+1-555-1234,+1-555-1234,,Wholesale,Email,USA,TX,Dallas,75201,"123 Main St, Dallas, TX",,apparel,Gildan 5000 Tee,50,7.50,L,Black,1,,Net 30,2026-08-01,Rush job,400,Draft
+Mary Lee,Bright Prints,mary@bright.com,+1-555-9876,,,Retail,WhatsApp,USA,CA,LA,90001,"9 Sunset Blvd, LA, CA",,gangsheet,22x60 Sheet,100,,,,3,25,Due on Receipt,2026-08-05,Repeat customer,2500,Draft

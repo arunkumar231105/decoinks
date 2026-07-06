@@ -434,8 +434,15 @@ const HEADER_MAP = {
   price:             'li_unit_price',
   rate:              'li_unit_price',
   sizes:             'li_sizes',
+  size:              'li_sizes',   // accept singular too (shared master CSV)
   colors:            'li_colors',
+  color:             'li_colors',
+  colour:            'li_colors',
   artworkcount:      'li_artwork_count',
+  noartworks:        'li_artwork_count',
+  artworks:          'li_artwork_count',
+  // Columns that belong to other modules (order_type, payment_terms, etc.)
+  // are simply not listed here, so they are ignored on a quote import.
 }
 
 const VALID_STATUSES = ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired']
