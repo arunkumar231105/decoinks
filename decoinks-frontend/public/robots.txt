@@ -1,0 +1,6 @@
+# Decoinks Printshop OS — internal business application.
+# Not intended for public indexing or crawling.
+User-agent: *
+Disallow: /
+
+# No sitemap is published for this private application.
