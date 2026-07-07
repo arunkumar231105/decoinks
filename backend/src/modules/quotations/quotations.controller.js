@@ -69,15 +69,25 @@ async function bulkUpload(req, res, next) {
       return res.status(400).json({ success: false, message: 'No CSV file uploaded' })
     }
     const dryRun = req.query.preview === 'true'
+    const useAi  = req.query.ai === 'true'
     const fs = require('fs')
-    const buffer = fs.readFileSync(req.file.path)
+    let buffer = fs.readFileSync(req.file.path)
     // Clean up temp file
     fs.unlink(req.file.path, () => {})
+
+    // AI mode: let Grok normalise any layout into our canonical columns first,
+    // then the same deterministic parser/validator/preview handles the rest.
+    if (useAi) {
+      const { aiNormaliseCsv } = require('../../utils/aiCsv')
+      const normalised = await aiNormaliseCsv(buffer.toString('utf8'))
+      buffer = Buffer.from(normalised, 'utf8')
+    }
+
     const result = await service.bulkParseAndProcess(buffer, {
       dryRun,
       createdBy: req.user.id,
     })
-    return success(res, result, dryRun ? 'Preview ready' : `Import complete`)
+    return success(res, { ...result, ai: useAi }, dryRun ? 'Preview ready' : `Import complete`)
   } catch (err) { next(err) }
 }
 

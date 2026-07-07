@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Download, Upload, X, XCircle } from 'lucide-react'
+import { CheckCircle, Download, Sparkles, Upload, X, XCircle } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
 
@@ -31,12 +31,13 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
+  const [useAi, setUseAi] = useState(false)
 
   const previewMutation = useMutation({
-    mutationFn: (f: File) => {
+    mutationFn: ({ f, ai }: { f: File; ai: boolean }) => {
       const fd = new FormData()
       fd.append('file', f)
-      return api.post('/quotations/bulk-upload?preview=true', fd, {
+      return api.post(`/quotations/bulk-upload?preview=true${ai ? '&ai=true' : ''}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
     },
@@ -45,10 +46,10 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
   })
 
   const importMutation = useMutation({
-    mutationFn: (f: File) => {
+    mutationFn: ({ f, ai }: { f: File; ai: boolean }) => {
       const fd = new FormData()
       fd.append('file', f)
-      return api.post('/quotations/bulk-upload', fd, {
+      return api.post(`/quotations/bulk-upload${ai ? '?ai=true' : ''}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
     },
@@ -65,7 +66,13 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
     const f = e.target.files?.[0] ?? null
     setFile(f)
     setPreview(null)
-    if (f) previewMutation.mutate(f)
+    if (f) previewMutation.mutate({ f, ai: useAi })
+  }
+
+  const toggleAi = (next: boolean) => {
+    setUseAi(next)
+    setPreview(null)
+    if (file) previewMutation.mutate({ f: file, ai: next })
   }
 
   const handleDownloadTemplate = () => {
@@ -92,7 +99,7 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid #e5e7eb' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#111827' }}>Bulk Upload Quotations</h2>
-            <p style={{ margin: '3px 0 0', fontSize: 13, color: '#6b7280' }}>Upload a CSV to create multiple quotations at once. No AI needed.</p>
+            <p style={{ margin: '3px 0 0', fontSize: 13, color: '#6b7280' }}>Upload a CSV to create multiple quotations at once.</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 4 }}>
             <X size={20} />
@@ -101,6 +108,26 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+
+          {/* AI toggle */}
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18, cursor: 'pointer',
+            padding: '12px 14px', borderRadius: 10,
+            border: `1px solid ${useAi ? '#5eead4' : '#e5e7eb'}`,
+            background: useAi ? '#f0fdfa' : '#fafafa',
+          }}>
+            <input type="checkbox" checked={useAi} onChange={e => toggleAi(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, color: '#0f766e' }}>
+                <Sparkles size={14} /> Smart import with AI
+              </span>
+              <span style={{ display: 'block', fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                Let AI read any column layout (e.g. a DTF PO master sheet) — it maps
+                fields, detects the quote type and works out totals. You still review
+                the preview before importing.
+              </span>
+            </span>
+          </label>
 
           {/* Step 1: Template */}
           <div style={{ marginBottom: 20 }}>
@@ -234,7 +261,7 @@ export function BulkUploadModal({ onClose }: { onClose: () => void }) {
           <button
             className="lb-action-btn lb-action-primary"
             disabled={!preview || preview.validRows === 0 || pending || importMutation.isPending}
-            onClick={() => file && importMutation.mutate(file)}
+            onClick={() => file && importMutation.mutate({ f: file, ai: useAi })}
             style={{ gap: 6 }}
           >
             {importMutation.isPending
