@@ -394,6 +394,8 @@ function normaliseHeader(h) {
 const HEADER_MAP = {
   customername:      'customer_name',
   customer:          'customer_name',
+  clientname:        'customer_name',   // DTF PO master sheet
+  client:            'customer_name',
   companyname:       'company_name',
   company:           'company_name',
   email:             'billing_email',
@@ -418,9 +420,15 @@ const HEADER_MAP = {
   zipcode:           'zip_code',
   shippingaddress:   'shipping_address',
   address:           'shipping_address',
+  shiptoaddress:     'shipping_address',   // DTF PO master sheet
+  shipto:            'shipping_address',
+  poshipping:        'shipping_address',
+  poshippingaddress: 'shipping_address',
   billingaddress:    'billing_address',
   duedate:           'due_date',
   deliverydate:      'due_date',
+  requireddate:      'due_date',
+  requireddeliverydate: 'due_date',
   notes:             'internal_notes',
   internalnotes:     'internal_notes',
   estimate:          'quote_estimate',
@@ -433,17 +441,26 @@ const HEADER_MAP = {
   description:       'li_description',
   qty:               'li_qty',
   quantity:          'li_qty',
+  totalgangsheets:   'li_qty',   // DTF: number of gangsheets = quantity
+  gangsheets:        'li_qty',
   unitprice:         'li_unit_price',
   price:             'li_unit_price',
   rate:              'li_unit_price',
+  netproduct:        'li_net_amount',   // DTF: net product amount for the row
+  netproductcost:    'li_net_amount',
+  netamount:         'li_net_amount',
+  netproductprice:   'li_net_amount',
   sizes:             'li_sizes',
   size:              'li_sizes',   // accept singular too (shared master CSV)
+  gangsheetwidth:    'li_width',   // DTF gangsheet dimensions → description
+  gangsheetlength:   'li_length',
   colors:            'li_colors',
   color:             'li_colors',
   colour:            'li_colors',
   artworkcount:      'li_artwork_count',
   noartworks:        'li_artwork_count',
   artworks:          'li_artwork_count',
+  totalartworks:     'li_artwork_count',
   // Columns that belong to other modules (order_type, payment_terms, etc.)
   // are simply not listed here, so they are ignored on a quote import.
 }
@@ -604,6 +621,19 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
       mappedFields.status = 'Draft'
     }
 
+    // Synthesise a product description when the sheet has no explicit product
+    // column but does carry order-type / gangsheet data (e.g. a DTF PO sheet).
+    if (!lineItem.description || !String(lineItem.description).trim()) {
+      const typeLabel =
+        mappedFields.order_type === 'dtf'       ? 'DTF Transfer' :
+        mappedFields.order_type === 'gangsheet' ? 'Gangsheet' :
+        mappedFields.order_type === 'apparel'   ? 'Custom Apparel' : ''
+      const dims = [lineItem.width, lineItem.length]
+        .filter(v => v && String(v).trim()).join(' / ')
+      const parts = [typeLabel, dims && `(${dims})`].filter(Boolean)
+      if (parts.length) lineItem.description = parts.join(' ')
+    }
+
     // Line item: qty
     if (lineItem.qty !== undefined && lineItem.qty !== '') {
       const { value, error } = parseNum(lineItem.qty, 1)
@@ -613,13 +643,24 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
       lineItem.qty = lineItem.description ? 1 : null
     }
 
-    // Line item: unit_price
-    if (lineItem.unit_price !== undefined && lineItem.unit_price !== '') {
-      const { value, error } = parseNum(lineItem.unit_price, 0)
+    // Line item: unit_price (strip $ and commas that survive from spreadsheets)
+    const stripMoney = (v) => String(v ?? '').replace(/[$,\s]/g, '')
+    if (lineItem.unit_price !== undefined && stripMoney(lineItem.unit_price) !== '') {
+      const { value, error } = parseNum(stripMoney(lineItem.unit_price), 0)
       if (error) { errors.push(`unit_price: ${error}`); lineItem.unit_price = null }
       else lineItem.unit_price = value
     } else {
       lineItem.unit_price = 0
+    }
+
+    // Net amount → unit price: sheets that give the row's whole net amount
+    // (not a per-unit price) are converted so qty × unit_price = net amount.
+    if (lineItem.net_amount !== undefined && stripMoney(lineItem.net_amount) !== '') {
+      const { value, error } = parseNum(stripMoney(lineItem.net_amount), 0)
+      if (!error && value != null) {
+        const q = lineItem.qty && lineItem.qty > 0 ? lineItem.qty : 1
+        lineItem.unit_price = +(value / q).toFixed(2)
+      }
     }
 
     // Line item: artwork_count
