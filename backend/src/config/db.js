@@ -12,6 +12,9 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  // Robustness: a hung/runaway query can't tie up a pool connection forever.
+  statement_timeout: 20000,       // server aborts any query running > 20s
+  query_timeout: 25000,           // client gives up after 25s
 })
 
 pool.on('error', (err) => {

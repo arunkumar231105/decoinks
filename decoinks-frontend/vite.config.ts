@@ -16,6 +16,9 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'mui-vendor': ['@mui/material', '@mui/system', '@emotion/react', '@emotion/styled'],
           'data-vendor': ['@tanstack/react-query', 'axios'],
+          // Heavy, single-page libs split out so they cache separately and
+          // don't bloat the page chunk that uses them.
+          'charts-vendor': ['recharts'],
         },
       },
     },
