@@ -17,7 +17,7 @@ const uploadCsv = multer({
       file.originalname.toLowerCase().endsWith('.csv')
     ok ? cb(null, true) : cb(new Error('Only .csv files are allowed'), false)
   },
-})
+}).single('file')
 
 const router = Router()
 router.use(verifyToken)
