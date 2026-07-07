@@ -408,6 +408,9 @@ const HEADER_MAP = {
   customercategory:  'customer_category',
   source:            'customer_source',
   customersource:    'customer_source',
+  ordertype:         'order_type',
+  type:              'order_type',
+  printtype:         'order_type',
   country:           'shipping_country',
   state:             'shipping_state',
   city:              'shipping_city',
@@ -553,6 +556,21 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
 
     // --- Validate / coerce fields ---
 
+    // order_type: normalise free text (DTF/transfer→dtf, gangsheet→gangsheet,
+    // anything else→apparel). Absent = leave null.
+    if (mappedFields.order_type !== undefined) {
+      const ot = (mappedFields.order_type || '').toString().toLowerCase()
+      if (!ot.trim()) {
+        mappedFields.order_type = null
+      } else if (ot.includes('dtf') || ot.includes('transfer')) {
+        mappedFields.order_type = 'dtf'
+      } else if (ot.includes('gang')) {
+        mappedFields.order_type = 'gangsheet'
+      } else {
+        mappedFields.order_type = 'apparel'
+      }
+    }
+
     // due_date
     if (mappedFields.due_date !== undefined) {
       const parsed = parseDate(mappedFields.due_date)
@@ -667,7 +685,7 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
 
       const { rows } = await client.query(
         `INSERT INTO quotations (
-           quote_number, status,
+           quote_number, status, order_type,
            subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
            customer_name, company_name, billing_email, contact_number,
            whatsapp, wechat, customer_category, customer_source,
@@ -676,14 +694,15 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
            due_date, internal_notes, quote_estimate,
            created_by
          ) VALUES (
-           $1,$2,$3,0,$4,0,$5,$6,
-           $7,$8,$9,$10,$11,$12,$13,$14,
-           $15,$16,$17,$18,$19,$20,
-           $21,$22,$23,$24
+           $1,$2,$3,$4,0,$5,0,$6,$7,
+           $8,$9,$10,$11,$12,$13,$14,$15,
+           $16,$17,$18,$19,$20,$21,
+           $22,$23,$24,$25
          ) RETURNING *`,
         [
           quote_number,
           mappedFields.status || 'Draft',
+          mappedFields.order_type || null,
           subtotal, discount_amt, tax_amt, total,
           mappedFields.customer_name   || null,
           mappedFields.company_name    || null,
@@ -742,13 +761,13 @@ function getCsvTemplate() {
     'customer_name','company_name','email','phone','whatsapp','wechat',
     'category','source','country','state','city','zip',
     'shipping_address','billing_address','due_date','notes','estimate','status',
-    'product','qty','unit_price','sizes','colors','artwork_count',
+    'order_type','product','qty','unit_price','sizes','colors','artwork_count',
   ]
   const example = [
     'John Smith','Acme Corp','john@acme.com','+1-555-1234','+1-555-1234','',
     'Wholesale','Email','USA','TX','Dallas','75201',
     '123 Main St','123 Main St','2026-12-31','Rush order','500.00','Draft',
-    'Custom T-Shirt','100','5.00','S,M,L,XL','Black,White','2',
+    'dtf','Custom T-Shirt','100','5.00','S,M,L,XL','Black,White','2',
   ]
   return headers.join(',') + '\n' + example.join(',') + '\n'
 }

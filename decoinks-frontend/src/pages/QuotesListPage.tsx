@@ -17,7 +17,6 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { downloadCsv } from '../utils/actions'
 import { BulkUploadModal } from '../components/BulkUploadModal'
-import { CsvImportQuotesModal } from '../components/CsvImportQuotesModal'
 
 interface Quote {
   id: string
@@ -54,7 +53,6 @@ export function QuotesListPage() {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; number: string } | null>(null)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false)
-  const [csvImportOpen, setCsvImportOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
@@ -175,10 +173,7 @@ export function QuotesListPage() {
           <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'Draft' : 'All')}><Filter size={13} /> Filter</button>
           <button className="lb-action-btn" onClick={() => downloadCsv('quotations.csv', quotes as unknown as Record<string, unknown>[])}><Download size={13} /> Export<ChevronDown size={12} /></button>
           <button className="lb-action-btn" onClick={() => setBulkUploadOpen(true)} style={{ gap: 6 }}>
-            <Upload size={13} /> Bulk Upload (CSV)
-          </button>
-          <button className="lb-action-btn" onClick={() => setCsvImportOpen(true)} style={{ gap: 6, color: '#0d9488', borderColor: '#99f6e4' }}>
-            <Upload size={13} /> Import DTF CSV
+            <Upload size={13} /> Import CSV
           </button>
           <button className="lb-action-btn lb-action-primary" onClick={() => navigate('/quotes/new')}>
             <Plus size={14} /> New Quotation
@@ -287,7 +282,8 @@ export function QuotesListPage() {
       </div>
 
       {bulkUploadOpen && <BulkUploadModal onClose={() => setBulkUploadOpen(false)} />}
-      {csvImportOpen && <CsvImportQuotesModal onClose={() => setCsvImportOpen(false)} />}
+      {/* legacy DTF-only importer removed — the CSV importer above now detects
+          order_type (dtf / gangsheet / apparel) from the file */}
 
       {/* Single delete */}
       <Dialog open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}>
