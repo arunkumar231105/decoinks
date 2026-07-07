@@ -68,11 +68,20 @@ async function bulkUpload(req, res, next) {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No CSV file uploaded' })
     const dryRun = req.query.preview === 'true'
+    const useAi  = req.query.ai === 'true'
     const fs = require('fs')
-    const buffer = fs.readFileSync(req.file.path)
+    let buffer = fs.readFileSync(req.file.path)
     fs.unlink(req.file.path, () => {})
+
+    // AI mode: normalise any layout into the order importer's canonical columns.
+    if (useAi) {
+      const { aiNormaliseCsv } = require('../../utils/aiCsv')
+      const normalised = await aiNormaliseCsv(buffer.toString('utf8'), 'order')
+      buffer = Buffer.from(normalised, 'utf8')
+    }
+
     const result = await service.bulkCreateOrdersFromCsv(buffer, { dryRun, createdBy: req.user.id })
-    return success(res, result, dryRun ? 'Preview ready' : 'Import complete')
+    return success(res, { ...result, ai: useAi }, dryRun ? 'Preview ready' : 'Import complete')
   } catch (err) { next(err) }
 }
 

@@ -79,7 +79,7 @@ async function bulkUpload(req, res, next) {
     // then the same deterministic parser/validator/preview handles the rest.
     if (useAi) {
       const { aiNormaliseCsv } = require('../../utils/aiCsv')
-      const normalised = await aiNormaliseCsv(buffer.toString('utf8'))
+      const normalised = await aiNormaliseCsv(buffer.toString('utf8'), 'quote')
       buffer = Buffer.from(normalised, 'utf8')
     }
 

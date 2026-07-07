@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Download, Upload, X, XCircle } from 'lucide-react'
+import { CheckCircle, Download, Sparkles, Upload, X, XCircle } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
 
@@ -29,20 +29,21 @@ export function BulkUploadOrdersModal({ onClose }: { onClose: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
+  const [useAi, setUseAi] = useState(false)
 
   const previewMutation = useMutation({
-    mutationFn: (f: File) => {
+    mutationFn: ({ f, ai }: { f: File; ai: boolean }) => {
       const fd = new FormData(); fd.append('file', f)
-      return api.post('/orders/bulk-upload?preview=true', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post(`/orders/bulk-upload?preview=true${ai ? '&ai=true' : ''}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     },
     onSuccess: (res) => setPreview(res.data.data),
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Preview failed'),
   })
 
   const importMutation = useMutation({
-    mutationFn: (f: File) => {
+    mutationFn: ({ f, ai }: { f: File; ai: boolean }) => {
       const fd = new FormData(); fd.append('file', f)
-      return api.post('/orders/bulk-upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post(`/orders/bulk-upload${ai ? '?ai=true' : ''}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     },
     onSuccess: (res) => {
       const d = res.data.data
@@ -56,7 +57,12 @@ export function BulkUploadOrdersModal({ onClose }: { onClose: () => void }) {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null
     setFile(f); setPreview(null)
-    if (f) previewMutation.mutate(f)
+    if (f) previewMutation.mutate({ f, ai: useAi })
+  }
+
+  const toggleAi = (next: boolean) => {
+    setUseAi(next); setPreview(null)
+    if (file) previewMutation.mutate({ f: file, ai: next })
   }
 
   const pending = previewMutation.isPending || importMutation.isPending
@@ -76,6 +82,26 @@ export function BulkUploadOrdersModal({ onClose }: { onClose: () => void }) {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+
+          {/* AI toggle */}
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18, cursor: 'pointer',
+            padding: '12px 14px', borderRadius: 10,
+            border: `1px solid ${useAi ? '#5eead4' : '#e5e7eb'}`,
+            background: useAi ? '#f0fdfa' : '#fafafa',
+          }}>
+            <input type="checkbox" checked={useAi} onChange={e => toggleAi(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, color: '#0f766e' }}>
+                <Sparkles size={14} /> Smart import with AI
+              </span>
+              <span style={{ display: 'block', fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                Let AI read any column layout — it maps fields, detects the order
+                type and works out per-unit prices. You still review the preview
+                before importing.
+              </span>
+            </span>
+          </label>
 
           {/* Step 1 */}
           <div style={{ marginBottom: 20 }}>
@@ -176,7 +202,7 @@ export function BulkUploadOrdersModal({ onClose }: { onClose: () => void }) {
           <button
             className="lb-action-btn lb-action-primary"
             disabled={!preview || preview.validRows === 0 || pending}
-            onClick={() => file && importMutation.mutate(file)}
+            onClick={() => file && importMutation.mutate({ f: file, ai: useAi })}
             style={{ gap: 6 }}
           >
             {importMutation.isPending
