@@ -88,7 +88,6 @@ export function NewCustomerPage() {
   const [stateVal,         setStateVal]         = useState('')
   const [zip,              setZip]              = useState('')
   const [country,          setCountry]          = useState('United States')
-  const [sameAsBilling,    setSameAsBilling]    = useState(true)
   const [billingAddress,   setBillingAddress]   = useState('')
 
   // Section 4 — Classification
@@ -116,8 +115,7 @@ export function NewCustomerPage() {
         state: stateVal || undefined,
         zip: zip.trim() || undefined,
         country: country || undefined,
-        same_as_shipping: sameAsBilling,
-        billing_address: sameAsBilling ? undefined : (billingAddress.trim() || undefined),
+        billing_address: billingAddress.trim() || undefined,
         buyer_type: buyerType,
         source: source || undefined,
         internal_notes: notes.trim() || undefined,
@@ -406,25 +404,14 @@ export function NewCustomerPage() {
               </div>
 
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F1F5F9' }}>
-                <label className="ncust-check-opt" style={{ marginBottom: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={sameAsBilling}
-                    onChange={(e) => setSameAsBilling(e.target.checked)}
-                  />
-                  <span className="ncust-check-box" />
-                  Same as Shipping Address
-                </label>
                 <div className="al-field">
                   <label>Billing Address</label>
                   <textarea
                     className="al-textarea"
                     rows={3}
-                    disabled={sameAsBilling}
-                    value={sameAsBilling ? [addrLine1, city, stateVal, zip, country].filter(Boolean).join(', ') : billingAddress}
+                    value={billingAddress}
                     onChange={(e) => setBillingAddress(e.target.value)}
-                    placeholder="Enter billing address..."
-                    style={sameAsBilling ? { opacity: 0.5, cursor: 'not-allowed', resize: 'none' } : {}}
+                    placeholder="Enter billing address (leave blank to use the address above)..."
                   />
                 </div>
               </div>
