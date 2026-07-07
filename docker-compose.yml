@@ -77,10 +77,11 @@ services:
       MINIO_SECRET_KEY: decoinks_secret_123
       MINIO_BUCKET: decoinks
       MINIO_PUBLIC_URL: http://31.97.110.197:9002
-      # AI CSV import (xAI / Grok). Put the real key in a .env file on the
-      # server, not here. Leave empty to disable the "Smart import with AI".
-      XAI_API_KEY: ${XAI_API_KEY:-}
-      XAI_MODEL: ${XAI_MODEL:-grok-3}
+      # AI CSV import. Defaults to Groq (free, https://groq.com). Put the real
+      # key in a .env file on the server, not here. Empty = AI import disabled.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-llama-3.3-70b-versatile}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
     volumes:
       - backend_uploads:/app/uploads
     ports:

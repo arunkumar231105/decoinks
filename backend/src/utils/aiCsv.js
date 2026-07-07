@@ -7,8 +7,15 @@
 const crypto = require('crypto')
 const { cacheGet, cacheSet } = require('../config/redis')
 
-const XAI_BASE = process.env.XAI_BASE_URL || 'https://api.x.ai/v1'
-const XAI_MODEL = process.env.XAI_MODEL || 'grok-3'
+// Provider-agnostic, OpenAI-compatible chat API. Defaults target Groq
+// (free tier, https://groq.com) with an open Llama model; override via env
+// to use xAI/Grok, OpenAI, etc.
+//   GROQ_API_KEY (or AI_API_KEY / XAI_API_KEY) — the API key
+//   AI_BASE_URL  — default https://api.groq.com/openai/v1
+//   AI_MODEL     — default llama-3.3-70b-versatile
+const AI_KEY   = process.env.GROQ_API_KEY || process.env.AI_API_KEY || process.env.XAI_API_KEY
+const AI_BASE  = process.env.AI_BASE_URL || process.env.GROQ_BASE_URL || process.env.XAI_BASE_URL || 'https://api.groq.com/openai/v1'
+const AI_MODEL = process.env.AI_MODEL || process.env.GROQ_MODEL || process.env.XAI_MODEL || 'llama-3.3-70b-versatile'
 
 // Canonical columns the deterministic importer understands.
 const CANONICAL = [
@@ -34,16 +41,15 @@ Rules:
 - Do not invent customers or amounts that are not in the input.`
 
 async function callGrok(csvText) {
-  const key = process.env.XAI_API_KEY
-  if (!key) {
-    throw Object.assign(new Error('AI import is not configured (XAI_API_KEY is not set)'), { statusCode: 400 })
+  if (!AI_KEY) {
+    throw Object.assign(new Error('AI import is not configured (GROQ_API_KEY is not set)'), { statusCode: 400 })
   }
 
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
+  const res = await fetch(`${AI_BASE}/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_KEY}` },
     body: JSON.stringify({
-      model: XAI_MODEL,
+      model: AI_MODEL,
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
