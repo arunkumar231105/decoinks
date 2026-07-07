@@ -21,21 +21,26 @@ import {
 } from 'recharts'
 import { api } from '../services/api'
 
+// Keys must match the lead_stage enum the backend returns.
 const LEAD_STAGES = [
-  { key: 'New', color: '#0D9488' },
-  { key: 'Qualified', color: '#14B8A6' },
-  { key: 'Quoted', color: '#2563EB' },
-  { key: 'Artwork', color: '#F59E0B' },
-  { key: 'Won', color: '#7C3AED' },
-  { key: 'Lost', color: '#EF4444' },
+  { key: 'initiated', label: 'Initiated', color: '#0D9488' },
+  { key: 'quotation', label: 'Quotation', color: '#14B8A6' },
+  { key: 'artwork',   label: 'Artwork',   color: '#2563EB' },
+  { key: 'gangsheet', label: 'Gangsheet', color: '#F59E0B' },
+  { key: 'payment',   label: 'Payment',   color: '#8B5CF6' },
+  { key: 'confirmed', label: 'Confirmed', color: '#22C55E' },
 ]
 
+// Keys must match the order_status enum.
 const ORDER_STATUS_COLORS: Record<string, string> = {
-  'Not Started': '#94A3B8',
-  'In Progress': '#0D9488',
-  'Ready to Ship': '#F59E0B',
-  'Shipped': '#2563EB',
-  'Cancelled': '#EF4444',
+  'Draft':          '#94A3B8',
+  'Confirmed':      '#0D9488',
+  'In Production':  '#2563EB',
+  'QC':             '#8B5CF6',
+  'Ready to Ship':  '#F59E0B',
+  'Shipped':        '#14B8A6',
+  'Delivered':      '#22C55E',
+  'Cancelled':      '#EF4444',
 }
 
 export function DashboardPage() {
@@ -179,6 +184,7 @@ export function DashboardPage() {
                       <Bar
                         key={stage.key}
                         dataKey={stage.key}
+                        name={stage.label}
                         stackId="lead-stage"
                         fill={stage.color}
                         radius={[0, 0, 0, 0]}
@@ -193,7 +199,7 @@ export function DashboardPage() {
                   return (
                     <span key={p.stage}>
                       <i style={{ backgroundColor: cfg?.color ?? '#94A3B8' }} />
-                      {p.stage} ({p.count})
+                      {cfg?.label ?? p.stage} ({p.count})
                     </span>
                   )
                 })}
