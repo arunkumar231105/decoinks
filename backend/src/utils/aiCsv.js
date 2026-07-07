@@ -65,7 +65,8 @@ Rules:
 ${[...profile.rules, ...commonRules].map(r => `- ${r}`).join('\n')}`
 }
 
-async function callGrok(csvText, profile) {
+// Low-level: send a system + user message and get parsed JSON back.
+async function chatJson(systemContent, userContent) {
   if (!AI_KEY) {
     throw Object.assign(new Error('AI import is not configured (GROQ_API_KEY is not set)'), { statusCode: 400 })
   }
@@ -78,8 +79,8 @@ async function callGrok(csvText, profile) {
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: buildSystemPrompt(profile) },
-        { role: 'user', content: `CSV:\n${csvText}` },
+        { role: 'system', content: systemContent },
+        { role: 'user', content: userContent },
       ],
     }),
   })
@@ -96,15 +97,37 @@ async function callGrok(csvText, profile) {
   const content = data?.choices?.[0]?.message?.content
   if (!content) throw Object.assign(new Error('AI returned an empty response'), { statusCode: 502 })
 
-  let parsed
-  try { parsed = JSON.parse(content) }
+  try { return JSON.parse(content) }
   catch { throw Object.assign(new Error('AI returned malformed JSON'), { statusCode: 502 }) }
+}
 
+async function callGrok(csvText, profile) {
+  const parsed = await chatJson(buildSystemPrompt(profile), `CSV:\n${csvText}`)
   const rows = Array.isArray(parsed) ? parsed : (parsed.rows || parsed.quotes || [])
   if (!Array.isArray(rows) || rows.length === 0) {
     throw Object.assign(new Error('AI could not extract any rows from this file'), { statusCode: 422 })
   }
   return rows
+}
+
+// Classify what kind of records a CSV holds, from its header + a few rows.
+const CLASSIFY_PROMPT = `You classify a print-shop CSV. Return ONLY JSON:
+{"target": one of "quote" | "order" | "purchase_order" | "invoice",
+ "order_type": one of "apparel" | "gangsheet" | "dtf" | null,
+ "reason": a short human sentence}.
+Hints:
+- Columns like vendor / PO number / "net product" / gangsheet dimensions -> usually a purchase_order or order sheet.
+- Columns like quote / estimate / "valid until" -> quote.
+- Columns like invoice number / "amount paid" / "balance due" -> invoice.
+- Print type "DTF"/"transfer" -> dtf; "gangsheet"/gangsheet dimensions -> gangsheet; shirts/apparel -> apparel.`
+
+async function aiClassifyCsv(csvText) {
+  const lines = String(csvText).split(/\r?\n/).filter(l => l.trim())
+  const sample = lines.slice(0, 9).join('\n')
+  const parsed = await chatJson(CLASSIFY_PROMPT, `CSV sample:\n${sample}`)
+  const target = ['quote', 'order', 'purchase_order', 'invoice'].includes(parsed.target) ? parsed.target : 'quote'
+  const order_type = ['apparel', 'gangsheet', 'dtf'].includes(parsed.order_type) ? parsed.order_type : null
+  return { target, order_type, reason: String(parsed.reason || '') }
 }
 
 // Turn AI row objects into a canonical CSV string for the given profile.
@@ -137,4 +160,4 @@ async function aiNormaliseCsv(csvText, profileName = 'quote') {
   return csv
 }
 
-module.exports = { aiNormaliseCsv }
+module.exports = { aiNormaliseCsv, aiClassifyCsv }

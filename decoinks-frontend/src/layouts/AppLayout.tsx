@@ -32,6 +32,7 @@ import {
   ReceiptText,
   Settings,
   ShipWheel,
+  Sparkles,
   Sliders,
   ShoppingCart,
   Truck,
@@ -46,6 +47,7 @@ import { notReady } from '../utils/actions'
 import { cn } from '../utils/cn'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { GlobalSearch } from '../components/GlobalSearch'
+import { GlobalImportModal } from '../components/GlobalImportModal'
 
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
@@ -145,6 +147,7 @@ export function AppLayout() {
   })
   const [userAnchor, setUserAnchor] = useState<null | HTMLElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const { title, subtitle } = usePageMeta()
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
@@ -269,6 +272,14 @@ export function AppLayout() {
 
           <div className="topbar-actions">
             <GlobalSearch />
+            <button
+              className="lb-action-btn"
+              onClick={() => setImportOpen(true)}
+              style={{ gap: 6, whiteSpace: 'nowrap' }}
+              title="Import any CSV — AI routes it to the right module"
+            >
+              <Sparkles size={15} /> Import CSV
+            </button>
             <Tooltip title="Notifications (Coming Soon)">
               <span>
                 <IconButton disabled sx={{ opacity: 0.4 }}>
@@ -292,6 +303,8 @@ export function AppLayout() {
           </ErrorBoundary>
         </Box>
       </div>
+
+      {importOpen && <GlobalImportModal onClose={() => setImportOpen(false)} />}
 
       <Menu
         anchorEl={userAnchor}

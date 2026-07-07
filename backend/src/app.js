@@ -25,6 +25,7 @@ const uploadRoutes         = require('./modules/upload/upload.routes')
 const settingsRoutes       = require('./modules/settings/settings.routes')
 const customerRoutes       = require('./modules/customers/customers.routes')
 const searchRoutes         = require('./modules/search/search.routes')
+const importRoutes         = require('./modules/import/import.routes')
 
 const app = express()
 
@@ -65,6 +66,7 @@ app.use('/api/upload',       uploadRoutes)
 app.use('/api/settings',     settingsRoutes)
 app.use('/api/customers',    customerRoutes)
 app.use('/api/search',       searchRoutes)
+app.use('/api/import',       importRoutes)
 
 app.use(errorHandler)
 
