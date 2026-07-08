@@ -11,6 +11,8 @@ interface Invoice {
   subtotal: number; discount_pct: number; discount_amt: number
   rush_services: number; shipping_charges: number
   total: number; notes: string | null; quote_id: string | null; order_type: string | null
+  currency?: string | null
+  items?: QuoteItem[]
   payments: any[]
 }
 interface Quotation {
@@ -255,7 +257,9 @@ export function InvoiceReceiptPage() {
     </div>
   )
 
-  const items: QuoteItem[] = quotation?.items ?? []
+  // Prefer the quotation's items; fall back to the invoice's own line items
+  // (direct/converted invoices with no linked quote) — same as the full invoice view.
+  const items: QuoteItem[] = (quotation?.items?.length ? quotation.items : invoice.items) ?? []
   const artworks: Artwork[] = artworkData?.artworks ?? []
 
   const subtotal      = Number(invoice.subtotal)
@@ -416,7 +420,7 @@ export function InvoiceReceiptPage() {
           <div className="rc-total-row">
             <span className="tl">Total</span>
             <span className="tv">
-              {fmt(total)}<span className="currency">USD</span>
+              {fmt(total)}<span className="currency">{invoice.currency || 'USD'}</span>
             </span>
           </div>
 
