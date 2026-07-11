@@ -63,7 +63,7 @@ const mainNav = [
 ]
 
 const artworkNav = [
-  { label: 'Artworks', path: '/artwork-library', icon: Image },
+  { label: 'Artwork Vault', path: '/artwork-library', icon: Image },
 ]
 
 const boardNav = [

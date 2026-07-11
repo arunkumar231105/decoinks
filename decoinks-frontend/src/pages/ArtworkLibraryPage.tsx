@@ -246,7 +246,9 @@ export function ArtworkLibraryPage() {
 
   const { data: artworkApiData } = useQuery({
     queryKey: ['artworks'],
-    queryFn: () => api.get('/artworks').then(r => {
+    // The vault shows everything — without a limit the API returns only 10,
+    // which made older artworks "disappear" as new ones were uploaded.
+    queryFn: () => api.get('/artworks', { params: { limit: 1000 } }).then(r => {
       const rows = r.data.data?.rows ?? r.data.data ?? []
       return rows.map((a: any): Artwork => ({
         id: a.id,

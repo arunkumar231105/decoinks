@@ -232,7 +232,7 @@ export const router = createBrowserRouter([
               {
                 path: '/artwork-library',
                 element: <ArtworkLibraryPage />,
-                handle: { title: 'Artwork Library', subtitle: 'Create, manage and finalize artworks for leads and orders.' },
+                handle: { title: 'Artwork Vault', subtitle: 'Create, manage and finalize artworks for leads and orders.' },
               },
               {
                 path: '/fulfillment/board',
