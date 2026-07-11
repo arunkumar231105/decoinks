@@ -371,18 +371,26 @@ export function ArtworkLibraryPage() {
     logActivity('duplicated artwork', duplicate.filename)
   }
 
-  const deleteArtwork = (id: string) => {
+  const deleteArtwork = async (id: string) => {
     const artwork = artworks.find(item => item.id === id)
-    if (!artwork || !window.confirm(`Delete ${artwork.filename}?`)) return
-    setArtworks(prev => prev.filter(item => item.id !== id))
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-    if (activeArtworkId === id) setActiveArtworkId(artworks.find(item => item.id !== id)?.id ?? '')
-    logActivity('deleted artwork', artwork.filename)
-    api.delete(`/artworks/${id}`).catch(() => {})
+    if (!artwork || !window.confirm(`Delete ${artwork.filename}? This permanently removes the file.`)) return
+    try {
+      // Backend hard-deletes the DB row AND the MinIO object.
+      await api.delete(`/artworks/${id}`)
+      setArtworks(prev => prev.filter(item => item.id !== id))
+      setSelected(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      if (activeArtworkId === id) setActiveArtworkId(artworks.find(item => item.id !== id)?.id ?? '')
+      logActivity('deleted artwork', artwork.filename)
+      toast.success('Artwork deleted')
+      // Re-sync with the server so the list reflects what was actually removed.
+      queryClient.invalidateQueries({ queryKey: ['artworks'] })
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Failed to delete artwork')
+    }
   }
 
   const moveArtworksToFolder = (ids: string[], folderId: string) => {
