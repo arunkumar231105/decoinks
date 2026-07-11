@@ -393,6 +393,24 @@ export function ArtworkLibraryPage() {
     }
   }
 
+  // Bulk delete — hard-removes each selected artwork from DB + MinIO.
+  const deleteSelectedArtworks = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    if (!window.confirm(`Delete ${ids.length} artwork${ids.length > 1 ? 's' : ''}? This permanently removes the files.`)) return
+    let ok = 0
+    for (const id of ids) {
+      try { await api.delete(`/artworks/${id}`); ok++ }
+      catch { /* keep going; report the tally below */ }
+    }
+    setSelected(new Set())
+    if (ok > 0) {
+      toast.success(`Deleted ${ok} artwork${ok > 1 ? 's' : ''}`)
+      queryClient.invalidateQueries({ queryKey: ['artworks'] })
+    }
+    if (ok < ids.length) toast.error(`${ids.length - ok} could not be deleted`)
+  }
+
   const moveArtworksToFolder = (ids: string[], folderId: string) => {
     const folder = folders.find(item => item.id === folderId)
     if (!folder) return
@@ -682,6 +700,9 @@ export function ArtworkLibraryPage() {
           </button>
           <button className="aw-bulk-btn" onClick={e => setMoveMenuAnchor(e.currentTarget)}>
             <Folder size={13} /> Move to Folder
+          </button>
+          <button className="aw-bulk-btn" style={{ color: '#dc2626' }} onClick={deleteSelectedArtworks}>
+            <Trash2 size={13} /> Delete
           </button>
         </div>
       )}
