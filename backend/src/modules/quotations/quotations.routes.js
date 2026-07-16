@@ -37,14 +37,21 @@ const uploadCsv = multer({
 const router = Router()
 router.use(verifyToken)
 
+// Browser selectors represent "no selection" as an empty string. Treat that
+// as null for optional relationships so older open frontend tabs remain valid.
+const optionalUuid = z.preprocess(
+  (value) => value === '' ? null : value,
+  z.string().uuid().optional().nullable()
+)
+
 const itemSchema = z.object({
   description:   z.string().min(1),
   qty:           z.number().positive(),
   unit_price:    z.number().nonnegative(),
-  product_id:    z.string().uuid().optional().nullable(),
+  product_id:    optionalUuid,
   product_type:  z.string().optional().nullable(),
   decoration_method: z.string().optional().nullable(),
-  artwork_id:    z.string().uuid().optional().nullable(),
+  artwork_id:    optionalUuid,
   unit:          z.string().optional().default('pcs'),
   print_locations: z.string().optional().nullable(),
   sizes:         z.string().optional().nullable(),
@@ -57,8 +64,8 @@ const itemSchema = z.object({
   model:         z.string().optional().nullable(),
   artwork_width: z.number().nonnegative().optional().nullable(),
   artwork_height:z.number().nonnegative().optional().nullable(),
-  front_artwork_id: z.string().uuid().optional().nullable(),
-  back_artwork_id:  z.string().uuid().optional().nullable(),
+  front_artwork_id: optionalUuid,
+  back_artwork_id:  optionalUuid,
 })
 
 const ORDER_TYPES = ['apparel', 'gangsheet', 'dtf']
@@ -79,16 +86,16 @@ const intakeFields = {
   shipping_address:             z.string().optional().nullable(),
   billing_address:              z.string().optional().nullable(),
   due_date:                     z.string().optional().nullable(),
-  sales_agent_id:               z.string().uuid().optional().nullable(),
+  sales_agent_id:               optionalUuid,
   internal_notes:               z.string().optional().nullable(),
   customer_requirement_summary: z.string().optional().nullable(),
   quote_estimate:               z.number().nonnegative().optional().nullable(),
 }
 
 const createSchema = z.object({
-  lead_id:            z.string().uuid().optional().nullable(),
-  customer_id:        z.string().uuid().optional().nullable(),
-  supplier_id:        z.string().uuid().optional().nullable(),
+  lead_id:            optionalUuid,
+  customer_id:        optionalUuid,
+  supplier_id:        optionalUuid,
   order_type:         z.enum(ORDER_TYPES).optional().nullable(),
   valid_until:        z.string().optional().nullable(),
   discount_pct:       z.number().min(0).max(100).default(0),
@@ -108,9 +115,9 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
-  lead_id:            z.string().uuid().optional().nullable(),
-  customer_id:        z.string().uuid().optional().nullable(),
-  supplier_id:        z.string().uuid().optional().nullable(),
+  lead_id:            optionalUuid,
+  customer_id:        optionalUuid,
+  supplier_id:        optionalUuid,
   order_type:         z.enum(ORDER_TYPES).optional().nullable(),
   valid_until:        z.string().optional().nullable(),
   discount_pct:       z.number().min(0).max(100).optional(),

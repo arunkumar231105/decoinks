@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Eye, FileText, Image, MapPin, Plus, Save, Search, Shirt, Trash2, Upload, UserRound, X } from 'lucide-react'
 import { api } from '../services/api'
+import { getApiError } from '../utils/apiError'
 import toast from '../utils/toast'
 
 type QuoteType = 'dtf' | 'apparel'
@@ -19,6 +20,7 @@ type Line = {
   sizes: string
   artwork_width: number
   artwork_height: number
+  artwork_count: number
   qty: number
   unit_price: number
   artwork_url: string
@@ -32,7 +34,7 @@ type Line = {
 const blankLine = (): Line => ({
   key: crypto.randomUUID(), product_id: '', description: '', artwork_id: '',
   front_artwork_id: '', back_artwork_id: '', brand: '', model: '', color: '',
-  sizes: '', artwork_width: 0, artwork_height: 0, qty: 1, unit_price: 0,
+  sizes: '', artwork_width: 0, artwork_height: 0, artwork_count: 1, qty: 1, unit_price: 0,
   artwork_url: '', artwork_label: '', front_artwork_url: '', front_artwork_label: '', back_artwork_url: '', back_artwork_label: '',
 })
 
@@ -144,6 +146,7 @@ export function NewQuotationPage() {
       key: x.id ?? String(i), product_id: x.product_id ?? '', description: x.description ?? '', artwork_id: x.artwork_id ?? '',
       front_artwork_id: x.front_artwork_id ?? '', back_artwork_id: x.back_artwork_id ?? '', brand: x.brand ?? '', model: x.model ?? '',
       color: x.colors ?? '', sizes: x.sizes ?? '', artwork_width: Number(x.artwork_width ?? 0), artwork_height: Number(x.artwork_height ?? 0),
+      artwork_count: Number(x.artwork_count) || 1,
       qty: Number(x.qty) || 1, unit_price: Number(x.unit_price) || 0,
       artwork_url: x.artwork_file_url ?? x.artwork_image ?? '', artwork_label: [x.artwork_no, x.artwork_name].filter(Boolean).join(' · '),
       front_artwork_url: x.front_artwork_url ?? x.front_image ?? '', front_artwork_label: [x.front_artwork_no, x.front_artwork_name].filter(Boolean).join(' · '),
@@ -224,12 +227,20 @@ export function NewQuotationPage() {
           back_image: line.back_artwork_url || null,
           product_type: form.order_type === 'dtf' ? 'DTF Transfers' : 'Custom Apparel',
           decoration_method: 'DTF', colors: color || null,
-          artwork_count: form.order_type === 'dtf' ? 1 : Number(!!line.front_artwork_id) + Number(!!line.back_artwork_id),
+          artwork_count: form.order_type === 'dtf' ? line.artwork_count : Number(!!line.front_artwork_id) + Number(!!line.back_artwork_id),
           qty: Number(line.qty), unit_price: Number(line.unit_price), unit: 'pcs',
         }
       })
       const payload = {
         ...form,
+        // Search controls use an empty string for "not selected". The API's
+        // optional UUID fields correctly use null, so normalize them here.
+        lead_id: form.lead_id || null,
+        customer_id: form.customer_id || null,
+        supplier_id: form.supplier_id || null,
+        sales_agent_id: form.sales_agent_id || null,
+        valid_until: form.valid_until || null,
+        due_date: form.due_date || null,
         customer_name: selectedCustomer?.name ?? existing?.customer_name ?? null,
         company_name: selectedCustomer?.company_name ?? selectedCustomer?.company ?? null,
         billing_email: selectedCustomer?.email ?? null,
@@ -259,7 +270,7 @@ export function NewQuotationPage() {
       if (!savedId) throw new Error('Saved quotation id was not returned')
       navigate(preview ? `/quotes/${savedId}/print` : '/quotes')
     },
-    onError: (error: any) => toast.error(error.response?.data?.message ?? error.response?.data?.error ?? 'Unable to save quotation'),
+    onError: (error: unknown) => toast.error(getApiError(error)),
   })
 
   const saveDisabled = mutation.isPending || !form.customer_id || !lines.some(isLineReady)
