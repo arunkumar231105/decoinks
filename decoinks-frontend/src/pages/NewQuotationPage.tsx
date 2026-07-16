@@ -207,8 +207,8 @@ export function NewQuotationPage() {
     setLines([blankLine()])
   }
   const isLineReady = (line: Line) => form.order_type === 'dtf'
-    ? !!line.description && !!line.artwork_id
-    : !!line.description && !!line.color && !!line.sizes
+    ? !!line.description && Number(line.qty) > 0
+    : !!line.description && !!line.color && !!line.sizes && Number(line.qty) > 0
 
   const mutation = useMutation({
     mutationFn: async ({ preview }: { preview: boolean }) => {
@@ -255,7 +255,9 @@ export function NewQuotationPage() {
     onSuccess: ({ quote, preview }) => {
       qc.invalidateQueries({ queryKey: ['quotations'] })
       toast.success(id ? 'Quotation updated' : 'Quotation created')
-      navigate(preview ? `/quotes/${quote.id ?? id}/print` : '/quotations')
+      const savedId = quote.id ?? id
+      if (!savedId) throw new Error('Saved quotation id was not returned')
+      navigate(preview ? `/quotes/${savedId}/print` : '/quotes')
     },
     onError: (error: any) => toast.error(error.response?.data?.message ?? error.response?.data?.error ?? 'Unable to save quotation'),
   })
@@ -319,5 +321,11 @@ export function NewQuotationPage() {
       <section className="nq-card nq-financial"><div className="nq-card-heading"><h3>Pricing Summary</h3></div><div className="nq-fin-grid"><div className="al-field"><label>Rush Services ($)</label><input className="al-input" type="number" min="0" step="0.01" value={form.rush_services} onChange={e => setForm({ ...form, rush_services: +e.target.value })}/></div><div className="al-field"><label>Estimated Shipping ($)</label><input className="al-input" type="number" min="0" step="0.01" value={form.shipping_amount} onChange={e => setForm({ ...form, shipping_amount: +e.target.value })}/></div><div className="al-field"><label>Discount Type</label><select className="al-input" value={form.discount_type} onChange={e => setForm({ ...form, discount_type: e.target.value })}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select></div><div className="al-field"><label>Discount {form.discount_type === 'fixed' ? '($)' : '(%)'}</label><input className="al-input" type="number" min="0" step="0.01" value={form.discount_value} onChange={e => setForm({ ...form, discount_value: +e.target.value })}/></div><div className="al-field"><label>Tax (%)</label><input className="al-input" type="number" min="0" max="100" step="0.01" value={form.tax_percentage} onChange={e => setForm({ ...form, tax_percentage: +e.target.value })}/></div><div className="al-field"><label>Payment Method</label><select className="al-input" value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>{['Bank Transfer', 'Zelle', 'PayPal', 'Credit / Debit Card', 'Cash'].map(x => <option key={x}>{x}</option>)}</select></div></div>
         <div className="nq-summary"><span>Items Total <b>{money(amounts.items)}</b></span><span>Rush Services <b>{money(Number(form.rush_services) || 0)}</b></span><span>Shipping <b>{money(Number(form.shipping_amount) || 0)}</b></span><span>Subtotal <b>{money(amounts.subtotal)}</b></span><span>Discount <b>- {money(amounts.discount)}</b></span><span>Tax <b>{money(amounts.tax)}</b></span><span className="total">Total <b>{money(amounts.total)}</b></span></div>
       </section></div>
+    <div className="nq-sticky-actions">
+      <span>{saveDisabled && !mutation.isPending ? 'Select a customer and add at least one complete item.' : 'Ready to save quotation'}</span>
+      <button className="lb-action-btn" onClick={() => navigate('/quotes')}>Cancel</button>
+      <button className="lb-action-btn" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: false })}><Save size={15}/> {mutation.isPending ? 'Saving…' : 'Save Draft'}</button>
+      <button className="lb-action-btn lb-action-primary" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: true })}><Eye size={15}/> Save &amp; Preview</button>
+    </div>
   </div>
 }

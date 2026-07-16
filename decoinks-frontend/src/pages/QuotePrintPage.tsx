@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -83,6 +83,8 @@ const CSS = `
     display: flex; align-items: center; gap: 8px;
     box-shadow: 0 4px 14px rgba(29,78,216,0.3);
   }
+  .print-btn.secondary { right: 176px; background: #fff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
+  .print-btn.secondary:hover { background: #eff6ff; }
   .print-btn:hover { background: #1e40af; }
   .back-btn {
     position: fixed; top: 16px; left: 16px; z-index: 999;
@@ -321,6 +323,7 @@ export function QuotePrintPage() {
   const { id }   = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
+  const [downloading, setDownloading] = useState(false)
 
   const { data: quote, isLoading } = useQuery<Quote>({
     queryKey: ['quote-print', id],
@@ -369,6 +372,37 @@ export function QuotePrintPage() {
     ? quote.shipping_address.split('\n').filter(Boolean)
     : [quote.shipping_address, [quote.shipping_city, quote.shipping_state, quote.zip_code].filter(Boolean).join(', '), quote.shipping_country].filter(Boolean)
 
+  const downloadPdf = async () => {
+    const element = document.getElementById('quotation-pdf')
+    if (!element || downloading) return
+    setDownloading(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false })
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageWidth = 198
+      const pageHeight = 285
+      const imageHeight = canvas.height * pageWidth / canvas.width
+      const image = canvas.toDataURL('image/jpeg', 0.95)
+      let remaining = imageHeight
+      let y = 6
+      pdf.addImage(image, 'JPEG', 6, y, pageWidth, imageHeight, undefined, 'FAST')
+      remaining -= pageHeight
+      while (remaining > 0) {
+        y -= pageHeight
+        pdf.addPage()
+        pdf.addImage(image, 'JPEG', 6, y, pageWidth, imageHeight, undefined, 'FAST')
+        remaining -= pageHeight
+      }
+      pdf.save(`${quote.quote_number}.pdf`)
+    } catch (error) {
+      console.error(error)
+      window.alert('PDF download failed. Please use Print / Save PDF instead.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <>
       <style>{CSS}</style>
@@ -376,11 +410,14 @@ export function QuotePrintPage() {
       <button className="no-print back-btn" onClick={() => navigate(-1)}>
         ← Back
       </button>
-      <button className="no-print print-btn" onClick={() => window.print()}>
-        🖨️ Download / Print PDF
+      <button className="no-print print-btn secondary" onClick={() => window.print()}>
+        🖨️ Print
+      </button>
+      <button className="no-print print-btn" onClick={downloadPdf} disabled={downloading}>
+        {downloading ? 'Preparing PDF…' : '⬇ Download PDF'}
       </button>
 
-      <div className="page">
+      <div className="page" id="quotation-pdf">
 
         {/* ── HEADER ── */}
         <div className="hdr">
@@ -538,7 +575,7 @@ export function QuotePrintPage() {
         </div>
 
         {/* ── ARTWORKS SECTION ── */}
-        {artworks.length > 0 && (
+        {orderType === 'gangsheet' && artworks.length > 0 && (
           <div className="aw-section">
             <div className="aw-section-hdr">
               <div className="aw-section-num">★</div>

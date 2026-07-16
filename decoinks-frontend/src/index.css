@@ -10651,6 +10651,8 @@ select.al-input {
 .nq-customer-preview small { color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .nq-customer-preview strong { color: #0f172a; font-size: 12px; overflow-wrap: anywhere; }
 .nq-customer-preview em { color: #64748b; font-size: 11px; font-style: normal; }
+.nq-sticky-actions { position: sticky; bottom: 12px; z-index: 20; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 12px 30px rgba(15,23,42,.16); backdrop-filter: blur(8px); }
+.nq-sticky-actions > span { margin-right: auto; color: #64748b; font-size: 12px; font-weight: 700; }
 .nq-address-text { white-space: pre-line; line-height: 1.45; }
 .nq-quote-entry { min-width: 1050px; }
 .nq-quote-entry td { vertical-align: middle; }

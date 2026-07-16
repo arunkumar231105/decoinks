@@ -78,7 +78,7 @@ services:
       MINIO_ACCESS_KEY: decoinks
       MINIO_SECRET_KEY: decoinks_secret_123
       MINIO_BUCKET: decoinks
-      MINIO_PUBLIC_URL: http://31.97.110.197:9002
+      MINIO_PUBLIC_URL: /storage
       # AI CSV import. Defaults to Groq (free, https://groq.com). Put the real
       # key in a .env file on the server, not here. Empty = AI import disabled.
       GROQ_API_KEY: ${GROQ_API_KEY:-}

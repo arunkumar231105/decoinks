@@ -3,6 +3,10 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ClipboardList,
+  Images,
+  ReceiptText,
+  ShoppingCart,
+  Users,
   DollarSign,
   FileCheck2,
   PackageCheck,
@@ -81,9 +85,9 @@ export function DashboardPage() {
 
   const statCards = stats ? [
     {
-      label: 'Total Leads Today',
-      value: String(stats.leads_today ?? 0),
-      note: `${stats.leads_today_change_pct >= 0 ? '+' : ''}${stats.leads_today_change_pct ?? 0}% vs yesterday`,
+      label: 'Total Leads',
+      value: Number(stats.total_leads ?? 0).toLocaleString(),
+      note: `${stats.leads_today ?? 0} added today`,
       trend: `${stats.leads_today_change_pct >= 0 ? '+' : ''}${stats.leads_today_change_pct ?? 0}%`,
       direction: (stats.leads_today_change_pct ?? 0) >= 0 ? 'up' : 'down',
       icon: ClipboardList,
@@ -91,34 +95,60 @@ export function DashboardPage() {
       bg: '#CCFBF1',
     },
     {
-      label: 'Active Quotes',
-      value: String(stats.active_quotes ?? 0),
-      note: 'open quotations',
+      label: 'Customers',
+      value: Number(stats.total_customers ?? 0).toLocaleString(),
+      note: 'active customer records',
       trend: '',
       direction: 'up',
-      icon: FileCheck2,
+      icon: Users,
       color: '#2563EB',
       bg: '#DBEAFE',
     },
     {
-      label: 'Pending Orders',
-      value: String(stats.pending_orders ?? 0),
-      note: 'awaiting production',
+      label: 'Quotations',
+      value: Number(stats.total_quotes ?? 0).toLocaleString(),
+      note: `${stats.approved_quotes ?? 0} approved`,
       trend: '',
       direction: 'up',
-      icon: PackageCheck,
+      icon: FileCheck2,
       color: '#F59E0B',
       bg: '#FEF3C7',
     },
     {
-      label: 'Revenue This Month',
-      value: `$${Number(stats.revenue_this_month ?? 0).toLocaleString()}`,
-      note: `${stats.revenue_change_pct >= 0 ? '+' : ''}${stats.revenue_change_pct ?? 0}% vs last month`,
-      trend: `${stats.revenue_change_pct >= 0 ? '+' : ''}${stats.revenue_change_pct ?? 0}%`,
-      direction: (stats.revenue_change_pct ?? 0) >= 0 ? 'up' : 'down',
-      icon: DollarSign,
+      label: 'Orders',
+      value: Number(stats.total_orders ?? 0).toLocaleString(),
+      note: `${stats.delivered_orders ?? 0} delivered`,
+      trend: '', direction: 'up', icon: ShoppingCart,
+      color: '#7C3AED', bg: '#EDE9FE',
+    },
+    {
+      label: 'Invoices',
+      value: Number(stats.total_invoices ?? 0).toLocaleString(),
+      note: `${stats.paid_invoices ?? 0} paid`,
+      trend: '', direction: 'up', icon: ReceiptText,
+      color: '#0891B2', bg: '#CFFAFE',
+    },
+    {
+      label: 'Purchase Orders',
+      value: Number(stats.total_purchase_orders ?? 0).toLocaleString(),
+      note: 'vendor fulfillment records',
+      trend: '', direction: 'up', icon: PackageCheck,
+      color: '#EA580C', bg: '#FFEDD5',
+    },
+    {
+      label: 'Paid Revenue',
+      value: `$${Number(stats.lifetime_revenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      note: `$${Number(stats.outstanding_revenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} outstanding`,
+      trend: '', direction: 'up', icon: DollarSign,
       color: '#7C3AED',
       bg: '#EDE9FE',
+    },
+    {
+      label: 'Production Volume',
+      value: Number(stats.total_artworks ?? 0).toLocaleString(),
+      note: `${stats.total_gangsheets ?? 0} gangsheets`,
+      trend: '', direction: 'up', icon: Images,
+      color: '#0D9488', bg: '#CCFBF1',
     },
   ] : []
 
@@ -214,7 +244,7 @@ export function DashboardPage() {
           <div className="panel-header">
             <div>
               <h2>Order Production Status</h2>
-              <p>Current production queue mix</p>
+              <p>All-time order status mix</p>
             </div>
           </div>
           {donutData.length > 0 ? (
@@ -242,7 +272,7 @@ export function DashboardPage() {
               </div>
             </div>
           ) : (
-            <p style={{ color: '#9CA3AF', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No orders this week</p>
+            <p style={{ color: '#9CA3AF', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No orders yet</p>
           )}
         </article>
       </section>
@@ -279,12 +309,12 @@ export function DashboardPage() {
           <div className="panel-header">
             <div>
               <h2>Quick Stats</h2>
-              <p>Weekly order status and top accounts</p>
+              <p>Order status and top customer accounts</p>
             </div>
           </div>
           <div className="quick-stats-grid">
             <div>
-              <h3>Orders by Status This Week</h3>
+              <h3>Orders by Status</h3>
               <table>
                 <tbody>
                   {ordersByStatus.length === 0 && (
@@ -300,7 +330,7 @@ export function DashboardPage() {
               </table>
             </div>
             <div>
-              <h3>Top Suppliers by Revenue</h3>
+              <h3>Top Customers by Revenue</h3>
               <table>
                 <tbody>
                   {topSuppliers.length === 0 && (
