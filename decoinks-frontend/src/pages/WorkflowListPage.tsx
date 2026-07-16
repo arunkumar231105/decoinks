@@ -28,6 +28,24 @@ interface WorkflowRecord {
   date: string
   due: string
   meta: string
+  sourceId?: string
+  gangsheets?: number
+  artworks?: number
+  shipping?: string
+  paymentState?: string
+}
+
+interface POSummary {
+  po_entries: number
+  unique_po_numbers: number
+  customers: number
+  gangsheets: number
+  artworks: number
+  paid_revenue: string
+  shipping_collected: string
+  net_product_amount: string
+  free_reprints: number
+  qa_notes: number
 }
 
 interface KindConfig {
@@ -51,7 +69,7 @@ const STATUS_TONES: Record<string, string> = {
   'Sent': 'blue', 'In Production': 'blue', 'In Transit': 'blue', 'Label Created': 'blue',
   'Draft': 'slate', 'Not Started': 'slate',
   'Overdue': 'red', 'Rejected': 'red', 'Cancelled': 'red',
-  'On Hold': 'amber', 'Proofing': 'purple', 'Partial': 'purple',
+  'On Hold': 'amber', 'Free/Reprint': 'amber', 'Proofing': 'purple', 'Partial': 'purple',
 }
 
 function toneCls(status: string) {
@@ -107,8 +125,8 @@ const KIND_CONFIGS: Record<WorkflowKind, KindConfig> = {
   },
   'purchase-orders': {
     title: 'Purchase Orders',
-    subtitle: 'Coordinate vendor purchasing and outside fulfillment.',
-    searchPlaceholder: 'Search PO, vendor, order...',
+    subtitle: 'DTF production, artworks, gangsheets, shipping and payments in one place.',
+    searchPlaceholder: 'Search PO, client, vendor, or address...',
     newLabel: 'New PO',
     newPath: '/purchase-orders/new',
     primaryColumn: 'PO',
@@ -117,15 +135,20 @@ const KIND_CONFIGS: Record<WorkflowKind, KindConfig> = {
     apiPath: '/purchase-orders',
     mapRow: (r) => ({
       id: r.id,
-      primaryId: r.po_number,
-      customer: r.display_vendor_name ?? r.vendor_name ?? r.supplier_name ?? '-',
-      linked: r.order_number ?? '-',
+      primaryId: r.source_po_number ?? r.po_number,
+      sourceId: r.source_po_number && r.source_po_number !== r.po_number ? r.po_number : undefined,
+      customer: r.customer_name ?? '-',
+      linked: r.display_vendor_name ?? r.vendor_name ?? r.supplier_name ?? '-',
       owner: r.created_by_name ?? '-',
-      status: r.status,
-      amount: fmtMoney(r.total),
+      status: r.source_payment_status ?? r.status,
+      amount: r.source_payment_status === 'Free/Reprint' ? 'Free' : fmtMoney(r.payment_received ?? r.total),
       date: fmtDate(r.order_date),
-      due: fmtDate(r.expected_date),
-      meta: r.notes ?? '',
+      due: r.required_dispatch_text ?? fmtDate(r.expected_date),
+      meta: r.print_type ?? '',
+      gangsheets: Number(r.total_gangsheets ?? 0),
+      artworks: Number(r.total_artworks ?? 0),
+      shipping: fmtMoney(r.shipping_charge),
+      paymentState: r.payment_status,
     }),
   },
 }
@@ -148,6 +171,7 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; primaryId: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [bulkOrderModal, setBulkOrderModal] = useState(false)
+  const [poSummary, setPoSummary] = useState<POSummary | null>(null)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -173,6 +197,12 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
   }
 
   useEffect(() => { fetchRecords() }, [kind])
+  useEffect(() => {
+    if (kind !== 'purchase-orders') return
+    api.get('/purchase-orders/summary')
+      .then(({ data }) => setPoSummary(data.data))
+      .catch(() => setPoSummary(null))
+  }, [kind])
 
   const handleSearch = (v: string) => { setSearch(v); setPage(1); fetchRecords(1, v, statusFilter) }
   const handleFilter = (sf: string) => { setStatusFilter(sf); setPage(1); setFilterAnchor(null); fetchRecords(1, search, sf) }
@@ -229,16 +259,65 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
       </div>
 
       <div className="wf-metrics">
-        <div className="wf-metric"><span>Total</span><strong>{total}</strong></div>
-        <div className="wf-metric"><span>Loaded</span><strong>{records.length}</strong></div>
-        <div className="wf-metric">
-          <span>Needs Attention</span>
-          <strong>{records.filter(r => ['red', 'amber'].includes(STATUS_TONES[r.status] ?? '')).length}</strong>
-        </div>
+        {kind === 'purchase-orders' && poSummary ? (
+          <>
+            <div className="wf-metric"><span>PO Entries</span><strong>{poSummary.po_entries}</strong><small>{poSummary.unique_po_numbers} unique</small></div>
+            <div className="wf-metric"><span>Gangsheets</span><strong>{poSummary.gangsheets}</strong></div>
+            <div className="wf-metric"><span>Artworks</span><strong>{poSummary.artworks.toLocaleString()}</strong></div>
+            <div className="wf-metric"><span>Paid Revenue</span><strong>{fmtMoney(poSummary.paid_revenue)}</strong><small>{poSummary.free_reprints} free/reprints</small></div>
+            <div className="wf-metric"><span>Shipping</span><strong>{fmtMoney(poSummary.shipping_collected)}</strong><small>{poSummary.customers} clients</small></div>
+          </>
+        ) : (
+          <>
+            <div className="wf-metric"><span>Total</span><strong>{total}</strong></div>
+            <div className="wf-metric"><span>Loaded</span><strong>{records.length}</strong></div>
+            <div className="wf-metric">
+              <span>Needs Attention</span>
+              <strong>{records.filter(r => ['red', 'amber'].includes(STATUS_TONES[r.status] ?? '')).length}</strong>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="al-panel cust-table-wrap wf-table-wrap">
         <table className="cust-table wf-table">
+          {kind === 'purchase-orders' ? (
+            <>
+          <thead>
+            <tr>
+              <th>Source PO</th>
+              <th>Client</th>
+              <th>Vendor</th>
+              <th>Gangsheets</th>
+              <th>Artworks</th>
+              <th>Payment</th>
+              <th>Shipping</th>
+              <th>Payment Status</th>
+              <th>PO Date</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={10} className="cust-empty-row">Loading...</td></tr>}
+            {!loading && records.length === 0 && <tr><td colSpan={10} className="cust-empty-row">No purchase orders found.</td></tr>}
+            {!loading && records.map((record) => (
+              <tr key={record.id} className="cust-row" style={{ cursor: 'pointer' }} onClick={() => navigate(`/purchase-orders/${record.id}`)}>
+                <td><div className="wf-record-title"><strong>{record.primaryId}</strong>{record.sourceId && <span>Internal: {record.sourceId}</span>}</div></td>
+                <td><strong>{record.customer}</strong></td>
+                <td className="cust-muted">{record.linked}</td>
+                <td>{record.gangsheets}</td>
+                <td>{record.artworks?.toLocaleString()}</td>
+                <td className="cust-spent">{record.amount}</td>
+                <td>{record.shipping}</td>
+                <td><span className={cn('wf-status', toneCls(record.status))}>{record.status}</span></td>
+                <td className="cust-muted">{record.date}</td>
+                <td onClick={(e) => e.stopPropagation()}><button className="lb-icon-btn" onClick={(e) => setMenuAnchor({ el: e.currentTarget, id: record.id, primaryId: record.primaryId })}><MoreHorizontal size={15} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+            </>
+          ) : (
+            <>
           <thead>
             <tr>
               <th>{config.primaryColumn}</th>
@@ -282,6 +361,8 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
               </tr>
             ))}
           </tbody>
+            </>
+          )}
         </table>
       </div>
 

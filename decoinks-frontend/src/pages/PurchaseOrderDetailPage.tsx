@@ -26,6 +26,12 @@ interface POItem {
   line_total: number
   required_by_date: string | null
   remarks: string | null
+  source_artwork_no?: string | null
+  image_file_ref?: string | null
+  artwork_size?: string | null
+  print_type?: string | null
+  gangsheet_lengths?: string | null
+  brand?: string | null
 }
 
 interface PurchaseOrder {
@@ -90,6 +96,34 @@ interface PurchaseOrder {
     file_url: string | null
     thumbnail_url: string | null
     file_type: string | null
+  }[]
+  customer_name?: string | null
+  customer_email?: string | null
+  customer_phone?: string | null
+  source_system?: string | null
+  source_po_number?: string | null
+  source_entry_index?: number | null
+  brand?: string | null
+  production_priority?: string | null
+  required_dispatch_text?: string | null
+  print_type?: string | null
+  total_gangsheets?: number | null
+  total_artworks?: number | null
+  gangsheet_width?: string | null
+  gangsheet_lengths?: string | null
+  payment_received?: number | null
+  shipping_charge?: number | null
+  net_product_amount?: number | null
+  delivery_type?: string | null
+  courier_account?: string | null
+  shipping_labels?: string | null
+  packages?: number | null
+  source_payment_status?: string | null
+  qa_notes?: {
+    id: string
+    issue_type: string
+    details: string
+    created_at: string
   }[]
 }
 
@@ -193,11 +227,11 @@ export function PurchaseOrderDetailPage() {
 
   // â"€â"€ Helpers â"€â"€
 
-  const fmo = (n: number | null | undefined) =>
-    n != null ? n.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '-"'
+  const fmo = (n: number | string | null | undefined) =>
+    n != null ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-"'
+    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'
 
   const fmtDateTime = (d: string) =>
     new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -225,6 +259,7 @@ export function PurchaseOrderDetailPage() {
 
   const transitions = getValidTransitions('po', po.status, (user?.role as UserRole) ?? 'Viewer')
   const currency = po.currency || 'USD'
+  const isImportedDTF = po.source_system === 'decoinks_dtf_po_master_apr_jun_2026'
 
   return (
     <div className="np-page">
@@ -235,7 +270,7 @@ export function PurchaseOrderDetailPage() {
           <div className="np-breadcrumb">
             <Link to="/purchase-orders" className="hover:text-gray-700">Purchase Orders</Link>
             <ChevronRight size={13} />
-            <strong>{po.po_number}</strong>
+            <strong>{po.source_po_number || po.po_number}</strong>
           </div>
           <h2 className="np-page-title">Purchase Order Details</h2>
         </div>
@@ -267,7 +302,7 @@ export function PurchaseOrderDetailPage() {
       {/* â"€â"€ INFO BAR â"€â"€ */}
       <div className="np-info-bar">
         {[
-          { label: 'PO Number',   value: po.po_number },
+          { label: 'PO Number',   value: po.source_po_number || po.po_number },
           { label: 'Order Date',  value: fmtDate(po.order_date) },
           { label: 'Expected',    value: fmtDate(po.expected_date) },
           { label: 'Currency',    value: po.currency || 'USD' },
@@ -300,6 +335,32 @@ export function PurchaseOrderDetailPage() {
         {/* ── MAIN CONTENT ── */}
         <div className="resp-two-col-main">
 
+          {isImportedDTF && (
+            <div className="np-card" style={{ borderTop: '3px solid #0d9488' }}>
+              <div className="np-card-header">
+                <span className="np-section-num">DTF</span>
+                <h3>Imported DTF Master Record</h3>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '16px 24px' }}>
+                <DetailRow label="Client" value={po.customer_name || '-'} />
+                <DetailRow label="Vendor" value={po.supplier_name || '-'} />
+                <DetailRow label="Brand" value={po.brand || '-'} />
+                <DetailRow label="Print Type" value={po.print_type || '-'} />
+                <DetailRow label="Production Priority" value={po.production_priority || '-'} />
+                <DetailRow label="Required Dispatch" value={po.required_dispatch_text || '-'} />
+                <DetailRow label="Total Gangsheets" value={String(po.total_gangsheets ?? 0)} />
+                <DetailRow label="Total Artworks" value={Number(po.total_artworks ?? 0).toLocaleString()} />
+                <DetailRow label="Gangsheet Width" value={po.gangsheet_width || '-'} />
+                <DetailRow label="Delivery Type" value={po.delivery_type || '-'} />
+                <DetailRow label="Courier Account" value={po.courier_account || '-'} />
+                <DetailRow label="Shipping Labels" value={po.shipping_labels || '-'} />
+                <DetailRow label="Packages" value={String(po.packages ?? '-')} />
+                <DetailRow label="Source Payment Status" value={po.source_payment_status || '-'} />
+              </div>
+              {po.shipping_address && <div style={{ marginTop: 16 }}><DetailRow label="Ship To Address" value={po.shipping_address} multiline /></div>}
+            </div>
+          )}
+
           {/* Supplier & Fulfillment */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '16px' }}>
 
@@ -310,9 +371,9 @@ export function PurchaseOrderDetailPage() {
                 <h3>Supplier</h3>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
-                <DetailRow label="Supplier" value={po.supplier_name ?? '-"'} />
-                <DetailRow label="Supplier Reference" value={po.supplier_reference ?? '-"'} />
-                <DetailRow label="Payment Terms" value={po.payment_terms ?? '-"'} />
+                <DetailRow label="Supplier" value={po.supplier_name ?? '-'} />
+                <DetailRow label="Supplier Reference" value={po.supplier_reference ?? '-'} />
+                <DetailRow label="Payment Terms" value={po.payment_terms ?? '-'} />
               </div>
             </div>
 
@@ -323,10 +384,10 @@ export function PurchaseOrderDetailPage() {
                 <h3>Fulfillment</h3>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
-                <DetailRow label="Buyer" value={po.buyer_name ?? '-"'} />
-                <DetailRow label="Department" value={po.department ?? '-"'} />
-                <DetailRow label="Shipping Method" value={po.shipping_method ?? '-"'} />
-                {po.shipping_address && <DetailRow label="Ship To" value={po.shipping_address} muloiline />}
+                <DetailRow label="Buyer" value={po.buyer_name ?? '-'} />
+                <DetailRow label="Department" value={po.department ?? '-'} />
+                <DetailRow label="Shipping Method" value={po.shipping_method ?? '-'} />
+                {po.shipping_address && <DetailRow label="Ship To" value={po.shipping_address} multiline />}
               </div>
             </div>
           </div>
@@ -340,35 +401,59 @@ export function PurchaseOrderDetailPage() {
             <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
               <table className="np-table" style={{ minWidth: '800px' }}>
                 <thead>
+                  {isImportedDTF ? (
+                  <tr>
+                    <th style={{ width: 36 }}>#</th>
+                    <th style={{ width: 90 }}>AW #</th>
+                    <th>Artwork Name</th>
+                    <th style={{ width: 105 }}>Image Ref</th>
+                    <th style={{ width: 100 }}>Size</th>
+                    <th style={{ width: 80 }}>Quantity</th>
+                    <th style={{ width: 120 }}>Print Type</th>
+                    <th style={{ width: 170 }}>Gangsheet Length(s)</th>
+                  </tr>
+                  ) : (
                   <tr>
                     <th style={{ width: 36 }}>#</th>
                     <th>Item Name</th>
                     <th style={{ width: 70 }}>HSN</th>
                     <th style={{ width: 56 }}>UOM</th>
-                    <th style={{ width: 64 }}>Qoy</th>
+                    <th style={{ width: 64 }}>Qty</th>
                     <th style={{ width: 96 }}>Unit Price</th>
                     <th style={{ width: 64 }}>Disc%</th>
                     <th style={{ width: 64 }}>Tax%</th>
                     <th style={{ width: 96 }}>Line Total</th>
                     <th style={{ width: 100 }}>Req By</th>
                   </tr>
+                  )}
                 </thead>
                 <tbody>
                   {po.items.length === 0 ? (
                     <tr>
-                      <td colSpan={10} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
+                      <td colSpan={isImportedDTF ? 8 : 10} style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
                         No line items
                       </td>
                     </tr>
                   ) : (
-                    po.items.map((item, i) => (
+                    po.items.map((item, i) => isImportedDTF ? (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="np-od-num">{i + 1}</td>
+                        <td style={{ padding: 8, fontWeight: 600 }}>{item.source_artwork_no || '-'}</td>
+                        <td style={{ padding: 8 }}><strong>{item.item_name}</strong>{item.remarks && <p style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{item.remarks}</p>}</td>
+                        <td style={{ padding: 8 }}>{item.image_file_ref || '-'}</td>
+                        <td style={{ padding: 8 }}>{item.artwork_size || '-'}</td>
+                        <td style={{ padding: 8, textAlign: 'center', fontWeight: 600 }}>{item.qty_ordered}</td>
+                        <td style={{ padding: 8 }}>{item.print_type || po.print_type || '-'}</td>
+                        <td style={{ padding: 8, fontSize: 12 }}>{item.gangsheet_lengths || '-'}</td>
+                      </tr>
+                    ) : (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="np-od-num">{i + 1}</td>
                         <td style={{ padding: '8px', fontSize: '13px' }}>
                           <p style={{ fontWeight: 500, color: '#111827' }}>{item.item_name}</p>
                           {item.description && <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>{item.description}</p>}
                         </td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{item.hsn_code ?? '-"'}</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{item.hsn_code ?? '-'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#374151' }}>{item.uom}</td>
                         <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{item.qty_ordered}</td>
                         <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{fmo(item.unit_price)}</td>
@@ -520,6 +605,23 @@ export function PurchaseOrderDetailPage() {
             </div>
           )}
 
+          {(po.qa_notes ?? []).length > 0 && (
+            <div className="np-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+              <div className="np-card-header">
+                <AlertTriangle size={17} color="#d97706" />
+                <h3>Import QA Notes ({po.qa_notes?.length})</h3>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {po.qa_notes?.map(note => (
+                  <div key={note.id} style={{ padding: '10px 12px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                    <strong style={{ display: 'block', fontSize: 12, color: '#92400e', marginBottom: 3 }}>{note.issue_type}</strong>
+                    <span style={{ fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>{note.details}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Status history Timeline */}
           {history.length > 0 && (
             <div className="np-card">
@@ -575,8 +677,20 @@ export function PurchaseOrderDetailPage() {
               <h3>Financial Summary</h3>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {isImportedDTF ? (
+                <>
+                  <SummaryRow label="Payment Received" value={po.source_payment_status === 'Free/Reprint' ? 'Free / Reprint' : `${currency} ${fmo(po.payment_received)}`} />
+                  <SummaryRow label="Shipping Collected" value={`${currency} ${fmo(po.shipping_charge)}`} />
+                  <SummaryRow label="Net Product Amount" value={`${currency} ${fmo(po.net_product_amount)}`} />
+                  <SummaryRow label="Payment Status" value={po.source_payment_status || '-'} />
+                  <div style={{ borderTop: '2px solid #0d9488', paddingTop: 10, marginTop: 4 }}>
+                    <SummaryRow label="Imported Source Total" value={po.source_payment_status === 'Free/Reprint' ? 'Free' : `${currency} ${fmo(po.payment_received)}`} />
+                  </div>
+                </>
+              ) : (
+                <>
               <SummaryRow label="Subtotal"        value={`${currency} ${fmo(po.subtotal ?? null)}`} />
-              <SummaryRow label="Total Discount"  value={`-" ${currency} ${fmo(po.total_discount ?? null)}`} dimmed />
+              <SummaryRow label="Total Discount"  value={`- ${currency} ${fmo(po.total_discount ?? null)}`} dimmed />
               <SummaryRow label="Total Tax"       value={`${currency} ${fmo(po.total_tax ?? null)}`} />
               <SummaryRow label="Freight"         value={`${currency} ${fmo(po.freight_charges ?? null)}`} />
               <SummaryRow label="Other Charges"   value={`${currency} ${fmo(po.other_charges ?? null)}`} />
@@ -588,6 +702,8 @@ export function PurchaseOrderDetailPage() {
                   </span>
                 </div>
               </div>
+                </>
+              )}
             </div>
 
             {/* Delete */}
@@ -616,7 +732,7 @@ export function PurchaseOrderDetailPage() {
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
         }}>
-          <div style={{ background: 'whioe', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Change Status</h3>
             {user?.role === 'Admin' && (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
@@ -657,7 +773,7 @@ export function PurchaseOrderDetailPage() {
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
         }}>
-          <div style={{ background: 'whioe', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>Send to Supplier Portal</h3>
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>
               The supplier will be able to view this PO in their portal.
@@ -690,11 +806,11 @@ export function PurchaseOrderDetailPage() {
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function DetailRow({ label, value, muloiline }: { label: string; value: string; muloiline?: boolean }) {
+function DetailRow({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
   return (
     <div>
       <p style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1px' }}>{label}</p>
-      <p style={{ fontSize: '13px', color: '#111827', whiteSpace: muloiline ? 'pre-line' : undefined }}>{value}</p>
+      <p style={{ fontSize: '13px', color: '#111827', whiteSpace: multiline ? 'pre-line' : undefined }}>{value}</p>
     </div>
   )
 }
@@ -707,9 +823,6 @@ function SummaryRow({ label, value, dimmed }: { label: string; value: string; di
     </div>
   )
 }
-
-
-
 
 
 
