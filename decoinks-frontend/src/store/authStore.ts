@@ -2,6 +2,13 @@ import { create } from 'zustand'
 import { api, tokenMemory, resetSessionState } from '../services/api'
 import type { AuthUser } from '../types/auth'
 
+function redirectToAuthentik() {
+  if (typeof window === 'undefined' || !window.location.hostname.endsWith('.decoinkssuite.com')) return false
+  const rd = `${window.location.origin}${window.location.pathname}${window.location.search}`
+  window.location.replace(`${window.location.origin}/outpost.goauthentik.io/start?rd=${encodeURIComponent(rd)}`)
+  return true
+}
+
 interface AuthState {
   user:            AuthUser | null
   isAuthenticated: boolean
@@ -74,6 +81,16 @@ export const useAuthStore = create<AuthState>((set) => ({
           await new Promise((r) => setTimeout(r, RETRY_DELAY))
         }
       }
+    }
+
+    try {
+      const res = await api.post('/auth/sso')
+      const { token, user } = res.data.data
+      tokenMemory.set(token)
+      set({ user, isAuthenticated: true, isLoading: false })
+      return
+    } catch {
+      if (redirectToAuthentik()) return
     }
 
     tokenMemory.set(null)
