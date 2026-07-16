@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  ArrowRight,
   ArrowDownRight,
   ArrowUpRight,
+  Clock3,
   ClipboardList,
   Images,
   ReceiptText,
@@ -12,17 +14,13 @@ import {
   PackageCheck,
 } from 'lucide-react'
 import {
-  Bar,
-  BarChart,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from 'recharts'
+import { Link } from 'react-router-dom'
 import { api } from '../services/api'
 
 // Keys must match the lead_stage enum the backend returns.
@@ -73,15 +71,15 @@ export function DashboardPage() {
     queryFn: () => api.get('/dashboard/recent-activity').then(r => r.data.data),
   })
 
-  const pipelineChartData = pipeline.length
-    ? [Object.fromEntries([['name', 'Lead pipeline'], ...pipeline.map((p: any) => [p.stage, p.count])])]
-    : []
+  const pipelineTotal = pipeline.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0)
 
   const donutData: { name: string; value: number; color: string }[] = ordersByStatus.map((o: any) => ({
     name: o.status,
     value: o.count,
     color: ORDER_STATUS_COLORS[o.status] ?? '#94A3B8',
   }))
+  const orderTotal = donutData.reduce((sum, row) => sum + Number(row.value || 0), 0)
+  const visibleActivity = recentActivity.slice(0, 8)
 
   const statCards = stats ? [
     {
@@ -160,7 +158,7 @@ export function DashboardPage() {
           const TrendIcon = stat.direction === 'up' ? ArrowUpRight : ArrowDownRight
 
           return (
-            <article className="metric-card" key={stat.label}>
+            <article className="metric-card" key={stat.label} style={{ borderTopColor: stat.color }}>
               <div className="metric-card-top">
                 <span className="metric-icon" style={{ backgroundColor: stat.bg, color: stat.color }}>
                   <Icon size={21} />
@@ -201,40 +199,24 @@ export function DashboardPage() {
               <p>Pipeline volume by current stage</p>
             </div>
           </div>
-          {pipelineChartData.length > 0 ? (
-            <>
-              <div className="stacked-chart-wrap">
-                <ResponsiveContainer width="100%" height={150}>
-                  <BarChart data={pipelineChartData} layout="vertical" margin={{ top: 16, right: 18, left: 0, bottom: 8 }}>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" hide />
-                    <Tooltip cursor={{ fill: 'transparent' }} />
-                    <Legend iconType="circle" />
-                    {LEAD_STAGES.filter(s => pipelineChartData[0]?.[s.key] !== undefined).map((stage) => (
-                      <Bar
-                        key={stage.key}
-                        dataKey={stage.key}
-                        name={stage.label}
-                        stackId="lead-stage"
-                        fill={stage.color}
-                        radius={[0, 0, 0, 0]}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="stage-breakdown">
-                {pipeline.map((p: any) => {
-                  const cfg = LEAD_STAGES.find(s => s.key === p.stage)
-                  return (
-                    <span key={p.stage}>
-                      <i style={{ backgroundColor: cfg?.color ?? '#94A3B8' }} />
-                      {cfg?.label ?? p.stage} ({p.count})
-                    </span>
-                  )
-                })}
-              </div>
-            </>
+          {pipeline.length > 0 ? (
+            <div className="pipeline-list">
+              {LEAD_STAGES.map((stage) => {
+                const row = pipeline.find((p: any) => p.stage === stage.key)
+                const count = Number(row?.count || 0)
+                const percentage = pipelineTotal ? (count / pipelineTotal) * 100 : 0
+                return (
+                  <div className="pipeline-row" key={stage.key}>
+                    <div className="pipeline-row-head">
+                      <span><i style={{ backgroundColor: stage.color }} />{stage.label}</span>
+                      <strong>{count.toLocaleString()} <small>{percentage.toFixed(percentage > 0 && percentage < 1 ? 1 : 0)}%</small></strong>
+                    </div>
+                    <div className="pipeline-track"><span style={{ width: `${Math.max(percentage, count ? 2 : 0)}%`, backgroundColor: stage.color }} /></div>
+                  </div>
+                )
+              })}
+              <div className="pipeline-total"><span>Total pipeline</span><strong>{pipelineTotal.toLocaleString()} leads</strong></div>
+            </div>
           ) : (
             <p style={{ color: '#9CA3AF', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No lead data yet</p>
           )}
@@ -249,16 +231,19 @@ export function DashboardPage() {
           </div>
           {donutData.length > 0 ? (
             <div className="donut-layout">
-              <ResponsiveContainer width="100%" height={230}>
-                <PieChart>
-                  <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>
-                    {donutData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="donut-chart-wrap">
+                <ResponsiveContainer width="100%" height={230}>
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={66} outerRadius={92} paddingAngle={3} stroke="none">
+                      {donutData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="donut-center"><strong>{orderTotal}</strong><span>Total orders</span></div>
+              </div>
               <div className="donut-legend">
                 {donutData.map((s) => (
                   <div key={s.name}>
@@ -277,29 +262,26 @@ export function DashboardPage() {
         </article>
       </section>
 
-      <section className="dashboard-two-column">
+      <section className="dashboard-two-column dashboard-bottom-grid">
         <article className="panel activity-panel">
           <div className="panel-header">
             <div>
               <h2>Recent Activity</h2>
               <p>Latest updates across leads, invoices, and orders</p>
             </div>
+            <Link className="panel-link" to="/quotes">View records <ArrowRight size={14} /></Link>
           </div>
           <div className="activity-feed">
             {recentActivity.length === 0 && (
               <p style={{ color: '#9CA3AF', fontSize: 13, padding: '8px 0' }}>No recent activity</p>
             )}
-            {recentActivity.map((item: any) => (
+            {visibleActivity.map((item: any) => (
               <div className="activity-item" key={item.id}>
-                <span />
-                <p>
-                  <strong>{item.entity_type}</strong> — {item.action}
-                  {item.user_name ? ` by ${item.user_name}` : ''}
-                  {' · '}
-                  <span style={{ color: '#9CA3AF' }}>
-                    {new Date(item.created_at).toLocaleString()}
-                  </span>
-                </p>
+                <span className="activity-dot" />
+                <div className="activity-copy">
+                  <p><span className="activity-type">{item.entity_type}</span>{item.action}</p>
+                  <small><Clock3 size={12} />{new Date(item.created_at).toLocaleString()} {item.user_name ? `· ${item.user_name}` : ''}</small>
+                </div>
               </div>
             ))}
           </div>
@@ -313,7 +295,7 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="quick-stats-grid">
-            <div>
+            <div className="quick-stat-section">
               <h3>Orders by Status</h3>
               <table>
                 <tbody>
@@ -329,21 +311,20 @@ export function DashboardPage() {
                 </tbody>
               </table>
             </div>
-            <div>
+            <div className="quick-stat-section">
               <h3>Top Customers by Revenue</h3>
-              <table>
-                <tbody>
-                  {topSuppliers.length === 0 && (
-                    <tr><td colSpan={2} style={{ color: '#9CA3AF', fontSize: 13 }}>No data yet</td></tr>
-                  )}
-                  {topSuppliers.map((row: any) => (
-                    <tr key={row.supplier}>
-                      <td>{row.supplier}</td>
-                      <td>${Number(row.revenue).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="customer-ranking">
+                {topSuppliers.length === 0 && <p className="empty-copy">No data yet</p>}
+                {topSuppliers.map((row: any, index: number) => {
+                  const max = Number(topSuppliers[0]?.revenue || 1)
+                  return (
+                    <div className="customer-rank" key={row.supplier}>
+                      <span className="rank-number">{index + 1}</span>
+                      <div><p><strong>{row.supplier}</strong><b>${Number(row.revenue).toLocaleString()}</b></p><div className="rank-track"><span style={{ width: `${Number(row.revenue) / max * 100}%` }} /></div></div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </article>
