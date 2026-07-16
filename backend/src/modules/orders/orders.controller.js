@@ -3,8 +3,8 @@ const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '' } = req.query
-    const { rows, total } = await service.list({ page: +page, limit: +limit, status, order_type, customer_id, date_from, date_to })
+    const { page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '' } = req.query
+    const { rows, total } = await service.list({ page: +page, limit: +limit, status, order_type, customer_id, date_from, date_to, search })
     return paginated(res, rows, total, +page, +limit)
   } catch (err) { next(err) }
 }

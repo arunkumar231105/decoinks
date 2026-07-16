@@ -62,27 +62,32 @@ async function getItemsForOrder(orderId, orderType) {
   return rows
 }
 
-async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', supplier_id = '', date_from = '', date_to = '' }) {
+async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', supplier_id = '', date_from = '', date_to = '', search = '' }) {
   const offset = (page - 1) * limit
   const conditions = ['o.deleted_at IS NULL']
   const params = []
 
   if (status) { params.push(status); conditions.push(`o.status = $${params.length}`) }
   if (order_type) { params.push(order_type); conditions.push(`o.order_type = $${params.length}`) }
-  const sid = supplier_id || customer_id
-  if (sid) { params.push(sid); conditions.push(`o.supplier_id = $${params.length}`) }
+  if (supplier_id) { params.push(supplier_id); conditions.push(`o.supplier_id = $${params.length}`) }
+  if (customer_id) { params.push(customer_id); conditions.push(`o.customer_id = $${params.length}`) }
   if (date_from) { params.push(date_from); conditions.push(`o.order_date >= $${params.length}`) }
   if (date_to) { params.push(date_to); conditions.push(`o.order_date <= $${params.length}`) }
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(o.order_number ILIKE $${params.length} OR o.source_po_number ILIKE $${params.length} OR o.contact_name ILIKE $${params.length} OR cust.name ILIKE $${params.length})`)
+  }
 
   const where = 'WHERE ' + conditions.join(' AND ')
-  const countRes = await query(`SELECT COUNT(*) FROM orders o ${where}`, params)
+  const countRes = await query(`SELECT COUNT(*) FROM orders o LEFT JOIN customers cust ON cust.id=o.customer_id ${where}`, params)
   const total = parseInt(countRes.rows[0].count, 10)
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, u.name AS agent_name
+    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name
      FROM orders o
      LEFT JOIN suppliers c ON c.id = o.supplier_id
+     LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u ON u.id = o.assigned_to
      ${where}
      ORDER BY o.order_date DESC, o.created_at DESC
@@ -94,9 +99,10 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, u.name AS agent_name, i.invoice_number
+    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name, i.invoice_number
      FROM orders o
      LEFT JOIN suppliers c  ON c.id = o.supplier_id
+     LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u      ON u.id = o.assigned_to
      LEFT JOIN invoices i   ON i.id = o.invoice_id
      WHERE o.id = $1 AND o.deleted_at IS NULL`,

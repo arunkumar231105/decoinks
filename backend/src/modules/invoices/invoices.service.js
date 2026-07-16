@@ -20,7 +20,7 @@ async function logActivity(actorId, invoiceId, action, description) {
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-async function list({ page = 1, limit = 10, status = '', customer_id = '', supplier_id = '' }) {
+async function list({ page = 1, limit = 10, status = '', customer_id = '', supplier_id = '', search = '' }) {
   const offset = (page - 1) * limit
   const conditions = []
   const params = []
@@ -29,9 +29,19 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
   if (status)     { params.push(status);     conditions.push(`i.status = $${params.length}`) }
   if (customer_id) { params.push(customer_id); conditions.push(`i.customer_id = $${params.length}`) }
   else if (supplierId) { params.push(supplierId); conditions.push(`i.supplier_id = $${params.length}`) }
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(i.invoice_number ILIKE $${params.length} OR i.source_po_number ILIKE $${params.length} OR i.customer_name ILIKE $${params.length} OR c.name ILIKE $${params.length} OR o.order_number ILIKE $${params.length})`)
+  }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
-  const countRes = await query(`SELECT COUNT(*) FROM invoices i ${where}`, params)
+  const countRes = await query(
+    `SELECT COUNT(*) FROM invoices i
+     LEFT JOIN customers c ON c.id=i.customer_id
+     LEFT JOIN orders o ON o.id=i.order_id
+     ${where}`,
+    params
+  )
   const total = parseInt(countRes.rows[0].count, 10)
 
   params.push(limit, offset)
