@@ -66,10 +66,10 @@ async function create({ artwork_no: providedNo, name, supplier_id, order_id, quo
     `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, quotation_id, lead_id,
        artwork_category, artwork_micro_niche, artwork_type, status, file_url, storage_key,
        file_name, file_type, file_size_bytes, tags, notes, uploaded_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
     [artwork_no, name, supplier_id || null, order_id || null, quotation_id || null,
      lead_id || null, artwork_category || null, artwork_micro_niche || null, artwork_type || 'custom', status,
-     file_url, file.originalname, file_type, file.size || file.buffer?.length || null,
+     file_url, file_url, file.originalname, file_type, file.size || file.buffer?.length || null,
      tagsArr, notes || null, uploaded_by]
   )
   await query(

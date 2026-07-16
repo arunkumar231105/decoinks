@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Eye, FileText, Image, MapPin, Plus, Save, Shirt, Trash2, UserRound } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, FileText, Image, MapPin, Plus, Save, Search, Shirt, Trash2, Upload, UserRound, X } from 'lucide-react'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 
@@ -21,18 +21,69 @@ type Line = {
   artwork_height: number
   qty: number
   unit_price: number
+  artwork_url: string
+  artwork_label: string
+  front_artwork_url: string
+  front_artwork_label: string
+  back_artwork_url: string
+  back_artwork_label: string
 }
 
 const blankLine = (): Line => ({
   key: crypto.randomUUID(), product_id: '', description: '', artwork_id: '',
   front_artwork_id: '', back_artwork_id: '', brand: '', model: '', color: '',
   sizes: '', artwork_width: 0, artwork_height: 0, qty: 1, unit_price: 0,
+  artwork_url: '', artwork_label: '', front_artwork_url: '', front_artwork_label: '', back_artwork_url: '', back_artwork_label: '',
 })
 
 const addressText = (address: any) => {
   if (!address) return ''
   return [address.line1, address.line2, [address.city, address.state, address.zipcode].filter(Boolean).join(', '), address.country]
     .filter(Boolean).join('\n')
+}
+
+function useDebounced(value: string, delay = 250) {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => { const timer = window.setTimeout(() => setDebounced(value), delay); return () => window.clearTimeout(timer) }, [value, delay])
+  return debounced
+}
+
+function SearchPicker({ value, label, placeholder, options, loading, optional, onSearch, onChange }: {
+  value: string; label: string; placeholder: string; options: any[]; loading?: boolean; optional?: boolean
+  onSearch: (value: string) => void; onChange: (value: string, option?: any) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  return <div className="nq-search-picker">
+    <div className="nq-search-input-wrap">
+      <Search size={15}/>
+      <input className="al-input" value={open ? search : label} placeholder={placeholder}
+        onFocus={() => { setOpen(true); setSearch(''); onSearch('') }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        onChange={e => { setSearch(e.target.value); onSearch(e.target.value); setOpen(true) }}/>
+      {value ? <button type="button" className="nq-search-clear" title="Clear selection" onMouseDown={e => e.preventDefault()} onClick={() => onChange('')}><X size={14}/></button> : <ChevronDown size={15}/>}
+    </div>
+    {open && <div className="nq-search-menu">
+      {optional && <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { onChange(''); setOpen(false) }}>No linked lead</button>}
+      {loading && <div className="nq-search-empty">Searching…</div>}
+      {!loading && options.map(option => <button type="button" key={option.id} onMouseDown={e => e.preventDefault()} onClick={() => { onChange(option.id, option); setOpen(false) }}><strong>{option.primary}</strong><span>{option.secondary}</span></button>)}
+      {!loading && options.length === 0 && <div className="nq-search-empty">No matching record found</div>}
+    </div>}
+  </div>
+}
+
+function ArtworkUpload({ label, artworkLabel, artworkUrl, uploading, onUpload, onClear }: {
+  label: string; artworkLabel: string; artworkUrl: string; uploading: boolean
+  onUpload: (file: File) => void; onClear: () => void
+}) {
+  const inputId = `art-${crypto.randomUUID()}`
+  return <div className="nq-art-upload">
+    {artworkLabel ? <div className="nq-art-selected">
+      {artworkUrl && !/\.pdf($|\?)/i.test(artworkUrl) ? <img src={artworkUrl} alt={artworkLabel}/> : <FileText size={24}/>}
+      <span title={artworkLabel}>{artworkLabel}</span><button type="button" title="Remove" onClick={onClear}><X size={13}/></button>
+    </div> : <label htmlFor={inputId} className={uploading ? 'disabled' : ''}><Upload size={15}/><span>{uploading ? 'Uploading…' : label}</span></label>}
+    <input id={inputId} type="file" accept="image/*,.pdf,.ai,.eps,.svg" disabled={uploading} onChange={e => { const file = e.target.files?.[0]; if (file) onUpload(file); e.currentTarget.value = '' }}/>
+  </div>
 }
 
 export function NewQuotationPage() {
@@ -46,23 +97,29 @@ export function NewQuotationPage() {
     notes: '', internal_notes: '',
   })
   const [lines, setLines] = useState<Line[]>([blankLine()])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [leadSearch, setLeadSearch] = useState('')
+  const [uploading, setUploading] = useState<Record<string, boolean>>({})
+  const debouncedCustomerSearch = useDebounced(customerSearch)
+  const debouncedLeadSearch = useDebounced(leadSearch)
 
-  const { data: customers = [] } = useQuery<any[]>({
-    queryKey: ['quote-customers'],
-    queryFn: () => api.get('/customers', { params: { limit: 200 } }).then(r => r.data.data.rows),
+  const { data: customers = [], isFetching: customersLoading } = useQuery<any[]>({
+    queryKey: ['quote-customers', debouncedCustomerSearch],
+    queryFn: () => api.get('/customers', { params: { limit: 30, search: debouncedCustomerSearch } }).then(r => r.data.data.rows),
   })
   const { data: customerDetail, isFetching: customerLoading } = useQuery<any>({
     queryKey: ['quote-customer', form.customer_id],
     queryFn: () => api.get(`/customers/${form.customer_id}`).then(r => r.data.data),
     enabled: !!form.customer_id,
   })
-  const { data: leads = [] } = useQuery<any[]>({
-    queryKey: ['quote-leads'],
-    queryFn: () => api.get('/leads/list', { params: { limit: 500 } }).then(r => r.data.data.rows),
+  const { data: leads = [], isFetching: leadsLoading } = useQuery<any[]>({
+    queryKey: ['quote-leads', debouncedLeadSearch],
+    queryFn: () => api.get('/leads/list', { params: { limit: 30, search: debouncedLeadSearch } }).then(r => r.data.data.rows),
   })
-  const { data: artworks = [] } = useQuery<any[]>({
-    queryKey: ['quote-artworks'],
-    queryFn: () => api.get('/artworks', { params: { limit: 500 } }).then(r => r.data.data.rows),
+  const { data: selectedLead } = useQuery<any>({
+    queryKey: ['quote-lead', form.lead_id],
+    queryFn: () => api.get(`/leads/${form.lead_id}`).then(r => r.data.data),
+    enabled: !!form.lead_id,
   })
   const { data: existing } = useQuery<any>({
     queryKey: ['quotation', id],
@@ -88,6 +145,9 @@ export function NewQuotationPage() {
       front_artwork_id: x.front_artwork_id ?? '', back_artwork_id: x.back_artwork_id ?? '', brand: x.brand ?? '', model: x.model ?? '',
       color: x.colors ?? '', sizes: x.sizes ?? '', artwork_width: Number(x.artwork_width ?? 0), artwork_height: Number(x.artwork_height ?? 0),
       qty: Number(x.qty) || 1, unit_price: Number(x.unit_price) || 0,
+      artwork_url: x.artwork_file_url ?? x.artwork_image ?? '', artwork_label: [x.artwork_no, x.artwork_name].filter(Boolean).join(' · '),
+      front_artwork_url: x.front_artwork_url ?? x.front_image ?? '', front_artwork_label: [x.front_artwork_no, x.front_artwork_name].filter(Boolean).join(' · '),
+      back_artwork_url: x.back_artwork_url ?? x.back_image ?? '', back_artwork_label: [x.back_artwork_no, x.back_artwork_name].filter(Boolean).join(' · '),
     })) : [blankLine()])
   }, [existing])
 
@@ -96,7 +156,7 @@ export function NewQuotationPage() {
     setForm((current: any) => ({ ...current, lead_id: current.lead_id || customerDetail.lead_id || '' }))
   }, [customerDetail, existing])
 
-  const selectedCustomer = customerDetail ?? customers.find(c => c.id === form.customer_id)
+  const selectedCustomer = customerDetail
   const shipping = customerDetail?.addresses?.find((a: any) => a.address_type === 'shipping' && a.is_default)
     ?? customerDetail?.addresses?.find((a: any) => a.address_type === 'shipping')
   const billing = customerDetail?.addresses?.find((a: any) => a.address_type === 'billing' && a.is_default)
@@ -118,6 +178,29 @@ export function NewQuotationPage() {
 
   const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const updateLine = (key: string, patch: Partial<Line>) => setLines(value => value.map(line => line.key === key ? { ...line, ...patch } : line))
+  const uploadArtwork = async (lineKey: string, position: 'artwork' | 'front' | 'back', file: File) => {
+    const uploadKey = `${lineKey}:${position}`
+    setUploading(value => ({ ...value, [uploadKey]: true }))
+    try {
+      const data = new FormData()
+      data.append('file', file)
+      data.append('name', file.name.replace(/\.[^.]+$/, ''))
+      data.append('status', 'Draft')
+      data.append('artwork_type', 'custom')
+      if (form.lead_id) data.append('lead_id', form.lead_id)
+      const response = await api.post('/artworks', data, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const artwork = response.data.data ?? response.data
+      const common = { [`${position}_artwork_url`]: artwork.file_url ?? '', [`${position}_artwork_label`]: `${artwork.artwork_no} · ${artwork.name}` }
+      if (position === 'artwork') updateLine(lineKey, { artwork_id: artwork.id, artwork_url: artwork.file_url ?? '', artwork_label: `${artwork.artwork_no} · ${artwork.name}`, artwork_width: Number(artwork.width_inches ?? 0), artwork_height: Number(artwork.height_inches ?? 0) })
+      else updateLine(lineKey, { ...common, [`${position}_artwork_id`]: artwork.id } as Partial<Line>)
+      qc.invalidateQueries({ queryKey: ['artworks'] })
+      toast.success(`${position === 'artwork' ? 'Artwork' : `${position[0].toUpperCase()}${position.slice(1)} artwork`} uploaded`)
+    } catch (error: any) {
+      toast.error(error.response?.data?.message ?? error.response?.data?.error ?? 'Artwork upload failed')
+    } finally {
+      setUploading(value => ({ ...value, [uploadKey]: false }))
+    }
+  }
   const changeType = (type: QuoteType) => {
     if (form.order_type === type) return
     setForm((value: any) => ({ ...value, order_type: type }))
@@ -130,18 +213,15 @@ export function NewQuotationPage() {
   const mutation = useMutation({
     mutationFn: async ({ preview }: { preview: boolean }) => {
       const items = lines.filter(isLineReady).map(({ key, color, ...line }) => {
-        const art = artworks.find(a => a.id === line.artwork_id)
-        const front = artworks.find(a => a.id === line.front_artwork_id)
-        const back = artworks.find(a => a.id === line.back_artwork_id)
         return {
           ...line,
           product_id: line.product_id || null,
           artwork_id: line.artwork_id || null,
           front_artwork_id: line.front_artwork_id || null,
           back_artwork_id: line.back_artwork_id || null,
-          artwork_image: art?.file_url ?? null,
-          front_image: front?.file_url ?? null,
-          back_image: back?.file_url ?? null,
+          artwork_image: line.artwork_url || null,
+          front_image: line.front_artwork_url || null,
+          back_image: line.back_artwork_url || null,
           product_type: form.order_type === 'dtf' ? 'DTF Transfers' : 'Custom Apparel',
           decoration_method: 'DTF', colors: color || null,
           artwork_count: form.order_type === 'dtf' ? 1 : Number(!!line.front_artwork_id) + Number(!!line.back_artwork_id),
@@ -199,8 +279,8 @@ export function NewQuotationPage() {
     <section className="nq-card">
       <div className="nq-card-heading"><UserRound size={17}/><h3>Customer & Quotation Details</h3></div>
       <div className="nq-detail-grid">
-        <div className="al-field"><label>Customer *</label><select className="al-input" value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })}><option value="">Select customer</option>{customers.map(c => <option key={c.id} value={c.id}>{c.customer_no ?? c.customer_number} · {c.name}</option>)}</select></div>
-        <div className="al-field"><label>Originating Lead</label><select className="al-input" value={form.lead_id} onChange={e => setForm({ ...form, lead_id: e.target.value })}><option value="">No linked lead</option>{leads.map(l => <option key={l.id} value={l.id}>{l.lead_number} · {l.customer_name}</option>)}</select></div>
+        <div className="al-field"><label>Customer *</label><SearchPicker value={form.customer_id} label={selectedCustomer ? `${selectedCustomer.customer_no ?? selectedCustomer.customer_number} · ${selectedCustomer.name}` : ''} placeholder="Search customer by name…" loading={customersLoading} onSearch={setCustomerSearch} onChange={customer_id => setForm({ ...form, customer_id })} options={customers.map(c => ({ ...c, primary: c.name, secondary: [c.customer_no ?? c.customer_number, c.company_name, c.email].filter(Boolean).join(' · ') }))}/></div>
+        <div className="al-field"><label>Originating Lead</label><SearchPicker value={form.lead_id} label={selectedLead ? `${selectedLead.lead_number} · ${selectedLead.customer_name ?? selectedLead.supplier_name ?? ''}` : ''} placeholder="Search lead by name or number…" loading={leadsLoading} optional onSearch={setLeadSearch} onChange={lead_id => setForm({ ...form, lead_id })} options={leads.map(l => ({ ...l, primary: l.customer_name ?? l.supplier_name ?? 'Unnamed lead', secondary: l.lead_number }))}/></div>
         <div className="al-field"><label>Valid Until</label><input className="al-input" type="date" value={form.valid_until ?? ''} onChange={e => setForm({ ...form, valid_until: e.target.value })}/></div>
         <div className="al-field"><label>Payment Terms</label><select className="al-input" value={form.payment_terms} onChange={e => setForm({ ...form, payment_terms: e.target.value })}>{['Due on Receipt', 'Net 7', 'Net 15', 'Net 30'].map(x => <option key={x}>{x}</option>)}</select></div>
       </div>
@@ -218,7 +298,7 @@ export function NewQuotationPage() {
           <td className="nq-row-number">{index + 1}</td>
           <td><input className="al-input" value={line.description} onChange={e => updateLine(line.key, { description: e.target.value })} placeholder={form.order_type === 'dtf' ? 'Premium Quality DTF Transfer' : 'T-Shirt (Premium)'}/></td>
           {form.order_type === 'dtf' ? <>
-            <td><select className="al-input" value={line.artwork_id} onChange={e => { const art = artworks.find(a => a.id === e.target.value); updateLine(line.key, { artwork_id: e.target.value, artwork_width: Number(art?.width_inches ?? line.artwork_width), artwork_height: Number(art?.height_inches ?? line.artwork_height) }) }}><option value="">Select artwork</option>{artworks.map(a => <option key={a.id} value={a.id}>{a.artwork_no} · {a.name}</option>)}</select></td>
+            <td><ArtworkUpload label="Upload artwork" artworkLabel={line.artwork_label} artworkUrl={line.artwork_url} uploading={!!uploading[`${line.key}:artwork`]} onUpload={file => uploadArtwork(line.key, 'artwork', file)} onClear={() => updateLine(line.key, { artwork_id: '', artwork_url: '', artwork_label: '' })}/></td>
             <td><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.artwork_width || ''} onChange={e => updateLine(line.key, { artwork_width: +e.target.value })}/></td>
             <td><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.artwork_height || ''} onChange={e => updateLine(line.key, { artwork_height: +e.target.value })}/></td>
           </> : <>
@@ -228,7 +308,7 @@ export function NewQuotationPage() {
             <td><input className="al-input" value={line.sizes} onChange={e => updateLine(line.key, { sizes: e.target.value })} placeholder="S:10, M:20, L:15, XL:5"/></td>
           </>}
           <td><input className="al-input nq-number" type="number" min="1" step="1" value={line.qty} onChange={e => updateLine(line.key, { qty: +e.target.value })}/></td>
-          {form.order_type === 'apparel' && <><td><select className="al-input" value={line.front_artwork_id} onChange={e => updateLine(line.key, { front_artwork_id: e.target.value })}><option value="">None</option>{artworks.map(a => <option key={a.id} value={a.id}>{a.artwork_no} · {a.name}</option>)}</select></td><td><select className="al-input" value={line.back_artwork_id} onChange={e => updateLine(line.key, { back_artwork_id: e.target.value })}><option value="">None</option>{artworks.map(a => <option key={a.id} value={a.id}>{a.artwork_no} · {a.name}</option>)}</select></td></>}
+          {form.order_type === 'apparel' && <><td><ArtworkUpload label="Upload front" artworkLabel={line.front_artwork_label} artworkUrl={line.front_artwork_url} uploading={!!uploading[`${line.key}:front`]} onUpload={file => uploadArtwork(line.key, 'front', file)} onClear={() => updateLine(line.key, { front_artwork_id: '', front_artwork_url: '', front_artwork_label: '' })}/></td><td><ArtworkUpload label="Upload back" artworkLabel={line.back_artwork_label} artworkUrl={line.back_artwork_url} uploading={!!uploading[`${line.key}:back`]} onUpload={file => uploadArtwork(line.key, 'back', file)} onClear={() => updateLine(line.key, { back_artwork_id: '', back_artwork_url: '', back_artwork_label: '' })}/></td></>}
           <td><div className="nq-money-input"><span>$</span><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.unit_price || ''} onChange={e => updateLine(line.key, { unit_price: +e.target.value })}/></div></td>
           <td><strong className="nq-line-amount">{money(line.qty * line.unit_price)}</strong><small className="nq-formula">{line.qty} × {money(line.unit_price)}</small></td>
           <td><button className="nq-icon-btn" disabled={lines.length === 1} onClick={() => setLines(value => value.filter(item => item.key !== line.key))}><Trash2 size={15}/></button></td>
