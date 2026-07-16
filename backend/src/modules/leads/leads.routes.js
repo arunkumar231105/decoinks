@@ -35,6 +35,18 @@ const contactFields = {
   buyer_type:       z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
   productInterest:  z.array(productInterestItemSchema).optional(),
+  instagram_id: z.string().optional().nullable(),
+  facebook_id: z.string().optional().nullable(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  source_campaign: z.string().optional().nullable(),
+  next_followup_date: z.string().optional().nullable(),
+  last_contact_at: z.string().optional().nullable(),
+  qualification: z.object({
+    sizes_received: z.boolean().optional(), artwork_received: z.boolean().optional(),
+    delivery_date_confirmed: z.boolean().optional(), shipping_address_confirmed: z.boolean().optional(),
+    budget_confirmed: z.boolean().optional(), payment_method_pref: z.string().optional().nullable(),
+    info_completeness_score: z.number().int().min(0).max(100).optional(),
+  }).optional(),
 }
 
 const createSchema = z.object({

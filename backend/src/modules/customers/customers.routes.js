@@ -27,12 +27,27 @@ const customerFields = {
   buyer_type:       z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
+  first_name:       z.string().min(1).optional(),
+  last_name:        z.string().optional().nullable(),
+  company_name:     z.string().optional().nullable(),
+  company_phone_number: z.string().optional().nullable(),
+  mobile_number:    z.string().optional().nullable(),
+  preferred_language: z.string().optional().nullable(),
+  customer_segment: z.string().optional().nullable(),
+  tier:             z.string().optional().nullable(),
+  addresses: z.array(z.object({
+    address_type: z.enum(['billing', 'shipping']),
+    line1: z.string().optional().nullable(), line2: z.string().optional().nullable(),
+    city: z.string().optional().nullable(), state: z.string().optional().nullable(),
+    zipcode: z.string().optional().nullable(), country: z.string().optional().nullable(),
+    is_default: z.boolean().optional(),
+  })).optional(),
 }
 
 const createSchema = z.object(customerFields)
 const updateSchema = z.object({
   ...Object.fromEntries(Object.entries(customerFields).map(([k, v]) => [k, v.optional()])),
-  status: z.enum(['Active', 'Inactive']).optional(),
+  status: z.enum(['prospect', 'active', 'inactive', 'archived', 'Active', 'Inactive']).optional(),
 })  // no .strict() — unknown fields are safely stripped
 
 router.get('/',    controller.list)

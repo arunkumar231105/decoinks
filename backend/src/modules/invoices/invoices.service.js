@@ -25,9 +25,10 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
   const conditions = []
   const params = []
 
-  const supplierId = customer_id || supplier_id
+  const supplierId = supplier_id
   if (status)     { params.push(status);     conditions.push(`i.status = $${params.length}`) }
-  if (supplierId) { params.push(supplierId); conditions.push(`i.supplier_id = $${params.length}`) }
+  if (customer_id) { params.push(customer_id); conditions.push(`i.customer_id = $${params.length}`) }
+  else if (supplierId) { params.push(supplierId); conditions.push(`i.supplier_id = $${params.length}`) }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const countRes = await query(`SELECT COUNT(*) FROM invoices i ${where}`, params)
@@ -35,9 +36,10 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT i.*, c.name AS supplier_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
      FROM invoices i
-     LEFT JOIN suppliers c  ON c.id = i.supplier_id
+     LEFT JOIN customers c  ON c.id = i.customer_id
+     LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
      ${where}
@@ -50,9 +52,10 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT i.*, c.name AS supplier_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
      FROM invoices i
-     LEFT JOIN suppliers c  ON c.id = i.supplier_id
+     LEFT JOIN customers c  ON c.id = i.customer_id
+     LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
      WHERE i.id = $1`,
@@ -72,7 +75,7 @@ async function getById(id) {
 }
 
 async function create(fields_in) {
-  const { quote_id, order_id, supplier_id, issue_date, due_date,
+  const { quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
           subtotal = 0, discount_amt = 0,
           notes, created_by, order_type, items } = fields_in
   const fields = fields_in
@@ -81,13 +84,14 @@ async function create(fields_in) {
   let resolvedDiscountAmt = Number(discount_amt)
   let resolvedSupplierId  = supplier_id || null
   let resolvedCustomerName = fields.customer_name || null
+  let resolvedCustomerId = customer_id || null
   let quoteData = null   // full quotation row, used to backfill contact fields + line items
 
   // Pull totals, customer identity and contact fields from the quotation
   // when converting quote → invoice (so nothing is left blank on the invoice).
   if (quote_id) {
     const { rows: qRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, order_type, currency,
+      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_id, order_type, currency,
               customer_name, company_name, billing_email, contact_number,
               shipping_address, billing_address, payment_terms, payment_method
        FROM quotations WHERE id = $1`,
@@ -99,6 +103,7 @@ async function create(fields_in) {
     resolvedSubtotal    = Number(q.subtotal)
     resolvedDiscountAmt = Number(q.discount_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
+    if (!resolvedCustomerId) resolvedCustomerId = q.customer_id
     if (!resolvedCustomerName) resolvedCustomerName = q.customer_name || q.company_name
   } else if (order_id) {
     const { rows: orderRows } = await query(
@@ -111,6 +116,14 @@ async function create(fields_in) {
     resolvedSubtotal    = Number(o.subtotal)
     resolvedDiscountAmt = Number(o.discount_amt)
     if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
+  }
+
+  if (resolvedCustomerId) {
+    const { rows: cRows } = await query(`SELECT name, email, company_phone_number, mobile_number FROM customers WHERE id=$1 AND deleted_at IS NULL`, [resolvedCustomerId])
+    if (!cRows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+    resolvedCustomerName ||= cRows[0].name
+    fields.billing_email ||= cRows[0].email
+    fields.contact_number ||= cRows[0].mobile_number || cRows[0].company_phone_number
   }
 
   // Also try to get customer name from linked supplier record if still missing
@@ -126,16 +139,16 @@ async function create(fields_in) {
 
   const { rows } = await query(
     `INSERT INTO invoices
-       (invoice_number, quote_id, order_id, supplier_id, issue_date, due_date,
+       (invoice_number, internal_no, quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
         notes, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
         order_type, payment_terms, payment_method, currency, rush_services, shipping_charges)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
      RETURNING *`,
     [
       invoice_number,
-      quote_id || null, order_id || null, resolvedSupplierId,
+      `INV-INT-${invoice_number}`, quote_id || null, order_id || null, resolvedSupplierId, resolvedCustomerId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
       resolvedSubtotal, resolvedDiscountAmt, 0,

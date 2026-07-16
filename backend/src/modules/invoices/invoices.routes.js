@@ -20,6 +20,7 @@ const createSchema = z.object({
   quote_id:         z.string().uuid().optional().nullable(),
   order_id:         z.string().uuid().optional().nullable(),
   supplier_id:      z.string().uuid().optional().nullable(),
+  customer_id:      z.string().uuid().optional().nullable(),
   issue_date:       z.string().optional().nullable(),
   due_date:         z.string().optional().nullable(),
   subtotal:         z.number().nonnegative().default(0),
@@ -39,8 +40,8 @@ const createSchema = z.object({
   rush_services:    z.number().nonnegative().default(0),
   shipping_charges: z.number().nonnegative().default(0),
 }).refine(
-  (d) => d.quote_id || d.order_id || d.supplier_id || d.customer_name,
-  { message: 'At least one of quote_id, order_id, supplier_id, or customer_name is required' }
+  (d) => d.quote_id || d.order_id || d.customer_id || d.supplier_id || d.customer_name,
+  { message: 'A quote, order, or customer is required' }
 )
 
 const updateSchema = z.object({
