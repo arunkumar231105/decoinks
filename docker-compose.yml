@@ -69,7 +69,8 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094,http://31.97.110.197:3001,https://printshop.decoinkssuite.com
       JWT_SECRET: Decoinks2026SecretKeyPOSSoftwarePrintShop123XYZ
-      SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:?SSO_SHARED_SECRET is required}
+      # Leave empty to keep SSO disabled until Authentik is configured.
+      SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:-}
       UPLOAD_DIR: uploads
       MAX_FILE_SIZE_MB: "10"
       MINIO_HOST: minio
