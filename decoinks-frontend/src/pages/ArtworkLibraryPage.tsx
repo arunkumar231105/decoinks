@@ -227,6 +227,9 @@ export function ArtworkLibraryPage() {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [leadNo, setLeadNo] = useState('')
   const [orderNo, setOrderNo] = useState('')
+  const [artworkCategory, setArtworkCategory] = useState('Apparel')
+  const [artworkNiche, setArtworkNiche] = useState('')
+  const [artworkType, setArtworkType] = useState('custom')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [tabFilter, setTabFilter] = useState<TabFilter>('All Artworks')
   const [folderFilter, setFolderFilter] = useState('all')
@@ -243,6 +246,11 @@ export function ArtworkLibraryPage() {
   const [activities, setActivities] = useState<ActivityEntry[]>([])
   const [uploading, setUploading] = useState(false)
   const queryClient = useQueryClient()
+  const { data: leadMatches = [] } = useQuery<any[]>({
+    queryKey: ['artwork-lead-match', leadNo],
+    queryFn: () => api.get('/leads/list', { params: { search: leadNo, limit: 20 } }).then(r => r.data.data?.rows ?? []),
+    enabled: leadNo.trim().length > 2,
+  })
 
   const { data: artworkApiData } = useQuery({
     queryKey: ['artworks'],
@@ -483,8 +491,11 @@ export function ArtworkLibraryPage() {
         const fd = new FormData()
         fd.append('file', file)
         fd.append('name', file.name.replace(/\.[^.]+$/, ''))
-        if (leadNo) fd.append('lead_no', leadNo)
-        if (orderNo) fd.append('order_no', orderNo)
+        const linkedLead = leadMatches.find((l: any) => l.lead_number.toLowerCase() === leadNo.trim().toLowerCase())
+        if (linkedLead) fd.append('lead_id', linkedLead.id)
+        fd.append('artwork_category', artworkCategory)
+        if (artworkNiche.trim()) fd.append('artwork_micro_niche', artworkNiche.trim())
+        fd.append('artwork_type', artworkType)
         await api.post('/artworks', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
         uploaded++
         logActivity('uploaded artwork', file.name)
@@ -589,14 +600,9 @@ export function ArtworkLibraryPage() {
                 <ChevronDown size={12} />
               </div>
             </div>
-            <div className="aw-filter-field">
-              <label>Order No.</label>
-              <div className="aw-filter-select">
-                <input value={orderNo} onChange={e => setOrderNo(e.target.value)} className="aw-filter-input" />
-                <button className="aw-clear-btn" onClick={() => setOrderNo('')}><X size={12} /></button>
-                <ChevronDown size={12} />
-              </div>
-            </div>
+            <div className="aw-filter-field"><label>Artwork Category</label><div className="aw-filter-select"><input value={artworkCategory} onChange={e=>setArtworkCategory(e.target.value)} className="aw-filter-input" placeholder="Apparel / Logo / Sports" /></div></div>
+            <div className="aw-filter-field"><label>Micro-niche</label><div className="aw-filter-select"><input value={artworkNiche} onChange={e=>setArtworkNiche(e.target.value)} className="aw-filter-input" placeholder="Church / Birthday / Football" /></div></div>
+            <div className="aw-filter-field"><label>Artwork Type</label><div className="aw-filter-select"><select value={artworkType} onChange={e=>setArtworkType(e.target.value)} className="aw-filter-input">{['custom','template','logo','photo'].map(x=><option key={x}>{x}</option>)}</select></div></div>
             <div className="aw-filter-field">
               <label>Search</label>
               <div className="aw-filter-select">

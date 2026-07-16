@@ -39,8 +39,14 @@ router.use(verifyToken)
 
 const itemSchema = z.object({
   description:   z.string().min(1),
-  qty:           z.number().int().positive(),
+  qty:           z.number().positive(),
   unit_price:    z.number().nonnegative(),
+  product_id:    z.string().uuid().optional().nullable(),
+  product_type:  z.string().optional().nullable(),
+  decoration_method: z.string().optional().nullable(),
+  artwork_id:    z.string().uuid().optional().nullable(),
+  unit:          z.string().optional().default('pcs'),
+  print_locations: z.string().optional().nullable(),
   sizes:         z.string().optional().nullable(),
   colors:        z.string().optional().nullable(),
   artwork_count: z.number().int().min(0).optional().nullable(),
@@ -87,6 +93,11 @@ const createSchema = z.object({
   payment_terms:      z.string().optional().nullable(),
   payment_method:     z.string().optional().nullable(),
   customer_notes:     z.string().optional().nullable(),
+  discount_type:      z.enum(['fixed','percentage']).optional().default('percentage'),
+  discount_value:     z.number().nonnegative().optional().default(0),
+  tax_percentage:     z.number().min(0).max(100).optional().default(0),
+  shipping_amount:    z.number().nonnegative().optional().default(0),
+  estimated_shipping_cost: z.number().nonnegative().optional().default(0),
   ...intakeFields,
 })
 
@@ -104,6 +115,11 @@ const updateSchema = z.object({
   payment_terms:      z.string().optional().nullable(),
   payment_method:     z.string().optional().nullable(),
   customer_notes:     z.string().optional().nullable(),
+  discount_type:      z.enum(['fixed','percentage']).optional(),
+  discount_value:     z.number().nonnegative().optional(),
+  tax_percentage:     z.number().min(0).max(100).optional(),
+  shipping_amount:    z.number().nonnegative().optional(),
+  estimated_shipping_cost: z.number().nonnegative().optional(),
   ...intakeFields,
 })
 
