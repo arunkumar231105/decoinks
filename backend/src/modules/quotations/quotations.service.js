@@ -49,7 +49,16 @@ async function getById(id) {
   if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
   const items = await query(
-    `SELECT * FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order`, [id]
+    `SELECT qi.*,
+            a.artwork_no, a.name AS artwork_name, a.file_url AS artwork_file_url,
+            fa.artwork_no AS front_artwork_no, fa.name AS front_artwork_name, fa.file_url AS front_artwork_url,
+            ba.artwork_no AS back_artwork_no, ba.name AS back_artwork_name, ba.file_url AS back_artwork_url
+       FROM quotation_items qi
+       LEFT JOIN artworks a ON a.id = qi.artwork_id
+       LEFT JOIN artworks fa ON fa.id = qi.front_artwork_id
+       LEFT JOIN artworks ba ON ba.id = qi.back_artwork_id
+      WHERE qi.quotation_id = $1
+      ORDER BY qi.sort_order`, [id]
   )
   return { ...rows[0], items: items.rows }
 }
@@ -110,13 +119,16 @@ async function create({
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
         `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image,
-           product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+           product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations,
+           brand,model,artwork_width,artwork_height,front_artwork_id,back_artwork_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
         [qId, item.description || null, item.qty, item.unit_price, amount, i,
          item.sizes || null, item.colors || null, item.artwork_count ?? 0,
          item.front_image || null, item.back_image || null, item.artwork_image || null,
          item.product_id || null, i + 1, item.product_type || item.description || null,
-         item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null]
+         item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null,
+         item.brand || null, item.model || null, item.artwork_width ?? null, item.artwork_height ?? null,
+         item.front_artwork_id || null, item.back_artwork_id || null]
       )
     }
     await client.query('COMMIT')
@@ -197,13 +209,16 @@ async function update(id, {
         const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
         await client.query(
           `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image,
-             product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+             product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations,
+             brand,model,artwork_width,artwork_height,front_artwork_id,back_artwork_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
           [id, item.description || null, item.qty, item.unit_price, amount, i,
            item.sizes || null, item.colors || null, item.artwork_count ?? 0,
            item.front_image || null, item.back_image || null, item.artwork_image || null,
            item.product_id || null, i + 1, item.product_type || item.description || null,
-           item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null]
+           item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null,
+           item.brand || null, item.model || null, item.artwork_width ?? null, item.artwork_height ?? null,
+           item.front_artwork_id || null, item.back_artwork_id || null]
         )
       }
     }

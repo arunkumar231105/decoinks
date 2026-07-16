@@ -53,6 +53,12 @@ const itemSchema = z.object({
   front_image:   z.string().optional().nullable(),
   back_image:    z.string().optional().nullable(),
   artwork_image: z.string().optional().nullable(),
+  brand:         z.string().optional().nullable(),
+  model:         z.string().optional().nullable(),
+  artwork_width: z.number().nonnegative().optional().nullable(),
+  artwork_height:z.number().nonnegative().optional().nullable(),
+  front_artwork_id: z.string().uuid().optional().nullable(),
+  back_artwork_id:  z.string().uuid().optional().nullable(),
 })
 
 const ORDER_TYPES = ['apparel', 'gangsheet', 'dtf']
