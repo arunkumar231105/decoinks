@@ -12,7 +12,6 @@ const page = <T extends ComponentType<any> = ComponentType<any>>(
 ) => lazy(() => loader().then((m) => ({ default: m[name] as T })))
 
 const ArtworkFormPage        = page(() => import('../pages/ArtworkFormPage'), 'ArtworkFormPage')
-const BoardPage              = page(() => import('../pages/BoardPage'), 'BoardPage')
 const DashboardPage          = page(() => import('../pages/DashboardPage'), 'DashboardPage')
 const ForgotPasswordPage     = page(() => import('../pages/ForgotPasswordPage'), 'ForgotPasswordPage')
 const AddLeadPage            = page(() => import('../pages/AddLeadPage'), 'AddLeadPage')
@@ -21,7 +20,6 @@ const LeadsListPage          = page(() => import('../pages/LeadsListPage'), 'Lea
 const LoginPage              = page(() => import('../pages/LoginPage'), 'LoginPage')
 const NewInvoicePage         = page(() => import('../pages/NewInvoicePage'), 'NewInvoicePage')
 const SuppliersPage          = page(() => import('../pages/SuppliersPage'), 'SuppliersPage')
-const FulfillmentBoardPage   = page(() => import('../pages/FulfillmentBoardPage'), 'FulfillmentBoardPage')
 const NewSupplierPage        = page(() => import('../pages/NewSupplierPage'), 'NewSupplierPage')
 const NewOrderPage           = page(() => import('../pages/NewOrderPage'), 'NewOrderPage')
 const OrderDetailPage        = page(() => import('../pages/OrderDetailPage'), 'OrderDetailPage')
@@ -38,13 +36,8 @@ const QuotesListPage         = page(() => import('../pages/QuotesListPage'), 'Qu
 const NewQuotationPage       = page(() => import('../pages/NewQuotationPage'), 'NewQuotationPage')
 const ShipmentsPage          = page(() => import('../pages/ShipmentsPage'), 'ShipmentsPage')
 const ArtworkLibraryPage     = page(() => import('../pages/ArtworkLibraryPage'), 'ArtworkLibraryPage')
-const AIAutomationsPage      = page(() => import('../pages/AIAutomationsPage'), 'AIAutomationsPage')
-const SettingsWorkflowPage   = page(() => import('../pages/SettingsWorkflowPage'), 'SettingsWorkflowPage')
-const SettingsIntegrationsPage = page(() => import('../pages/SettingsIntegrationsPage'), 'SettingsIntegrationsPage')
-const SettingsBillingPage    = page(() => import('../pages/SettingsBillingPage'), 'SettingsBillingPage')
 const SetupPage              = page(() => import('../pages/SetupPage'), 'SetupPage')
 const SupplierDetailPage     = page(() => import('../pages/SupplierDetailPage'), 'SupplierDetailPage')
-const SettingsCustomFieldsPage = page(() => import('../pages/SettingsCustomFieldsPage'), 'SettingsCustomFieldsPage')
 const InvoiceDetailPage      = page(() => import('../pages/InvoiceDetailPage'), 'InvoiceDetailPage')
 const QuotePrintPage         = page(() => import('../pages/QuotePrintPage'), 'QuotePrintPage')
 const InvoicePrintPage       = page(() => import('../pages/InvoicePrintPage'), 'InvoicePrintPage')
@@ -235,42 +228,9 @@ export const router = createBrowserRouter([
                 handle: { title: 'Artwork Vault', subtitle: 'Create, manage and finalize artworks for leads and orders.' },
               },
               {
-                path: '/fulfillment/board',
-                element: <FulfillmentBoardPage />,
-                handle: {
-                  title: 'Fulfillment Board',
-                  subtitle: 'Track packing, shipping, and claim readiness.',
-                },
-              },
-              {
-                path: '/design/board',
-                element: <BoardPage boardName="Design Board" />,
-                handle: { title: 'Design Board', subtitle: 'Move artwork through proofing and approval.' },
-              },
-              {
                 path: '/settings/general',
                 element: <SettingsGeneralPage />,
                 handle: { title: 'General Settings', subtitle: 'Configure company and workflow defaults.' },
-              },
-              {
-                path: '/settings/ai-automations',
-                element: <AIAutomationsPage />,
-                handle: { title: 'AI Automations', subtitle: 'Configure AI extraction, drafting, and workflow assists.' },
-              },
-              {
-                path: '/settings/workflows',
-                element: <SettingsWorkflowPage />,
-                handle: { title: 'Workflow Settings', subtitle: 'Control operational rules from lead to delivery.' },
-              },
-              {
-                path: '/settings/integrations',
-                element: <SettingsIntegrationsPage />,
-                handle: { title: 'Integrations', subtitle: 'Connect chat, email, vendors, shipping, and file tools.' },
-              },
-              {
-                path: '/settings/billing',
-                element: <SettingsBillingPage />,
-                handle: { title: 'Billing & Tax', subtitle: 'Manage invoice defaults, payments, and finance controls.' },
               },
               {
                 path: '/settings/users',
@@ -281,11 +241,6 @@ export const router = createBrowserRouter([
                 path: '/settings/users/:id',
                 element: <UserEditPage />,
                 handle: { title: 'Edit User', subtitle: 'Manage user access, roles, and security.' },
-              },
-              {
-                path: '/settings/custom-fields',
-                element: <SettingsCustomFieldsPage />,
-                handle: { title: 'Custom Fields', subtitle: 'Define additional fields for leads, quotes, orders, and more.' },
               },
             ],
           },
