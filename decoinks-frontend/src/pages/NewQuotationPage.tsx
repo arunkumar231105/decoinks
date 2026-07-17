@@ -95,7 +95,12 @@ const uid = () => Math.random().toString(36).slice(2, 8)
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const today = () => {
   const d = new Date()
-  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const addDays = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
@@ -217,6 +222,7 @@ function QuoteHeader({
   quoteNumber,
   revisionNumber,
   quoteDate,
+  setQuoteDate,
   validUntil,
   setValidUntil,
   agent,
@@ -226,6 +232,7 @@ function QuoteHeader({
   quoteNumber: string
   revisionNumber: number
   quoteDate: string
+  setQuoteDate: (v: string) => void
   validUntil: string
   setValidUntil: (v: string) => void
   agent: string
@@ -246,7 +253,7 @@ function QuoteHeader({
           )}
         </div>
       </div>
-      <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" value={quoteDate} readOnly /></div>
+      <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" type="date" value={quoteDate} onChange={e => { setQuoteDate(e.target.value); setValidUntil(addDays(e.target.value, 7)) }} /></div>
       <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
       <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
       <div className="nq-info-field">
@@ -807,8 +814,8 @@ export function NewQuotationPage() {
 
   // ── Base form state ──
   const [status, setStatus] = useState<QuoteStatus>('Draft')
-  const [quoteDate] = useState(today())
-  const [validUntil, setValidUntil] = useState('')
+  const [quoteDate, setQuoteDate] = useState(today())
+  const [validUntil, setValidUntil] = useState(() => addDays(today(), 7))
   const [agent, setAgent] = useState(user?.name ?? '')
   const [supplierText, setSupplierText] = useState('')
   const [supplierId, setSupplierId] = useState('')
@@ -951,6 +958,9 @@ export function NewQuotationPage() {
   useEffect(() => {
     if (!quotationData || formInitialized) return
     const q = quotationData as Record<string, any>
+    const savedQuoteDate = q.created_at ? String(q.created_at).slice(0, 10) : today()
+    setQuoteDate(savedQuoteDate)
+    setValidUntil(q.valid_until ? String(q.valid_until).slice(0, 10) : addDays(savedQuoteDate, 7))
     setLeadId(q.lead_id ?? null)
     if (q.customer_id) { setCustomerId(q.customer_id as string); setCustomerText(q.customer_name ?? '') }
     // When lead has customer name but no linked customer record, show name in main field
@@ -1251,7 +1261,7 @@ export function NewQuotationPage() {
         status={status}
         quoteNumber={(quotationData as Record<string, any>)?.quote_number ?? ''}
         revisionNumber={Number((quotationData as Record<string, any>)?.revision_number ?? 1)}
-        quoteDate={quoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
+        quoteDate={quoteDate} setQuoteDate={setQuoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
         agent={agent} setAgent={setAgent} />
 
       <div className="nq-body">
