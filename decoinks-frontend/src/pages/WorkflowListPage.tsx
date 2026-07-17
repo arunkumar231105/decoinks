@@ -35,19 +35,6 @@ interface WorkflowRecord {
   paymentState?: string
 }
 
-interface POSummary {
-  po_entries: number
-  unique_po_numbers: number
-  customers: number
-  gangsheets: number
-  artworks: number
-  paid_revenue: string
-  shipping_collected: string
-  net_product_amount: string
-  free_reprints: number
-  qa_notes: number
-}
-
 interface KindConfig {
   title: string
   subtitle: string
@@ -171,7 +158,6 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; primaryId: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [bulkOrderModal, setBulkOrderModal] = useState(false)
-  const [poSummary, setPoSummary] = useState<POSummary | null>(null)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -197,13 +183,6 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
   }
 
   useEffect(() => { fetchRecords() }, [kind])
-  useEffect(() => {
-    if (kind !== 'purchase-orders') return
-    api.get('/purchase-orders/summary')
-      .then(({ data }) => setPoSummary(data.data))
-      .catch(() => setPoSummary(null))
-  }, [kind])
-
   const handleSearch = (v: string) => { setSearch(v); setPage(1); fetchRecords(1, v, statusFilter) }
   const handleFilter = (sf: string) => { setStatusFilter(sf); setPage(1); setFilterAnchor(null); fetchRecords(1, search, sf) }
   const handlePage = (p: number) => { setPage(p); fetchRecords(p, search, statusFilter) }
@@ -258,16 +237,8 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
         </div>
       </div>
 
-      <div className="wf-metrics">
-        {kind === 'purchase-orders' && poSummary ? (
-          <>
-            <div className="wf-metric"><span>PO Entries</span><strong>{poSummary.po_entries}</strong><small>{poSummary.unique_po_numbers} unique</small></div>
-            <div className="wf-metric"><span>Gangsheets</span><strong>{poSummary.gangsheets}</strong></div>
-            <div className="wf-metric"><span>Artworks</span><strong>{poSummary.artworks.toLocaleString()}</strong></div>
-            <div className="wf-metric"><span>Paid Revenue</span><strong>{fmtMoney(poSummary.paid_revenue)}</strong><small>{poSummary.free_reprints} free/reprints</small></div>
-            <div className="wf-metric"><span>Shipping</span><strong>{fmtMoney(poSummary.shipping_collected)}</strong><small>{poSummary.customers} clients</small></div>
-          </>
-        ) : (
+      {kind !== 'purchase-orders' && (
+        <div className="wf-metrics">
           <>
             <div className="wf-metric"><span>Total</span><strong>{total}</strong></div>
             <div className="wf-metric"><span>Loaded</span><strong>{records.length}</strong></div>
@@ -276,8 +247,8 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
               <strong>{records.filter(r => ['red', 'amber'].includes(STATUS_TONES[r.status] ?? '')).length}</strong>
             </div>
           </>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="al-panel cust-table-wrap wf-table-wrap">
         <table className="cust-table wf-table">
