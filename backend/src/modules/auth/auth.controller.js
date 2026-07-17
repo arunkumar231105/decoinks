@@ -31,6 +31,26 @@ async function login(req, res, next) {
   }
 }
 
+async function sso(req, res, next) {
+  try {
+    const expected = String(process.env.SSO_SHARED_SECRET || '')
+    if (!expected || req.get('x-decoinks-sso-secret') !== expected) {
+      return res.status(403).json({ error: 'SSO unavailable' })
+    }
+    const username = String(req.get('x-authentik-username') || '').trim().toLowerCase()
+    if (!username) return res.status(401).json({ error: 'Missing SSO identity' })
+    const rawEmail = String(req.get('x-authentik-email') || '').trim().toLowerCase()
+    const email = rawEmail.includes('@') ? rawEmail : `${username}@decoinkssuite.com`
+    const name = String(req.get('x-authentik-name') || '').trim() || username
+    const groups = String(req.get('x-authentik-groups') || '').toLowerCase()
+    const result = await authService.sso(email, name, groups.includes('admin'), req.ip, req.headers['user-agent'])
+    setRefreshCookie(res, result.refreshToken)
+    return success(res, { token: result.accessToken, user: result.user }, 'SSO login successful')
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function getMe(req, res, next) {
   try {
     const user = await authService.getMe(req.user.id)
@@ -106,4 +126,4 @@ async function changePassword(req, res, next) {
   }
 }
 
-module.exports = { login, refresh, logout, logoutEverywhere, getMe, setupStatus, setup, changePassword }
+module.exports = { login, sso, refresh, logout, logoutEverywhere, getMe, setupStatus, setup, changePassword }

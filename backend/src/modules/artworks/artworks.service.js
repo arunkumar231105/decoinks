@@ -39,10 +39,12 @@ async function getById(id) {
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Artwork not found'), { statusCode: 404 })
-  return rows[0]
+  const versions = await query(`SELECT * FROM artwork_versions WHERE artwork_id=$1 ORDER BY version_no DESC`, [id])
+  return { ...rows[0], versions: versions.rows }
 }
 
-async function create({ artwork_no: providedNo, name, supplier_id, order_id, quotation_id, status = 'Draft', tags, notes, uploaded_by, file }) {
+async function create({ artwork_no: providedNo, name, supplier_id, order_id, quotation_id, lead_id,
+  artwork_category, artwork_micro_niche, artwork_type, status = 'Draft', tags, notes, uploaded_by, file }) {
   if (!file) throw Object.assign(new Error('Artwork file is required'), { statusCode: 400 })
 
   let artwork_no = providedNo || null
@@ -61,10 +63,18 @@ async function create({ artwork_no: providedNo, name, supplier_id, order_id, quo
     : []
 
   const { rows } = await query(
-    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, quotation_id, status, file_url, file_type, tags, notes, uploaded_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [artwork_no, name, supplier_id || null, order_id || null, quotation_id || null, status,
-     file_url, file_type, tagsArr, notes || null, uploaded_by]
+    `INSERT INTO artworks (artwork_no, name, supplier_id, order_id, quotation_id, lead_id,
+       artwork_category, artwork_micro_niche, artwork_type, status, file_url, storage_key,
+       file_name, file_type, file_size_bytes, tags, notes, uploaded_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+    [artwork_no, name, supplier_id || null, order_id || null, quotation_id || null,
+     lead_id || null, artwork_category || null, artwork_micro_niche || null, artwork_type || 'custom', status,
+     file_url, file_url, file.originalname, file_type, file.size || file.buffer?.length || null,
+     tagsArr, notes || null, uploaded_by]
+  )
+  await query(
+    `INSERT INTO artwork_versions (artwork_id,version_no,version_type,file_link,file_type,created_by)
+     VALUES ($1,1,'raw',$2,$3,$4)`, [rows[0].id, file_url, file_type, uploaded_by]
   )
   return rows[0]
 }

@@ -162,16 +162,32 @@ async function replaceArtworks(client, poId, artworkIds) {
 
 // ── List / Get ────────────────────────────────────────────────────────────────
 
-async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
+async function list({ page = 1, limit = 10, status = '', supplier_id = '', search = '' }) {
   const offset = (page - 1) * limit
   const conditions = ['po.deleted_at IS NULL']
   const params = []
 
   if (status)      { params.push(status);      conditions.push(`po.status = $${params.length}`) }
   if (supplier_id) { params.push(supplier_id); conditions.push(`po.supplier_id = $${params.length}`) }
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(
+      po.po_number ILIKE $${params.length}
+      OR po.source_po_number ILIKE $${params.length}
+      OR po.vendor_name ILIKE $${params.length}
+      OR cust.name ILIKE $${params.length}
+      OR po.shipping_address ILIKE $${params.length}
+    )`)
+  }
 
   const where = 'WHERE ' + conditions.join(' AND ')
-  const countRes = await query(`SELECT COUNT(*) FROM purchase_orders po ${where}`, params)
+  const countRes = await query(
+    `SELECT COUNT(*)
+     FROM purchase_orders po
+     LEFT JOIN customers cust ON cust.id = po.customer_id
+     ${where}`,
+    params
+  )
   const total = parseInt(countRes.rows[0].count, 10)
 
   params.push(limit, offset)
@@ -179,10 +195,12 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
     `SELECT po.*,
             COALESCE(po.vendor_name, s.name, os.name, o.contact_name) AS display_vendor_name,
             s.name      AS supplier_name,
+            cust.name   AS customer_name,
             o.order_number,
             u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s  ON s.id  = po.supplier_id
+     LEFT JOIN customers cust ON cust.id = po.customer_id
      LEFT JOIN orders   o  ON o.id  = po.order_id
      LEFT JOIN suppliers os ON os.id = o.supplier_id
      LEFT JOIN users    u  ON u.id  = po.created_by
@@ -194,6 +212,29 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
   return { rows, total }
 }
 
+async function getImportSummary() {
+  const { rows } = await query(
+    `SELECT
+       COUNT(*)::int AS po_entries,
+       COUNT(DISTINCT source_po_number)::int AS unique_po_numbers,
+       COUNT(DISTINCT customer_id)::int AS customers,
+       COALESCE(SUM(total_gangsheets), 0)::int AS gangsheets,
+       COALESCE(SUM(total_artworks), 0)::int AS artworks,
+       COALESCE(SUM(payment_received), 0)::numeric(12,2) AS paid_revenue,
+       COALESCE(SUM(shipping_charge), 0)::numeric(12,2) AS shipping_collected,
+       COALESCE(SUM(net_product_amount), 0)::numeric(12,2) AS net_product_amount,
+       COUNT(*) FILTER (WHERE source_payment_status = 'Free/Reprint')::int AS free_reprints
+     FROM purchase_orders
+     WHERE deleted_at IS NULL AND source_system = 'decoinks_dtf_po_master_apr_jun_2026'`
+  )
+  const qa = await query(
+    `SELECT COUNT(*)::int AS qa_notes
+     FROM po_import_qa_notes
+     WHERE source_system = 'decoinks_dtf_po_master_apr_jun_2026'`
+  )
+  return { ...rows[0], qa_notes: qa.rows[0].qa_notes }
+}
+
 async function getById(id) {
   const { rows } = await query(
     `SELECT po.*, s.name AS supplier_name, s.email AS supplier_email,
@@ -202,13 +243,16 @@ async function getById(id) {
             sc.name AS contact_name, sc.email AS contact_email,
             sc.phone AS contact_phone, sc.wechat_id AS contact_wechat,
             u.name AS created_by_name, b.name AS buyer_name,
-            o.order_number AS order_number
+            o.order_number AS order_number,
+            cust.name AS customer_name, cust.email AS customer_email,
+            cust.phone AS customer_phone
      FROM purchase_orders po
      LEFT JOIN suppliers s          ON s.id  = po.supplier_id
      LEFT JOIN supplier_contacts sc ON sc.id = po.supplier_contact_id
      LEFT JOIN users u ON u.id = po.created_by
      LEFT JOIN users b ON b.id = po.buyer_id
      LEFT JOIN orders o ON o.id = po.order_id
+     LEFT JOIN customers cust ON cust.id = po.customer_id
      WHERE po.id = $1 AND po.deleted_at IS NULL`,
     [id]
   )
@@ -271,6 +315,17 @@ async function getById(id) {
   )
 
   const order_total_artworks = orders.rows.reduce((sum, r) => sum + (r.no_artworks || 0), 0)
+  let qaNotes = []
+  if (po.source_system && po.source_po_number) {
+    const qa = await query(
+      `SELECT id, issue_type, details, created_at
+       FROM po_import_qa_notes
+       WHERE source_system = $1 AND source_po_number = $2
+       ORDER BY created_at, issue_type`,
+      [po.source_system, po.source_po_number]
+    )
+    qaNotes = qa.rows
+  }
 
   return {
     ...po,
@@ -278,6 +333,7 @@ async function getById(id) {
     orders: orders.rows,
     fragments: fragments.rows,
     artworks: artworks.rows,
+    qa_notes: qaNotes,
     order_total_artworks,
   }
 }
@@ -580,7 +636,7 @@ async function sendToPortal(poId, sentByUserId, overrideSupplierId) {
 }
 
 module.exports = {
-  list, getById, create, update, updateStatus, remove,
+  list, getImportSummary, getById, create, update, updateStatus, remove,
   listAttachments, addAttachment, removeAttachment,
   getStatusHistory, sendToPortal,
 }

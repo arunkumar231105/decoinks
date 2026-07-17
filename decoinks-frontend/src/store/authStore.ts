@@ -2,6 +2,24 @@ import { create } from 'zustand'
 import { api, tokenMemory, resetSessionState } from '../services/api'
 import type { AuthUser } from '../types/auth'
 
+const SSO_REDIRECT_KEY = 'decoinks_sso_redirect_started_at'
+
+function clearSsoRedirectGuard() {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(SSO_REDIRECT_KEY)
+}
+
+function redirectToAuthentik() {
+  if (typeof window === 'undefined' || !window.location.hostname.endsWith('.decoinkssuite.com')) return false
+  // If Authentik returned to the app but /auth/sso failed, never bounce the
+  // browser straight back to Authentik. That creates an infinite reload loop.
+  const lastRedirect = Number(window.sessionStorage.getItem(SSO_REDIRECT_KEY) || 0)
+  if (lastRedirect && Date.now() - lastRedirect < 60_000) return false
+  window.sessionStorage.setItem(SSO_REDIRECT_KEY, String(Date.now()))
+  const rd = `${window.location.origin}${window.location.pathname}${window.location.search}`
+  window.location.replace(`${window.location.origin}/outpost.goauthentik.io/start?rd=${encodeURIComponent(rd)}`)
+  return true
+}
+
 interface AuthState {
   user:            AuthUser | null
   isAuthenticated: boolean
@@ -20,6 +38,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   // ── Login ──────────────────────────────────────────────────────────────────
   login: async (email, password) => {
+    clearSsoRedirectGuard()
     resetSessionState()   // clear any stale "session ended" guard from previous expiry
     const res = await api.post('/auth/login', { email, password })
     const { token, user } = res.data.data
@@ -63,6 +82,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           const meRes = await api.get('/auth/me')
           set({ user: meRes.data.data, isAuthenticated: true, isLoading: false })
         }
+        clearSsoRedirectGuard()
         return
       } catch (err: any) {
         // 401/403 means the token itself is invalid — no point retrying
@@ -74,6 +94,17 @@ export const useAuthStore = create<AuthState>((set) => ({
           await new Promise((r) => setTimeout(r, RETRY_DELAY))
         }
       }
+    }
+
+    try {
+      const res = await api.post('/auth/sso')
+      const { token, user } = res.data.data
+      tokenMemory.set(token)
+      clearSsoRedirectGuard()
+      set({ user, isAuthenticated: true, isLoading: false })
+      return
+    } catch {
+      if (redirectToAuthentik()) return
     }
 
     tokenMemory.set(null)

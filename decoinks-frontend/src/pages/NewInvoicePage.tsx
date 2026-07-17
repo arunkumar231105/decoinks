@@ -96,8 +96,8 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { data: suppliers = [] } = useQuery({
-    queryKey: ['suppliers-for-invoice'],
-    queryFn: () => api.get('/suppliers', { params: { limit: 100 } }).then(r => r.data.data.rows),
+    queryKey: ['customers-for-invoice'],
+    queryFn: () => api.get('/customers', { params: { limit: 100 } }).then(r => r.data.data.rows),
   })
   const filtered = suppliers.filter((c: any) => (c.name ?? '').toLowerCase().includes(value.toLowerCase()))
   useEffect(() => {
@@ -107,7 +107,7 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
   }, [])
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <input className="ni-info-select" value={value} placeholder="Type supplier name..."
+      <input className="ni-info-select" value={value} placeholder="Search customer name..."
         onChange={e => { onChange(e.target.value, ''); setOpen(true) }}
         onFocus={() => setOpen(true)}
         style={{ width: '100%' }}
@@ -525,7 +525,7 @@ export function NewInvoicePage() {
   }
 
   const buildPayload = () => ({
-    supplier_id:      supplierId || null,
+    customer_id:      supplierId || null,
     quote_id:         quoteId || null,
     notes:            internalNotes || null,
     issue_date:       invoiceDate || null,
@@ -549,7 +549,7 @@ export function NewInvoicePage() {
 
   const saveDraft = () => {
     if (!supplierId && !supplierText) {
-      toast.error('Please select a supplier before saving')
+      toast.error('Please select a customer before saving')
       return
     }
     saveMutation.mutate(buildPayload())
@@ -557,7 +557,7 @@ export function NewInvoicePage() {
 
   const previewInvoice = () => {
     if (!supplierId && !supplierText) {
-      toast.error('Please select a supplier before saving')
+      toast.error('Please select a customer before saving')
       return
     }
     navigateAfterSave.current = 'print'
@@ -1109,7 +1109,7 @@ export function NewInvoicePage() {
               </div>
               <div className="ni-notes-field">
                 <label className="ni-notes-label">
-                  Supplier Notes <small>(visible to supplier)</small>
+                  Customer Notes <small>(visible to customer)</small>
                 </label>
                 <textarea
                   className="ni-textarea"
@@ -1299,7 +1299,6 @@ export function NewInvoicePage() {
     </div>
   )
 }
-
 
 
 

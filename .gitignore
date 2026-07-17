@@ -33,8 +33,12 @@ Thumbs.db
 # Uploads / user-generated content
 backend/uploads/
 
-# Docker volumes (never in repo)
+# Docker volumes and database backups (never in repo)
 postgres_data/
+/postgres-data/
+/postgres-data-BACKUP/
+/backup_before_crm_lead_sync.sql
+*.dump
 e2e/node_modules/
 e2e/playwright-report/
 e2e/test-results/

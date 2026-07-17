@@ -112,6 +112,7 @@ const attachmentSchema = z.object({
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get('/',                           controller.list)
+router.get('/summary',                    controller.summary)
 router.get('/:id',                        controller.getOne)
 router.post('/',                          validate(createSchema),     controller.create)
 router.put('/:id',                        validate(updateSchema),     controller.update)

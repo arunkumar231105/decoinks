@@ -18,6 +18,10 @@ const createSchema = z.object({
   status:      z.enum(['Draft', 'Pending Approval', 'Changes Requested', 'Approved', 'Archived']).optional(),
   tags:        z.string().optional(),   // comma-separated, parsed in service
   notes:       z.string().optional().nullable(),
+  lead_id:     z.string().uuid().optional().nullable(),
+  artwork_category: z.string().optional().nullable(),
+  artwork_micro_niche: z.string().optional().nullable(),
+  artwork_type: z.enum(['custom','template','logo','photo']).optional().nullable(),
 })
 
 const statusSchema = z.object({
@@ -30,6 +34,10 @@ const taskSchema = z.object({
   order_id:    z.string().uuid().optional().nullable(),
   notes:       z.string().optional().nullable(),
   tags:        z.string().optional(),
+  lead_id:     z.string().uuid().optional().nullable(),
+  artwork_category: z.string().optional().nullable(),
+  artwork_micro_niche: z.string().optional().nullable(),
+  artwork_type: z.enum(['custom','template','logo','photo']).optional().nullable(),
 })
 
 router.get('/',             controller.list)

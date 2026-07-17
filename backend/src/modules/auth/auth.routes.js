@@ -25,6 +25,7 @@ const changePasswordSchema = z.object({
 router.get ('/setup-status',                                                   controller.setupStatus)
 router.post('/setup',            validate(setupSchema),                        controller.setup)
 router.post('/login',            validate(loginSchema),                        controller.login)
+router.post('/sso',                                                            controller.sso)
 router.post('/refresh',                                                        controller.refresh)   // reads httpOnly cookie
 router.get ('/me',               verifyToken,                                  controller.getMe)
 router.post('/logout',                                                         controller.logout)    // cookie-based, no token needed

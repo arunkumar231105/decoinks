@@ -3,10 +3,14 @@ const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 10, status = '', supplier_id = '' } = req.query
-    const { rows, total } = await service.list({ page: +page, limit: +limit, status, supplier_id })
+    const { page = 1, limit = 10, status = '', supplier_id = '', search = '' } = req.query
+    const { rows, total } = await service.list({ page: +page, limit: +limit, status, supplier_id, search })
     return paginated(res, rows, total, +page, +limit)
   } catch (err) { next(err) }
+}
+
+async function summary(req, res, next) {
+  try { return success(res, await service.getImportSummary()) } catch (err) { next(err) }
 }
 
 async function getOne(req, res, next) {
@@ -78,4 +82,4 @@ async function sendToPortal(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, remove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }
+module.exports = { list, summary, getOne, create, update, updateStatus, remove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }

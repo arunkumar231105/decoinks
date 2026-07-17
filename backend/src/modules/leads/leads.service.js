@@ -78,11 +78,13 @@ async function getById(id) {
   )
   if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
 
-  const [comments, attachments, activity, productInterest] = await Promise.all([
+  const [comments, attachments, activity, productInterest, qualification, tasks] = await Promise.all([
     query(`SELECT lc.*, u.name AS user_name FROM lead_comments lc LEFT JOIN users u ON u.id = lc.user_id WHERE lc.lead_id = $1 ORDER BY lc.created_at`, [id]),
     query(`SELECT la.*, u.name AS uploaded_by_name FROM lead_attachments la LEFT JOIN users u ON u.id = la.uploaded_by WHERE la.lead_id = $1 ORDER BY la.created_at`, [id]),
     query(`SELECT al.*, u.name AS user_name FROM activity_logs al LEFT JOIN users u ON u.id = al.user_id WHERE al.entity_type = 'lead' AND al.entity_id = $1 ORDER BY al.created_at DESC LIMIT 20`, [id]),
     query(`SELECT * FROM lead_product_interest WHERE lead_id = $1 ORDER BY sort_order, created_at`, [id]),
+    query(`SELECT * FROM lead_qualifications WHERE lead_id = $1`, [id]),
+    query(`SELECT * FROM tasks WHERE lead_id = $1 ORDER BY due_at NULLS LAST, created_at DESC`, [id]),
   ])
 
   return {
@@ -91,6 +93,8 @@ async function getById(id) {
     attachments: attachments.rows,
     activity: activity.rows,
     productInterest: productInterest.rows,
+    qualification: qualification.rows[0] || null,
+    tasks: tasks.rows,
   }
 }
 
@@ -120,6 +124,8 @@ async function create({
   company_name, email, phone, whatsapp,
   country, state, city, zip, shipping_address, billing_address,
   buyer_type, internal_notes,
+  instagram_id, facebook_id, priority, source_campaign, next_followup_date, last_contact_at,
+  qualification,
   productInterest = [],
 }) {
   const lead_number = await getNextNumber('LEAD', 'leads', 'lead_number')
@@ -132,19 +138,24 @@ async function create({
          (lead_number, supplier_id, customer_name, source, description, assigned_to,
           company_name, email, phone, whatsapp,
           country, state, city, zip, shipping_address, billing_address,
-          buyer_type, internal_notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          buyer_type, internal_notes, instagram_id, facebook_id, priority,
+          source_campaign, next_followup_date, last_contact_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        RETURNING *`,
       [
         lead_number, supplier_id || null, customer_name || null, source, description || null, assigned_to || null,
         company_name || null, email || null, phone || null, whatsapp || null,
         country || null, state || null, city || null, zip || null,
         shipping_address || null, billing_address || null,
-        buyer_type || null, internal_notes || null,
+        buyer_type || null, internal_notes || null, instagram_id || null, facebook_id || null,
+        priority || 'medium', source_campaign || null, next_followup_date || null, last_contact_at || null,
       ]
     )
     const lead = rows[0]
     await insertProductInterest(client, lead.id, productInterest)
+    if (qualification) {
+      await upsertQualification(client, lead.id, qualification)
+    }
     await client.query('COMMIT')
     await logActivity(created_by, 'lead', lead.id, 'created', `Lead ${lead_number} created`)
     return getById(lead.id)
@@ -162,6 +173,7 @@ async function update(id, fields, actorId) {
     'company_name', 'email', 'phone', 'whatsapp',
     'country', 'state', 'city', 'zip', 'shipping_address', 'billing_address',
     'buyer_type', 'internal_notes',
+    'instagram_id', 'facebook_id', 'priority', 'source_campaign', 'next_followup_date', 'last_contact_at',
   ]
   const sets = []
   const params = []
@@ -172,7 +184,8 @@ async function update(id, fields, actorId) {
     }
   }
   const hasProductInterest = Array.isArray(fields.productInterest)
-  if (!sets.length && !hasProductInterest) {
+  const hasQualification = fields.qualification && typeof fields.qualification === 'object'
+  if (!sets.length && !hasProductInterest && !hasQualification) {
     throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
   }
 
@@ -199,6 +212,7 @@ async function update(id, fields, actorId) {
       await client.query(`DELETE FROM lead_product_interest WHERE lead_id = $1`, [id])
       await insertProductInterest(client, id, fields.productInterest)
     }
+    if (hasQualification) await upsertQualification(client, id, fields.qualification)
 
     await client.query('COMMIT')
 
@@ -212,6 +226,25 @@ async function update(id, fields, actorId) {
   } finally {
     client.release()
   }
+}
+
+async function upsertQualification(client, leadId, q) {
+  await client.query(
+    `INSERT INTO lead_qualifications
+       (lead_id,sizes_received,artwork_received,delivery_date_confirmed,
+        shipping_address_confirmed,budget_confirmed,payment_method_pref,info_completeness_score)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (lead_id) DO UPDATE SET
+       sizes_received=EXCLUDED.sizes_received, artwork_received=EXCLUDED.artwork_received,
+       delivery_date_confirmed=EXCLUDED.delivery_date_confirmed,
+       shipping_address_confirmed=EXCLUDED.shipping_address_confirmed,
+       budget_confirmed=EXCLUDED.budget_confirmed,
+       payment_method_pref=EXCLUDED.payment_method_pref,
+       info_completeness_score=EXCLUDED.info_completeness_score, updated_at=NOW()`,
+    [leadId, !!q.sizes_received, !!q.artwork_received, !!q.delivery_date_confirmed,
+     !!q.shipping_address_confirmed, !!q.budget_confirmed, q.payment_method_pref || null,
+     q.info_completeness_score || 0]
+  )
 }
 
 async function move(id, { stage, position = 0, user_id }) {

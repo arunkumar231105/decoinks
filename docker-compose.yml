@@ -67,8 +67,10 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: postgresql://postgres:decoinks_pass@postgres:5432/decoinks_db
       REDIS_URL: redis://redis:6379
-      CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094,http://31.97.110.197:3001
+      CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094,http://31.97.110.197:3001,https://printshop.decoinkssuite.com
       JWT_SECRET: Decoinks2026SecretKeyPOSSoftwarePrintShop123XYZ
+      # Leave empty to keep SSO disabled until Authentik is configured.
+      SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:-}
       UPLOAD_DIR: uploads
       MAX_FILE_SIZE_MB: "10"
       MINIO_HOST: minio
@@ -76,7 +78,7 @@ services:
       MINIO_ACCESS_KEY: decoinks
       MINIO_SECRET_KEY: decoinks_secret_123
       MINIO_BUCKET: decoinks
-      MINIO_PUBLIC_URL: http://31.97.110.197:9002
+      MINIO_PUBLIC_URL: /storage
       # AI CSV import. Defaults to Groq (free, https://groq.com). Put the real
       # key in a .env file on the server, not here. Empty = AI import disabled.
       GROQ_API_KEY: ${GROQ_API_KEY:-}

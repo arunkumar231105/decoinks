@@ -1,0 +1,23 @@
+# Compatibility endpoint for legacy Technocas clients. The old :5436 address
+# now terminates at the central Decoinks PostgreSQL service on the shared
+# Docker network. This container stores no data.
+name: decoinks-central-db
+
+services:
+  technocas_db_compat:
+    image: alpine/socat
+    container_name: technocas_postgres_proxy
+    restart: unless-stopped
+    command:
+      - -dd
+      - TCP-LISTEN:5436,fork,reuseaddr
+      - TCP:postgres:5432
+    ports:
+      - "5436:5436"
+    networks:
+      - central
+
+networks:
+  central:
+    external: true
+    name: decoinks_decoinks_net

@@ -72,6 +72,40 @@ async function login(email, password, ip, userAgent) {
   }
 }
 
+async function sso(email, name, isAdmin, ip, userAgent) {
+  let { rows } = await query(
+    `SELECT id, name, email, role, is_active, avatar_url FROM users WHERE email = $1 LIMIT 1`,
+    [email.toLowerCase().trim()]
+  )
+  let user = rows[0]
+  if (!user) {
+    const password = await bcrypt.hash(crypto.randomBytes(48).toString('base64url'), 10)
+    const created = await query(
+      `INSERT INTO users (name, email, password, role, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)
+       RETURNING id, name, email, role, is_active, avatar_url`,
+      [name, email.toLowerCase().trim(), password, isAdmin ? 'Admin' : 'Sales']
+    )
+    user = created.rows[0]
+  }
+  if (!user.is_active) throw Object.assign(new Error('Account is deactivated'), { statusCode: 403 })
+  const accessToken = signAccessToken(user)
+  const refreshToken = generateRefreshToken()
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    await storeRefreshToken(client, user.id, refreshToken, ip, userAgent)
+    await client.query(`UPDATE users SET last_login = NOW() WHERE id = $1`, [user.id])
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+  return { accessToken, refreshToken, user }
+}
+
 // ── Refresh (with rotation) ───────────────────────────────────────────────────
 
 async function refresh(rawToken, ip, userAgent) {
@@ -196,6 +230,6 @@ async function changePassword(userId, currentPassword, newPassword) {
 
 module.exports = {
   COOKIE_NAME,
-  login, refresh, logout, revokeAll,
+  login, sso, refresh, logout, revokeAll,
   getMe, setupStatus, setup, changePassword,
 }
