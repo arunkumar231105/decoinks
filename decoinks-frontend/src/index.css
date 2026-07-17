@@ -14,7 +14,7 @@
 }
 
 /* ===== Application-wide responsive safety layer ===== */
-html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }
+html, body, #root { width: 100%; max-width: 100%; overflow-x: clip; }
 img, svg, video, canvas { max-width: 100%; }
 .main-column, .content-area, .content-area > *, .content-area form, .content-area section { min-width: 0; max-width: 100%; }
 .cust-table-wrap, .wf-table-wrap, .ql-table-wrap, .sh-table-wrap, .prod-table-wrap,
