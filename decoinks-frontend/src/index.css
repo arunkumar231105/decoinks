@@ -10786,14 +10786,18 @@ select.al-input {
   width: 82px;
 }
 
-.nq-table tfoot td {
+.nq-table tfoot td,
+.ni-table tfoot td,
+.no-table tfoot td,
+.np-table tfoot td {
   padding: 11px 10px;
   border-top: 1px solid #dbe3ec;
+  border-bottom: 0;
   background: #f8fafc;
   vertical-align: middle;
 }
 
-.nq-dtf-summary-title {
+.live-summary-title {
   color: #64748b;
   font-size: 11px;
   font-weight: 800;
@@ -10801,7 +10805,7 @@ select.al-input {
   text-transform: uppercase;
 }
 
-.nq-dtf-summary-stat {
+.live-summary-stat {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -10809,7 +10813,7 @@ select.al-input {
   white-space: nowrap;
 }
 
-.nq-dtf-summary-stat span {
+.live-summary-stat span {
   color: #64748b;
   font-size: 10px;
   font-weight: 700;
@@ -10817,13 +10821,13 @@ select.al-input {
   text-transform: uppercase;
 }
 
-.nq-dtf-summary-stat strong {
+.live-summary-stat strong {
   color: #0f172a;
   font-size: 14px;
   font-weight: 800;
 }
 
-.nq-dtf-summary-total strong {
+.live-summary-total strong {
   color: #0f766e;
 }
 

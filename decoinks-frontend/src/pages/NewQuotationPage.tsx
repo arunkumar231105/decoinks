@@ -723,6 +723,9 @@ function ImageUploadCell({
 
 // ── Lead product interest items grid ──────────────────────────────────────
 function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (items: LeadItem[]) => void }) {
+  const totalQty = items.reduce((sum, item) => sum + item.qty, 0)
+  const totalArtworks = items.reduce((sum, item) => sum + item.artwork_count, 0)
+  const sectionTotal = items.reduce((sum, item) => sum + item.qty * item.unit_price, 0)
   const updateItem = (id: string, patch: Partial<LeadItem>) =>
     setItems(items.map(item => (item.id === id ? { ...item, ...patch } : item)))
   const removeItem = (id: string) =>
@@ -736,7 +739,6 @@ function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (i
         <span className="nq-section-num">★</span>
         <h3>Product Interest Items</h3>
         <span className="nq-badge nq-badge-ai">Auto-Filled from Lead</span>
-        <strong className="nq-section-total">Section Total: ${fmt(items.reduce((s, r) => s + r.qty * r.unit_price, 0))}</strong>
       </div>
       <div className="nq-table-wrap">
         <table className="nq-table">
@@ -776,6 +778,15 @@ function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (i
               <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '14px 0' }}>No items yet — click &ldquo;Add Item&rdquo; below.</td></tr>
             )}
           </tbody>
+          <tfoot><tr className="live-summary-row">
+            <td colSpan={2}><span className="live-summary-title">Items Summary</span></td>
+            <td><div className="live-summary-stat"><span>Total Qty</span><strong>{totalQty}</strong></div></td>
+            <td colSpan={2}></td>
+            <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{totalArtworks}</strong></div></td>
+            <td></td>
+            <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(sectionTotal)}</strong></div></td>
+            <td></td>
+          </tr></tfoot>
         </table>
       </div>
       <button className="nq-add-row-btn" onClick={addItem}><Plus size={12} /> Add Item</button>
@@ -1128,7 +1139,11 @@ export function NewQuotationPage() {
   }
 
   const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
+  const apparelQty     = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty, 0), [apparelItems])
+  const apparelArtwork = useMemo(() => apparelItems.reduce((sum, item) => sum + item.printDetails.length, 0), [apparelItems])
   const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
+  const gangsheetQty   = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets, 0), [gangsheetRows])
+  const gangsheetArtwork = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheetRows])
   const transfersTotal = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0), [transferRows])
   const transfersQty   = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty, 0), [transferRows])
   const activeTotal    = activeTab === 'apparel' ? apparelTotal : activeTab === 'dtf' ? transfersTotal : gangsheetTotal
@@ -1314,7 +1329,6 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
-                <strong className="nq-section-total">Section Total: ${fmt(apparelTotal)}</strong>
               </div>
               <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Color</th><th>Size</th><th>Qty</th><th>FR Image</th><th>BK Image</th><th>Print Locations</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
@@ -1341,7 +1355,15 @@ export function NewQuotationPage() {
                   </tr>
                 ))}
                 {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
-              </tbody></table></div>
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
+                <td colSpan={2}></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparelArtwork}</strong></div></td>
+                <td colSpan={2}></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
               <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), name: '', description: '', brand: '', model: '', variant: '', sizes: '', qty: 1, printDetails: [], stdCost: 0, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Apparel Row</button>
             </section>
           )}
@@ -1366,12 +1388,12 @@ export function NewQuotationPage() {
                   </tr>
                 ))}
                 {transferRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
-              </tbody><tfoot><tr className="nq-dtf-summary-row">
-                <td colSpan={3}><span className="nq-dtf-summary-title">DTF Summary</span></td>
-                <td><div className="nq-dtf-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
-                <td><div className="nq-dtf-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
                 <td colSpan={2}></td>
-                <td><div className="nq-dtf-summary-stat nq-dtf-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot></table></div>
               <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, stdCost: 1.5, quotedCost: 2, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
@@ -1382,7 +1404,6 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>📐 Gangsheet</span>
-                <strong className="nq-section-total">Section Total: ${fmt(gangsheetTotal)}</strong>
               </div>
               <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>Front Art</th><th>Back Art</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
                 {gangsheetRows.map((row, idx) => (
@@ -1412,7 +1433,14 @@ export function NewQuotationPage() {
                   </tr>
                 ))}
                 {gangsheetRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No sheets yet — click "Add Gangsheet Row" below.</td></tr>}
-              </tbody></table></div>
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtwork}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
+                <td colSpan={4}></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(gangsheetTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
               <button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, stdCost: 25, quotedCost: 30, front_image: null, back_image: null }])}><Plus size={12} /> Add Gangsheet Row</button>
             </section>
           )}

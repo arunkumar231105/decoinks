@@ -850,6 +850,15 @@ export function NewInvoicePage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
+                      <td colSpan={2}></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
+                      <td></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="ni-add-item-btn" onClick={addApparelItem}>
@@ -925,6 +934,14 @@ export function NewInvoicePage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetItems.reduce((sum, row) => sum + row.numArtworks, 0)}</strong></div></td>
+                      <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
+                      <td colSpan={2}></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="ni-add-item-btn" onClick={addGangsheetItem}>
@@ -991,6 +1008,13 @@ export function NewInvoicePage() {
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot><tr className="live-summary-row">
+                        <td><span className="live-summary-title">Artwork Summary</span></td>
+                        <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks.length}</strong></div></td>
+                        <td colSpan={4}></td>
+                        <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetArtworks.reduce((sum, row) => sum + row.qtySheets, 0)}</strong></div></td>
+                        <td></td>
+                      </tr></tfoot>
                     </table>
                   </div>
                   <button className="ni-add-item-btn" onClick={addGangsheetArtwork}>
@@ -1008,11 +1032,12 @@ export function NewInvoicePage() {
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
-                        <th>Artwork Image</th>
+                        <th>Front Art</th>
+                        <th>Back Art</th>
                         <th>Artwork Name</th>
                         <th>Size</th>
                         <th>Qty</th>
-                        <th>Amount</th>
+                        <th>Unit Price</th>
                         <th>Line Total</th>
                         <th style={{ width: 36 }} />
                       </tr>
@@ -1057,6 +1082,15 @@ export function NewInvoicePage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
+                      <td></td>
+                      <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
+                      <td></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="ni-add-item-btn" onClick={addTransferItem}>
@@ -1299,7 +1333,6 @@ export function NewInvoicePage() {
     </div>
   )
 }
-
 
 
 

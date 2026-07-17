@@ -900,17 +900,12 @@ export function NewPurchaseOrderPage() {
                     </tr>
                   ))}
                 </tbody>
-                {state.orders.length > 0 && (
-                  <tfoot>
-                    <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
-                      <td />
-                      <td>Total</td>
-                      <td style={{ textAlign: 'center' }}>{orderTotals.artworks}</td>
-                      <td style={{ textAlign: 'center' }}>{orderTotals.qty}</td>
-                      <td colSpan={7} />
-                    </tr>
-                  </tfoot>
-                )}
+                <tfoot><tr className="live-summary-row">
+                  <td colSpan={2}><span className="live-summary-title">Orders Summary</span></td>
+                  <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{orderTotals.artworks}</strong></div></td>
+                  <td><div className="live-summary-stat"><span>Total Qty</span><strong>{orderTotals.qty}</strong></div></td>
+                  <td colSpan={7}></td>
+                </tr></tfoot>
               </table>
             </div>
           </div>
@@ -1008,18 +1003,12 @@ export function NewPurchaseOrderPage() {
                     </tr>
                   ))}
                 </tbody>
-                {state.fragments.length > 0 && (
-                  <tfoot>
-                    <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
-                      <td />
-                      <td>Total</td>
-                      <td /><td /><td />
-                      <td style={{ textAlign: 'center' }}>{fragTotals.artworks}</td>
-                      <td style={{ textAlign: 'center' }}>{fragTotals.qty}</td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                )}
+                <tfoot><tr className="live-summary-row">
+                  <td colSpan={5}><span className="live-summary-title">Fragments Summary</span></td>
+                  <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{fragTotals.artworks}</strong></div></td>
+                  <td><div className="live-summary-stat"><span>Total Qty</span><strong>{fragTotals.qty}</strong></div></td>
+                  <td colSpan={2}></td>
+                </tr></tfoot>
               </table>
             </div>
           </div>
@@ -1133,19 +1122,14 @@ export function NewPurchaseOrderPage() {
                   </tr>
                 ))}
               </tbody>
-              {state.items.length > 0 && (
-                <tfoot>
-                  <tr style={{ background: '#f0fdf4', fontWeight: 700 }}>
-                    <td />
-                    <td>Total</td>
-                    <td colSpan={3} />
-                    <td style={{ textAlign: 'center' }}>{state.items.reduce((s, it) => s + it.qty_ordered, 0)}</td>
-                    <td colSpan={4} />
-                    <td style={{ textAlign: 'right', paddingRight: 8 }}>${fmt(itemsTotal)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              )}
+              <tfoot><tr className="live-summary-row">
+                <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.items.reduce((sum, item) => sum + item.qty_ordered, 0)}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
+                <td colSpan={4}></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot>
             </table>
           </div>
         </div>
