@@ -6,8 +6,8 @@
 require('dotenv').config()
 const { getClient, pool } = require('../src/config/db')
 
-const SOURCE = 'decoinks_dtf_po_master_apr_jun_2026'
-const CHAIN_SOURCE = 'decoinks_dtf_commercial_chain_apr_jun_2026'
+const SOURCE = process.env.DTF_IMPORT_SOURCE || 'decoinks_dtf_po_master_apr_jun_2026'
+const CHAIN_SOURCE = process.env.DTF_CHAIN_SOURCE || 'decoinks_dtf_commercial_chain_apr_jun_2026'
 const dryRun = process.argv.includes('--dry-run')
 
 const num = value => Number(value || 0)
@@ -237,7 +237,9 @@ async function main() {
          (SELECT COUNT(*)::int FROM purchase_orders WHERE source_system=$2 AND order_id IS NOT NULL) AS linked_pos`,
       [CHAIN_SOURCE, SOURCE]
     )).rows[0]
-    const expected = { quotations: 31, orders: 31, invoices: 31, invoice_total: 3034.41, paid_total: 3034.41, linked_pos: 31 }
+    const expectedCount = Number(process.env.DTF_EXPECTED_COUNT || 31)
+    const expectedTotal = Number(process.env.DTF_EXPECTED_TOTAL || 3034.41)
+    const expected = { quotations: expectedCount, orders: expectedCount, invoices: expectedCount, invoice_total: expectedTotal, paid_total: expectedTotal, linked_pos: expectedCount }
     for (const [key, value] of Object.entries(expected)) {
       if (Math.abs(num(metrics[key]) - value) > 0.005) throw new Error(`Metric mismatch ${key}: ${metrics[key]} != ${value}`)
     }

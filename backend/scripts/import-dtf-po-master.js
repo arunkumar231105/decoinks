@@ -7,7 +7,7 @@ require('dotenv').config()
 const fs = require('fs')
 const { getClient, pool } = require('../src/config/db')
 
-const SOURCE = 'decoinks_dtf_po_master_apr_jun_2026'
+const SOURCE = process.env.DTF_IMPORT_SOURCE || 'decoinks_dtf_po_master_apr_jun_2026'
 const dryRun = process.argv.includes('--dry-run')
 const inputPath = process.argv.slice(2).find(arg => !arg.startsWith('--'))
 if (!inputPath) throw new Error('Usage: node scripts/import-dtf-po-master.js <input.json> [--dry-run]')
@@ -57,11 +57,17 @@ async function main() {
       const sourceRow = data.po_summary.find(row => row['Client Name'] === name)
       if (!customer) {
         const person = splitName(name)
+        const prefix = process.env.DTF_CUSTOMER_PREFIX || 'CUST-DTF-2026-'
+        let sequence = i + 1
+        let customerNumber
+        do {
+          customerNumber = `${prefix}${String(sequence++).padStart(3, '0')}`
+        } while ((await client.query(`SELECT 1 FROM customers WHERE customer_number=$1`, [customerNumber])).rowCount)
         customer = (await client.query(
           `INSERT INTO customers
              (customer_number,name,first_name,last_name,address_line1,country,status,source,internal_notes,created_by)
            VALUES ($1,$2,$3,$4,$5,'United States','Active',$6,$7,$8) RETURNING id`,
-          [`CUST-DTF-2026-${String(i + 1).padStart(3, '0')}`, name, person.first, person.last,
+          [customerNumber, name, person.first, person.last,
            sourceRow['Ship To Address'] || null, SOURCE, `Imported from DTF PO master. Source address retained as provided.`, user.id]
         )).rows[0]
         await client.query(
@@ -267,7 +273,7 @@ async function main() {
               COUNT(*) FILTER (WHERE source_payment_status='Free/Reprint')::int AS free_entries
          FROM purchase_orders WHERE source_system=$1`, [SOURCE]
     )).rows[0]
-    const expected = { po_entries:31, unique_pos:30, gangsheets:59, artworks:2520, paid_revenue:'3034.41', shipping_collected:'320.20', net_product_amount:'2164.21', free_entries:5 }
+    const expected = data.expected_metrics || { po_entries:31, unique_pos:30, gangsheets:59, artworks:2520, paid_revenue:'3034.41', shipping_collected:'320.20', net_product_amount:'2164.21', free_entries:5 }
     for (const [key, value] of Object.entries(expected)) {
       if (Math.abs(Number(metrics[key]) - Number(value)) > 0.005) throw new Error(`Metric mismatch ${key}: got ${metrics[key]}, expected ${value}`)
     }
