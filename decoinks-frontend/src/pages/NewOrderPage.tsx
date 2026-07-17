@@ -331,6 +331,10 @@ export function NewOrderPage() {
     if (orderType === 'gangsheet') return gangsheet.reduce((s, r) => s + r.pricePerSheet * r.qty, 0)
     return dtf.reduce((s, r) => s + r.unitPrice * r.qty, 0)
   }, [orderType, apparel, gangsheet, dtf])
+  const apparelQty = useMemo(() => apparel.reduce((sum, row) => sum + row.qty, 0), [apparel])
+  const gangsheetQty = useMemo(() => gangsheet.reduce((sum, row) => sum + row.qty, 0), [gangsheet])
+  const gangsheetArtworks = useMemo(() => gangsheet.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheet])
+  const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
   const discountAmt = useMemo(() => +(subtotal * (discountPct / 100)).toFixed(2), [subtotal, discountPct])
@@ -688,6 +692,15 @@ export function NewOrderPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
+                      <td colSpan={2}></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
+                      <td colSpan={2}></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="no-add-item-btn" onClick={addApparel}><Plus size={13} /> Add Item</button>
@@ -748,6 +761,14 @@ export function NewOrderPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks}</strong></div></td>
+                      <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
+                      <td colSpan={3}></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="no-add-item-btn" onClick={addGangsheet}><Plus size={13} /> Add Item</button>
@@ -808,6 +829,15 @@ export function NewOrderPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot><tr className="live-summary-row">
+                      <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{dtf.length}</strong></div></td>
+                      <td></td>
+                      <td><div className="live-summary-stat"><span>Total Qty</span><strong>{dtfQty}</strong></div></td>
+                      <td></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td></td>
+                    </tr></tfoot>
                   </table>
                 </div>
                 <button className="no-add-item-btn" onClick={addDtf}><Plus size={13} /> Add Item</button>

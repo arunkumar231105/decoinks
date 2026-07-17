@@ -185,10 +185,10 @@ async function create(fields_in) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
       await query(
-        `INSERT INTO invoice_items
+         `INSERT INTO invoice_items
            (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-            front_image, back_image, artwork_image)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            front_image, back_image, artwork_image, sizes, colors)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           rows[0].id,
           it.description || null,
@@ -200,18 +200,20 @@ async function create(fields_in) {
           it.front_image || null,
           it.back_image  || null,
           it.artwork_image || null,
+          it.sizes || null,
+          it.colors || null,
         ]
       )
     }
   } else if (quote_id) {
     // Copy quotation_items → invoice_items (description, qty, price, images, artwork count)
     await query(
-      `INSERT INTO invoice_items
+       `INSERT INTO invoice_items
          (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-          front_image, back_image, artwork_image)
+          front_image, back_image, artwork_image, sizes, colors)
        SELECT $1, description, qty, unit_price, amount,
               COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
-              front_image, back_image, artwork_image
+              front_image, back_image, artwork_image, sizes, colors
        FROM quotation_items WHERE quotation_id = $2
        ORDER BY sort_order, id`,
       [rows[0].id, quote_id]

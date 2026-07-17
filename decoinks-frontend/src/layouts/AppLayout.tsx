@@ -12,14 +12,12 @@ import {
 } from '@mui/material'
 import {
   Bell,
-  Bot,
   Boxes,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   ClipboardList,
-  CreditCard,
   FileText,
   Home,
   Image,
@@ -27,19 +25,15 @@ import {
   LogOut,
   Menu as MenuIcon,
   Package,
-  Palette,
-  PlugZap,
   ReceiptText,
   Settings,
   ShipWheel,
   Sparkles,
-  Sliders,
   ShoppingCart,
   Truck,
   User,
   UserCheck,
   Users,
-  Workflow,
 } from 'lucide-react'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useAuthStore } from '../store/authStore'
@@ -68,16 +62,9 @@ const artworkNav = [
 
 const boardNav = [
   { label: 'Lead Board', path: '/leads/board', icon: Layers3 },
-  { label: 'Design Board', path: '/design/board', icon: Palette },
-  { label: 'Fulfillment Board', path: '/fulfillment/board', icon: Package },
 ]
 
 const systemNav = [
-  { label: 'AI Automations', path: '/settings/ai-automations', icon: Bot },
-  { label: 'Workflow Settings', path: '/settings/workflows', icon: Workflow },
-  { label: 'Integrations', path: '/settings/integrations', icon: PlugZap },
-  { label: 'Billing & Tax', path: '/settings/billing', icon: CreditCard },
-  { label: 'Custom Fields', path: '/settings/custom-fields', icon: Sliders },
   { label: 'Users & Roles', path: '/settings/users', icon: Users },
   { label: 'Settings', path: '/settings/general', icon: Settings },
 ]

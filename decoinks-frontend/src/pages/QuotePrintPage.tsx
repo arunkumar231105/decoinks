@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -9,12 +9,6 @@ interface QuoteItem {
   id: string; description: string; qty: number; unit_price: number
   amount: number; sizes: string | null; colors: string | null; artwork_count: number
   artwork_image: string | null; front_image: string | null; back_image: string | null
-  artwork_id: string | null; front_artwork_id: string | null; back_artwork_id: string | null
-  artwork_no: string | null; artwork_name: string | null; artwork_file_url: string | null
-  front_artwork_no: string | null; front_artwork_url: string | null
-  back_artwork_no: string | null; back_artwork_url: string | null
-  brand: string | null; model: string | null
-  artwork_width: number | null; artwork_height: number | null
 }
 interface Artwork {
   id: string; artwork_no: string; name: string; file_url: string | null
@@ -29,7 +23,6 @@ interface Quote {
   shipping_state: string | null; zip_code: string | null; shipping_country: string | null
   billing_address: string | null; supplier_name: string | null
   subtotal: number; discount_pct: number; discount_amt: number
-  tax_amt: number; tax_percentage: number; shipping_amount: number
   total: number; notes: string | null; customer_notes: string | null
   rush_services: number | null; estimated_shipping: number | null
   payment_terms: string | null; payment_method: string | null; items: QuoteItem[]
@@ -83,8 +76,6 @@ const CSS = `
     display: flex; align-items: center; gap: 8px;
     box-shadow: 0 4px 14px rgba(29,78,216,0.3);
   }
-  .print-btn.secondary { right: 176px; background: #fff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
-  .print-btn.secondary:hover { background: #eff6ff; }
   .print-btn:hover { background: #1e40af; }
   .back-btn {
     position: fixed; top: 16px; left: 16px; z-index: 999;
@@ -323,7 +314,6 @@ export function QuotePrintPage() {
   const { id }   = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
-  const [downloading, setDownloading] = useState(false)
 
   const { data: quote, isLoading } = useQuery<Quote>({
     queryKey: ['quote-print', id],
@@ -360,48 +350,19 @@ export function QuotePrintPage() {
 
   const orderType    = quote.order_type ?? 'dtf'
   const totalItems   = quote.items.length
-  const totalQty     = quote.items.reduce((s, i) => s + Number(i.qty || 0), 0)
-  const totalArt     = quote.items.reduce((s, i) => s + (i.artwork_count || 0), 0) || artworks.length
+  const totalQty     = quote.items.reduce((s, i) => s + i.qty, 0)
+  const totalArt     = artworks.length || quote.items.reduce((s, i) => s + (i.artwork_count || 0), 0)
   const custName     = quote.customer_name || quote.supplier_name || '—'
   const termStr      = quote.payment_terms || 'Net 15'
   const rushAmt      = Number(quote.rush_services ?? 0)
-  const shippingAmt  = Number(quote.shipping_amount ?? 0)
+  const shippingAmt  = Number(quote.estimated_shipping ?? 0)
 
   // Build full shipping address lines
-  const shipLines = quote.shipping_address?.includes('\n')
-    ? quote.shipping_address.split('\n').filter(Boolean)
-    : [quote.shipping_address, [quote.shipping_city, quote.shipping_state, quote.zip_code].filter(Boolean).join(', '), quote.shipping_country].filter(Boolean)
-
-  const downloadPdf = async () => {
-    const element = document.getElementById('quotation-pdf')
-    if (!element || downloading) return
-    setDownloading(true)
-    try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false })
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pageWidth = 198
-      const pageHeight = 285
-      const imageHeight = canvas.height * pageWidth / canvas.width
-      const image = canvas.toDataURL('image/jpeg', 0.95)
-      let remaining = imageHeight
-      let y = 6
-      pdf.addImage(image, 'JPEG', 6, y, pageWidth, imageHeight, undefined, 'FAST')
-      remaining -= pageHeight
-      while (remaining > 0) {
-        y -= pageHeight
-        pdf.addPage()
-        pdf.addImage(image, 'JPEG', 6, y, pageWidth, imageHeight, undefined, 'FAST')
-        remaining -= pageHeight
-      }
-      pdf.save(`${quote.quote_number}.pdf`)
-    } catch (error) {
-      console.error(error)
-      window.alert('PDF download failed. Please use Print / Save PDF instead.')
-    } finally {
-      setDownloading(false)
-    }
-  }
+  const shipLines = [
+    quote.shipping_address,
+    [quote.shipping_city, quote.shipping_state, quote.zip_code].filter(Boolean).join(', '),
+    quote.shipping_country,
+  ].filter(Boolean)
 
   return (
     <>
@@ -410,14 +371,11 @@ export function QuotePrintPage() {
       <button className="no-print back-btn" onClick={() => navigate(-1)}>
         ← Back
       </button>
-      <button className="no-print print-btn secondary" onClick={() => window.print()}>
-        🖨️ Print
-      </button>
-      <button className="no-print print-btn" onClick={downloadPdf} disabled={downloading}>
-        {downloading ? 'Preparing PDF…' : '⬇ Download PDF'}
+      <button className="no-print print-btn" onClick={() => window.print()}>
+        🖨️ Download / Print PDF
       </button>
 
-      <div className="page" id="quotation-pdf">
+      <div className="page">
 
         {/* ── HEADER ── */}
         <div className="hdr">
@@ -575,7 +533,7 @@ export function QuotePrintPage() {
         </div>
 
         {/* ── ARTWORKS SECTION ── */}
-        {orderType === 'gangsheet' && artworks.length > 0 && (
+        {artworks.length > 0 && (
           <div className="aw-section">
             <div className="aw-section-hdr">
               <div className="aw-section-num">★</div>
@@ -620,7 +578,6 @@ export function QuotePrintPage() {
             <hr className="pr-divider" />
             <div className="pr-row"><span className="lbl">Subtotal</span><span className="val">{fmt(quote.subtotal)}</span></div>
             {Number(quote.discount_amt) > 0 && <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>}
-            {Number(quote.tax_amt) > 0 && <div className="pr-row"><span className="lbl">Tax ({Number(quote.tax_percentage || 0)}%)</span><span className="val">{fmt(quote.tax_amt)}</span></div>}
             <div className="pr-row total"><span className="lbl">Total</span><span className="val">{fmt(quote.total)}</span></div>
           </div>
 
@@ -688,7 +645,7 @@ export function QuotePrintPage() {
 
 // ── APPAREL TABLE ─────────────────────────────────────────────────────────────
 
-function ApparelTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
+function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[] }) {
   return (
     <table className="items-tbl">
       <thead>
@@ -727,8 +684,8 @@ function ApparelTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
         ) : items.map((item, idx) => {
           // Apparel front/back images are stored inline on the item row,
           // not in the artworks table — use them directly.
-          const frontUrl = item.front_artwork_url ?? item.front_image ?? null
-          const backUrl  = item.back_artwork_url ?? item.back_image ?? null
+          const frontUrl = item.front_image ?? null
+          const backUrl  = item.back_image  ?? null
           const colors   = item.colors?.split(',').map(c => c.trim()).filter(Boolean) ?? []
 
           return (
@@ -736,7 +693,6 @@ function ApparelTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
               <td style={{ fontWeight: 700, color: '#374151' }}>{idx + 1}</td>
               <td className="left">
                 <div className="item-main">{item.description}</div>
-                {(item.brand || item.model) && <div className="item-sub">{[item.brand, item.model].filter(Boolean).join(' | ')}</div>}
               </td>
               <td>
                 {colors.length > 0 ? colors.map(c => (
@@ -765,8 +721,8 @@ function ApparelTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
                   ? <img src={backUrl} alt="back artwork" className="art-img" />
                   : <div className="art-empty">—</div>}
               </td>
-              <td style={{ fontWeight: 600 }}>$ {Number(item.unit_price).toFixed(2)}</td>
-              <td style={{ fontWeight: 700 }}>$ {Number(item.amount).toFixed(2)}</td>
+              <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
+              <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
             </tr>
           )
         })}
@@ -777,16 +733,103 @@ function ApparelTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
 
 // ── DTF TABLE ─────────────────────────────────────────────────────────────────
 
-function DtfTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
+function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[] }) {
+  if (artworks.length > 0) {
+    // Group artworks by item — distribute evenly if no direct mapping
+    const artPerItem = Math.ceil(artworks.length / Math.max(items.length, 1))
+    const rows: { item: QuoteItem; itemIdx: number; art: Artwork; artIdxInItem: number; totalArtsForItem: number }[] = []
+
+    let artIdx = 0
+    items.forEach((item, itemIdx) => {
+      const countForItem = item.artwork_count || artPerItem
+      const myArts = artworks.slice(artIdx, artIdx + countForItem)
+      if (myArts.length === 0) myArts.push(artworks[artIdx % artworks.length])
+      myArts.forEach((art, ai) => {
+        rows.push({ item, itemIdx, art, artIdxInItem: ai, totalArtsForItem: myArts.length })
+      })
+      artIdx += countForItem
+    })
+
+    return (
+      <table className="items-tbl">
+        <thead>
+          <tr>
+            <th style={{ width: 40 }}>S.No</th>
+            <th className="left" style={{ minWidth: 150 }}>
+              Item Description<br />
+              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
+            </th>
+            <th style={{ width: 80 }}>Artwork No</th>
+            <th style={{ width: 78 }}>Artwork Thumbnail</th>
+            <th style={{ width: 120 }}>
+              Artwork Size<br />
+              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(Width x Height)</span>
+            </th>
+            <th style={{ width: 70 }}>QTY</th>
+            <th style={{ width: 80 }}>
+              Rate<br />
+              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(USD)</span>
+            </th>
+            <th style={{ width: 90 }}>
+              Amount<br />
+              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(USD)</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => {
+            const rowQty = Math.ceil(r.item.qty / r.totalArtsForItem)
+            const rowAmt = +(rowQty * r.item.unit_price).toFixed(2)
+            // Use the transfer size stored in the item description (e.g. '12" x 12"')
+            const artSize = r.item.description || r.art.name
+            return (
+              <tr key={ri}>
+                {r.artIdxInItem === 0 && (
+                  <td rowSpan={r.totalArtsForItem} style={{ fontWeight: 700, color: '#374151', verticalAlign: 'middle' }}>
+                    {r.itemIdx + 1}
+                  </td>
+                )}
+                {r.artIdxInItem === 0 && (
+                  <td rowSpan={r.totalArtsForItem} className="left" style={{ verticalAlign: 'middle' }}>
+                    <div className="item-main">{r.item.description}</div>
+                    <div className="item-sub">
+                      Premium Quality DTF<br />
+                      Ready to Press<br />
+                      Full Color
+                    </div>
+                  </td>
+                )}
+                <td><span className="aw-no">{r.art.artwork_no}</span></td>
+                <td>
+                  {r.art.file_url && r.art.file_type !== 'pdf'
+                    ? <img src={r.art.file_url} alt={r.art.name} className="art-img" />
+                    : <div className="art-empty">—</div>}
+                </td>
+                <td style={{ fontSize: 11 }}>{artSize}</td>
+                <td style={{ fontWeight: 600 }}>{rowQty} pcs</td>
+                {r.artIdxInItem === 0 && (
+                  <td rowSpan={r.totalArtsForItem} style={{ verticalAlign: 'middle', fontWeight: 700 }}>
+                    $ {r.item.unit_price.toFixed(2)}
+                  </td>
+                )}
+                <td style={{ fontWeight: 700 }}>$ {rowAmt.toFixed(2)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
+
+  // Fallback: no artworks uploaded yet
   return (
     <table className="items-tbl">
       <thead>
         <tr>
           <th style={{ width: 40 }}>S.No</th>
           <th className="left">Item Description <span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
-          <th style={{ width: 90 }}>Artwork No</th>
-          <th style={{ width: 90 }}>Artwork Thumbnail</th>
-          <th style={{ width: 120 }}>Artwork Size<br/><span style={{ fontWeight: 400, fontSize: 8 }}>(Width × Height)</span></th>
+          <th style={{ width: 100 }}>Artwork Thumbnail</th>
+          <th style={{ width: 120 }}>Size</th>
           <th style={{ width: 70 }}>QTY</th>
           <th style={{ width: 80 }}>Rate (USD)</th>
           <th style={{ width: 90 }}>Amount (USD)</th>
@@ -800,12 +843,15 @@ function DtfTable({ items }: { items: QuoteItem[]; artworks: Artwork[] }) {
               <div className="item-main">{item.description}</div>
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>
-            <td><span className="aw-no">{item.artwork_no || '—'}</span></td>
-            <td>{(item.artwork_file_url || item.artwork_image) ? <img src={item.artwork_file_url || item.artwork_image || ''} alt={item.artwork_name || 'artwork'} className="art-img" /> : <div className="art-empty">—</div>}</td>
-            <td style={{ fontWeight: 600, fontSize: 11 }}>{item.artwork_width || item.artwork_height ? `${Number(item.artwork_width || 0)} in × ${Number(item.artwork_height || 0)} in` : '—'}</td>
+            <td>
+              {(item.artwork_image || item.front_image)
+                ? <img src={item.artwork_image || item.front_image || ''} alt="artwork" className="art-img" />
+                : <div className="art-empty">—</div>}
+            </td>
+            <td style={{ fontWeight: 600, fontSize: 11 }}>{item.description}</td>
             <td style={{ fontWeight: 600 }}>{item.qty} pcs</td>
-            <td style={{ fontWeight: 600 }}>$ {Number(item.unit_price).toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {Number(item.amount).toFixed(2)}</td>
+            <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
+            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>
@@ -847,8 +893,8 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
                 ? <img src={item.back_image} alt="back" className="art-img" />
                 : <div className="art-empty">—</div>}
             </td>
-            <td>$ {Number(item.unit_price).toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {Number(item.amount).toFixed(2)}</td>
+            <td>$ {item.unit_price.toFixed(2)}</td>
+            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>
@@ -876,8 +922,8 @@ function GenericTable({ items }: { items: QuoteItem[] }) {
             <td style={{ fontWeight: 700 }}>{idx + 1}</td>
             <td className="left"><div className="item-main">{item.description}</div></td>
             <td style={{ fontWeight: 600 }}>{item.qty}</td>
-            <td>$ {Number(item.unit_price).toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {Number(item.amount).toFixed(2)}</td>
+            <td>$ {item.unit_price.toFixed(2)}</td>
+            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>

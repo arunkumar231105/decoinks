@@ -14,6 +14,11 @@ const itemSchema = z.object({
   amount:        z.number().nonnegative().default(0),
   artwork_count: z.number().int().nonnegative().default(0),
   sort_order:    z.number().int().default(0),
+  sizes:         z.string().optional().nullable(),
+  colors:        z.string().optional().nullable(),
+  front_image:   z.string().optional().nullable(),
+  back_image:    z.string().optional().nullable(),
+  artwork_image: z.string().optional().nullable(),
 })
 
 const createSchema = z.object({

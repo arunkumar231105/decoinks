@@ -8,6 +8,9 @@ const { getClient, pool } = require('../src/config/db')
 
 const SOURCE = process.env.DTF_IMPORT_SOURCE || 'decoinks_dtf_po_master_apr_jun_2026'
 const CHAIN_SOURCE = process.env.DTF_CHAIN_SOURCE || 'decoinks_dtf_commercial_chain_apr_jun_2026'
+const ORDER_TYPE = process.env.DTF_ORDER_TYPE || 'dtf'
+const PRODUCT_TYPE = process.env.DTF_PRODUCT_TYPE || 'DTF Transfer'
+const DECORATION_METHOD = process.env.DTF_DECORATION_METHOD || 'DTF'
 const dryRun = process.argv.includes('--dry-run')
 
 const num = value => Number(value || 0)
@@ -115,14 +118,14 @@ async function main() {
             payment_terms,customer_notes,customer_id,payment_method,discount_type,discount_value,
             tax_percentage,shipping_amount,source_system,source_entry_key,source_po_number)
          VALUES($1,'Approved',COALESCE($2::date + 7,CURRENT_DATE),$3,0,0,0,0,$4,$5,$6,$7,$8,$9,$10,
-                $11,$11,$12,$6,$13,$4,'dtf',$14,COALESCE($2::date,CURRENT_DATE),$15,0,
+                $11,$11,$12,$6,$13,$4,$22,$14,COALESCE($2::date,CURRENT_DATE),$15,0,
                 $16,$17,$18,'Historical Import','fixed',0,0,$15,$19,$20,$21)
          RETURNING id`,
         [`QT-${docSuffix}`, po.order_date, product, payment, sourceNotes, user.id,
          po.customer_name, po.customer_email, po.customer_phone, SOURCE,
          po.shipping_address, po.expected_date, `DTF Transfers: ${po.total_artworks || 0} artworks across ${po.total_gangsheets || 0} gangsheets.`,
          po.currency || 'USD', shipping, po.payment_terms || 'Paid', sourceNotes, po.customer_id,
-         CHAIN_SOURCE, sourceKey, po.source_po_number]
+         CHAIN_SOURCE, sourceKey, po.source_po_number, ORDER_TYPE]
       )).rows[0]
       stats.quotations++
 
@@ -135,9 +138,9 @@ async function main() {
           `INSERT INTO quotation_items
              (quotation_id,description,qty,unit_price,amount,sort_order,sizes,artwork_count,
               product_type,decoration_method,unit,brand)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$3,'DTF Transfer','DTF','pcs',$8)`,
+           VALUES($1,$2,$3,$4,$5,$6,$7,$3,$9,$10,'pcs',$8)`,
           [quote.id, item.item_name, qty, unitPrice.toFixed(2), money(amountCents), index,
-           item.artwork_size || null, item.brand || po.brand || null]
+           item.artwork_size || null, item.brand || po.brand || null, PRODUCT_TYPE, DECORATION_METHOD]
         )
       }
 
@@ -148,13 +151,13 @@ async function main() {
             discount_pct,discount_amt,tax_pct,tax_amt,total,notes,shipping_name,shipping_address,
             contact_name,contact_email,contact_phone,assigned_to,created_by,source_system,
             source_entry_key,source_po_number,shipped_at)
-         VALUES($1,$2,$3,'dtf','Delivered',$4,'Historical Import',$5,$6,$7,$8,0,$9,$10,
+         VALUES($1,$2,$3,$21,'Delivered',$4,'Historical Import',$5,$6,$7,$8,0,$9,$10,
                 0,0,0,0,$11,$12,$13,$14,$13,$15,$16,$17,$17,$18,$19,$20,COALESCE($7::date,NOW()::date))
          RETURNING id`,
         [`ORD-${docSuffix}`, quote.id, po.customer_id, isFree ? 'Paid' : 'Paid',
          po.payment_terms || 'Paid', po.currency || 'USD', po.order_date, po.expected_date,
          shipping, product, payment, sourceNotes, po.customer_name, po.shipping_address,
-         po.customer_email, po.customer_phone, user.id, CHAIN_SOURCE, sourceKey, po.source_po_number]
+         po.customer_email, po.customer_phone, user.id, CHAIN_SOURCE, sourceKey, po.source_po_number, ORDER_TYPE]
       )).rows[0]
       stats.orders++
 
@@ -163,13 +166,22 @@ async function main() {
         const amountCents = lineCents[index]
         const qty = Math.max(0, num(item.qty_ordered))
         const unitPrice = qty ? amountCents / 100 / qty : 0
-        await client.query(
-          `INSERT INTO order_items_dtf
-             (order_id,artwork_name,size,qty,unit_price,amount,sort_order)
-           VALUES($1,$2,$3,$4,$5,$6,$7)`,
-          [order.id, item.source_artwork_no ? `${item.source_artwork_no} - ${item.item_name}` : item.item_name,
-           item.artwork_size || null, qty, unitPrice.toFixed(2), money(amountCents), index]
-        )
+        if (ORDER_TYPE === 'apparel') {
+          await client.query(
+            `INSERT INTO order_items_apparel
+               (order_id,item,size,qty,unit_price,amount,sort_order)
+             VALUES($1,$2,$3,$4,$5,$6,$7)`,
+            [order.id, item.item_name, item.artwork_size || null, qty, unitPrice.toFixed(2), money(amountCents), index]
+          )
+        } else {
+          await client.query(
+            `INSERT INTO order_items_dtf
+               (order_id,artwork_name,size,qty,unit_price,amount,sort_order)
+             VALUES($1,$2,$3,$4,$5,$6,$7)`,
+            [order.id, item.source_artwork_no ? `${item.source_artwork_no} - ${item.item_name}` : item.item_name,
+             item.artwork_size || null, qty, unitPrice.toFixed(2), money(amountCents), index]
+          )
+        }
       }
 
       const invoice = (await client.query(
@@ -180,13 +192,13 @@ async function main() {
             payment_terms,payment_method,currency,rush_services,shipping_charges,source_system,
             source_entry_key,source_po_number,paid_at)
          VALUES($1,$2,$3,$4,$5,'Paid',$6,$7,$8,0,0,$9,0,$9,$10,$11,$12,$13,$14,$15,$15,
-                'dtf',$16,'Historical Import',$17,0,$18,$19,$20,$21,CASE WHEN $9::numeric>0 THEN COALESCE($6::date,CURRENT_DATE) END)
+                $22,$16,'Historical Import',$17,0,$18,$19,$20,$21,CASE WHEN $9::numeric>0 THEN COALESCE($6::date,CURRENT_DATE) END)
          RETURNING id`,
         [`INV-${docSuffix}`, `INV-INT-${docSuffix}`, order.id, quote.id, po.customer_id,
          po.order_date, po.expected_date, product, payment, sourceNotes, user.id,
          po.customer_name, po.customer_email, po.customer_phone, po.shipping_address,
          po.payment_terms || 'Paid', po.currency || 'USD', shipping,
-         CHAIN_SOURCE, sourceKey, po.source_po_number]
+         CHAIN_SOURCE, sourceKey, po.source_po_number, ORDER_TYPE]
       )).rows[0]
       stats.invoices++
 

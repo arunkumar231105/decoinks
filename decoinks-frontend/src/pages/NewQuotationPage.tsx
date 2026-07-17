@@ -1,342 +1,1448 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Eye, FileText, Image, MapPin, Plus, Save, Search, Shirt, Trash2, Upload, UserRound, X } from 'lucide-react'
-import { api } from '../services/api'
-import { getApiError } from '../utils/apiError'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { Menu, MenuItem } from '@mui/material'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
+import {
+  ChevronDown,
+  Copy,
+  Edit3,
+  ExternalLink,
+  MessageCircle,
+  MessageSquare,
+  Package,
+  Plus,
+  Save,
+  Send,
+  Trash2,
+  User2,
+  X,
+} from 'lucide-react'
+import { cn } from '../utils/cn'
+import { api } from '../services/api'
+import { useAuthStore } from '../store/authStore'
+import { copyText, printPanel } from '../utils/actions'
+import ArtworkUploader from '../components/ArtworkUploader'
 
-type QuoteType = 'dtf' | 'apparel'
-type Line = {
-  key: string
-  product_id: string
+type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
+
+interface ApparelItem {
+  id: string
   description: string
-  artwork_id: string
-  front_artwork_id: string
-  back_artwork_id: string
-  brand: string
-  model: string
-  color: string
+  variant: string
   sizes: string
-  artwork_width: number
-  artwork_height: number
-  artwork_count: number
   qty: number
+  quotedCost: number
+  front_image?: string | null
+  back_image?: string | null
+}
+
+interface GangsheetRow {
+  id: string
+  size: string
+  noArtworks: number
+  qtySheets: number
+  quotedCost: number
+  front_image?: string | null
+  back_image?: string | null
+}
+
+interface TransferRow {
+  id: string
+  width: string
+  height: string
+  qty: number
+  quotedCost: number
+  artwork_image?: string | null
+}
+
+interface OtherCharge {
+  key: 'artwork' | 'packaging' | 'shipping' | 'discount'
+  label: string
+  description: string
+  enabled: boolean
+  stdCost: number
+  quotedCost: number
+}
+
+interface LeadItem {
+  id: string
+  description: string
+  qty: number
+  sizes: string
+  colors: string
+  artwork_count: number
   unit_price: number
-  artwork_url: string
-  artwork_label: string
-  front_artwork_url: string
-  front_artwork_label: string
-  back_artwork_url: string
-  back_artwork_label: string
+  sort_order: number
 }
 
-const blankLine = (): Line => ({
-  key: crypto.randomUUID(), product_id: '', description: '', artwork_id: '',
-  front_artwork_id: '', back_artwork_id: '', brand: '', model: '', color: '',
-  sizes: '', artwork_width: 0, artwork_height: 0, artwork_count: 1, qty: 1, unit_price: 0,
-  artwork_url: '', artwork_label: '', front_artwork_url: '', front_artwork_label: '', back_artwork_url: '', back_artwork_label: '',
-})
-
-const addressText = (address: any) => {
-  if (!address) return ''
-  return [address.line1, address.line2, [address.city, address.state, address.zipcode].filter(Boolean).join(', '), address.country]
-    .filter(Boolean).join('\n')
+interface ProductTotals {
+  apparel: number
+  gangsheet: number
+  transfers: number
+  leadItems: number
 }
 
-function useDebounced(value: string, delay = 250) {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => { const timer = window.setTimeout(() => setDebounced(value), delay); return () => window.clearTimeout(timer) }, [value, delay])
-  return debounced
+const uid = () => Math.random().toString(36).slice(2, 8)
+const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const addDays = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function SearchPicker({ value, label, placeholder, options, loading, optional, onSearch, onChange }: {
-  value: string; label: string; placeholder: string; options: any[]; loading?: boolean; optional?: boolean
-  onSearch: (value: string) => void; onChange: (value: string, option?: any) => void
+const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
+const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
+
+const parseTransferSize = (size: unknown): Pick<TransferRow, 'width' | 'height'> => {
+  const match = String(size ?? '').match(/([\d.]+)\s*(?:"|in(?:ches)?)?\s*[x×]\s*([\d.]+)/i)
+  return match ? { width: match[1], height: match[2] } : { width: '', height: '' }
+}
+
+const formatTransferSize = (width: string, height: string) => {
+  const cleanWidth = width.trim()
+  const cleanHeight = height.trim()
+  if (cleanWidth && cleanHeight) return `${cleanWidth}" x ${cleanHeight}"`
+  if (cleanWidth) return `${cleanWidth}" wide`
+  if (cleanHeight) return `${cleanHeight}" high`
+  return 'DTF Transfer'
+}
+
+const initialApparelItems: ApparelItem[] = []
+const initialGangsheetRows: GangsheetRow[] = []
+const initialTransferRows: TransferRow[] = []
+
+const initialOtherCharges: OtherCharge[] = [
+  { key: 'artwork', label: 'Artwork Services', description: 'Artwork setup & editing', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'packaging', label: 'Packaging', description: 'Poly mailer + label', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'shipping', label: 'Estimated Shipping', description: 'Shipping & handling', enabled: false, stdCost: 0, quotedCost: 0 },
+  { key: 'discount', label: 'Discount', description: 'Special discount', enabled: false, stdCost: 0, quotedCost: 0 },
+]
+
+function calculateQuotationTotals({
+  productTotals,
+  otherCharges,
+}: {
+  productTotals: ProductTotals
+  otherCharges: OtherCharge[]
 }) {
+  const itemsTotal = productTotals.apparel + productTotals.gangsheet + productTotals.transfers + productTotals.leadItems
+  const enabled = otherCharges.filter(charge => charge.enabled)
+  const shipping = enabled.find(charge => charge.key === 'shipping')?.quotedCost ?? 0
+  const nonTaxCharges = enabled
+    .filter(charge => !['shipping', 'discount'].includes(charge.key))
+    .reduce((sum, charge) => sum + charge.quotedCost, 0)
+  const discount = enabled.find(charge => charge.key === 'discount')?.quotedCost ?? 0
+  const subtotal = itemsTotal + shipping + nonTaxCharges
+  const finalTotal = +(Math.max(subtotal + discount, 0)).toFixed(2)
+
+  return { itemsTotal, shipping, subtotal, discount, finalTotal }
+}
+
+function CustomerCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string, customer?: Record<string, any>) => void }) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  return <div className="nq-search-picker">
-    <div className="nq-search-input-wrap">
-      <Search size={15}/>
-      <input className="al-input" value={open ? search : label} placeholder={placeholder}
-        onFocus={() => { setOpen(true); setSearch(''); onSearch('') }}
-        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
-        onChange={e => { setSearch(e.target.value); onSearch(e.target.value); setOpen(true) }}/>
-      {value ? <button type="button" className="nq-search-clear" title="Clear selection" onMouseDown={e => e.preventDefault()} onClick={() => onChange('')}><X size={14}/></button> : <ChevronDown size={15}/>}
+  const ref = useRef<HTMLDivElement>(null)
+  const { data } = useQuery({
+    queryKey: ['customers-suggest', value],
+    // list endpoint wraps rows as { success, data: { rows, total } }
+    queryFn: () => api.get(`/customers?limit=20&search=${encodeURIComponent(value)}`)
+      .then(r => r.data.data?.rows ?? r.data.rows ?? []),
+    enabled: value.length > 0,
+  })
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="nq-select"
+        placeholder="Search customer name..."
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && data && data.length > 0 && (
+        <div className="nq-dropdown" style={{ position: 'absolute', zIndex: 50, width: '100%', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          {data.map((c: Record<string, any>) => (
+            <button key={c.id} className="nq-dropdown-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }}
+              onMouseDown={() => { onChange(c.name, c.id, c); setOpen(false) }}>
+              <div style={{ fontWeight: 500 }}>{c.name}</div>
+              {c.company && <div style={{ fontSize: 11, color: '#64748b' }}>{c.company}</div>}
+              {c.email && <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.email}</div>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
-    {open && <div className="nq-search-menu">
-      {optional && <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { onChange(''); setOpen(false) }}>No linked lead</button>}
-      {loading && <div className="nq-search-empty">Searching…</div>}
-      {!loading && options.map(option => <button type="button" key={option.id} onMouseDown={e => e.preventDefault()} onClick={() => { onChange(option.id, option); setOpen(false) }}><strong>{option.primary}</strong><span>{option.secondary}</span></button>)}
-      {!loading && options.length === 0 && <div className="nq-search-empty">No matching record found</div>}
-    </div>}
-  </div>
+  )
 }
 
-function ArtworkUpload({ label, artworkLabel, artworkUrl, uploading, onUpload, onClear }: {
-  label: string; artworkLabel: string; artworkUrl: string; uploading: boolean
-  onUpload: (file: File) => void; onClear: () => void
+function SupplierCombobox({ value, onChange }: { value: string; onChange: (text: string, id?: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const { data } = useQuery({
+    queryKey: ['suppliers-suggest', value],
+    queryFn: () => api.get(`/suppliers?limit=20&search=${encodeURIComponent(value)}`).then(r => r.data.data?.rows ?? []),
+    enabled: value.length > 0,
+  })
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="nq-select"
+        placeholder="Type supplier name..."
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && data && data.length > 0 && (
+        <div className="nq-dropdown" style={{ position: 'absolute', zIndex: 50, width: '100%', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          {data.map((c: { id: string; name: string; email?: string }) => (
+            <button key={c.id} className="nq-dropdown-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px' }}
+              onMouseDown={() => { onChange(c.name, c.id); setOpen(false) }}>
+              <div style={{ fontWeight: 500 }}>{c.name}</div>
+              {c.email && <div style={{ fontSize: 11, color: '#64748b' }}>{c.email}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuoteHeader({
+  status,
+  quoteNumber,
+  revisionNumber,
+  quoteDate,
+  setQuoteDate,
+  validUntil,
+  setValidUntil,
+  agent,
+  setAgent,
+}: {
+  status: QuoteStatus
+  quoteNumber: string
+  revisionNumber: number
+  quoteDate: string
+  setQuoteDate: (v: string) => void
+  validUntil: string
+  setValidUntil: (v: string) => void
+  agent: string
+  setAgent: (agent: string) => void
 }) {
-  const inputId = `art-${crypto.randomUUID()}`
-  return <div className="nq-art-upload">
-    {artworkLabel ? <div className="nq-art-selected">
-      {artworkUrl && !/\.pdf($|\?)/i.test(artworkUrl) ? <img src={artworkUrl} alt={artworkLabel}/> : <FileText size={24}/>}
-      <span title={artworkLabel}>{artworkLabel}</span><button type="button" title="Remove" onClick={onClear}><X size={13}/></button>
-    </div> : <label htmlFor={inputId} className={uploading ? 'disabled' : ''}><Upload size={15}/><span>{uploading ? 'Uploading…' : label}</span></label>}
-    <input id={inputId} type="file" accept="image/*,.pdf,.ai,.eps,.svg" disabled={uploading} onChange={e => { const file = e.target.files?.[0]; if (file) onUpload(file); e.currentTarget.value = '' }}/>
-  </div>
+  const isRevised = revisionNumber > 1
+  return (
+    <section className="nq-info-bar">
+      <div className="nq-info-field">
+        <label>Quote #</label>
+        <div className="nq-quote-num">
+          <input className="nq-input nq-input-readonly" value={quoteNumber || 'AUTO-GENERATED'} readOnly />
+          <span className="nq-badge nq-badge-draft">{status}</span>
+          {isRevised && (
+            <span className="nq-badge nq-badge-approved" title={`This quote has been edited ${revisionNumber - 1} time(s)`}>
+              Revised · v{revisionNumber}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" type="date" value={quoteDate} onChange={e => { setQuoteDate(e.target.value); setValidUntil(addDays(e.target.value, 7)) }} /></div>
+      <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
+      <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
+      <div className="nq-info-field">
+        <label>Sales Agent</label>
+        <input className="nq-input" placeholder="Agent name" value={agent} onChange={e => setAgent(e.target.value)} />
+      </div>
+    </section>
+  )
+}
+
+function SupplierSection({
+  billingAddress,
+  setBillingAddress,
+  shippingAddress,
+  setShippingAddress,
+  sameAsBilling,
+  setSameAsBilling,
+}: {
+  billingAddress: string
+  setBillingAddress: (v: string) => void
+  shippingAddress: string
+  setShippingAddress: (v: string) => void
+  sameAsBilling: boolean
+  setSameAsBilling: (same: boolean) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Address</h3></div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="nq-address-block">
+          <div className="nq-address-header"><span className="nq-field-label">Billing Address</span></div>
+          <textarea
+            className="nq-textarea"
+            rows={4}
+            placeholder="Billing address..."
+            value={billingAddress}
+            onChange={e => setBillingAddress(e.target.value)}
+          />
+        </div>
+        <div className="nq-address-block">
+          <div className="nq-address-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="nq-field-label">Shipping Address</span>
+            <label className="nq-same-billing" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={sameAsBilling}
+                onChange={e => {
+                  setSameAsBilling(e.target.checked)
+                  if (e.target.checked) setShippingAddress(billingAddress)
+                }}
+              />
+              Same as billing
+            </label>
+          </div>
+          <textarea
+            className="nq-textarea"
+            rows={4}
+            placeholder="Shipping address..."
+            value={sameAsBilling ? billingAddress : shippingAddress}
+            onChange={e => { if (!sameAsBilling) setShippingAddress(e.target.value) }}
+            readOnly={sameAsBilling}
+            style={sameAsBilling ? { opacity: 0.6, cursor: 'not-allowed', resize: 'none' } : {}}
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+type QuoteTab = 'apparel' | 'dtf' | 'gangsheet'
+
+const QUOTE_TABS: { key: QuoteTab; icon: string; label: string; desc: string; color: string }[] = [
+  { key: 'apparel',   icon: '👕', label: 'Custom Printed Apparel', desc: 'T-Shirts, Hoodies, Caps with DTF / screen prints',  color: '#0ea5e9' },
+  { key: 'dtf',       icon: '🖨️', label: 'DTF Transfers',          desc: 'Gang-sheet cut heat transfers quoted by size & qty', color: '#f97316' },
+  { key: 'gangsheet', icon: '📐', label: 'Gangsheet',              desc: 'Full gang sheets with multiple artwork designs',     color: '#8b5cf6' },
+]
+
+function QuoteTypeSelector({ activeTab, onChange, tabTotals }: {
+  activeTab: QuoteTab
+  onChange: (tab: QuoteTab) => void
+  tabTotals: Record<QuoteTab, number>
+}) {
+  return (
+    <section className="nq-card nq-type-selector-card">
+      <div className="nq-type-selector-hd">
+        <h3>Quote Type</h3>
+        <span className="nq-type-hint">Select ONE — each type generates its own PDF layout</span>
+      </div>
+      <div className="nq-tab-cards">
+        {QUOTE_TABS.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            className={cn('nq-tab-card', activeTab === tab.key && 'nq-tab-card-active')}
+            style={activeTab === tab.key ? { borderColor: tab.color, '--tab-color': tab.color } as React.CSSProperties : undefined}
+            onClick={() => onChange(tab.key)}
+          >
+            <span className="nq-tab-icon">{tab.icon}</span>
+            <div className="nq-tab-text">
+              <strong>{tab.label}</strong>
+              <span>{tab.desc}</span>
+            </div>
+            <div className="nq-tab-right">
+              {activeTab === tab.key
+                ? <span className="nq-tab-selected" style={{ background: tab.color }}>✓ Selected</span>
+                : <span className="nq-tab-select-hint">Click to select</span>}
+              {tabTotals[tab.key] > 0 && (
+                <span className="nq-tab-total">${fmt(tabTotals[tab.key])}</span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function OtherChargesSection({
+  charges,
+  toggleCharge,
+  updateCharge,
+}: {
+  charges: OtherCharge[]
+  toggleCharge: (key: OtherCharge['key']) => void
+  updateCharge: (key: OtherCharge['key'], patch: Partial<OtherCharge>) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-other-header"><input type="checkbox" checked readOnly /><span className="nq-other-title">Other Charges</span><span className="nq-other-hint">(independent from product rows)</span></div>
+      <div className="nq-other-grid">
+        {charges.map(item => (
+          <div key={item.key} className={cn('nq-other-item', item.enabled && 'nq-other-item-active')}>
+            <label className="nq-other-item-check">
+              <input type="checkbox" checked={item.enabled} onChange={() => toggleCharge(item.key)} />
+              <div><strong className={cn(item.key === 'discount' && 'nq-discount-label')}>{item.label}{item.key === 'discount' && <Edit3 size={11} style={{ marginLeft: 4 }} />}</strong><span>{item.description}</span></div>
+            </label>
+            <div className="nq-other-costs">
+              <div className="nq-other-cost-col"><span>STD Cost</span><div className="nq-money-input nq-money-sm"><span>$</span><input type="number" step={0.01} value={Math.abs(item.stdCost)} onChange={e => updateCharge(item.key, { stdCost: item.stdCost < 0 ? -Math.abs(+e.target.value) : +e.target.value })} /></div></div>
+              <div className="nq-other-cost-col"><span>Quoted</span><div className={cn('nq-money-input nq-money-sm', item.key === 'discount' && 'nq-money-discount')}><span>{item.quotedCost < 0 ? '-$' : '$'}</span><input type="number" step={0.01} value={Math.abs(item.quotedCost)} onChange={e => updateCharge(item.key, { quotedCost: item.quotedCost < 0 ? -Math.abs(+e.target.value) : +e.target.value })} /></div></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function NotesSection({ customerNotes, internalNotes, setCustomerNotes, setInternalNotes }: {
+  customerNotes: string
+  internalNotes: string
+  setCustomerNotes: (value: string) => void
+  setInternalNotes: (value: string) => void
+}) {
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading"><Package size={14} /><h3>Notes</h3></div>
+      <div className="nq-notes-grid">
+        <div className="nq-notes-col"><label>Customer Notes <small>(visible to customer)</small></label><textarea className="nq-textarea" rows={4} value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} /></div>
+        <div className="nq-notes-col"><label>Internal Notes <small>(visible to team only)</small></label><textarea className="nq-textarea" rows={4} value={internalNotes} onChange={e => setInternalNotes(e.target.value)} /></div>
+      </div>
+    </section>
+  )
+}
+
+interface RevisionRow {
+  id: string
+  quote_number: string
+  revision_number: number | null
+  parent_quote_id: string | null
+  status: string
+  total: number | string
+  created_at: string
+}
+
+function PreviousQuotesSection({ quoteId }: { quoteId?: string }) {
+  const navigate = useNavigate()
+
+  const { data: revisions = [] } = useQuery({
+    queryKey: ['quote-revisions', quoteId],
+    queryFn: () => api.get(`/quotations/${quoteId}/revisions`).then(r => r.data.data ?? []),
+    enabled: !!quoteId,
+  })
+
+  // Nothing to show for a brand-new quote or a quote with no other revisions.
+  if (!quoteId || (revisions as RevisionRow[]).length <= 1) return null
+
+  const revLabel = (r: RevisionRow) =>
+    !r.revision_number || r.revision_number <= 1 || !r.parent_quote_id
+      ? 'Original'
+      : `Rev. ${r.revision_number - 1}`
+
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+  const badgeClass = (s: string) =>
+    s === 'Approved' ? 'nq-badge-approved'
+    : s === 'Rejected' || s === 'Expired' ? 'nq-badge-rejected'
+    : s === 'Sent' ? 'nq-badge-sent'
+    : 'nq-badge-draft'
+
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header">
+        <span>Previous / Revised Quotations</span>
+        <button className="nq-link-btn" onClick={() => navigate('/quotes')}>View All</button>
+      </div>
+      <div className="nq-prev-quotes">
+        {(revisions as RevisionRow[]).map(q => (
+          <div key={q.id} className="nq-prev-quote-row">
+            <div className="nq-prev-quote-id">
+              <button
+                className="nq-link-btn nq-qt-link"
+                onClick={() => q.id !== quoteId && navigate(`/quotes/${q.id}`)}
+                disabled={q.id === quoteId}
+              >
+                {q.quote_number} ({revLabel(q)})
+              </button>
+              <span className={`nq-badge ${badgeClass(q.status)}`}>{q.status}</span>
+            </div>
+            <div className="nq-prev-quote-meta">
+              <span>{fmtDate(q.created_at)}</span>
+              <span className="nq-prev-amount">${fmt(Number(q.total) || 0)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PricingSummary({ totals }: { totals: ReturnType<typeof calculateQuotationTotals> }) {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><span>Pricing Summary</span></div>
+      <table className="nq-pricing-table">
+        <tbody>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Items Total</label></td><td>${fmt(totals.itemsTotal)}</td></tr>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Shipping</label></td><td>${fmt(totals.shipping)}</td></tr>
+          <tr className="nq-pricing-subtotal"><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Subtotal</label></td><td>${fmt(totals.subtotal)}</td></tr>
+          <tr><td><label className="nq-pricing-check"><input type="checkbox" checked readOnly /> Discount</label></td><td className="nq-pricing-discount">${fmt(totals.discount)}</td></tr>
+        </tbody>
+        <tfoot><tr className="nq-pricing-total-row"><td>Total</td><td><strong className="nq-total-quoted">${fmt(totals.finalTotal)}</strong></td></tr></tfoot>
+      </table>
+    </div>
+  )
+}
+
+function TermsSection({ paymentTerms, paymentMethod, productionTime, deliveryMethod, currency, setPaymentTerms, setPaymentMethod, setProductionTime, setDeliveryMethod, setCurrency }: {
+  paymentTerms: string
+  paymentMethod: string
+  productionTime: string
+  deliveryMethod: string
+  currency: string
+  setPaymentTerms: (value: string) => void
+  setPaymentMethod: (value: string) => void
+  setProductionTime: (value: string) => void
+  setDeliveryMethod: (value: string) => void
+  setCurrency: (value: string) => void
+}) {
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header"><span>Terms &amp; Conditions</span></div>
+      <div className="nq-terms-grid">
+        <div className="nq-terms-field"><label>Payment Terms</label><select className="nq-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}><option>Net 15</option><option>Net 30</option><option>Due on Receipt</option></select></div>
+        <div className="nq-terms-field"><label>Payment Method</label><select className="nq-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Bank Transfer</option><option>Zelle</option><option>PayPal</option><option>Cash App</option><option>Credit Card</option><option>Cash</option><option>Check</option></select></div>
+        <div className="nq-terms-field"><label>Production Time</label><select className="nq-select" value={productionTime} onChange={e => setProductionTime(e.target.value)}><option>2 - 3 Business Days</option><option>3 - 5 Business Days</option><option>5 - 7 Business Days</option></select></div>
+        <div className="nq-terms-field"><label>Delivery Method</label><select className="nq-select" value={deliveryMethod} onChange={e => setDeliveryMethod(e.target.value)}><option>Standard Shipping</option><option>Express Shipping</option><option>Local Pickup</option></select></div>
+        <div className="nq-terms-field"><label>Currency</label><select className="nq-select" value={currency} onChange={e => setCurrency(e.target.value)}><option>USD - US Dollar</option><option>CAD - Canadian Dollar</option><option>GBP - Pound Sterling</option></select></div>
+      </div>
+    </div>
+  )
+}
+
+function ActionBar({ status, setStatus, onSave, onConvert, onPreview, activeTab, saving, onSendToCustomer, onRequestApproval }: {
+  status: QuoteStatus; setStatus: (status: QuoteStatus) => void
+  onSave: () => void; onConvert: () => void
+  onPreview: () => void; activeTab: QuoteTab
+  saving?: boolean; onSendToCustomer: () => void; onRequestApproval: () => void
+}) {
+  const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
+  const tab = QUOTE_TABS.find(t => t.key === activeTab)!
+  const previewLabel = `${tab.icon} Preview ${tab.label} PDF`
+  return (
+    <div className="nq-bottom-bar">
+      <div className="nq-bottom-left">
+        <button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}>
+          <Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}
+        </button>
+        <button className="lb-action-btn" onClick={onPreview} title={`Preview ${tab.label} PDF`}>
+          {previewLabel}
+        </button>
+      </div>
+      <div className="nq-bottom-center">
+        <button className="lb-action-btn lb-action-primary" onClick={onSendToCustomer} disabled={saving} style={{ gap: 6 }}>
+          <Send size={13} /> Send to Customer
+        </button>
+      </div>
+      <div className="nq-bottom-right">
+        <button className="lb-action-btn" onClick={onRequestApproval} disabled={saving}>Request Approval</button>
+        <button className="lb-action-btn nq-convert-btn" onClick={onConvert}>Convert to Invoice</button>
+        <button className="lb-action-btn" onClick={e => setMoreAnchor(e.currentTarget)}>More Actions <ChevronDown size={13} /></button>
+        <span className="nq-badge nq-badge-draft">{status}</span>
+      </div>
+      <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+        <MenuItem onClick={() => { copyText(window.location.href, 'Quote link copied'); setMoreAnchor(null) }}>
+          <Copy size={14} style={{ marginRight: 8 }} /> Copy Link
+        </MenuItem>
+        <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}>
+          <ExternalLink size={14} style={{ marginRight: 8 }} /> {previewLabel}
+        </MenuItem>
+      </Menu>
+    </div>
+  )
+}
+
+// ── Customer info section (auto-filled from lead) ──────────────────────────
+// Compact read-only row for the selected-customer summary card
+function SummaryItem({ label, value }: { label: string; value?: string }) {
+  if (!value) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      <span style={{ fontSize: 13, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
+    </div>
+  )
+}
+
+function CustomerInfoSection({
+  leadId, leadNumber, customerSource,
+  customerId, customerText, onSelectCustomer, onClearCustomer,
+  customerName, companyName, billingEmail, contactNumber,
+  whatsapp, wechat, customerCategory,
+  shippingCountry, shippingState, shippingCity, zipCode,
+}: {
+  leadId: string | null; leadNumber: string; customerSource: string
+  customerId: string | null; customerText: string
+  onSelectCustomer: (text: string, id?: string, customer?: Record<string, any>) => void
+  onClearCustomer: () => void
+  customerName: string
+  companyName: string
+  billingEmail: string
+  contactNumber: string
+  whatsapp: string
+  wechat: string
+  customerCategory: string
+  shippingCountry: string
+  shippingState: string
+  shippingCity: string
+  zipCode: string
+}) {
+  const navigate = useNavigate()
+  const location = [shippingCity, shippingState, shippingCountry].filter(Boolean).join(', ')
+  return (
+    <section className="nq-card">
+      <div className="nq-card-heading">
+        <div className="nq-section-num-icon"><User2 size={14} /></div>
+        <h3>Customer Information</h3>
+        {leadId && <span className="nq-badge nq-badge-ai" style={{ marginLeft: 8 }}>Auto-Filled from Lead</span>}
+        {customerId && !leadId && <span className="nq-badge nq-badge-active" style={{ marginLeft: 8 }}>Linked Customer</span>}
+      </div>
+
+      {leadId && (
+        <div className="nq-locked-fields-row">
+          <div className="nq-locked-field">
+            <label>Reference Lead ID</label>
+            <input className="nq-input nq-input-readonly" value={leadNumber || leadId} readOnly />
+            <span className="nq-from-lead-hint">locked · from lead</span>
+          </div>
+          {customerSource && (
+            <div className="nq-locked-field">
+              <label>Customer Source</label>
+              <input className="nq-input nq-input-readonly" value={customerSource} readOnly />
+              <span className="nq-from-lead-hint">locked · from lead</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Customer selector — the only entry point; details live on the Customers record */}
+      <div className="nq-cinfo-field nq-cinfo-field-wide">
+        <label className="nq-field-label">Select Customer</label>
+        <CustomerCombobox value={customerText} onChange={onSelectCustomer} />
+        <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, display: 'block' }}>
+          Search a saved customer — their details fill in automatically.{' '}
+          New customer?{' '}
+          <button type="button" className="nq-link-btn" style={{ padding: 0, fontSize: 11 }}
+            onClick={() => navigate('/customers')}>
+            Create one in Customers
+          </button>
+        </span>
+      </div>
+
+      {customerId && (
+        /* Linked customer — compact read-only summary; data flows to preview/print */
+        <div style={{
+          border: '1px solid var(--border-default, #e2e8f0)', borderRadius: 10,
+          padding: '14px 16px', background: '#f8fafc', marginTop: 12,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{
+              display: 'grid', gap: '12px 24px', flex: 1,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            }}>
+              <SummaryItem label="Customer" value={customerName} />
+              <SummaryItem label="Company" value={companyName} />
+              <SummaryItem label="Billing Email" value={billingEmail} />
+              <SummaryItem label="Contact" value={contactNumber} />
+              <SummaryItem label="WhatsApp" value={whatsapp} />
+              <SummaryItem label="WeChat" value={wechat} />
+              <SummaryItem label="Category" value={customerCategory} />
+              <SummaryItem label="Location" value={location} />
+              <SummaryItem label="ZIP" value={zipCode} />
+            </div>
+            <button type="button" className="lb-action-btn" style={{ flexShrink: 0 }} onClick={onClearCustomer}>
+              Change
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ── Item image upload cell ─────────────────────────────────────────────────
+function ImageUploadCell({
+  imageUrl, label, onUpload, onRemove, uploading,
+}: {
+  imageUrl?: string | null; label: string
+  onUpload: (file: File) => void; onRemove: () => void; uploading?: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
+      {imageUrl ? (
+        <div className="nq-img-thumb-wrap">
+          <img src={imageUrl} className="nq-img-thumb" alt={label} />
+          <button className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
+        </div>
+      ) : (
+        <div className="nq-img-placeholder" onClick={() => inputRef.current?.click()}>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+            <rect width="20" height="20" rx="4" fill="#e2e8f0" />
+            <path d="M4 14l4-4 3 3 2-2 3 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="7" cy="7" r="1.5" fill="#94a3b8" />
+          </svg>
+          <span>{label}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Lead product interest items grid ──────────────────────────────────────
+function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (items: LeadItem[]) => void }) {
+  const totalQty = items.reduce((sum, item) => sum + item.qty, 0)
+  const totalArtworks = items.reduce((sum, item) => sum + item.artwork_count, 0)
+  const sectionTotal = items.reduce((sum, item) => sum + item.qty * item.unit_price, 0)
+  const updateItem = (id: string, patch: Partial<LeadItem>) =>
+    setItems(items.map(item => (item.id === id ? { ...item, ...patch } : item)))
+  const removeItem = (id: string) =>
+    setItems(items.filter(item => item.id !== id))
+  const addItem = () =>
+    setItems([...items, { id: uid(), description: '', qty: 1, sizes: '', colors: '', artwork_count: 0, unit_price: 0, sort_order: items.length }])
+
+  return (
+    <section className="nq-card">
+      <div className="nq-section-header">
+        <span className="nq-section-num">★</span>
+        <h3>Product Interest Items</h3>
+        <span className="nq-badge nq-badge-ai">Auto-Filled from Lead</span>
+      </div>
+      <div className="nq-table-wrap">
+        <table className="nq-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item / Description</th>
+              <th>Qty</th>
+              <th>Sizes</th>
+              <th>Colors</th>
+              <th>Artwork #</th>
+              <th>Unit Price</th>
+              <th>Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={item.id}>
+                <td className="nq-td-num">{idx + 1}</td>
+                <td><input className="nq-table-input" value={item.description} onChange={e => updateItem(item.id, { description: e.target.value })} placeholder="Item name..." /></td>
+                <td><input className="nq-table-input" type="number" min={0} value={item.qty} onChange={e => updateItem(item.id, { qty: +e.target.value })} /></td>
+                <td><input className="nq-table-input" value={item.sizes} onChange={e => updateItem(item.id, { sizes: e.target.value })} placeholder="S,M,L" /></td>
+                <td><input className="nq-table-input" value={item.colors} onChange={e => updateItem(item.id, { colors: e.target.value })} placeholder="Black" /></td>
+                <td><input className="nq-table-input" type="number" min={0} value={item.artwork_count} onChange={e => updateItem(item.id, { artwork_count: +e.target.value })} /></td>
+                <td>
+                  <div className="nq-money-input nq-money-quoted">
+                    <span>$</span>
+                    <input type="number" min={0} step={0.01} value={item.unit_price} onChange={e => updateItem(item.id, { unit_price: +e.target.value })} />
+                  </div>
+                </td>
+                <td className="nq-td-total">${fmt(item.qty * item.unit_price)}</td>
+                <td><button className="nq-icon-btn nq-delete-btn" onClick={() => removeItem(item.id)}><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '14px 0' }}>No items yet — click &ldquo;Add Item&rdquo; below.</td></tr>
+            )}
+          </tbody>
+          <tfoot><tr className="live-summary-row">
+            <td colSpan={2}><span className="live-summary-title">Items Summary</span></td>
+            <td><div className="live-summary-stat"><span>Total Qty</span><strong>{totalQty}</strong></div></td>
+            <td colSpan={2}></td>
+            <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{totalArtworks}</strong></div></td>
+            <td></td>
+            <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(sectionTotal)}</strong></div></td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
+      <button className="nq-add-row-btn" onClick={addItem}><Plus size={12} /> Add Item</button>
+    </section>
+  )
+}
+
+// ── CRM context snapshot (sidebar panel) ──────────────────────────────────
+function CRMSnapshotPanel({ lead }: { lead: Record<string, unknown> | null }) {
+  if (!lead) return null
+  const fields: { label: string; value: string | null }[] = [
+    { label: 'Last Customer Message',  value: (lead.last_message as string) || null },
+    { label: 'Communication Channel',  value: (lead.communication_channel as string) || null },
+    { label: 'Number of Messages',     value: lead.message_count != null ? String(lead.message_count) : null },
+    { label: 'Attachments Count',      value: lead.attachment_count != null ? String(lead.attachment_count) : null },
+    { label: 'Customer Intent',        value: (lead.customer_intent as string) || null },
+    { label: 'Pending Questions',      value: (lead.pending_questions as string) || null },
+  ].filter(f => f.value && f.value !== '0')
+
+  if (fields.length === 0) return null
+
+  return (
+    <div className="nq-sidebar-card">
+      <div className="nq-sidebar-card-header">
+        <MessageSquare size={13} style={{ color: '#7c3aed' }} />
+        <span>CRM Context Snapshot</span>
+        <span className="nq-badge nq-badge-ai">From Lead</span>
+      </div>
+      <ul className="nq-crm-list">
+        {fields.map(f => (
+          <li key={f.label} className="nq-crm-item">
+            <span className="nq-crm-label">{f.label}</span>
+            <span className="nq-crm-value">{f.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 export function NewQuotationPage() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const [form, setForm] = useState<any>({
-    customer_id: '', lead_id: '', order_type: 'dtf' as QuoteType, valid_until: '', status: 'Draft', currency: 'USD',
-    payment_terms: 'Net 15', payment_method: 'Bank Transfer', discount_type: 'fixed', discount_value: 0,
-    tax_percentage: 0, shipping_amount: 0, estimated_shipping_cost: 0, rush_services: 0,
-    notes: '', internal_notes: '',
-  })
-  const [lines, setLines] = useState<Line[]>([blankLine()])
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [leadSearch, setLeadSearch] = useState('')
-  const [uploading, setUploading] = useState<Record<string, boolean>>({})
-  const debouncedCustomerSearch = useDebounced(customerSearch)
-  const debouncedLeadSearch = useDebounced(leadSearch)
+  const navigate     = useNavigate()
+  const queryClient  = useQueryClient()
+  const location     = useLocation()
+  const { id: quoteId } = useParams<{ id?: string }>()
+  const { user } = useAuthStore()
 
-  const { data: customers = [], isFetching: customersLoading } = useQuery<any[]>({
-    queryKey: ['quote-customers', debouncedCustomerSearch],
-    queryFn: () => api.get('/customers', { params: { limit: 30, search: debouncedCustomerSearch } }).then(r => r.data.data.rows),
-  })
-  const { data: customerDetail, isFetching: customerLoading } = useQuery<any>({
-    queryKey: ['quote-customer', form.customer_id],
-    queryFn: () => api.get(`/customers/${form.customer_id}`).then(r => r.data.data),
-    enabled: !!form.customer_id,
-  })
-  const { data: leads = [], isFetching: leadsLoading } = useQuery<any[]>({
-    queryKey: ['quote-leads', debouncedLeadSearch],
-    queryFn: () => api.get('/leads/list', { params: { limit: 30, search: debouncedLeadSearch } }).then(r => r.data.data.rows),
-  })
-  const { data: selectedLead } = useQuery<any>({
-    queryKey: ['quote-lead', form.lead_id],
-    queryFn: () => api.get(`/leads/${form.lead_id}`).then(r => r.data.data),
-    enabled: !!form.lead_id,
-  })
-  const { data: existing } = useQuery<any>({
-    queryKey: ['quotation', id],
-    queryFn: () => api.get(`/quotations/${id}`).then(r => r.data.data ?? r.data),
-    enabled: !!id,
+  const fromCustomerId = (location.state as Record<string, unknown>)?.fromCustomerId as string | undefined
+
+  // ── Base form state ──
+  const [status, setStatus] = useState<QuoteStatus>('Draft')
+  const [quoteDate, setQuoteDate] = useState(today())
+  const [validUntil, setValidUntil] = useState(() => addDays(today(), 7))
+  const [agent, setAgent] = useState(user?.name ?? '')
+  const [supplierText, setSupplierText] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [billingAddress, setBillingAddress] = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
+  const [sameAsBilling, setSameAsBilling] = useState(false)
+  const [activeTab, setActiveTab] = useState<QuoteTab>('apparel')
+  const [apparelItems, setApparelItems] = useState<ApparelItem[]>(initialApparelItems)
+  const [gangsheetRows, setGangsheetRows] = useState<GangsheetRow[]>(initialGangsheetRows)
+  const [transferRows, setTransferRows] = useState<TransferRow[]>(initialTransferRows)
+  const [otherCharges, setOtherCharges] = useState<OtherCharge[]>(initialOtherCharges)
+  const [supplierNotes, setSupplierNotes] = useState('')
+  const [internalNotes, setInternalNotes] = useState('')
+  const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
+  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer')
+  const [productionTime, setProductionTime] = useState('2 - 3 Business Days')
+  const [deliveryMethod, setDeliveryMethod] = useState('Standard Shipping')
+  const [currency, setCurrency] = useState('USD - US Dollar')
+
+  // ── Customer link state ──
+  const [customerId,       setCustomerId]       = useState<string | null>(null)
+  const [customerText,     setCustomerText]     = useState('')
+
+  // ── Lead intake / auto-fill state ──
+  const [formInitialized, setFormInitialized] = useState(false)
+  const [leadId,           setLeadId]           = useState<string | null>(null)
+  const [leadNumber,       setLeadNumber]       = useState('')
+  const [customerSource,   setCustomerSource]   = useState('')
+  const [customerName,     setCustomerName]     = useState('')
+  const [companyName,      setCompanyName]      = useState('')
+  const [billingEmail,     setBillingEmail]     = useState('')
+  const [contactNumber,    setContactNumber]    = useState('')
+  const [whatsapp,         setWhatsapp]         = useState('')
+  const [wechat,           setWechat]           = useState('')
+  const [customerCategory, setCustomerCategory] = useState('')
+  const [shippingCountry,  setShippingCountry]  = useState('')
+  const [shippingState,    setShippingState]    = useState('')
+  const [shippingCity,     setShippingCity]     = useState('')
+  const [zipCode,          setZipCode]          = useState('')
+  const [dueDate,          setDueDate]          = useState('')
+  const [customerReqSummary, setCustomerReqSummary] = useState('')
+  const [quoteEstimate,    setQuoteEstimate]    = useState('')
+  const [leadItems,        setLeadItems]        = useState<LeadItem[]>([])
+
+  // ── Remote data ──
+  const { data: quotationData } = useQuery<Record<string, unknown>>({
+    queryKey: ['quotation', quoteId],
+    queryFn:  () => api.get(`/quotations/${quoteId}`).then(r => r.data.data),
+    enabled:  !!quoteId,
   })
 
+  const { data: leadData } = useQuery<Record<string, unknown>>({
+    queryKey: ['lead', leadId],
+    queryFn:  () => api.get(`/leads/${leadId}`).then(r => r.data.data),
+    enabled:  !!leadId,
+  })
+
+  const { data: fromCustomerData } = useQuery<Record<string, unknown>>({
+    queryKey: ['customer', fromCustomerId],
+    queryFn:  () => api.get(`/customers/${fromCustomerId}`).then(r => r.data.data),
+    enabled:  !!fromCustomerId && !quoteId,
+  })
+
+  // ── Auto-populate from customer when navigating via "Convert to Quote" ──
   useEffect(() => {
-    if (!existing) return
-    setForm((current: any) => ({
-      ...current, ...existing, customer_id: existing.customer_id ?? '', lead_id: existing.lead_id ?? '',
-      order_type: existing.order_type === 'apparel' ? 'apparel' : 'dtf',
-      discount_type: existing.discount_type ?? 'fixed',
-      discount_value: Number(existing.discount_value ?? existing.discount_pct ?? 0),
-      tax_percentage: Number(existing.tax_percentage ?? existing.tax_pct ?? 0),
-      shipping_amount: Number(existing.shipping_amount ?? 0),
-      estimated_shipping_cost: Number(existing.estimated_shipping ?? 0),
-      rush_services: Number(existing.rush_services ?? 0),
-    }))
-    const saved = existing.items ?? []
-    setLines(saved.length ? saved.map((x: any, i: number) => ({
-      key: x.id ?? String(i), product_id: x.product_id ?? '', description: x.description ?? '', artwork_id: x.artwork_id ?? '',
-      front_artwork_id: x.front_artwork_id ?? '', back_artwork_id: x.back_artwork_id ?? '', brand: x.brand ?? '', model: x.model ?? '',
-      color: x.colors ?? '', sizes: x.sizes ?? '', artwork_width: Number(x.artwork_width ?? 0), artwork_height: Number(x.artwork_height ?? 0),
-      artwork_count: Number(x.artwork_count) || 1,
-      qty: Number(x.qty) || 1, unit_price: Number(x.unit_price) || 0,
-      artwork_url: x.artwork_file_url ?? x.artwork_image ?? '', artwork_label: [x.artwork_no, x.artwork_name].filter(Boolean).join(' · '),
-      front_artwork_url: x.front_artwork_url ?? x.front_image ?? '', front_artwork_label: [x.front_artwork_no, x.front_artwork_name].filter(Boolean).join(' · '),
-      back_artwork_url: x.back_artwork_url ?? x.back_image ?? '', back_artwork_label: [x.back_artwork_no, x.back_artwork_name].filter(Boolean).join(' · '),
-    })) : [blankLine()])
-  }, [existing])
+    if (!fromCustomerData || formInitialized) return
+    const c = fromCustomerData as Record<string, any>
+    setCustomerId(c.id as string)
+    setCustomerText(c.name ?? '')
+    setCustomerName(c.name ?? '')
+    setCompanyName(c.company ?? '')
+    setBillingEmail(c.email ?? '')
+    setContactNumber(c.phone ?? '')
+    setWhatsapp(c.whatsapp ?? '')
+    if (c.lead_id) setLeadId(c.lead_id as string)
 
-  useEffect(() => {
-    if (!customerDetail || existing) return
-    setForm((current: any) => ({ ...current, lead_id: current.lead_id || customerDetail.lead_id || '' }))
-  }, [customerDetail, existing])
+    // Address fields
+    setShippingCountry(c.country ?? '')
+    setShippingState(c.state ?? '')
+    setShippingCity(c.city ?? '')
+    setZipCode(c.zip ?? '')
 
-  const selectedCustomer = customerDetail
-  const shipping = customerDetail?.addresses?.find((a: any) => a.address_type === 'shipping' && a.is_default)
-    ?? customerDetail?.addresses?.find((a: any) => a.address_type === 'shipping')
-  const billing = customerDetail?.addresses?.find((a: any) => a.address_type === 'billing' && a.is_default)
-    ?? customerDetail?.addresses?.find((a: any) => a.address_type === 'billing')
-  const legacyShipping = [selectedCustomer?.address_line1, selectedCustomer?.city, selectedCustomer?.state, selectedCustomer?.zip, selectedCustomer?.country].filter(Boolean).join(', ')
-  const shippingSnapshot = addressText(shipping) || legacyShipping
-  const billingSnapshot = addressText(billing) || selectedCustomer?.billing_address || shippingSnapshot
+    // Billing address: prefer stored billing_address, else build from address parts
+    const builtAddress = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
+    const billingAddr = c.billing_address || builtAddress
+    if (billingAddr) setBillingAddress(billingAddr)
 
-  const amounts = useMemo(() => {
-    const items = lines.reduce((sum, line) => sum + (Number(line.qty) || 0) * (Number(line.unit_price) || 0), 0)
-    const subtotal = items + (Number(form.shipping_amount) || 0) + (Number(form.rush_services) || 0)
-    const rawDiscount = form.discount_type === 'fixed'
-      ? Number(form.discount_value) || 0
-      : subtotal * (Number(form.discount_value) || 0) / 100
-    const discount = Math.min(Math.max(rawDiscount, 0), subtotal)
-    const tax = (subtotal - discount) * (Number(form.tax_percentage) || 0) / 100
-    return { items, subtotal, discount, tax, total: subtotal - discount + tax }
-  }, [lines, form.shipping_amount, form.rush_services, form.discount_type, form.discount_value, form.tax_percentage])
+    // Shipping address: if same_as_shipping is true, copy billing; else same built address
+    if (c.same_as_shipping && billingAddr) {
+      setShippingAddress(billingAddr)
+      setSameAsBilling(true)
+    } else if (builtAddress) {
+      setShippingAddress(builtAddress)
+    }
+  }, [fromCustomerData, formInitialized])
 
-  const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-  const updateLine = (key: string, patch: Partial<Line>) => setLines(value => value.map(line => line.key === key ? { ...line, ...patch } : line))
-  const uploadArtwork = async (lineKey: string, position: 'artwork' | 'front' | 'back', file: File) => {
-    const uploadKey = `${lineKey}:${position}`
-    setUploading(value => ({ ...value, [uploadKey]: true }))
+  // Fills all customer fields from a full customer record (used by the
+  // Customer Information selector). Fetches the complete row because the
+  // /customers list only returns a few columns.
+  async function fillFromCustomer(id: string) {
     try {
-      const data = new FormData()
-      data.append('file', file)
-      data.append('name', file.name.replace(/\.[^.]+$/, ''))
-      data.append('status', 'Draft')
-      data.append('artwork_type', 'custom')
-      if (form.lead_id) data.append('lead_id', form.lead_id)
-      const response = await api.post('/artworks', data, { headers: { 'Content-Type': 'multipart/form-data' } })
-      const artwork = response.data.data ?? response.data
-      const common = { [`${position}_artwork_url`]: artwork.file_url ?? '', [`${position}_artwork_label`]: `${artwork.artwork_no} · ${artwork.name}` }
-      if (position === 'artwork') updateLine(lineKey, { artwork_id: artwork.id, artwork_url: artwork.file_url ?? '', artwork_label: `${artwork.artwork_no} · ${artwork.name}`, artwork_width: Number(artwork.width_inches ?? 0), artwork_height: Number(artwork.height_inches ?? 0) })
-      else updateLine(lineKey, { ...common, [`${position}_artwork_id`]: artwork.id } as Partial<Line>)
-      qc.invalidateQueries({ queryKey: ['artworks'] })
-      toast.success(`${position === 'artwork' ? 'Artwork' : `${position[0].toUpperCase()}${position.slice(1)} artwork`} uploaded`)
-    } catch (error: any) {
-      toast.error(error.response?.data?.message ?? error.response?.data?.error ?? 'Artwork upload failed')
-    } finally {
-      setUploading(value => ({ ...value, [uploadKey]: false }))
+      const c = (await api.get(`/customers/${id}`)).data.data as Record<string, any>
+      setCustomerName(c.name ?? '')
+      setCompanyName(c.company ?? '')
+      setBillingEmail(c.email ?? '')
+      setContactNumber(c.phone ?? '')
+      setWhatsapp(c.whatsapp ?? '')
+      setShippingCountry(c.country ?? '')
+      setShippingState(c.state ?? '')
+      setShippingCity(c.city ?? '')
+      setZipCode(c.zip ?? '')
+      const built = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
+      const billingAddr = c.billing_address || built
+      if (billingAddr) setBillingAddress(billingAddr)
+      if (c.same_as_shipping && billingAddr) { setShippingAddress(billingAddr); setSameAsBilling(true) }
+      else if (built) setShippingAddress(built)
+    } catch { /* keep whatever the user typed */ }
+  }
+
+  // Called by the customer combobox. When a saved customer is chosen (id set),
+  // link it and auto-fill; when the user just types, only track the text.
+  function handleSelectCustomer(text: string, id?: string) {
+    setCustomerText(text)
+    if (id) { setCustomerId(id); fillFromCustomer(id) }
+    else if (!text) { setCustomerId(null) }
+  }
+
+  // "Change" — unlink the customer and clear the derived fields so the manual
+  // form starts blank (quote-specific fields like req summary are untouched).
+  function handleClearCustomer() {
+    setCustomerId(null)
+    setCustomerText('')
+    setCustomerName(''); setCompanyName(''); setBillingEmail(''); setContactNumber('')
+    setWhatsapp(''); setWechat('')
+    setShippingCountry(''); setShippingState(''); setShippingCity(''); setZipCode('')
+    setBillingAddress(''); setShippingAddress(''); setSameAsBilling(false)
+  }
+
+  // ── Initialize form from quotation once loaded ──
+  useEffect(() => {
+    if (!quotationData || formInitialized) return
+    const q = quotationData as Record<string, any>
+    const savedQuoteDate = q.created_at ? String(q.created_at).slice(0, 10) : today()
+    setQuoteDate(savedQuoteDate)
+    setValidUntil(q.valid_until ? String(q.valid_until).slice(0, 10) : addDays(savedQuoteDate, 7))
+    setLeadId(q.lead_id ?? null)
+    if (q.customer_id) { setCustomerId(q.customer_id as string); setCustomerText(q.customer_name ?? '') }
+    // When lead has customer name but no linked customer record, show name in main field
+    if (!q.customer_id && !q.supplier_id && q.customer_name) { setSupplierText(q.customer_name) }
+    setCustomerSource(q.customer_source ?? '')
+    setCustomerName(q.customer_name ?? '')
+    setCompanyName(q.company_name ?? '')
+    setBillingEmail(q.billing_email ?? '')
+    setContactNumber(q.contact_number ?? '')
+    setWhatsapp(q.whatsapp ?? '')
+    setWechat(q.wechat ?? '')
+    setCustomerCategory(q.customer_category ?? '')
+    setShippingCountry(q.shipping_country ?? '')
+    setShippingState(q.shipping_state ?? '')
+    setShippingCity(q.shipping_city ?? '')
+    setZipCode(q.zip_code ?? '')
+    setDueDate(q.due_date ?? '')
+    setCustomerReqSummary(q.customer_requirement_summary ?? '')
+    setQuoteEstimate(q.quote_estimate != null ? String(q.quote_estimate) : '')
+    setBillingAddress(q.billing_address ?? '')
+    setShippingAddress(q.shipping_address ?? '')
+    if (q.internal_notes) setInternalNotes(q.internal_notes)
+    const orderType = ((q.order_type as string) || 'apparel') as QuoteTab
+    setActiveTab(orderType)
+
+    if (Array.isArray(q.items) && q.items.length > 0) {
+      if (orderType === 'apparel') {
+        setApparelItems(q.items.map((item: Record<string, any>) => ({
+          id:           item.id ?? uid(),
+          description:  item.description ?? '',
+          variant:      item.colors ?? '',
+          sizes:        item.sizes ?? '',
+          qty:          item.qty ?? 1,
+          quotedCost:   item.unit_price ?? 0,
+          front_image:  item.front_image ?? null,
+          back_image:   item.back_image  ?? null,
+        })))
+      } else if (orderType === 'dtf') {
+        setTransferRows(q.items.map((item: Record<string, any>) => ({
+          id:            item.id ?? uid(),
+          ...parseTransferSize(item.description),
+          qty:           item.qty ?? 1,
+          quotedCost:    item.unit_price ?? 0,
+          artwork_image: item.artwork_image ?? item.front_image ?? null,
+        })))
+      } else if (orderType === 'gangsheet') {
+        setGangsheetRows(q.items.map((item: Record<string, any>) => ({
+          id:          item.id ?? uid(),
+          size:        item.description ?? '22" x 60"',
+          noArtworks:  item.artwork_count ?? 1,
+          qtySheets:   item.qty ?? 1,
+          quotedCost:  item.unit_price ?? 0,
+          front_image: item.front_image ?? null,
+          back_image:  item.back_image  ?? null,
+        })))
+      }
+    }
+    if (q.status) setStatus(q.status as QuoteStatus)
+
+    // Restore other charges from saved values
+    if (q.estimated_shipping > 0 || q.rush_services > 0 || q.discount_pct > 0) {
+      setOtherCharges(prev => prev.map(charge => {
+        if (charge.key === 'shipping' && q.estimated_shipping > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.estimated_shipping) }
+        if (charge.key === 'discount' && q.discount_pct > 0)
+          return { ...charge, enabled: true, quotedCost: -Number(q.discount_amt || 0) }
+        if (charge.key === 'artwork' && q.rush_services > 0)
+          return { ...charge, enabled: true, quotedCost: Number(q.rush_services) }
+        return charge
+      }))
+    }
+    if (q.payment_terms) setPaymentTerms(q.payment_terms)
+    if (q.payment_method) setPaymentMethod(q.payment_method)
+    if (q.customer_notes) setSupplierNotes(q.customer_notes)
+
+    setFormInitialized(true)
+  }, [quotationData, formInitialized])
+
+  // ── Fetch lead_number once leadId is known ──
+  useEffect(() => {
+    if (leadData) {
+      const l = leadData as Record<string, any>
+      setLeadNumber(l.lead_number ?? '')
+    }
+  }, [leadData])
+
+  const navigateAfterSave = useRef<string | null>(null)
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      quoteId ? api.put(`/quotations/${quoteId}`, data) : api.post('/quotations', data),
+    onSuccess: (res: any) => {
+      const q = res.data?.data
+      toast.success(quoteId ? 'Quote updated successfully' : `Quote ${q?.quote_number ?? ''} saved!`)
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      if (quoteId) {
+        queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
+        queryClient.invalidateQueries({ queryKey: ['quote-print', quoteId] })
+      }
+      // If preview was triggered, navigate to print page after save completes
+      if (navigateAfterSave.current) {
+        const path = navigateAfterSave.current
+        navigateAfterSave.current = null
+        navigate(path)
+        return
+      }
+      if (!quoteId && q?.id) {
+        // Stay on the edit page so artworks can be uploaded right away
+        navigate(`/quotes/${q.id}`, { replace: true })
+        return
+      }
+      navigate('/quotes')
+    },
+    onError: (err: any) => {
+      navigateAfterSave.current = null
+      toast.error(err.response?.data?.message ?? 'Could not save quote')
+    },
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
+      api.patch(`/quotations/${id}/status`, { status: newStatus }),
+    onSuccess: (_res, vars) => {
+      toast.success(`Quote marked as ${vars.newStatus}`)
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      navigate('/quotes')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not update status'),
+  })
+
+  const handleSendToCustomer = () => {
+    if (quoteId) {
+      statusMutation.mutate({ id: quoteId, newStatus: 'Sent' })
+    } else {
+      toast.error('Save the quote first, then mark as Sent')
     }
   }
-  const changeType = (type: QuoteType) => {
-    if (form.order_type === type) return
-    setForm((value: any) => ({ ...value, order_type: type }))
-    setLines([blankLine()])
+
+  const handleRequestApproval = () => {
+    if (quoteId) {
+      statusMutation.mutate({ id: quoteId, newStatus: 'Sent' })
+    } else {
+      toast.error('Save the quote first, then request approval')
+    }
   }
-  const isLineReady = (line: Line) => form.order_type === 'dtf'
-    ? !!line.description && Number(line.qty) > 0
-    : !!line.description && !!line.color && !!line.sizes && Number(line.qty) > 0
 
-  const mutation = useMutation({
-    mutationFn: async ({ preview }: { preview: boolean }) => {
-      const items = lines.filter(isLineReady).map(({ key, color, ...line }) => {
-        return {
-          ...line,
-          product_id: line.product_id || null,
-          artwork_id: line.artwork_id || null,
-          front_artwork_id: line.front_artwork_id || null,
-          back_artwork_id: line.back_artwork_id || null,
-          artwork_image: line.artwork_url || null,
-          front_image: line.front_artwork_url || null,
-          back_image: line.back_artwork_url || null,
-          product_type: form.order_type === 'dtf' ? 'DTF Transfers' : 'Custom Apparel',
-          decoration_method: 'DTF', colors: color || null,
-          artwork_count: form.order_type === 'dtf' ? line.artwork_count : Number(!!line.front_artwork_id) + Number(!!line.back_artwork_id),
-          qty: Number(line.qty), unit_price: Number(line.unit_price), unit: 'pcs',
-        }
+  const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
+  const apparelQty     = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty, 0), [apparelItems])
+  const apparelArtwork = useMemo(() => apparelItems.reduce((sum, item) => sum + Number(Boolean(item.front_image)) + Number(Boolean(item.back_image)), 0), [apparelItems])
+  const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
+  const gangsheetQty   = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets, 0), [gangsheetRows])
+  const gangsheetArtwork = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheetRows])
+  const transfersTotal = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0), [transferRows])
+  const transfersQty   = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty, 0), [transferRows])
+  const activeTotal    = activeTab === 'apparel' ? apparelTotal : activeTab === 'dtf' ? transfersTotal : gangsheetTotal
+  const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges }), [activeTotal, otherCharges])
+
+  const updateApparelItem = (id: string, patch: Partial<ApparelItem>) => setApparelItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item))
+  const updateGangsheetRow = (id: string, patch: Partial<GangsheetRow>) => setGangsheetRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const updateTransferRow = (id: string, patch: Partial<TransferRow>) => setTransferRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const toggleCharge = (key: OtherCharge['key']) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, enabled: !charge.enabled } : charge))
+  const updateCharge = (key: OtherCharge['key'], patch: Partial<OtherCharge>) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, ...patch } : charge))
+
+  const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
+  const uploadItemImage = async (
+    rowId: string,
+    field: 'front_image' | 'back_image' | 'artwork_image',
+    file: File,
+    updater: (id: string, patch: Record<string, string | null>) => void
+  ) => {
+    setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      updater(rowId, { [field]: res.data.url })
+    } catch {
+      toast.error('Image upload failed')
+    } finally {
+      setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
+    }
+  }
+
+  const handleSave = () => {
+    let sortIdx = 0
+    const allItems: Record<string, unknown>[] = []
+
+    if (activeTab === 'apparel') {
+      apparelItems.forEach(item => {
+        const color = (item.variant || '').trim() || undefined
+        allItems.push({
+          description:   item.description || 'Apparel Item',
+          qty:           item.qty,
+          unit_price:    item.quotedCost,
+          colors:        color,
+          sizes:         item.sizes || undefined,
+          artwork_count: Number(Boolean(item.front_image)) + Number(Boolean(item.back_image)),
+          sort_order:    sortIdx++,
+          front_image:   item.front_image || null,
+          back_image:    item.back_image  || null,
+        })
       })
-      const payload = {
-        ...form,
-        // Search controls use an empty string for "not selected". The API's
-        // optional UUID fields correctly use null, so normalize them here.
-        lead_id: form.lead_id || null,
-        customer_id: form.customer_id || null,
-        supplier_id: form.supplier_id || null,
-        sales_agent_id: form.sales_agent_id || null,
-        valid_until: form.valid_until || null,
-        due_date: form.due_date || null,
-        customer_name: selectedCustomer?.name ?? existing?.customer_name ?? null,
-        company_name: selectedCustomer?.company_name ?? selectedCustomer?.company ?? null,
-        billing_email: selectedCustomer?.email ?? null,
-        contact_number: selectedCustomer?.mobile_number ?? selectedCustomer?.phone ?? selectedCustomer?.company_phone_number ?? null,
-        whatsapp: selectedCustomer?.whatsapp ?? null,
-        shipping_address: shippingSnapshot || null,
-        billing_address: billingSnapshot || null,
-        shipping_city: shipping?.city ?? selectedCustomer?.city ?? null,
-        shipping_state: shipping?.state ?? selectedCustomer?.state ?? null,
-        shipping_country: shipping?.country ?? selectedCustomer?.country ?? null,
-        zip_code: shipping?.zipcode ?? selectedCustomer?.zip ?? null,
-        discount_value: Number(form.discount_value) || 0,
-        tax_percentage: Number(form.tax_percentage) || 0,
-        shipping_amount: Number(form.shipping_amount) || 0,
-        rush_services: Number(form.rush_services) || 0,
-        estimated_shipping_cost: Number(form.estimated_shipping_cost) || 0,
-        discount_pct: form.discount_type === 'percentage' ? Number(form.discount_value) || 0 : 0,
-        items,
-      }
-      const response = id ? await api.put(`/quotations/${id}`, payload) : await api.post('/quotations', payload)
-      return { quote: response.data.data ?? response.data, preview }
-    },
-    onSuccess: ({ quote, preview }) => {
-      qc.invalidateQueries({ queryKey: ['quotations'] })
-      toast.success(id ? 'Quotation updated' : 'Quotation created')
-      const savedId = quote.id ?? id
-      if (!savedId) throw new Error('Saved quotation id was not returned')
-      navigate(preview ? `/quotes/${savedId}/print` : '/quotes')
-    },
-    onError: (error: unknown) => toast.error(getApiError(error)),
-  })
+    } else if (activeTab === 'dtf') {
+      transferRows.forEach(row => {
+        allItems.push({
+          description:   formatTransferSize(row.width, row.height),
+          qty:           row.qty,
+          unit_price:    row.quotedCost,
+          artwork_count: 1,
+          sort_order:    sortIdx++,
+          artwork_image: row.artwork_image || null,
+        })
+      })
+    } else if (activeTab === 'gangsheet') {
+      gangsheetRows.forEach(row => {
+        allItems.push({
+          description:   row.size || 'Gangsheet',
+          qty:           row.qtySheets,
+          unit_price:    row.quotedCost,
+          artwork_count: row.noArtworks,
+          sort_order:    sortIdx++,
+          front_image:   row.front_image || null,
+          back_image:    row.back_image  || null,
+        })
+      })
+    }
 
-  const saveDisabled = mutation.isPending || !form.customer_id || !lines.some(isLineReady)
+    const discountCharge  = otherCharges.find(c => c.key === 'discount')
+    const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
+    const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
+    const packagingCharge = otherCharges.find(c => c.key === 'packaging')
+    const subtotalVal     = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
+    const discountPct     = discountCharge?.enabled && subtotalVal > 0
+      ? +((Math.abs(discountCharge.quotedCost) / subtotalVal) * 100).toFixed(4)
+      : 0
+    const estimatedShipping = shippingCharge?.enabled ? (shippingCharge.quotedCost || 0) : 0
+    const rushServices = (artworkCharge?.enabled ? (artworkCharge.quotedCost || 0) : 0)
+      + (packagingCharge?.enabled ? (packagingCharge.quotedCost || 0) : 0)
 
-  return <div className="nq-page nq-redesign">
-    <header className="ncust-header">
-      <div><div className="ns-breadcrumb"><span onClick={() => navigate('/quotations')}>Quotations</span><ChevronRight size={13}/><strong>{id ? 'Edit' : 'New'} Quotation</strong></div><h2 className="ns-page-title">{id ? 'Edit' : 'New'} Quotation</h2></div>
-      <div className="ns-header-actions"><button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button><button className="lb-action-btn" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: false })}><Save size={15}/> {mutation.isPending ? 'Saving…' : 'Save Draft'}</button><button className="lb-action-btn lb-action-primary" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: true })}><Eye size={15}/> Save & Preview</button></div>
-    </header>
+    saveMutation.mutate({
+      order_type:                   activeTab,
+      lead_id:                      leadId        || undefined,
+      customer_id:                  customerId    || undefined,
+      supplier_id:                  supplierId    || undefined,
+      billing_address:              billingAddress || undefined,
+      shipping_address:             sameAsBilling ? billingAddress : shippingAddress || undefined,
+      internal_notes:               internalNotes || undefined,
+      discount_pct:                 discountPct,
+      items:                        allItems,
+      estimated_shipping:           estimatedShipping,
+      rush_services:                rushServices,
+      payment_terms:                paymentTerms,
+      payment_method:               paymentMethod || undefined,
+      customer_notes:               supplierNotes || undefined,
+      // Customer intake fields
+      company_name:                 companyName       || undefined,
+      customer_name:                customerName      || undefined,
+      billing_email:                billingEmail      || undefined,
+      contact_number:               contactNumber     || undefined,
+      whatsapp:                     whatsapp          || undefined,
+      wechat:                       wechat            || undefined,
+      customer_category:            customerCategory  || undefined,
+      customer_source:              customerSource    || undefined,
+      shipping_country:             shippingCountry   || undefined,
+      shipping_state:               shippingState     || undefined,
+      shipping_city:                shippingCity      || undefined,
+      zip_code:                     zipCode           || undefined,
+      due_date:                     dueDate           || undefined,
+      customer_requirement_summary: customerReqSummary || undefined,
+      quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
+      valid_until:                  validUntil || undefined,
+    })
+  }
 
-    <section className="nq-card nq-type-card">
-      <div className="nq-card-heading"><FileText size={17}/><h3>Quotation Type</h3><span className="nq-muted">Fields and preview change automatically by business type.</span></div>
-      <div className="nq-type-grid">
-        <button type="button" className={`nq-type-choice ${form.order_type === 'dtf' ? 'active' : ''}`} onClick={() => changeType('dtf')}><Image size={24}/><span><strong>DTF Transfers</strong><small>Artwork, size, quantity and rate per transfer</small></span></button>
-        <button type="button" className={`nq-type-choice ${form.order_type === 'apparel' ? 'active' : ''}`} onClick={() => changeType('apparel')}><Shirt size={24}/><span><strong>Custom Apparel</strong><small>Garment, color, size ratio and front/back artwork</small></span></button>
+  return (
+    <div className="nq-page">
+      <header className="nq-header">
+        <div className="nq-header-left">
+          <nav className="nq-breadcrumb">
+            <button className="nq-breadcrumb-link" onClick={() => navigate('/quotes')}>Quotes</button>
+            <span className="nq-breadcrumb-sep">›</span>
+            <span className="nq-breadcrumb-current">{quoteId ? 'Edit Quotation' : 'New Quotation'}</span>
+          </nav>
+          <h1 className="nq-title">{quoteId ? 'Edit Quotation' : 'New Quotation'}</h1>
+          <p className="nq-subtitle">
+            {leadId ? `Auto-filled from lead ${leadNumber || leadId}` : 'Create, review and send quotation to customer'}
+          </p>
+        </div>
+      </header>
+
+      <QuoteHeader
+        status={status}
+        quoteNumber={(quotationData as Record<string, any>)?.quote_number ?? ''}
+        revisionNumber={Number((quotationData as Record<string, any>)?.revision_number ?? 1)}
+        quoteDate={quoteDate} setQuoteDate={setQuoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
+        agent={agent} setAgent={setAgent} />
+
+      <div className="nq-body">
+        <main className="nq-main">
+          <SupplierSection billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
+
+
+          <CustomerInfoSection
+            leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}
+            customerId={customerId} customerText={customerText}
+            onSelectCustomer={handleSelectCustomer} onClearCustomer={handleClearCustomer}
+            customerName={customerName}
+            companyName={companyName}
+            billingEmail={billingEmail}
+            contactNumber={contactNumber}
+            whatsapp={whatsapp}
+            wechat={wechat}
+            customerCategory={customerCategory}
+            shippingCountry={shippingCountry}
+            shippingState={shippingState}
+            shippingCity={shippingCity}
+            zipCode={zipCode}
+          />
+
+          {(leadId || leadItems.length > 0) && (
+            <LeadItemsSection items={leadItems} setItems={setLeadItems} />
+          )}
+
+          {/* ── Quote Type Selector ── */}
+          <QuoteTypeSelector
+            activeTab={activeTab}
+            onChange={setActiveTab}
+            tabTotals={{ apparel: apparelTotal, dtf: transfersTotal, gangsheet: gangsheetTotal }}
+          />
+
+          {/* ── Active Tab Content ── */}
+          {activeTab === 'apparel' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table"><thead><tr><th>#</th><th>Item Description <small>Brand | Model</small></th><th>Color</th><th>Qty (Shirts)</th><th>Sizes <small>Size Ratio</small></th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
+                {apparelItems.map((item, idx) => (
+                  <tr key={item.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td><textarea className="nq-table-input nq-description-input" rows={2} placeholder="T-Shirt Premium — Gildan | 18500" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></td>
+                    <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><input className="nq-table-input nq-size-ratio-input" placeholder="S:10, M:20, L:15" value={item.sizes} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })} /></td>
+                    <td><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /></td>
+                    <td><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={3}><span className="live-summary-title">Apparel Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
+                <td></td>
+                <td colSpan={2}><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparelArtwork}</strong></div></td>
+                <td></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
+              <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), description: '', variant: '', sizes: '', qty: 1, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Apparel Row</button>
+            </section>
+          )}
+
+          {activeTab === 'dtf' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
+                {transferRows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Width" aria-label={`Transfer ${idx + 1} width in inches`} value={row.width} onChange={e => updateTransferRow(row.id, { width: e.target.value })} /></td>
+                    <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><ImageUploadCell imageUrl={row.artwork_image} label="Artwork" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {transferRows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
+              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, quotedCost: 0, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
+            </section>
+          )}
+
+          {activeTab === 'gangsheet' && (
+            <section className="nq-card">
+              <div className="nq-section-header">
+                <span className="nq-tab-section-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>📐 Gangsheet</span>
+              </div>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
+                {gangsheetRows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td className="nq-td-num">{idx + 1}</td>
+                    <td>
+                      {GANGSHEET_SIZES.includes(row.size) ? (
+                        <select className="nq-table-select" value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value === '__custom__' ? '' : e.target.value })}>
+                          {GANGSHEET_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                          <option value="__custom__">Custom...</option>
+                        </select>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input className="nq-table-input" style={{ width: 90 }} placeholder='e.g. 36" x 60"' value={row.size} onChange={e => updateGangsheetRow(row.id, { size: e.target.value })} autoFocus />
+                          <button type="button" title="Back to list" onClick={() => updateGangsheetRow(row.id, { size: '22" x 60"' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 13, lineHeight: 1 }}>✕</button>
+                        </div>
+                      )}
+                    </td>
+                    <td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td>
+                    <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
+                    <td><ImageUploadCell imageUrl={row.front_image} label="Front" uploading={uploadingImg[`${row.id}-front_image`]} onUpload={f => uploadItemImage(row.id, 'front_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { front_image: null })} /></td>
+                    <td><ImageUploadCell imageUrl={row.back_image} label="Back" uploading={uploadingImg[`${row.id}-back_image`]} onUpload={f => uploadItemImage(row.id, 'back_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { back_image: null })} /></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td>
+                    <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+                {gangsheetRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No sheets yet — click "Add Gangsheet Row" below.</td></tr>}
+              </tbody><tfoot><tr className="live-summary-row">
+                <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtwork}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
+                <td colSpan={3}></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(gangsheetTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
+              <button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Gangsheet Row</button>
+            </section>
+          )}
+
+          <OtherChargesSection charges={otherCharges} toggleCharge={toggleCharge} updateCharge={updateCharge} />
+          <NotesSection customerNotes={supplierNotes} internalNotes={internalNotes} setCustomerNotes={setSupplierNotes} setInternalNotes={setInternalNotes} />
+          <ArtworkUploader quotationId={quoteId} />
+        </main>
+
+        <aside className="nq-sidebar">
+          <CRMSnapshotPanel lead={leadData ?? null} />
+          <PreviousQuotesSection quoteId={quoteId} />
+          <PricingSummary totals={totals} />
+          <TermsSection paymentTerms={paymentTerms} paymentMethod={paymentMethod} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setPaymentMethod={setPaymentMethod} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
+        </aside>
       </div>
-    </section>
 
-    <section className="nq-card">
-      <div className="nq-card-heading"><UserRound size={17}/><h3>Customer & Quotation Details</h3></div>
-      <div className="nq-detail-grid">
-        <div className="al-field"><label>Customer *</label><SearchPicker value={form.customer_id} label={selectedCustomer ? `${selectedCustomer.customer_no ?? selectedCustomer.customer_number} · ${selectedCustomer.name}` : ''} placeholder="Search customer by name…" loading={customersLoading} onSearch={setCustomerSearch} onChange={customer_id => setForm({ ...form, customer_id })} options={customers.map(c => ({ ...c, primary: c.name, secondary: [c.customer_no ?? c.customer_number, c.company_name, c.email].filter(Boolean).join(' · ') }))}/></div>
-        <div className="al-field"><label>Originating Lead</label><SearchPicker value={form.lead_id} label={selectedLead ? `${selectedLead.lead_number} · ${selectedLead.customer_name ?? selectedLead.supplier_name ?? ''}` : ''} placeholder="Search lead by name or number…" loading={leadsLoading} optional onSearch={setLeadSearch} onChange={lead_id => setForm({ ...form, lead_id })} options={leads.map(l => ({ ...l, primary: l.customer_name ?? l.supplier_name ?? 'Unnamed lead', secondary: l.lead_number }))}/></div>
-        <div className="al-field"><label>Valid Until</label><input className="al-input" type="date" value={form.valid_until ?? ''} onChange={e => setForm({ ...form, valid_until: e.target.value })}/></div>
-        <div className="al-field"><label>Payment Terms</label><select className="al-input" value={form.payment_terms} onChange={e => setForm({ ...form, payment_terms: e.target.value })}>{['Due on Receipt', 'Net 7', 'Net 15', 'Net 30'].map(x => <option key={x}>{x}</option>)}</select></div>
-      </div>
-      {form.customer_id && <div className="nq-customer-preview">
-        <div><UserRound size={18}/><span><small>Customer</small><strong>{customerLoading ? 'Loading…' : selectedCustomer?.name || '—'}</strong><em>{selectedCustomer?.company_name ?? selectedCustomer?.company ?? ''}</em></span></div>
-        <div><FileText size={18}/><span><small>Contact</small><strong>{selectedCustomer?.email || 'No email saved'}</strong><em>{selectedCustomer?.mobile_number ?? selectedCustomer?.phone ?? selectedCustomer?.company_phone_number ?? 'No phone saved'}</em></span></div>
-        <div><MapPin size={18}/><span><small>Shipping Address</small><strong className="nq-address-text">{shippingSnapshot || 'No shipping address saved'}</strong></span></div>
-      </div>}
-    </section>
-
-    <section className="nq-card">
-      <div className="nq-card-heading"><h3>{form.order_type === 'dtf' ? 'DTF Transfer Items' : 'Custom Apparel Items'}</h3><span className="nq-muted">Amount is calculated automatically: Quantity × Rate.</span><button className="lb-action-btn" style={{ marginLeft: 'auto' }} onClick={() => setLines(value => [...value, blankLine()])}><Plus size={14}/> Add item</button></div>
-      <div className="nq-table-wrap"><table className="nq-table nq-quote-entry"><thead>{form.order_type === 'dtf' ? <tr><th>#</th><th>Description *</th><th>Artwork *</th><th>Width (in)</th><th>Height (in)</th><th>Qty *</th><th>Rate / piece ($) *</th><th>Amount</th><th/></tr> : <tr><th>#</th><th>Item Description *</th><th>Brand</th><th>Model</th><th>Color *</th><th>Size Ratio *</th><th>Qty *</th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price ($) *</th><th>Amount</th><th/></tr>}</thead>
-        <tbody>{lines.map((line, index) => <tr key={line.key}>
-          <td className="nq-row-number">{index + 1}</td>
-          <td><input className="al-input" value={line.description} onChange={e => updateLine(line.key, { description: e.target.value })} placeholder={form.order_type === 'dtf' ? 'Premium Quality DTF Transfer' : 'T-Shirt (Premium)'}/></td>
-          {form.order_type === 'dtf' ? <>
-            <td><ArtworkUpload label="Upload artwork" artworkLabel={line.artwork_label} artworkUrl={line.artwork_url} uploading={!!uploading[`${line.key}:artwork`]} onUpload={file => uploadArtwork(line.key, 'artwork', file)} onClear={() => updateLine(line.key, { artwork_id: '', artwork_url: '', artwork_label: '' })}/></td>
-            <td><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.artwork_width || ''} onChange={e => updateLine(line.key, { artwork_width: +e.target.value })}/></td>
-            <td><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.artwork_height || ''} onChange={e => updateLine(line.key, { artwork_height: +e.target.value })}/></td>
-          </> : <>
-            <td><input className="al-input" value={line.brand} onChange={e => updateLine(line.key, { brand: e.target.value })} placeholder="Gildan"/></td>
-            <td><input className="al-input" value={line.model} onChange={e => updateLine(line.key, { model: e.target.value })} placeholder="18500"/></td>
-            <td><input className="al-input" value={line.color} onChange={e => updateLine(line.key, { color: e.target.value })} placeholder="Black"/></td>
-            <td><input className="al-input" value={line.sizes} onChange={e => updateLine(line.key, { sizes: e.target.value })} placeholder="S:10, M:20, L:15, XL:5"/></td>
-          </>}
-          <td><input className="al-input nq-number" type="number" min="1" step="1" value={line.qty} onChange={e => updateLine(line.key, { qty: +e.target.value })}/></td>
-          {form.order_type === 'apparel' && <><td><ArtworkUpload label="Upload front" artworkLabel={line.front_artwork_label} artworkUrl={line.front_artwork_url} uploading={!!uploading[`${line.key}:front`]} onUpload={file => uploadArtwork(line.key, 'front', file)} onClear={() => updateLine(line.key, { front_artwork_id: '', front_artwork_url: '', front_artwork_label: '' })}/></td><td><ArtworkUpload label="Upload back" artworkLabel={line.back_artwork_label} artworkUrl={line.back_artwork_url} uploading={!!uploading[`${line.key}:back`]} onUpload={file => uploadArtwork(line.key, 'back', file)} onClear={() => updateLine(line.key, { back_artwork_id: '', back_artwork_url: '', back_artwork_label: '' })}/></td></>}
-          <td><div className="nq-money-input"><span>$</span><input className="al-input nq-number" type="number" min="0" step="0.01" value={line.unit_price || ''} onChange={e => updateLine(line.key, { unit_price: +e.target.value })}/></div></td>
-          <td><strong className="nq-line-amount">{money(line.qty * line.unit_price)}</strong><small className="nq-formula">{line.qty} × {money(line.unit_price)}</small></td>
-          <td><button className="nq-icon-btn" disabled={lines.length === 1} onClick={() => setLines(value => value.filter(item => item.key !== line.key))}><Trash2 size={15}/></button></td>
-        </tr>)}</tbody></table></div>
-    </section>
-
-    <div className="nq-bottom-layout"><section className="nq-card"><div className="nq-card-heading"><h3>Notes</h3></div><div className="al-field"><label>Customer-facing Notes</label><textarea className="al-textarea" rows={5} maxLength={500} value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Add quotation notes…"/></div><div className="al-field"><label>Internal Notes</label><textarea className="al-textarea" rows={3} value={form.internal_notes ?? ''} onChange={e => setForm({ ...form, internal_notes: e.target.value })}/></div></section>
-      <section className="nq-card nq-financial"><div className="nq-card-heading"><h3>Pricing Summary</h3></div><div className="nq-fin-grid"><div className="al-field"><label>Rush Services ($)</label><input className="al-input" type="number" min="0" step="0.01" value={form.rush_services} onChange={e => setForm({ ...form, rush_services: +e.target.value })}/></div><div className="al-field"><label>Estimated Shipping ($)</label><input className="al-input" type="number" min="0" step="0.01" value={form.shipping_amount} onChange={e => setForm({ ...form, shipping_amount: +e.target.value })}/></div><div className="al-field"><label>Discount Type</label><select className="al-input" value={form.discount_type} onChange={e => setForm({ ...form, discount_type: e.target.value })}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select></div><div className="al-field"><label>Discount {form.discount_type === 'fixed' ? '($)' : '(%)'}</label><input className="al-input" type="number" min="0" step="0.01" value={form.discount_value} onChange={e => setForm({ ...form, discount_value: +e.target.value })}/></div><div className="al-field"><label>Tax (%)</label><input className="al-input" type="number" min="0" max="100" step="0.01" value={form.tax_percentage} onChange={e => setForm({ ...form, tax_percentage: +e.target.value })}/></div><div className="al-field"><label>Payment Method</label><select className="al-input" value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>{['Bank Transfer', 'Zelle', 'PayPal', 'Credit / Debit Card', 'Cash'].map(x => <option key={x}>{x}</option>)}</select></div></div>
-        <div className="nq-summary"><span>Items Total <b>{money(amounts.items)}</b></span><span>Rush Services <b>{money(Number(form.rush_services) || 0)}</b></span><span>Shipping <b>{money(Number(form.shipping_amount) || 0)}</b></span><span>Subtotal <b>{money(amounts.subtotal)}</b></span><span>Discount <b>- {money(amounts.discount)}</b></span><span>Tax <b>{money(amounts.tax)}</b></span><span className="total">Total <b>{money(amounts.total)}</b></span></div>
-      </section></div>
-    <div className="nq-sticky-actions">
-      <span>{saveDisabled && !mutation.isPending ? 'Select a customer and add at least one complete item.' : 'Ready to save quotation'}</span>
-      <button className="lb-action-btn" onClick={() => navigate('/quotes')}>Cancel</button>
-      <button className="lb-action-btn" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: false })}><Save size={15}/> {mutation.isPending ? 'Saving…' : 'Save Draft'}</button>
-      <button className="lb-action-btn lb-action-primary" disabled={saveDisabled} onClick={() => mutation.mutate({ preview: true })}><Eye size={15}/> Save &amp; Preview</button>
+      <ActionBar
+        status={status} setStatus={setStatus}
+        onSave={handleSave} saving={saveMutation.isPending || statusMutation.isPending}
+        onSendToCustomer={handleSendToCustomer}
+        onRequestApproval={handleRequestApproval}
+        onConvert={() => navigate('/invoices/new', { state: { fromQuoteId: quoteId } })}
+        activeTab={activeTab}
+        onPreview={() => {
+          if (quoteId) {
+            navigateAfterSave.current = `/quotes/${quoteId}/print`
+            handleSave()
+          } else {
+            toast.error('Save the quote first, then click Preview')
+          }
+        }}
+      />
     </div>
-  </div>
+  )
 }

@@ -3,14 +3,12 @@ const { getNextNumber, getNextInvoiceNumber } = require('../../utils/counter')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
-function calcTotals(items, discountType, discountValue, taxPct = 0, shippingAmount = 0, rushServices = 0) {
+function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushServices = 0) {
   const itemsTotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
-  const subtotal = +(itemsTotal + Number(shippingAmount) + Number(rushServices)).toFixed(2)
-  const rawDiscount = discountType === 'fixed' ? Number(discountValue) : subtotal * (Number(discountValue) / 100)
-  const discount_amt = +Math.min(Math.max(rawDiscount, 0), subtotal).toFixed(2)
-  const tax_amt = +((subtotal - discount_amt) * (Number(taxPct) / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
-  return { subtotal, discount_amt, tax_amt, total }
+  const subtotal = +(itemsTotal + Number(estimatedShipping) + Number(rushServices)).toFixed(2)
+  const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
+  const total = +(subtotal - discount_amt).toFixed(2)
+  return { subtotal, discount_amt, tax_amt: 0, total }
 }
 
 async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
@@ -49,33 +47,21 @@ async function getById(id) {
   if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
   const items = await query(
-    `SELECT qi.*,
-            a.artwork_no, a.name AS artwork_name, a.file_url AS artwork_file_url,
-            fa.artwork_no AS front_artwork_no, fa.name AS front_artwork_name, fa.file_url AS front_artwork_url,
-            ba.artwork_no AS back_artwork_no, ba.name AS back_artwork_name, ba.file_url AS back_artwork_url
-       FROM quotation_items qi
-       LEFT JOIN artworks a ON a.id = qi.artwork_id
-       LEFT JOIN artworks fa ON fa.id = qi.front_artwork_id
-       LEFT JOIN artworks ba ON ba.id = qi.back_artwork_id
-      WHERE qi.quotation_id = $1
-      ORDER BY qi.sort_order`, [id]
+    `SELECT * FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order`, [id]
   )
   return { ...rows[0], items: items.rows }
 }
 
 async function create({
-  lead_id, customer_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items = [], created_by,
+  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items = [], created_by,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
   due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
   estimated_shipping = 0, rush_services = 0, payment_terms, payment_method, customer_notes,
-  discount_type = 'percentage', discount_value, tax_percentage = 0, shipping_amount = 0,
-  estimated_shipping_cost = 0,
 }) {
   const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
-  const effectiveDiscount = discount_value ?? discount_pct
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_type, effectiveDiscount, tax_percentage, shipping_amount, rush_services)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
 
   const client = await getClient()
   try {
@@ -105,30 +91,15 @@ async function create({
       ]
     )
     const qId = rows[0].id
-    await client.query(
-      `UPDATE quotations SET customer_id=$1, discount_type=$2, discount_value=$3,
-         tax_percentage=$4, shipping_amount=$5, estimated_shipping=$6,
-         discount_pct=$7, tax_pct=$4, tax_amt=$8, total=$9, subtotal=$10, discount_amt=$11
-       WHERE id=$12`,
-      [customer_id || null, discount_type, effectiveDiscount, tax_percentage, shipping_amount,
-       estimated_shipping_cost, discount_type === 'percentage' ? effectiveDiscount : 0,
-       tax_amt, total, subtotal, discount_amt, qId]
-    )
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image,
-           product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations,
-           brand,model,artwork_width,artwork_height,front_artwork_id,back_artwork_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [qId, item.description || null, item.qty, item.unit_price, amount, i,
          item.sizes || null, item.colors || null, item.artwork_count ?? 0,
-         item.front_image || null, item.back_image || null, item.artwork_image || null,
-         item.product_id || null, i + 1, item.product_type || item.description || null,
-         item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null,
-         item.brand || null, item.model || null, item.artwork_width ?? null, item.artwork_height ?? null,
-         item.front_artwork_id || null, item.back_artwork_id || null]
+         item.front_image || null, item.back_image || null, item.artwork_image || null]
       )
     }
     await client.query('COMMIT')
@@ -142,20 +113,15 @@ async function create({
 }
 
 async function update(id, {
-  lead_id, customer_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items,
+  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
   customer_requirement_summary, quote_estimate,
   estimated_shipping, rush_services, payment_terms, payment_method, customer_notes,
-  discount_type = 'percentage', discount_value, tax_percentage = 0,
-  shipping_amount = 0, estimated_shipping_cost,
 }, actorId) {
   const itemList = items ?? []
-  const effectiveDiscount = discount_value ?? discount_pct
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(
-    itemList, discount_type, effectiveDiscount, tax_percentage, shipping_amount, rush_services
-  )
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, 0, estimated_shipping, rush_services)
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -181,13 +147,13 @@ async function update(id, {
        RETURNING id`,
       [
         lead_id || null, supplier_id || null, order_type || null, valid_until || null,
-        subtotal, discount_type === 'percentage' ? effectiveDiscount : 0, discount_amt, tax_percentage, tax_amt, total, notes || null,
+        subtotal, discount_pct, discount_amt, 0, 0, total, notes || null,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
         shipping_address || null, billing_address || null, due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
-        estimated_shipping_cost != null ? estimated_shipping_cost : (estimated_shipping != null ? estimated_shipping : null),
+        estimated_shipping != null ? estimated_shipping : null,
         rush_services != null ? rush_services : null,
         payment_terms || null,
         payment_method || null,
@@ -196,11 +162,6 @@ async function update(id, {
       ]
     )
     if (!updated[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
-    await client.query(
-      `UPDATE quotations SET customer_id=$1, discount_type=$2, discount_value=$3,
-         tax_percentage=$4, shipping_amount=$5 WHERE id=$6`,
-      [customer_id || null, discount_type, effectiveDiscount, tax_percentage, shipping_amount, id]
-    )
 
     if (items !== undefined) {
       await client.query(`DELETE FROM quotation_items WHERE quotation_id = $1`, [id])
@@ -208,17 +169,11 @@ async function update(id, {
         const item = itemList[i]
         const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
         await client.query(
-          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image,
-             product_id,line_no,product_type,decoration_method,artwork_id,unit,print_locations,
-             brand,model,artwork_width,artwork_height,front_artwork_id,back_artwork_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [id, item.description || null, item.qty, item.unit_price, amount, i,
            item.sizes || null, item.colors || null, item.artwork_count ?? 0,
-           item.front_image || null, item.back_image || null, item.artwork_image || null,
-           item.product_id || null, i + 1, item.product_type || item.description || null,
-           item.decoration_method || null, item.artwork_id || null, item.unit || 'pcs', item.print_locations || null,
-           item.brand || null, item.model || null, item.artwork_width ?? null, item.artwork_height ?? null,
-           item.front_artwork_id || null, item.back_artwork_id || null]
+           item.front_image || null, item.back_image || null, item.artwork_image || null]
         )
       }
     }

@@ -225,12 +225,11 @@ async function getImportSummary() {
        COALESCE(SUM(net_product_amount), 0)::numeric(12,2) AS net_product_amount,
        COUNT(*) FILTER (WHERE source_payment_status = 'Free/Reprint')::int AS free_reprints
      FROM purchase_orders
-     WHERE deleted_at IS NULL AND source_system = 'decoinks_dtf_po_master_apr_jun_2026'`
+     WHERE deleted_at IS NULL`
   )
   const qa = await query(
     `SELECT COUNT(*)::int AS qa_notes
-     FROM po_import_qa_notes
-     WHERE source_system = 'decoinks_dtf_po_master_apr_jun_2026'`
+     FROM po_import_qa_notes`
   )
   return { ...rows[0], qa_notes: qa.rows[0].qa_notes }
 }

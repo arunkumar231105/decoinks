@@ -11,16 +11,16 @@ const router = Router()
 router.use(verifyToken)
 
 const ROLES   = ['Admin', 'Manager', 'Sales', 'Production', 'Viewer']
-const MODULES = ['Dashboard', 'Leads', 'Quotes', 'Orders', 'Design Board', 'Fulfillment', 'Finance', 'Reports', 'Settings']
+const MODULES = ['Dashboard', 'Leads', 'Quotes', 'Orders', 'Finance', 'Reports', 'Settings']
 const ACCESS  = ['Full', 'Edit', 'View', 'None']
 
 // Default permissions (fallback when DB has no entry)
 const DEFAULTS = {
-  Admin:      ['Full','Full','Full','Full','Full', 'Full', 'Full','Full','Full'],
-  Manager:    ['Full','Full','Full','Full','Edit', 'Full', 'View','Full','View'],
-  Sales:      ['View','Full','Full','Edit','View', 'View', 'None','View','None'],
-  Production: ['View','View','View','View','Full', 'Full', 'None','View','None'],
-  Viewer:     ['View','None','View','View','View', 'View', 'None','View','None'],
+  Admin:      ['Full','Full','Full','Full','Full','Full','Full'],
+  Manager:    ['Full','Full','Full','Full','View','Full','View'],
+  Sales:      ['View','Full','Full','Edit','None','View','None'],
+  Production: ['View','View','View','View','None','View','None'],
+  Viewer:     ['View','None','View','View','None','View','None'],
 }
 
 // GET /api/permissions  — returns all role permissions

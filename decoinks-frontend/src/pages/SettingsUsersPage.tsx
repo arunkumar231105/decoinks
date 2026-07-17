@@ -51,7 +51,7 @@ const ROLE_COLORS: Record<UserRole, { bg: string; color: string }> = {
   'Viewer':     { bg: '#f1f5f9', color: '#64748b' },
 }
 
-const MODULES = ['Dashboard','Leads','Quooes','Orders','Design Board','Fulfillment','Finance','Reporos','Settings']
+const MODULES = ['Dashboard','Leads','Quotes','Orders','Finance','Reports','Settings']
 
 const DEFAULT_PERMISSIONS: Record<UserRole, AccessLevel[]> = {
   'Admin':      ['Full','Full','Full','Full','Full', 'Full', 'Full','Full','Full'],
@@ -457,7 +457,6 @@ export function SettingsUsersPage() {
     </div>
   )
 }
-
 
 
 
