@@ -10782,6 +10782,10 @@ select.al-input {
 
 .nq-table-input:focus { border-color: #0d9488; }
 
+.nq-dimension-input {
+  width: 82px;
+}
+
 .nq-table-select {
   height: 30px;
   border: 1px solid #d1d5db;

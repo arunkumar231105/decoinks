@@ -56,7 +56,8 @@ interface GangsheetRow {
 
 interface TransferRow {
   id: string
-  transferSize: string
+  width: string
+  height: string
   qty: number
   stdCost: number
   quotedCost: number
@@ -106,7 +107,20 @@ const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - 
 const PRINT_LOCATIONS = ['Front Print', 'Back Print', 'Left Chest', 'Right Sleeve', 'Back Neck']
 const PRINT_SIZES = ['12x16', '10x12', '8x10', '4x4', '3x3']
 const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
-const TRANSFER_SIZES = ['12" x 12"', '12" x 16"', '10" x 12"', '8" x 10"', '4" x 4"']
+
+const parseTransferSize = (size: unknown): Pick<TransferRow, 'width' | 'height'> => {
+  const match = String(size ?? '').match(/([\d.]+)\s*(?:"|in(?:ches)?)?\s*[x×]\s*([\d.]+)/i)
+  return match ? { width: match[1], height: match[2] } : { width: '', height: '' }
+}
+
+const formatTransferSize = (width: string, height: string) => {
+  const cleanWidth = width.trim()
+  const cleanHeight = height.trim()
+  if (cleanWidth && cleanHeight) return `${cleanWidth}" x ${cleanHeight}"`
+  if (cleanWidth) return `${cleanWidth}" wide`
+  if (cleanHeight) return `${cleanHeight}" high`
+  return 'DTF Transfer'
+}
 
 const initialApparelItems: ApparelItem[] = []
 const initialGangsheetRows: GangsheetRow[] = []
@@ -1005,7 +1019,7 @@ export function NewQuotationPage() {
       } else if (orderType === 'dtf') {
         setTransferRows(q.items.map((item: Record<string, any>) => ({
           id:            item.id ?? uid(),
-          transferSize:  item.description ?? '12" x 12"',
+          ...parseTransferSize(item.description),
           qty:           item.qty ?? 1,
           stdCost:       0,
           quotedCost:    item.unit_price ?? 0,
@@ -1169,7 +1183,7 @@ export function NewQuotationPage() {
     } else if (activeTab === 'dtf') {
       transferRows.forEach(row => {
         allItems.push({
-          description:   row.transferSize || 'DTF Transfer',
+          description:   formatTransferSize(row.width, row.height),
           qty:           row.qty,
           unit_price:    row.quotedCost,
           artwork_count: 1,
@@ -1337,27 +1351,12 @@ export function NewQuotationPage() {
                 <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
                 <strong className="nq-section-total">Section Total: ${fmt(transfersTotal)}</strong>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Transfer Size</th><th>Qty</th><th>Artwork</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
                 {transferRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
-                    <td>
-                      {TRANSFER_SIZES.includes(row.transferSize) ? (
-                        <select className="nq-table-select" value={row.transferSize}
-                          onChange={e => updateTransferRow(row.id, { transferSize: e.target.value === '__custom__' ? '' : e.target.value })}>
-                          {TRANSFER_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
-                          <option value="__custom__">Custom...</option>
-                        </select>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <input className="nq-table-input" style={{ width: 90 }} placeholder='e.g. 14" x 16"'
-                            value={row.transferSize} onChange={e => updateTransferRow(row.id, { transferSize: e.target.value })} autoFocus />
-                          <button type="button" title="Back to list"
-                            onClick={() => updateTransferRow(row.id, { transferSize: '12" x 12"' })}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 13, lineHeight: 1 }}>✕</button>
-                        </div>
-                      )}
-                    </td>
+                    <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Width" aria-label={`Transfer ${idx + 1} width in inches`} value={row.width} onChange={e => updateTransferRow(row.id, { width: e.target.value })} /></td>
+                    <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={row.artwork_image} label="Artwork" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
                     <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td>
@@ -1366,9 +1365,9 @@ export function NewQuotationPage() {
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {transferRows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
+                {transferRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
               </tbody></table></div>
-              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), transferSize: '12" x 12"', qty: 1, stdCost: 1.5, quotedCost: 2, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
+              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, stdCost: 1.5, quotedCost: 2, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
             </section>
           )}
 
