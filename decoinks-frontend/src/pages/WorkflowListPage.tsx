@@ -84,7 +84,7 @@ const KIND_CONFIGS: Record<WorkflowKind, KindConfig> = {
       amount: fmtMoney(r.total),
       date: fmtDate(r.invoice_date),
       due: fmtDate(r.due_date),
-      meta: r.notes ?? '',
+      meta: '',
     }),
   },
   orders: {
@@ -107,7 +107,7 @@ const KIND_CONFIGS: Record<WorkflowKind, KindConfig> = {
       amount: fmtMoney(r.total),
       date: fmtDate(r.order_date),
       due: fmtDate(r.due_date),
-      meta: r.notes ?? '',
+      meta: '',
     }),
   },
   'purchase-orders': {
@@ -236,19 +236,6 @@ export function WorkflowListPage({ kind }: { kind: WorkflowKind }) {
           </button>
         </div>
       </div>
-
-      {kind !== 'purchase-orders' && (
-        <div className="wf-metrics">
-          <>
-            <div className="wf-metric"><span>Total</span><strong>{total}</strong></div>
-            <div className="wf-metric"><span>Loaded</span><strong>{records.length}</strong></div>
-            <div className="wf-metric">
-              <span>Needs Attention</span>
-              <strong>{records.filter(r => ['red', 'amber'].includes(STATUS_TONES[r.status] ?? '')).length}</strong>
-            </div>
-          </>
-        </div>
-      )}
 
       <div className="al-panel cust-table-wrap wf-table-wrap">
         <table className="cust-table wf-table">
