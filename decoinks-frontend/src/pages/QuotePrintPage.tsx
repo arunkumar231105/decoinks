@@ -828,8 +828,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
         <tr>
           <th style={{ width: 40 }}>S.No</th>
           <th className="left">Item Description <span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
-          <th style={{ width: 78 }}>Front Art</th>
-          <th style={{ width: 78 }}>Back Art</th>
+          <th style={{ width: 100 }}>Artwork Thumbnail</th>
           <th style={{ width: 120 }}>Size</th>
           <th style={{ width: 70 }}>QTY</th>
           <th style={{ width: 80 }}>Rate (USD)</th>
@@ -845,13 +844,8 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>
             <td>
-              {item.front_image
-                ? <img src={item.front_image} alt="front" className="art-img" />
-                : <div className="art-empty">—</div>}
-            </td>
-            <td>
-              {item.back_image
-                ? <img src={item.back_image} alt="back" className="art-img" />
+              {(item.artwork_image || item.front_image)
+                ? <img src={item.artwork_image || item.front_image || ''} alt="artwork" className="art-img" />
                 : <div className="art-empty">—</div>}
             </td>
             <td style={{ fontWeight: 600, fontSize: 11 }}>{item.description}</td>
