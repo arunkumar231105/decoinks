@@ -6,6 +6,7 @@ import { Avatar, Menu, MenuItem } from '@mui/material'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
+import { cn } from '../utils/cn'
 import {
   Bot,
   Check,
@@ -24,7 +25,6 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react'
-import { cn } from '../utils/cn'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -36,9 +36,8 @@ interface ApparelItem {
   id: string
   description: string
   color: string
-  size: string
+  sizes: string
   qty: number
-  artworkNo: string
   unitPrice: number
   front_image?: string | null
   back_image?: string | null
@@ -54,24 +53,13 @@ interface GangsheetItem {
   back_image?: string | null
 }
 
-interface GangsheetArtwork {
-  id: string
-  artworkNo: string
-  frontImage: string
-  frontSize: string
-  backImage?: string
-  backSize?: string
-  qtySheets: number
-}
-
 interface TransferItem {
   id: string
-  artworkName: string
-  size: string
+  width: string
+  height: string
   qty: number
   unitPrice: number
-  front_image?: string | null
-  back_image?: string | null
+  artwork_image?: string | null
 }
 
 // â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -79,6 +67,57 @@ interface TransferItem {
 const uid = () => Math.random().toString(36).slice(2, 9)
 const todayISO = () => new Date().toISOString().split('T')[0]
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+const parseTransferSize = (size: unknown) => {
+  const match = String(size ?? '').match(/([\d.]+)\s*(?:"|in(?:ches)?)?\s*[x×]\s*([\d.]+)/i)
+  return match ? { width: match[1], height: match[2] } : { width: '', height: '' }
+}
+
+const formatTransferSize = (width: string, height: string) =>
+  width.trim() && height.trim() ? `${width.trim()}" x ${height.trim()}"` : 'DTF Transfer'
+
+function InvoiceArtworkUpload({ imageUrl, label, onChange }: {
+  imageUrl?: string | null
+  label: string
+  onChange: (url: string | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const upload = async (file: File) => {
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const response = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      onChange(response.data.url)
+    } catch {
+      toast.error('Artwork upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+      <input ref={inputRef} type="file" accept="image/*" hidden onChange={e => {
+        const file = e.target.files?.[0]
+        if (file) upload(file)
+        e.target.value = ''
+      }} />
+      {imageUrl ? (
+        <div className="nq-img-thumb-wrap">
+          <img src={imageUrl} className="nq-img-thumb" alt={label} />
+          <button type="button" className="nq-img-remove" onClick={() => onChange(null)}><Trash2 size={9} /></button>
+        </div>
+      ) : (
+        <button type="button" className="nq-img-placeholder" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          <ImageIcon size={15} /><span>{uploading ? 'Uploading' : label}</span>
+        </button>
+      )}
+    </div>
+  )
+}
 
 const GS_SIZES = ['22"x60"', '22"x120"', '24"x60"', '30"x60"']
 const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
@@ -237,12 +276,11 @@ function getInvoiceCounters(
   apparelItems: ApparelItem[],
   gangsheetItems: GangsheetItem[],
   transferItems: TransferItem[],
-  gangsheetArtworks: GangsheetArtwork[],
 ) {
   if (orderType === 'apparel') {
     return {
       totalItems: apparelItems.length,
-      totalArtworks: new Set(apparelItems.map(row => row.artworkNo).filter(Boolean)).size,
+      totalArtworks: apparelItems.reduce((sum, row) => sum + Number(Boolean(row.front_image)) + Number(Boolean(row.back_image)), 0),
       totalqtySheets: apparelItems.reduce((sum, row) => sum + row.qty, 0),
     }
   }
@@ -250,7 +288,7 @@ function getInvoiceCounters(
   if (orderType === 'gangsheet') {
     return {
       totalItems: gangsheetItems.length,
-      totalArtworks: gangsheetArtworks.length,
+      totalArtworks: gangsheetItems.reduce((sum, row) => sum + row.numArtworks, 0),
       totalqtySheets: gangsheetItems.reduce((sum, row) => sum + row.qtySheets, 0),
     }
   }
@@ -292,8 +330,6 @@ export function NewInvoicePage() {
   // Items
   const [apparelItems, setApparelItems] = useState<ApparelItem[]>([])
   const [gangsheetItems, setGangsheetItems] = useState<GangsheetItem[]>([])
-  const [gangsheetArtworks, setGangsheetArtworks] = useState<GangsheetArtwork[]>([])
-  const [editingArtworkId, setEditingArtworkId] = useState<string | null>(null)
   const [transferItems, setTransferItems] = useState<TransferItem[]>([])
 
   // Notes
@@ -364,19 +400,17 @@ export function NewInvoicePage() {
     if (sourceQuote.order_type === 'apparel') {
       setApparelItems(items.map((it: any) => ({
         id: uid(), description: it.description || it.item || '',
-        color: it.colors || it.color || '', size: it.size || 'M',
-        qty: Number(it.qty) || 1, artworkNo: it.artwork_no || '',
+        color: it.colors || it.color || '', sizes: it.sizes || it.size || '',
+        qty: Number(it.qty) || 1,
         unitPrice: Number(it.unit_price) || 0,
         front_image: it.front_image ?? null,
         back_image:  it.back_image  ?? null,
       })))
     } else if (sourceQuote.order_type === 'dtf') {
       setTransferItems(items.map((it: any) => ({
-        id: uid(), artworkName: it.artwork_name || it.description || '',
-        size: it.size || it.description || '', qty: Number(it.qty) || 1,
+        id: uid(), ...parseTransferSize(it.size || it.description), qty: Number(it.qty) || 1,
         unitPrice: Number(it.unit_price) || 0,
-        front_image: it.front_image ?? it.artwork_image ?? null,
-        back_image:  it.back_image  ?? null,
+        artwork_image: it.artwork_image ?? it.front_image ?? null,
       })))
     } else if (sourceQuote.order_type === 'gangsheet') {
       setGangsheetItems(items.map((it: any) => ({
@@ -435,13 +469,13 @@ export function NewInvoicePage() {
   )
 
   const invoiceCounoers = useMemo(
-    () => getInvoiceCounters(orderType, apparelItems, gangsheetItems, transferItems, gangsheetArtworks),
-    [orderType, apparelItems, gangsheetItems, transferItems, gangsheetArtworks],
+    () => getInvoiceCounters(orderType, apparelItems, gangsheetItems, transferItems),
+    [orderType, apparelItems, gangsheetItems, transferItems],
   )
 
   // â"€â"€ Apparel handlers â"€â"€
   const addApparelItem = () =>
-    setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', size: 'M', qty: 1, artworkNo: '', unitPrice: 0 }])
+    setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', sizes: '', qty: 1, unitPrice: 0, front_image: null, back_image: null }])
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) =>
     setApparelItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeApparelItem = (id: string) => setApparelItems(prev => prev.filter(r => r.id !== id))
@@ -453,32 +487,9 @@ export function NewInvoicePage() {
     setGangsheetItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeGangsheetItem = (id: string) => setGangsheetItems(prev => prev.filter(r => r.id !== id))
 
-  const addGangsheetArtwork = () => {
-    const nextArtwork: GangsheetArtwork = {
-      id: uid(),
-      artworkNo: `AW-${String(1000 + gangsheetArtworks.length + 1)}`,
-      frontImage: 'new_artwork.png',
-      frontSize: '12 x 16 in',
-      qtySheets: 1,
-    }
-
-    setGangsheetArtworks(prev => [...prev, nextArtwork])
-    setEditingArtworkId(nextArtwork.id)
-    setGangsheetItems(prev => prev.map((row, index) => index === 0 ? { ...row, numArtworks: row.numArtworks + 1 } : row))
-  }
-
-  const updateGangsheetArtwork = (id: string, patch: Partial<GangsheetArtwork>) =>
-    setGangsheetArtworks(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
-
-  const removeGangsheetArtwork = (id: string) => {
-    setGangsheetArtworks(prev => prev.filter(row => row.id !== id))
-    setGangsheetItems(prev => prev.map((row, index) => index === 0 ? { ...row, numArtworks: Math.max(0, row.numArtworks - 1) } : row))
-    setEditingArtworkId(prev => prev === id ? null : prev)
-  }
-
   // â"€â"€ Transfer handlers â"€â"€
   const addTransferItem = () =>
-    setTransferItems(prev => [...prev, { id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }])
+    setTransferItems(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, unitPrice: 0, artwork_image: null }])
   const updateTransferItem = (id: string, patch: Partial<TransferItem>) =>
     setTransferItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeTransferItem = (id: string) => setTransferItems(prev => prev.filter(r => r.id !== id))
@@ -503,7 +514,9 @@ export function NewInvoicePage() {
         qty:           row.qty,
         unit_price:    row.unitPrice,
         amount:        row.qty * row.unitPrice,
-        artwork_count: 0,
+        artwork_count: Number(Boolean(row.front_image)) + Number(Boolean(row.back_image)),
+        sizes:          row.sizes || null,
+        colors:         row.color || null,
         sort_order:    i,
         front_image:   row.front_image || null,
         back_image:    row.back_image  || null,
@@ -511,14 +524,13 @@ export function NewInvoicePage() {
     }
     if (orderType === 'dtf') {
       return transferItems.map((row, i) => ({
-        description:   `${row.artworkName}${row.size ? ' (' + row.size + ')' : ''}`,
+        description:   formatTransferSize(row.width, row.height),
         qty:           row.qty,
         unit_price:    row.unitPrice,
         amount:        row.qty * row.unitPrice,
-        artwork_count: 0,
+        artwork_count: row.artwork_image ? 1 : 0,
         sort_order:    i,
-        front_image:   row.front_image || null,
-        back_image:    row.back_image  || null,
+        artwork_image: row.artwork_image || null,
       }))
     }
     return undefined
@@ -786,15 +798,14 @@ export function NewInvoicePage() {
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
-                        <th>Item / Description</th>
+                        <th>Item Description <small>Brand | Model</small></th>
                         <th>Color</th>
-                        <th>Size</th>
-                        <th>qty</th>
-                        <th>FR Image</th>
-                        <th>BK Image</th>
-                        <th>Artwork No</th>
-                        <th>Unit Price</th>
-                        <th>Amount</th>
+                        <th>Qty (Shirts)</th>
+                        <th>Sizes <small>Size Ratio</small></th>
+                        <th>Front Artwork</th>
+                        <th>Back Artwork</th>
+                        <th>Unit Price (USD)</th>
+                        <th>Total Amount (USD)</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -802,37 +813,16 @@ export function NewInvoicePage() {
                       {apparelItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                          <td data-label="Item / Description">
-                            <div className="ni-item-cell">
-                              <ShiroThumb />
-                              <input
-                                className="ni-table-input ni-wide-input"
-                                value={row.description}
-                                onChange={e => updateApparelItem(row.id, { description: e.target.value })}
-                                placeholder="Item description"
-                              />
-                            </div>
-                          </td>
+                          <td data-label="Item Description"><textarea rows={2} className="ni-table-input ni-wide-input ni-description-input" value={row.description} onChange={e => updateApparelItem(row.id, { description: e.target.value })} placeholder="T-Shirt Premium — Gildan | 18500" /></td>
                           <td data-label="Color">
                             <input className="ni-table-input" value={row.color} onChange={e => updateApparelItem(row.id, { color: e.target.value })} />
                           </td>
-                          <td data-label="Size">
-                            <select className="ni-table-select ni-size-sel" value={row.size} onChange={e => updateApparelItem(row.id, { size: e.target.value })}>
-                              {['XS','S','M','L','XL','2XL','3XL'].map(s => <option key={s}>{s}</option>)}
-                            </select>
-                          </td>
-                          <td data-label="qty">
+                          <td data-label="Qty (Shirts)">
                             <input type="number" className="ni-table-input ni-num-input" min={0} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { qty: +e.target.value })} />
                           </td>
-                          <td data-label="FR Image">
-                            <ArtworkThumb40 name={row.artworkNo || 'frono.png'} />
-                          </td>
-                          <td data-label="BK Image">
-                            <ArtworkThumb40 name={row.artworkNo || 'back.ai'} />
-                          </td>
-                          <td data-label="Artwork No">
-                            <input className="ni-table-input" value={row.artworkNo} onChange={e => updateApparelItem(row.id, { artworkNo: e.target.value })} placeholder="AW-XXXX" />
-                          </td>
+                          <td data-label="Sizes"><input className="ni-table-input ni-wide-input" value={row.sizes} onChange={e => updateApparelItem(row.id, { sizes: e.target.value })} placeholder="S:10, M:20, L:15" /></td>
+                          <td data-label="Front Artwork"><InvoiceArtworkUpload imageUrl={row.front_image} label="Front" onChange={url => updateApparelItem(row.id, { front_image: url })} /></td>
+                          <td data-label="Back Artwork"><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateApparelItem(row.id, { back_image: url })} /></td>
                           <td data-label="Unit Price">
                             {ratesLocked ? (
                               <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
@@ -851,10 +841,10 @@ export function NewInvoicePage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={3}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
-                      <td colSpan={2}></td>
-                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
+                      <td></td>
+                      <td colSpan={2}><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
@@ -877,10 +867,11 @@ export function NewInvoicePage() {
                         <th style={{ width: 36 }}>#</th>
                         <th>Gangsheet Size</th>
                         <th>No. Artworks</th>
-                        <th>qty Sheets</th>
-                        <th>FR Image</th>
-                        <th>Price / Sheet</th>
-                        <th>Amount</th>
+                        <th>Qty Sheets</th>
+                        <th>Front Artwork</th>
+                        <th>Back Artwork</th>
+                        <th>Unit Price (USD)</th>
+                        <th>Total Amount (USD)</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -914,9 +905,8 @@ export function NewInvoicePage() {
                           <td data-label="qty Sheets">
                             <input type="number" className="ni-table-input ni-num-input" min={1} value={row.qtySheets} onChange={e => updateGangsheetItem(row.id, { qtySheets: +e.target.value })} />
                           </td>
-                          <td data-label="FR Image">
-                            <ArtworkThumb40 name="gangsheet.png" />
-                          </td>
+                          <td data-label="Front Artwork"><InvoiceArtworkUpload imageUrl={row.front_image} label="Front" onChange={url => updateGangsheetItem(row.id, { front_image: url })} /></td>
+                          <td data-label="Back Artwork"><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateGangsheetItem(row.id, { back_image: url })} /></td>
                           <td data-label="Price / Sheet">
                             {ratesLocked ? (
                               <span className="ni-price-locked">${fmt(row.pricePerSheet)}</span>
@@ -938,7 +928,7 @@ export function NewInvoicePage() {
                       <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetItems.reduce((sum, row) => sum + row.numArtworks, 0)}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
@@ -948,79 +938,6 @@ export function NewInvoicePage() {
                   <Plus size={13} /> Add Item
                 </button>
 
-                <div className="ni-artwork-section">
-                  <div className="ni-section-heading ni-artwork-heading">
-                    <span className="ni-section-num">3</span>
-                    <h3>Artworks in Gangsheet</h3>
-                  </div>
-                  <div className="ni-table-wrap">
-                    <table className="ni-table ni-artwork-table ni-mobile-stack-table">
-                      <thead>
-                        <tr>
-                          <th>S.No</th>
-                          <th>Artwork No.</th>
-                          <th>Frono Artwork Image</th>
-                          <th>Frono Artwork Size</th>
-                          <th>Back Artwork Image</th>
-                          <th>Back Artwork Size</th>
-                          <th>qty (Sheets)</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {gangsheetArtworks.map((row, i) => (
-                          <tr key={row.id} className={cn(editingArtworkId === row.id && 'ni-editing-row')}>
-                            <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                            <td data-label="Artwork No.">
-                              <input className="ni-table-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} />
-                            </td>
-                            <td data-label="Frono Artwork Image">
-                              <div className="ni-artwork-image-cell">
-                                <ArtworkThumb40 name={row.frontImage || 'frono.png'} />
-                                <input className="ni-table-input ni-wide-input" value={row.frontImage} onChange={e => updateGangsheetArtwork(row.id, { frontImage: e.target.value })} placeholder="front file" />
-                              </div>
-                            </td>
-                            <td data-label="Frono Artwork Size">
-                              <input className="ni-table-input" value={row.frontSize} onChange={e => updateGangsheetArtwork(row.id, { frontSize: e.target.value })} placeholder="12 x 16 in" />
-                            </td>
-                            <td data-label="Back Artwork Image">
-                              <div className="ni-artwork-image-cell">
-                                {row.backImage ? <ArtworkThumb40 name={row.backImage} /> : <span className="ni-empoy-artwork">-</span>}
-                                <input className="ni-table-input ni-wide-input" value={row.backImage ?? ''} onChange={e => updateGangsheetArtwork(row.id, { backImage: e.target.value || undefined })} placeholder="optional back file" />
-                              </div>
-                            </td>
-                            <td data-label="Back Artwork Size">
-                              {row.backImage ? (
-                                <input className="ni-table-input" value={row.backSize ?? ''} onChange={e => updateGangsheetArtwork(row.id, { backSize: e.target.value })} placeholder="12 x 16 in" />
-                              ) : (
-                                <span className="ni-empoy-artwork">-</span>
-                              )}
-                            </td>
-                            <td data-label="qty (Sheets)">
-                              <input type="number" className="ni-table-input ni-num-input" min={1} value={row.qtySheets} onChange={e => updateGangsheetArtwork(row.id, { qtySheets: +e.target.value })} />
-                            </td>
-                            <td data-label="Action">
-                              <div className="ni-row-actions">
-                                <button className="ni-icon-btn" title="Edit artwork" onClick={() => setEditingArtworkId(row.id)}><Pencil size={13} /></button>
-                                <button className="ni-del-btn" title="Delete artwork" onClick={() => removeGangsheetArtwork(row.id)}><Trash2 size={13} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot><tr className="live-summary-row">
-                        <td><span className="live-summary-title">Artwork Summary</span></td>
-                        <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks.length}</strong></div></td>
-                        <td colSpan={4}></td>
-                        <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetArtworks.reduce((sum, row) => sum + row.qtySheets, 0)}</strong></div></td>
-                        <td></td>
-                      </tr></tfoot>
-                    </table>
-                  </div>
-                  <button className="ni-add-item-btn" onClick={addGangsheetArtwork}>
-                    <Plus size={13} /> Add Artwork
-                  </button>
-                </div>
               </>
             )}
 
@@ -1032,13 +949,12 @@ export function NewInvoicePage() {
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
-                        <th>Front Art</th>
-                        <th>Back Art</th>
-                        <th>Artwork Name</th>
-                        <th>Size</th>
+                        <th>Width (in)</th>
+                        <th>Height (in)</th>
                         <th>Qty</th>
-                        <th>Unit Price</th>
-                        <th>Line Total</th>
+                        <th>Artwork</th>
+                        <th>Unit Price (USD)</th>
+                        <th>Total Amount (USD)</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -1046,25 +962,12 @@ export function NewInvoicePage() {
                       {transferItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                          <td data-label="Front Art">
-                            {row.front_image
-                              ? <img src={row.front_image} alt="front" style={{ width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
-                              : <ArtworkThumb60 name={row.artworkName || 'artwork.png'} />}
-                          </td>
-                          <td data-label="Back Art">
-                            {row.back_image
-                              ? <img src={row.back_image} alt="back" style={{ width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid #e5e7eb' }} />
-                              : <div style={{ width: 50, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d1d5db', fontSize: 11, border: '1px dashed #e5e7eb', borderRadius: 4 }}>—</div>}
-                          </td>
-                          <td data-label="Artwork Name">
-                            <input className="ni-table-input ni-wide-input" value={row.artworkName} onChange={e => updateTransferItem(row.id, { artworkName: e.target.value })} placeholder="Artwork file name" />
-                          </td>
-                          <td data-label="Size">
-                            <input className="ni-table-input" value={row.size} onChange={e => updateTransferItem(row.id, { size: e.target.value })} placeholder='e.g. 10"x10"' />
-                          </td>
+                          <td data-label="Width (in)"><input type="number" min={0} step="any" className="ni-table-input ni-num-input" value={row.width} onChange={e => updateTransferItem(row.id, { width: e.target.value })} placeholder="Width" /></td>
+                          <td data-label="Height (in)"><input type="number" min={0} step="any" className="ni-table-input ni-num-input" value={row.height} onChange={e => updateTransferItem(row.id, { height: e.target.value })} placeholder="Height" /></td>
                           <td data-label="Qty">
                             <input type="number" className="ni-table-input ni-num-input" min={0} value={row.qty} onChange={e => updateTransferItem(row.id, { qty: +e.target.value })} />
                           </td>
+                          <td data-label="Artwork"><InvoiceArtworkUpload imageUrl={row.artwork_image} label="Artwork" onChange={url => updateTransferItem(row.id, { artwork_image: url })} /></td>
                           <td data-label="Amount">
                             {ratesLocked ? (
                               <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
@@ -1084,9 +987,8 @@ export function NewInvoicePage() {
                     </tbody>
                     <tfoot><tr className="live-summary-row">
                       <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
-                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
-                      <td></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
@@ -1098,30 +1000,6 @@ export function NewInvoicePage() {
                 </button>
               </>
             )}
-          </div>
-
-          <div className="ni-counoer-grid">
-            <div className="ni-counoer-card">
-              <span className="ni-counoer-icon"><FileText size={18} /></span>
-              <div>
-                <p>Total Items</p>
-                <strong>{invoiceCounoers.totalItems}</strong>
-              </div>
-            </div>
-            <div className="ni-counoer-card">
-              <span className="ni-counoer-icon"><ImageIcon size={18} /></span>
-              <div>
-                <p>Total Artworks</p>
-                <strong>{invoiceCounoers.totalArtworks}</strong>
-              </div>
-            </div>
-            <div className="ni-counoer-card">
-              <span className="ni-counoer-icon"><FileText size={18} /></span>
-              <div>
-                <p>Total Quantity (Sheets)</p>
-                <strong>{invoiceCounoers.totalqtySheets}</strong>
-              </div>
-            </div>
           </div>
 
           {/* Notes */}
@@ -1333,7 +1211,3 @@ export function NewInvoicePage() {
     </div>
   )
 }
-
-
-
-

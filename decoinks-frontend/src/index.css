@@ -10698,6 +10698,17 @@ select.al-input {
   white-space: nowrap;
 }
 
+.nq-table th small,
+.ni-table th small {
+  display: block;
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .nq-table td {
   padding: 10px;
   border-bottom: 1px solid #f3f4f6;
@@ -10784,6 +10795,25 @@ select.al-input {
 
 .nq-dimension-input {
   width: 82px;
+}
+
+.nq-description-input,
+.ni-description-input {
+  width: 220px;
+  min-height: 48px;
+  padding: 7px 9px;
+  resize: vertical;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.nq-size-ratio-input {
+  width: 165px;
+  text-align: left;
+}
+
+.nq-apparel-table {
+  min-width: 1120px;
 }
 
 .nq-table tfoot td,

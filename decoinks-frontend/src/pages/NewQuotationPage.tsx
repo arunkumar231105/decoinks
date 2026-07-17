@@ -14,7 +14,6 @@ import {
   Plus,
   Save,
   Send,
-  Shirt,
   Trash2,
   User2,
   X,
@@ -29,15 +28,10 @@ type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
 
 interface ApparelItem {
   id: string
-  name: string
   description: string
-  brand: string
-  model: string
   variant: string
   sizes: string
   qty: number
-  printDetails: { location: string; size: string }[]
-  stdCost: number
   quotedCost: number
   front_image?: string | null
   back_image?: string | null
@@ -48,7 +42,6 @@ interface GangsheetRow {
   size: string
   noArtworks: number
   qtySheets: number
-  stdCost: number
   quotedCost: number
   front_image?: string | null
   back_image?: string | null
@@ -59,7 +52,6 @@ interface TransferRow {
   width: string
   height: string
   qty: number
-  stdCost: number
   quotedCost: number
   artwork_image?: string | null
 }
@@ -104,8 +96,6 @@ const addDays = (date: string, days: number) => {
 }
 
 const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
-const PRINT_LOCATIONS = ['Front Print', 'Back Print', 'Left Chest', 'Right Sleeve', 'Back Neck']
-const PRINT_SIZES = ['12x16', '10x12', '8x10', '4x4', '3x3']
 const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
 
 const parseTransferSize = (size: unknown): Pick<TransferRow, 'width' | 'height'> => {
@@ -1014,15 +1004,10 @@ export function NewQuotationPage() {
       if (orderType === 'apparel') {
         setApparelItems(q.items.map((item: Record<string, any>) => ({
           id:           item.id ?? uid(),
-          name:         (item.description ?? '').split('\n')[0],
-          description:  (item.description ?? '').split('\n').slice(1).join('\n'),
-          brand:        '',
-          model:        '',
+          description:  item.description ?? '',
           variant:      item.colors ?? '',
           sizes:        item.sizes ?? '',
           qty:          item.qty ?? 1,
-          printDetails: Array.from({ length: item.artwork_count ?? 0 }, () => ({ location: 'Front Print', size: '12x16' })),
-          stdCost:      0,
           quotedCost:   item.unit_price ?? 0,
           front_image:  item.front_image ?? null,
           back_image:   item.back_image  ?? null,
@@ -1032,7 +1017,6 @@ export function NewQuotationPage() {
           id:            item.id ?? uid(),
           ...parseTransferSize(item.description),
           qty:           item.qty ?? 1,
-          stdCost:       0,
           quotedCost:    item.unit_price ?? 0,
           artwork_image: item.artwork_image ?? item.front_image ?? null,
         })))
@@ -1042,7 +1026,6 @@ export function NewQuotationPage() {
           size:        item.description ?? '22" x 60"',
           noArtworks:  item.artwork_count ?? 1,
           qtySheets:   item.qty ?? 1,
-          stdCost:     0,
           quotedCost:  item.unit_price ?? 0,
           front_image: item.front_image ?? null,
           back_image:  item.back_image  ?? null,
@@ -1140,7 +1123,7 @@ export function NewQuotationPage() {
 
   const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
   const apparelQty     = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty, 0), [apparelItems])
-  const apparelArtwork = useMemo(() => apparelItems.reduce((sum, item) => sum + item.printDetails.length, 0), [apparelItems])
+  const apparelArtwork = useMemo(() => apparelItems.reduce((sum, item) => sum + Number(Boolean(item.front_image)) + Number(Boolean(item.back_image)), 0), [apparelItems])
   const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
   const gangsheetQty   = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets, 0), [gangsheetRows])
   const gangsheetArtwork = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheetRows])
@@ -1182,15 +1165,13 @@ export function NewQuotationPage() {
     if (activeTab === 'apparel') {
       apparelItems.forEach(item => {
         const color = (item.variant || '').trim() || undefined
-        const brand = [item.brand, item.model].filter(Boolean).join(' | ')
-        const fullDesc = [item.name || item.description, item.description && item.name !== item.description ? item.description : null, brand || null].filter(Boolean).join('\n')
         allItems.push({
-          description:   fullDesc || 'Apparel Item',
+          description:   item.description || 'Apparel Item',
           qty:           item.qty,
           unit_price:    item.quotedCost,
           colors:        color,
           sizes:         item.sizes || undefined,
-          artwork_count: item.printDetails.length || 0,
+          artwork_count: Number(Boolean(item.front_image)) + Number(Boolean(item.back_image)),
           sort_order:    sortIdx++,
           front_image:   item.front_image || null,
           back_image:    item.back_image  || null,
@@ -1330,41 +1311,32 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Item / Description</th><th>Color</th><th>Size</th><th>Qty</th><th>FR Image</th><th>BK Image</th><th>Print Locations</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table"><thead><tr><th>#</th><th>Item Description <small>Brand | Model</small></th><th>Color</th><th>Qty (Shirts)</th><th>Sizes <small>Size Ratio</small></th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
-                    <td><div className="nq-item-desc"><div className="nq-item-thumb"><Shirt size={18} /></div><div><input className="nq-table-input" placeholder="Item name (e.g. T-Shirt Premium)" value={item.name} onChange={e => updateApparelItem(item.id, { name: e.target.value })} /><input className="nq-table-input" placeholder="Brand | Model (e.g. Gildan | 18500)" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></div></div></td>
+                    <td><textarea className="nq-table-input nq-description-input" rows={2} placeholder="T-Shirt Premium — Gildan | 18500" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></td>
                     <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
-                    <td>
-                      <select className="nq-table-select" value={item.sizes || ''} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })}>
-                        <option value="">Select Size</option>
-                        {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'Custom'].map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><input className="nq-table-input nq-size-ratio-input" placeholder="S:10, M:20, L:15" value={item.sizes} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })} /></td>
                     <td><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></td>
-                    <td><div className="nq-print-details"><span className="nq-print-method-badge">DTF Transfer</span>{item.printDetails.map((pd, pi) => (<div key={pi} className="nq-print-location-row"><span className="nq-print-dot" /><select className="nq-print-loc-select" value={pd.location} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, location: e.target.value } : row) })}>{PRINT_LOCATIONS.map(l => <option key={l}>{l}</option>)}</select><select className="nq-print-size-select" value={pd.size} onChange={e => updateApparelItem(item.id, { printDetails: item.printDetails.map((row, i) => i === pi ? { ...row, size: e.target.value } : row) })}>{PRINT_SIZES.map(s => <option key={s}>{s}</option>)}</select><button className="nq-icon-btn" onClick={() => updateApparelItem(item.id, { printDetails: item.printDetails.filter((_, i) => i !== pi) })}><X size={10} /></button></div>))}<button className="nq-add-location-btn" onClick={() => updateApparelItem(item.id, { printDetails: [...item.printDetails, { location: 'Front Print', size: '12x16' }] })}><Plus size={11} /> Add Location</button></div></td>
-                    <td><div className="nq-money-input"><span>$</span><input type="number" value={item.stdCost} onChange={e => updateApparelItem(item.id, { stdCost: +e.target.value })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
+                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
-                <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                <td colSpan={3}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
-                <td colSpan={2}></td>
-                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparelArtwork}</strong></div></td>
-                <td colSpan={2}></td>
+                <td></td>
+                <td colSpan={2}><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparelArtwork}</strong></div></td>
+                <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot></table></div>
-              <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), name: '', description: '', brand: '', model: '', variant: '', sizes: '', qty: 1, printDetails: [], stdCost: 0, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Apparel Row</button>
+              <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), description: '', variant: '', sizes: '', qty: 1, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Apparel Row</button>
             </section>
           )}
 
@@ -1373,7 +1345,7 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
                 {transferRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
@@ -1381,22 +1353,20 @@ export function NewQuotationPage() {
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={row.artwork_image} label="Artwork" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
-                    <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateTransferRow(row.id, { stdCost: +e.target.value })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {transferRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
+                {transferRows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
                 <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
-                <td colSpan={2}></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot></table></div>
-              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, stdCost: 1.5, quotedCost: 2, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
+              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, quotedCost: 0, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
             </section>
           )}
 
@@ -1405,7 +1375,7 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>📐 Gangsheet</span>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>Front Art</th><th>Back Art</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
                 {gangsheetRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
@@ -1426,22 +1396,21 @@ export function NewQuotationPage() {
                     <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
                     <td><ImageUploadCell imageUrl={row.front_image} label="Front" uploading={uploadingImg[`${row.id}-front_image`]} onUpload={f => uploadItemImage(row.id, 'front_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={row.back_image} label="Back" uploading={uploadingImg[`${row.id}-back_image`]} onUpload={f => uploadItemImage(row.id, 'back_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { back_image: null })} /></td>
-                    <td><div className="nq-money-input"><span>$</span><input type="number" value={row.stdCost} onChange={e => updateGangsheetRow(row.id, { stdCost: +e.target.value })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {gangsheetRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No sheets yet — click "Add Gangsheet Row" below.</td></tr>}
+                {gangsheetRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No sheets yet — click "Add Gangsheet Row" below.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
                 <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtwork}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
-                <td colSpan={4}></td>
+                <td colSpan={3}></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(gangsheetTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot></table></div>
-              <button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, stdCost: 25, quotedCost: 30, front_image: null, back_image: null }])}><Plus size={12} /> Add Gangsheet Row</button>
+              <button className="nq-add-row-btn" onClick={() => setGangsheetRows(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qtySheets: 1, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Gangsheet Row</button>
             </section>
           )}
 
