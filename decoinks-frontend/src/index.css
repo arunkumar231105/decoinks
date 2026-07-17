@@ -13,6 +13,91 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ===== Application-wide responsive safety layer ===== */
+html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }
+img, svg, video, canvas { max-width: 100%; }
+.main-column, .content-area, .content-area > *, .content-area form, .content-area section { min-width: 0; max-width: 100%; }
+.cust-table-wrap, .wf-table-wrap, .ql-table-wrap, .sh-table-wrap, .prod-table-wrap,
+.su-table-wrap, .ni-table-wrap, .nq-table-wrap, .no-table-wrap, .np-table-wrap, .od-table-wrap {
+  max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1280px) {
+  .topbar { gap: 16px; padding-inline: 20px; }
+  .page-heading { min-width: 150px; }
+  .global-search { width: min(30vw, 360px); }
+  .content-area { padding: 22px; }
+  .ni-address-grid, .ni-notes-grid, .nq-notes-grid, .nq-other-grid, .nq-terms-grid,
+  .np-vendor-grid, .ns-address-grid, .ns-fields-grid, .ncust-grid, .ncust-comm-grid, .af-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(320px, 88vw); transform: translateX(-100%); }
+  .sidebar.sidebar-mobile-open { transform: translateX(0); }
+  .sidebar-close, .mobile-menu { display: inline-flex !important; }
+  .collapse-button { display: none; }
+  .topbar { min-height: 68px; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; }
+  .page-heading { flex: 1; min-width: 0; }
+  .page-heading h1 { font-size: clamp(20px, 4vw, 25px); }
+  .page-heading p { display: none; }
+  .topbar-actions { width: auto; max-width: 100%; margin-left: auto; }
+  .global-search { order: 10; width: 100%; flex-basis: 100%; }
+  .content-area { padding: 18px; }
+  .cust-page-header, .ni-header, .nq-header, .np-header, .ns-header, .ncust-header,
+  .af-header, .aw-header, .fb-header, .lb-header, .od-header, .rc-header, .prod-so-header {
+    align-items: flex-start; flex-wrap: wrap; gap: 12px;
+  }
+  .cust-controls, .ni-header-actions, .nq-header-actions, .np-header-actions, .ns-header-actions,
+  .af-header-actions, .aw-header-actions, .fb-header-controls, .lb-header-controls, .ql-toolbar, .sh-toolbar {
+    max-width: 100%; flex-wrap: wrap;
+  }
+  .ni-layout, .af-layout, .ns-main-grid, .settings-grid, .sg-grid, .su-layout { grid-template-columns: 1fr; }
+  .ni-sidebar { position: static; }
+}
+
+@media (max-width: 700px) {
+  .topbar { position: sticky; gap: 8px; padding: 10px 12px; }
+  .topbar-actions { display: contents; }
+  .topbar-actions > .lb-action-btn { margin-left: auto; }
+  .topbar-actions > .MuiIconButton-root, .topbar-actions > span:has(.MuiIconButton-root) { display: none; }
+  .topbar-user { width: 42px; height: 42px; overflow: hidden; border: 0; padding: 0; }
+  .topbar-user > span, .topbar-user > svg, .global-search kbd { display: none; }
+  .global-search { height: 40px; }
+  .content-area { padding: 12px; }
+  .content-area h1, .content-area h2 { overflow-wrap: anywhere; }
+  .cust-page-header, .ni-header, .nq-header, .np-header, .ns-header, .ncust-header,
+  .af-header, .aw-header, .fb-header, .lb-header, .od-header { flex-direction: column; }
+  .cust-controls, .ni-header-actions, .nq-header-actions, .np-header-actions, .ns-header-actions,
+  .af-header-actions, .aw-header-actions, .fb-header-controls, .lb-header-controls, .ql-toolbar, .sh-toolbar { width: 100%; }
+  .cust-controls > *, .ni-header-actions > *, .nq-header-actions > *, .np-header-actions > *,
+  .ns-header-actions > *, .af-header-actions > * { flex: 1 1 auto; justify-content: center; }
+  .cust-search, .ql-search, .sh-search { width: 100%; flex-basis: 100%; }
+  .metric-row, .quick-stats-grid, .dashboard-bottom-grid, .ni-address-grid, .ni-notes-grid,
+  .nq-detail-grid, .nq-notes-grid, .nq-other-grid, .nq-terms-grid, .nq-fin-grid, .np-vendor-grid,
+  .ns-address-grid, .ns-fields-grid, .ns-tracking-grid, .ncust-grid, .ncust-comm-grid,
+  .af-details-grid, .settings-payment-grid { grid-template-columns: 1fr; }
+  .ni-type-bar, .ni-type-pills, .nq-sticky-actions, .cust-pagination, .sh-pagination { align-items: stretch; flex-wrap: wrap; }
+  .ni-type-label { width: 100%; }
+  .ni-type-pill { height: auto; min-height: 40px; flex: 1 1 150px; justify-content: center; white-space: normal; text-align: center; }
+  .nq-sticky-actions { bottom: 6px; }
+  .nq-sticky-actions > span { width: 100%; margin-right: 0; }
+  .nq-sticky-actions > button { flex: 1 1 130px; justify-content: center; }
+  .al-panel, .ni-card, .np-card, .settings-card, .sg-card { border-radius: 10px; }
+  .ni-section, .nq-section, .np-card-body, .settings-card-body, .sg-card-body { padding: 14px; }
+  .MuiDialog-paper { width: calc(100% - 24px) !important; max-width: calc(100% - 24px) !important; margin: 12px !important; }
+}
+
+@media (max-width: 420px) {
+  .page-heading h1 { font-size: 19px; }
+  .topbar-actions > .lb-action-btn { width: 40px; overflow: hidden; padding-inline: 11px; white-space: nowrap; }
+  .content-area { padding: 10px; }
+  .lb-action-btn, .ni-type-pill { font-size: 12px; }
+  .cust-pagination, .sh-pagination { justify-content: center; }
+  .cust-pag-info, .sh-pag-info { width: 100%; text-align: center; }
+}
+
 body {
   margin: 0;
 }
@@ -15549,4 +15634,53 @@ select.al-input {
     justify-content: center;
     flex: 1 1 auto;
   }
+}
+
+/* Final responsive overrides: intentionally last in the cascade. */
+@media (max-width: 980px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(320px, 88vw); transform: translateX(-100%); }
+  .sidebar-mobile-open { transform: translateX(0); }
+  .sidebar-close, .mobile-menu { display: inline-flex !important; }
+  .collapse-button { display: none; }
+  .topbar { min-height: 68px; flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+  .page-heading { flex: 1; min-width: 0; }
+  .page-heading p { display: none; }
+  .topbar-actions { width: auto; max-width: 100%; margin-left: auto; flex-wrap: wrap; }
+  .global-search { order: 10; width: 100%; flex-basis: 100%; }
+  .content-area { padding: 18px; }
+  .cust-page-header, .ni-header, .nq-header, .np-header, .ns-header, .ncust-header,
+  .af-header, .aw-header, .fb-header, .lb-header, .od-header, .rc-header, .prod-so-header,
+  .cust-controls, .ni-header-actions, .nq-header-actions, .np-header-actions, .ns-header-actions,
+  .af-header-actions, .aw-header-actions, .fb-header-controls, .lb-header-controls, .ql-toolbar, .sh-toolbar {
+    max-width: 100%; flex-wrap: wrap;
+  }
+  .ni-layout, .af-layout, .ns-main-grid, .settings-grid, .sg-grid, .su-layout { grid-template-columns: 1fr; }
+  .ni-sidebar { position: static; }
+}
+
+@media (max-width: 700px) {
+  .topbar { align-items: center; gap: 8px; padding: 10px 12px; }
+  .topbar-actions { display: contents; }
+  .topbar-actions > .lb-action-btn { margin-left: auto; }
+  .topbar-actions > .MuiIconButton-root, .topbar-actions > span:has(.MuiIconButton-root) { display: none; }
+  .topbar-user { width: 42px; height: 42px; overflow: hidden; border: 0; padding: 0; }
+  .topbar-user > span, .topbar-user > svg, .global-search kbd { display: none; }
+  .content-area { padding: 12px; }
+  .cust-page-header, .ni-header, .nq-header, .np-header, .ns-header, .ncust-header,
+  .af-header, .aw-header, .fb-header, .lb-header, .od-header { align-items: stretch; flex-direction: column; }
+  .cust-controls, .ni-header-actions, .nq-header-actions, .np-header-actions, .ns-header-actions,
+  .af-header-actions, .aw-header-actions, .fb-header-controls, .lb-header-controls, .ql-toolbar, .sh-toolbar { width: 100%; }
+  .cust-controls > *, .ni-header-actions > *, .nq-header-actions > *, .np-header-actions > *,
+  .ns-header-actions > *, .af-header-actions > * { flex: 1 1 auto; justify-content: center; }
+  .cust-search, .ql-search, .sh-search { width: 100%; flex-basis: 100%; }
+  .metric-row, .quick-stats-grid, .dashboard-bottom-grid, .ni-address-grid, .ni-notes-grid,
+  .nq-detail-grid, .nq-notes-grid, .nq-other-grid, .nq-terms-grid, .nq-fin-grid, .np-vendor-grid,
+  .ns-address-grid, .ns-fields-grid, .ns-tracking-grid, .ncust-grid, .ncust-comm-grid,
+  .af-details-grid, .settings-payment-grid { grid-template-columns: 1fr; }
+  .ni-type-bar, .ni-type-pills, .nq-sticky-actions, .cust-pagination, .sh-pagination { align-items: stretch; flex-wrap: wrap; }
+  .ni-type-label { width: 100%; }
+  .ni-type-pill { height: auto; min-height: 40px; flex: 1 1 150px; justify-content: center; white-space: normal; text-align: center; }
+  .nq-sticky-actions > span { width: 100%; margin-right: 0; }
+  .nq-sticky-actions > button { flex: 1 1 130px; justify-content: center; }
+  .MuiDialog-paper { width: calc(100% - 24px) !important; max-width: calc(100% - 24px) !important; margin: 12px !important; }
 }
