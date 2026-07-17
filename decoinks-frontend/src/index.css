@@ -10786,6 +10786,47 @@ select.al-input {
   width: 82px;
 }
 
+.nq-table tfoot td {
+  padding: 11px 10px;
+  border-top: 1px solid #dbe3ec;
+  background: #f8fafc;
+  vertical-align: middle;
+}
+
+.nq-dtf-summary-title {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.nq-dtf-summary-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.nq-dtf-summary-stat span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.nq-dtf-summary-stat strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.nq-dtf-summary-total strong {
+  color: #0f766e;
+}
+
 .nq-table-select {
   height: 30px;
   border: 1px solid #d1d5db;

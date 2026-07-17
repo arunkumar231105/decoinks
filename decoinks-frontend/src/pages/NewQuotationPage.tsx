@@ -1130,6 +1130,7 @@ export function NewQuotationPage() {
   const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
   const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
   const transfersTotal = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty * row.quotedCost, 0), [transferRows])
+  const transfersQty   = useMemo(() => transferRows.reduce((sum, row) => sum + row.qty, 0), [transferRows])
   const activeTotal    = activeTab === 'apparel' ? apparelTotal : activeTab === 'dtf' ? transfersTotal : gangsheetTotal
   const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges }), [activeTotal, otherCharges])
 
@@ -1349,7 +1350,6 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
-                <strong className="nq-section-total">Section Total: ${fmt(transfersTotal)}</strong>
               </div>
               <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>STD Cost</th><th>Quoted</th><th>Total</th><th></th></tr></thead><tbody>
                 {transferRows.map((row, idx) => (
@@ -1366,7 +1366,14 @@ export function NewQuotationPage() {
                   </tr>
                 ))}
                 {transferRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
-              </tbody></table></div>
+              </tbody><tfoot><tr className="nq-dtf-summary-row">
+                <td colSpan={3}><span className="nq-dtf-summary-title">DTF Summary</span></td>
+                <td><div className="nq-dtf-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
+                <td><div className="nq-dtf-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
+                <td colSpan={2}></td>
+                <td><div className="nq-dtf-summary-stat nq-dtf-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
+                <td></td>
+              </tr></tfoot></table></div>
               <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, stdCost: 1.5, quotedCost: 2, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
             </section>
           )}
