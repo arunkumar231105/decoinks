@@ -35,6 +35,27 @@ interface ApparelItem {
   quotedCost: number
   front_image?: string | null
   back_image?: string | null
+  styleId?: string
+  styleCode?: string
+  brand?: string
+  productImage?: string | null
+  styleDescription?: string | null
+  colorId?: string
+  sizeId?: string
+  sku?: string
+  availableColors?: CatalogColor[]
+  availableSizes?: CatalogSize[]
+  availableVariants?: CatalogVariant[]
+}
+
+interface CatalogColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null }
+interface CatalogSize { style_size_id: string; size_code: string; size_name: string }
+interface CatalogVariant { sku_id: string; sku_code: string; style_color_id: string; style_size_id: string }
+interface CatalogStyle {
+  id: string; name: string; sku: string; brand: string; image_url: string | null
+  description: string | null; total_colors: number; total_sizes: number; total_skus: number
+  colors?: CatalogColor[]; sizes?: CatalogSize[]; variants?: CatalogVariant[]
+  images?: Array<{ image_url: string; is_primary: boolean }>
 }
 
 interface GangsheetRow {
@@ -241,6 +262,9 @@ function QuoteHeader({
   setValidUntil,
   agent,
   setAgent,
+  leadNumber,
+  customerName,
+  source,
 }: {
   status: QuoteStatus
   quoteNumber: string
@@ -251,25 +275,24 @@ function QuoteHeader({
   setValidUntil: (v: string) => void
   agent: string
   setAgent: (agent: string) => void
+  leadNumber: string
+  customerName: string
+  source: string
 }) {
-  const isRevised = revisionNumber > 1
+  const navigate = useNavigate()
   return (
     <section className="nq-info-bar">
       <div className="nq-info-field">
         <label>Quote #</label>
-        <div className="nq-quote-num">
-          <input className="nq-input nq-input-readonly" value={quoteNumber || 'AUTO-GENERATED'} readOnly />
-          <span className="nq-badge nq-badge-draft">{status}</span>
-          {isRevised && (
-            <span className="nq-badge nq-badge-approved" title={`This quote has been edited ${revisionNumber - 1} time(s)`}>
-              Revised · v{revisionNumber}
-            </span>
-          )}
-        </div>
+        <div className="nq-quote-num"><input className="nq-input nq-input-readonly" value={quoteNumber || 'AUTO-GENERATED'} readOnly /></div>
       </div>
+      <div className="nq-info-field"><label>Revision</label><input className="nq-input nq-input-readonly" value={`Rev ${Math.max(revisionNumber - 1, 0)}`} readOnly /></div>
+      <div className="nq-info-field"><label>Status</label><div><span className="nq-badge nq-badge-draft">{status}</span></div></div>
+      <div className="nq-info-field"><label>Lead #</label>{leadNumber ? <button type="button" className="nq-link-btn" onClick={() => navigate('/leads')}>{leadNumber}</button> : <span className="nq-muted">—</span>}</div>
+      <div className="nq-info-field"><label>Customer</label><input className="nq-input nq-input-readonly" value={customerName || 'Not selected'} readOnly /></div>
       <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" type="date" value={quoteDate} onChange={e => { setQuoteDate(e.target.value); setValidUntil(addDays(e.target.value, 7)) }} /></div>
       <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
-      <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input" placeholder="Source (e.g. Email, Chatwoot)" value="" readOnly /></div></div>
+      <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input nq-input-readonly" placeholder="Source" value={source} readOnly /></div></div>
       <div className="nq-info-field">
         <label>Sales Agent</label>
         <input className="nq-input" placeholder="Agent name" value={agent} onChange={e => setAgent(e.target.value)} />
@@ -285,6 +308,7 @@ function SupplierSection({
   setShippingAddress,
   sameAsBilling,
   setSameAsBilling,
+  customerId,
 }: {
   billingAddress: string
   setBillingAddress: (v: string) => void
@@ -292,20 +316,16 @@ function SupplierSection({
   setShippingAddress: (v: string) => void
   sameAsBilling: boolean
   setSameAsBilling: (same: boolean) => void
+  customerId: string | null
 }) {
+  const navigate = useNavigate()
   return (
     <section className="nq-card">
-      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Address</h3></div>
+      <div className="nq-card-heading"><div className="nq-section-num-icon">1</div><h3>Customer Addresses</h3>{customerId && <button type="button" className="lb-action-btn" style={{ marginLeft: 'auto' }} onClick={() => navigate(`/customers/${customerId}`)}>Edit Customer</button>}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="nq-address-block">
           <div className="nq-address-header"><span className="nq-field-label">Billing Address</span></div>
-          <textarea
-            className="nq-textarea"
-            rows={4}
-            placeholder="Billing address..."
-            value={billingAddress}
-            onChange={e => setBillingAddress(e.target.value)}
-          />
+          <select className="nq-select" value={billingAddress} disabled={!billingAddress} onChange={e => setBillingAddress(e.target.value)}><option value={billingAddress}>{billingAddress || 'Select a customer first'}</option></select>
         </div>
         <div className="nq-address-block">
           <div className="nq-address-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -322,15 +342,7 @@ function SupplierSection({
               Same as billing
             </label>
           </div>
-          <textarea
-            className="nq-textarea"
-            rows={4}
-            placeholder="Shipping address..."
-            value={sameAsBilling ? billingAddress : shippingAddress}
-            onChange={e => { if (!sameAsBilling) setShippingAddress(e.target.value) }}
-            readOnly={sameAsBilling}
-            style={sameAsBilling ? { opacity: 0.6, cursor: 'not-allowed', resize: 'none' } : {}}
-          />
+          <select className="nq-select" value={sameAsBilling ? billingAddress : shippingAddress} disabled={sameAsBilling || !shippingAddress} onChange={e => setShippingAddress(e.target.value)}><option value={sameAsBilling ? billingAddress : shippingAddress}>{(sameAsBilling ? billingAddress : shippingAddress) || 'No shipping address in Customer Master'}</option></select>
         </div>
       </div>
     </section>
@@ -345,10 +357,11 @@ const QUOTE_TABS: { key: QuoteTab; icon: string; label: string; desc: string; co
   { key: 'gangsheet', icon: '📐', label: 'Gangsheet',              desc: 'Full gang sheets with multiple artwork designs',     color: '#8b5cf6' },
 ]
 
-function QuoteTypeSelector({ activeTab, onChange, tabTotals }: {
+function QuoteTypeSelector({ activeTab, onChange, tabTotals, disabled = false }: {
   activeTab: QuoteTab
   onChange: (tab: QuoteTab) => void
   tabTotals: Record<QuoteTab, number>
+  disabled?: boolean
 }) {
   return (
     <section className="nq-card nq-type-selector-card">
@@ -361,9 +374,11 @@ function QuoteTypeSelector({ activeTab, onChange, tabTotals }: {
           <button
             key={tab.key}
             type="button"
+            disabled={disabled && activeTab !== tab.key}
             className={cn('nq-tab-card', activeTab === tab.key && 'nq-tab-card-active')}
             style={activeTab === tab.key ? { borderColor: tab.color, '--tab-color': tab.color } as React.CSSProperties : undefined}
             onClick={() => onChange(tab.key)}
+            title={disabled && activeTab !== tab.key ? 'Remove all items before changing quote type' : undefined}
           >
             <span className="nq-tab-icon">{tab.icon}</span>
             <div className="nq-tab-text">
@@ -529,13 +544,10 @@ function TermsSection({ paymentTerms, paymentMethod, productionTime, deliveryMet
 }) {
   return (
     <div className="nq-sidebar-card">
-      <div className="nq-sidebar-card-header"><span>Terms &amp; Conditions</span></div>
+      <div className="nq-sidebar-card-header"><span>Payment Information</span></div>
       <div className="nq-terms-grid">
         <div className="nq-terms-field"><label>Payment Terms</label><select className="nq-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}><option>Net 15</option><option>Net 30</option><option>Due on Receipt</option></select></div>
         <div className="nq-terms-field"><label>Payment Method</label><select className="nq-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Bank Transfer</option><option>Zelle</option><option>PayPal</option><option>Cash App</option><option>Credit Card</option><option>Cash</option><option>Check</option></select></div>
-        <div className="nq-terms-field"><label>Production Time</label><select className="nq-select" value={productionTime} onChange={e => setProductionTime(e.target.value)}><option>2 - 3 Business Days</option><option>3 - 5 Business Days</option><option>5 - 7 Business Days</option></select></div>
-        <div className="nq-terms-field"><label>Delivery Method</label><select className="nq-select" value={deliveryMethod} onChange={e => setDeliveryMethod(e.target.value)}><option>Standard Shipping</option><option>Express Shipping</option><option>Local Pickup</option></select></div>
-        <div className="nq-terms-field"><label>Currency</label><select className="nq-select" value={currency} onChange={e => setCurrency(e.target.value)}><option>USD - US Dollar</option><option>CAD - Canadian Dollar</option><option>GBP - Pound Sterling</option></select></div>
       </div>
     </div>
   )
@@ -688,6 +700,70 @@ function CustomerInfoSection({
         </div>
       )}
     </section>
+  )
+}
+
+function CatalogStyleSearch({ onSelect }: { onSelect: (style: CatalogStyle) => void }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const [loadingId, setLoadingId] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const { data: styles = [], isFetching } = useQuery<CatalogStyle[]>({
+    queryKey: ['quotation-product-styles', search],
+    queryFn: () => api.get('/products', { params: { page: 1, limit: 50, search: search || undefined, product_type: 'Apparel' } })
+      .then(r => r.data.data?.rows ?? []),
+  })
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const choose = async (style: CatalogStyle) => {
+    setLoadingId(style.id)
+    try {
+      const detail = (await api.get(`/products/${style.id}`)).data.data as CatalogStyle
+      onSelect(detail)
+      setSearch('')
+      setOpen(false)
+    } catch {
+      toast.error('Could not load style colors and sizes')
+    } finally {
+      setLoadingId('')
+    }
+  }
+
+  return (
+    <div ref={ref} className="nq-style-search">
+      <div className="nq-style-search-input">
+        <Package size={15} />
+        <input
+          value={search}
+          placeholder="Search style by name, brand, style code or SKU..."
+          onFocus={() => setOpen(true)}
+          onChange={event => { setSearch(event.target.value); setOpen(true) }}
+        />
+        {isFetching && <span className="nq-style-searching">Searching…</span>}
+      </div>
+      {open && (
+        <div className="nq-style-results">
+          <div className="nq-style-results-label">Available Product Styles ({styles.length})</div>
+          {styles.map(style => (
+            <button type="button" key={style.id} onMouseDown={() => choose(style)} disabled={loadingId === style.id}>
+              {style.image_url
+                ? <img src={style.image_url} alt="" />
+                : <span className="nq-style-no-image"><Package size={17} /></span>}
+              <span className="nq-style-result-main"><strong>{style.name}</strong><small>{style.brand} · Style {style.sku}</small></span>
+              <span className="nq-style-result-counts">{style.total_colors} colors · {style.total_sizes} sizes · {style.total_skus} SKUs</span>
+            </button>
+          ))}
+          {!isFetching && styles.length === 0 && <div className="nq-style-empty">No matching style found.</div>}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1064,6 +1140,12 @@ export function NewQuotationPage() {
           quotedCost:   item.unit_price ?? 0,
           front_image:  item.front_image ?? null,
           back_image:   item.back_image  ?? null,
+          styleId:      item.catalog_style_id ?? undefined,
+          colorId:      item.catalog_color_id ?? undefined,
+          sizeId:       item.catalog_size_id ?? undefined,
+          sku:          item.catalog_sku ?? undefined,
+          styleCode:    item.model ?? undefined,
+          brand:        item.brand ?? undefined,
         })))
       } else if (orderType === 'dtf') {
         setTransferRows(q.items.map((item: Record<string, any>) => ({
@@ -1113,6 +1195,33 @@ export function NewQuotationPage() {
       setLeadNumber(l.lead_number ?? '')
     }
   }, [leadData])
+
+  // Rehydrate Product Master choices when an existing quotation is opened.
+  useEffect(() => {
+    const missing = apparelItems.filter(item => item.styleId && !item.availableColors)
+    if (!missing.length) return
+    let cancelled = false
+    Promise.all(missing.map(async item => {
+      const style = (await api.get(`/products/${item.styleId}`)).data.data as CatalogStyle
+      const color = style.colors?.find(value => value.display_name.toLowerCase() === item.variant.toLowerCase())
+      const size = style.sizes?.find(value => value.size_name.toLowerCase() === item.sizes.toLowerCase())
+      const variant = style.variants?.find(value => value.style_color_id === color?.style_color_id && value.style_size_id === size?.style_size_id)
+      return { id: item.id, style, color, size, variant }
+    })).then(hydrated => {
+      if (cancelled) return
+      setApparelItems(previous => previous.map(item => {
+        const match = hydrated.find(value => value.id === item.id)
+        if (!match) return item
+        return { ...item, styleCode: match.style.sku, brand: match.style.brand,
+          productImage: match.style.images?.[0]?.image_url ?? match.style.image_url,
+          styleDescription: match.style.description, availableColors: match.style.colors ?? [],
+          availableSizes: match.style.sizes ?? [], availableVariants: match.style.variants ?? [],
+          colorId: match.color?.style_color_id, sizeId: match.size?.style_size_id,
+          sku: match.variant?.sku_code ?? '' }
+      }))
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [apparelItems])
 
   const navigateAfterSave = useRef<string | null>(null)
 
@@ -1186,6 +1295,29 @@ export function NewQuotationPage() {
   const totals = useMemo(() => calculateQuotationTotals({ productTotals: { apparel: activeTotal, gangsheet: 0, transfers: 0, leadItems: 0 }, otherCharges }), [activeTotal, otherCharges])
 
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) => setApparelItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item))
+  const addCatalogStyle = (style: CatalogStyle) => {
+    setApparelItems(prev => [...prev, {
+      id: uid(),
+      description: style.name,
+      variant: '', sizes: '', qty: 1, quotedCost: 0,
+      front_image: null, back_image: null,
+      styleId: style.id, styleCode: style.sku, brand: style.brand,
+      productImage: style.images?.[0]?.image_url ?? style.image_url,
+      styleDescription: style.description,
+      availableColors: style.colors ?? [], availableSizes: style.sizes ?? [],
+      availableVariants: style.variants ?? [],
+    }])
+  }
+  const selectApparelColor = (item: ApparelItem, colorId: string) => {
+    const color = item.availableColors?.find(value => value.style_color_id === colorId)
+    const matchingSku = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.sizeId)
+    updateApparelItem(item.id, { colorId, variant: color?.display_name ?? '', sku: matchingSku?.sku_code ?? '' })
+  }
+  const selectApparelSize = (item: ApparelItem, sizeId: string) => {
+    const size = item.availableSizes?.find(value => value.style_size_id === sizeId)
+    const matchingSku = item.availableVariants?.find(value => value.style_size_id === sizeId && value.style_color_id === item.colorId)
+    updateApparelItem(item.id, { sizeId, sizes: size?.size_name ?? '', sku: matchingSku?.sku_code ?? '' })
+  }
   const updateGangsheetRow = (id: string, patch: Partial<GangsheetRow>) => setGangsheetRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
   const updateTransferRow = (id: string, patch: Partial<TransferRow>) => setTransferRows(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
   const toggleCharge = (key: OtherCharge['key']) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, enabled: !charge.enabled } : charge))
@@ -1228,6 +1360,12 @@ export function NewQuotationPage() {
           sort_order:    sortIdx++,
           front_image:   item.front_image || null,
           back_image:    item.back_image  || null,
+          catalog_style_id: item.styleId || null,
+          catalog_color_id: item.colorId || null,
+          catalog_size_id:  item.sizeId || null,
+          catalog_sku:      item.sku || null,
+          brand:         item.brand || null,
+          model:         item.styleCode || null,
         })
       })
     } else if (activeTab === 'dtf') {
@@ -1306,15 +1444,12 @@ export function NewQuotationPage() {
     <div className="nq-page">
       <header className="nq-header">
         <div className="nq-header-left">
-          <nav className="nq-breadcrumb">
-            <button className="nq-breadcrumb-link" onClick={() => navigate('/quotes')}>Quotes</button>
-            <span className="nq-breadcrumb-sep">›</span>
-            <span className="nq-breadcrumb-current">{quoteId ? 'Edit Quotation' : 'New Quotation'}</span>
-          </nav>
           <h1 className="nq-title">{quoteId ? 'Edit Quotation' : 'New Quotation'}</h1>
-          <p className="nq-subtitle">
-            {leadId ? `Auto-filled from lead ${leadNumber || leadId}` : 'Create, review and send quotation to customer'}
-          </p>
+        </div>
+        <div className="nq-header-actions">
+          <button type="button" className="lb-action-btn" onClick={() => quoteId ? navigate(`/quotes/${quoteId}/print`) : toast.error('Save the quote first, then click Preview')}>Preview PDF</button>
+          <button type="button" className="lb-action-btn" onClick={handleSendToCustomer}><Send size={13} /> Send to Customer</button>
+          <button type="button" className="lb-action-btn">More Actions <ChevronDown size={12} /></button>
         </div>
       </header>
 
@@ -1323,13 +1458,10 @@ export function NewQuotationPage() {
         quoteNumber={(quotationData as Record<string, any>)?.quote_number ?? ''}
         revisionNumber={Number((quotationData as Record<string, any>)?.revision_number ?? 1)}
         quoteDate={quoteDate} setQuoteDate={setQuoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
-        agent={agent} setAgent={setAgent} />
+        agent={agent} setAgent={setAgent} leadNumber={leadNumber} customerName={customerName} source={customerSource} />
 
       <div className="nq-body">
         <main className="nq-main">
-          <SupplierSection billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} />
-
-
           <CustomerInfoSection
             leadId={leadId} leadNumber={leadNumber} customerSource={customerSource}
             customerId={customerId} customerText={customerText}
@@ -1347,6 +1479,8 @@ export function NewQuotationPage() {
             zipCode={zipCode}
           />
 
+          <SupplierSection billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} customerId={customerId} />
+
           {(leadId || leadItems.length > 0) && (
             <LeadItemsSection items={leadItems} setItems={setLeadItems} />
           )}
@@ -1356,40 +1490,41 @@ export function NewQuotationPage() {
             activeTab={activeTab}
             onChange={setActiveTab}
             tabTotals={{ apparel: apparelTotal, dtf: transfersTotal, gangsheet: gangsheetTotal }}
+            disabled={apparelItems.length + transferRows.length + gangsheetRows.length + leadItems.length > 0}
           />
 
           {/* ── Active Tab Content ── */}
           {activeTab === 'apparel' && (
             <section className="nq-card">
               <div className="nq-section-header">
-                <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
+                <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
+                <button type="button" className="lb-action-btn" onClick={() => navigate('/artworks')}>Open Artwork Studio</button>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table"><thead><tr><th>#</th><th title="Item Description — Brand / Model">Item <small>Brand / Model</small></th><th>Color</th><th title="Quantity (Shirts)">Qty</th><th title="Sizes — Size Ratio">Size Mix <small>Size / Ratio</small></th><th title="Front Artwork">Front Art</th><th title="Back Artwork">Back Art</th><th title="Unit Price (USD)">Unit $</th><th title="Total Amount (USD)">Total $</th><th></th></tr></thead><tbody>
+              <CatalogStyleSearch onSelect={addCatalogStyle} />
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
-                    <td><textarea className="nq-table-input nq-description-input" rows={2} placeholder="T-Shirt Premium — Gildan | 18500" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></td>
-                    <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
+                    <td><div className="nq-quote-product"><div className="nq-quote-product-image">{item.productImage ? <img src={item.productImage} alt={item.description} /> : <Package size={20} />}</div><div><strong>{item.description || 'Legacy apparel item'}</strong><span>Brand: {item.brand || '—'}</span><span>Style: {item.styleCode || '—'}</span>{item.styleDescription && <small title={item.styleDescription}>{item.styleDescription}</small>}</div></div></td>
+                    <td>{item.styleId ? <select className="nq-table-select" value={item.colorId ?? ''} onChange={e => selectApparelColor(item, e.target.value)}><option value="">Select color</option>{(item.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="nq-table-input" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} />}</td>
+                    <td>{item.styleId ? <select className="nq-table-select" value={item.sizeId ?? ''} onChange={e => selectApparelSize(item, e.target.value)}><option value="">Select size</option>{(item.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} />}</td>
+                    <td><code className="nq-item-sku">{item.sku || (item.colorId && item.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
-                    <td><ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} /></td>
-                    <td><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /></td>
-                    <td><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></td>
+                    <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No items yet — click "Add Apparel Row" below.</td></tr>}
+                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
-                <td colSpan={3}><span className="live-summary-title">Apparel Summary</span></td>
+                <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
-                <td></td>
-                <td colSpan={2}><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparelArtwork}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Artworks</span><strong>{apparelArtwork}</strong></div></td>
                 <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot></table></div>
-              <button className="nq-add-row-btn" onClick={() => setApparelItems(prev => [...prev, { id: uid(), description: '', variant: '', sizes: '', qty: 1, quotedCost: 0, front_image: null, back_image: null }])}><Plus size={12} /> Add Apparel Row</button>
             </section>
           )}
 
@@ -1473,8 +1608,6 @@ export function NewQuotationPage() {
         </main>
 
         <aside className="nq-sidebar">
-          <CRMSnapshotPanel lead={leadData ?? null} />
-          <PreviousQuotesSection quoteId={quoteId} />
           <PricingSummary totals={totals} />
           <TermsSection paymentTerms={paymentTerms} paymentMethod={paymentMethod} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setPaymentMethod={setPaymentMethod} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
         </aside>

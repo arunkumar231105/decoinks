@@ -89,6 +89,46 @@ img, svg, video, canvas { max-width: 100%; }
   .MuiDialog-paper { width: calc(100% - 24px) !important; max-width: calc(100% - 24px) !important; margin: 12px !important; }
 }
 
+/* Quotation Product Master selector */
+.nq-page > .nq-info-bar { display: grid; grid-template-columns: 1.1fr .6fr .6fr .75fr 1fr .85fr .85fr .8fr 1fr; gap: 0; margin: 0 18px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 9px; box-shadow: 0 2px 8px rgba(15,23,42,.04); }
+.nq-page > .nq-info-bar .nq-info-field { min-height: 54px; padding: 0 14px; justify-content: center; border-right: 1px solid #e2e8f0; }
+.nq-page > .nq-info-bar .nq-info-field:last-child { border-right: 0; }
+.nq-page > .nq-info-bar .nq-input { min-width: 0; width: 100%; }
+.nq-style-search { position: relative; margin: 12px 0; z-index: 20; }
+.nq-style-search-input { height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #64748b; }
+.nq-style-search-input:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.nq-style-search-input input { flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; color: #0f172a; background: transparent; }
+.nq-style-searching { font-size: 11px; color: #64748b; }
+.nq-style-results { position: absolute; top: calc(100% + 5px); left: 0; right: 0; max-height: 370px; overflow-y: auto; background: #fff; border: 1px solid #dbe3ec; border-radius: 9px; box-shadow: 0 16px 38px rgba(15,23,42,.16); }
+.nq-style-results-label { position: sticky; top: 0; z-index: 1; padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.nq-style-results button { width: 100%; display: grid; grid-template-columns: 46px minmax(190px,1fr) auto; align-items: center; gap: 11px; padding: 9px 12px; border: 0; border-bottom: 1px solid #f1f5f9; background: #fff; text-align: left; cursor: pointer; }
+.nq-style-results button:hover { background: #eff6ff; }
+.nq-style-results button img,.nq-style-no-image { width: 44px; height: 44px; object-fit: contain; display: grid; place-items: center; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; color: #94a3b8; }
+.nq-style-result-main { min-width: 0; }
+.nq-style-result-main strong,.nq-style-result-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nq-style-result-main strong { color: #0f172a; font-size: 12px; }
+.nq-style-result-main small,.nq-style-result-counts { margin-top: 3px; color: #64748b; font-size: 10px; }
+.nq-style-empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 12px; }
+.nq-items-hint { margin: 7px 0 0; color: #64748b; font-size: 11px; }
+.nq-catalog-items-table { min-width: 1220px; }
+.nq-quote-product { display: flex; align-items: center; gap: 9px; min-width: 225px; }
+.nq-quote-product-image { width: 56px; height: 56px; flex: 0 0 56px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; color: #94a3b8; }
+.nq-quote-product-image img { width: 100%; height: 100%; object-fit: contain; }
+.nq-quote-product strong,.nq-quote-product span,.nq-quote-product small { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nq-quote-product strong { color: #0f172a; font-size: 12px; }
+.nq-quote-product span { margin-top: 2px; color: #64748b; font-size: 10px; }
+.nq-quote-product small { margin-top: 4px; color: #94a3b8; font-size: 9px; }
+.nq-item-sku { display: inline-block; max-width: 145px; padding: 4px 6px; border-radius: 5px; background: #f1f5f9; color: #475569; font-size: 10px; white-space: normal; }
+.nq-artwork-pair { display: flex; gap: 4px; }
+.nq-tab-card:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 800px) {
+  .nq-page > .nq-info-bar { grid-template-columns: 1fr 1fr; margin: 0 12px; }
+  .nq-page > .nq-info-bar .nq-info-field { border-right: 0; border-bottom: 1px solid #e2e8f0; }
+  .nq-style-results button { grid-template-columns: 42px 1fr; }
+  .nq-style-result-counts { grid-column: 2; }
+}
+
 /* ===== Orders V01 reference layout ===== */
 .no-page { gap: 12px; padding-bottom: 28px; background: #f7f9fc; }
 .no-topbar {
