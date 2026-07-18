@@ -323,6 +323,44 @@ async function update(id, fields) {
   return rows[0]
 }
 
+async function copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType) {
+  if (orderType === 'apparel') {
+    await q.query(
+      `INSERT INTO order_items_apparel
+         (order_id, item, color, size, qty, artwork_no, unit_price, amount,
+          front_image, back_image, sort_order, catalog_style_id, catalog_color_id,
+          catalog_size_id, catalog_sku, brand, model, product_image, style_description)
+       SELECT $2, COALESCE(description, 'Apparel Item'), colors, sizes, qty, artwork_no,
+              unit_price, amount, front_image, back_image, sort_order,
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
+              brand, model, product_image, style_description
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  } else if (orderType === 'dtf') {
+    await q.query(
+      `INSERT INTO order_items_dtf
+         (order_id, artwork_name, artwork_no, size, qty, unit_price, amount,
+          artwork_image, front_image, back_image, sort_order)
+       SELECT $2, COALESCE(description, 'DTF Transfer'), artwork_no, sizes, qty,
+              unit_price, amount, COALESCE(artwork_image, front_image), front_image,
+              back_image, sort_order
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  } else if (orderType === 'gangsheet') {
+    await q.query(
+      `INSERT INTO order_items_gangsheet
+         (order_id, size, no_artworks, qty, price_per_sheet, amount,
+          front_image, back_image, sort_order)
+       SELECT $2, COALESCE(sizes, description, 'Gangsheet'), GREATEST(artwork_count, 1),
+              qty, unit_price, amount, COALESCE(front_image, artwork_image), back_image, sort_order
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  }
+}
+
 async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   // Resolve order_type from the linked quotation (if any)
   const q = clientArg || { query: (...a) => query(...a) }
@@ -348,18 +386,25 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
 
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
-       (order_number, invoice_id, supplier_id, order_type, order_date,
-        subtotal, discount_amt, tax_amt, total, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+        payment_terms, payment_method, currency, contact_name, contact_email,
+        contact_phone, shipping_name, shipping_address, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
-      ordNumber, invoiceId, invoice.supplier_id, orderType,
+      ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
       new Date().toISOString().split('T')[0],
-      invoice.subtotal, invoice.discount_amt, 0, total,
+      invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
+      invoice.tax_pct || 0, invoice.tax_amt || 0, total,
+      invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',
+      invoice.customer_name, invoice.billing_email, invoice.contact_number,
+      invoice.customer_name, invoice.shipping_address, invoice.notes,
       actorId,
     ]
   )
   const orderId = ordRows[0].id
+  await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
 
   await q.query(
     `INSERT INTO pipeline_events
@@ -418,18 +463,25 @@ async function updateStatus(id, status, actor) {
           const total = +Number(invoice.total).toFixed(2)
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
-               (order_number, invoice_id, supplier_id, order_type, order_date,
-                subtotal, discount_amt, tax_amt, total, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+                subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+                payment_terms, payment_method, currency, contact_name, contact_email,
+                contact_phone, shipping_name, shipping_address, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
-              ordNumber, id, invoice.supplier_id, orderType,
+              ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
               new Date().toISOString().split('T')[0],
-              invoice.subtotal, invoice.discount_amt, 0, total,
+              invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
+              invoice.tax_pct || 0, invoice.tax_amt || 0, total,
+              invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',
+              invoice.customer_name, invoice.billing_email, invoice.contact_number,
+              invoice.customer_name, invoice.shipping_address, invoice.notes,
               actorId,
             ]
           )
           autoOrderId = ordRows[0].id
+          await copyInvoiceItemsToOrder(client, id, autoOrderId, orderType)
 
           await client.query(
             `INSERT INTO pipeline_events

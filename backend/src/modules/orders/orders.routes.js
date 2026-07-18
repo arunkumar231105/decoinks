@@ -36,6 +36,14 @@ const apparelItemSchema = z.object({
   unit_price:   z.number().nonnegative(),
   front_image:  z.string().optional().nullable(),
   back_image:   z.string().optional().nullable(),
+  catalog_style_id: z.string().uuid().optional().nullable(),
+  catalog_color_id: z.string().uuid().optional().nullable(),
+  catalog_size_id: z.string().uuid().optional().nullable(),
+  catalog_sku: z.string().max(100).optional().nullable(),
+  brand: z.string().max(100).optional().nullable(),
+  model: z.string().max(100).optional().nullable(),
+  product_image: z.string().optional().nullable(),
+  style_description: z.string().optional().nullable(),
 })
 
 const gangsheetItemSchema = z.object({
@@ -52,6 +60,9 @@ const dtfItemSchema = z.object({
   qty:           z.number().int().positive(),
   unit_price:    z.number().nonnegative(),
   artwork_image: z.string().optional().nullable(),
+  artwork_no:    z.string().max(100).optional().nullable(),
+  front_image:   z.string().optional().nullable(),
+  back_image:    z.string().optional().nullable(),
 })
 
 const ITEM_SCHEMAS = { apparel: apparelItemSchema, gangsheet: gangsheetItemSchema, dtf: dtfItemSchema }

@@ -26,11 +26,15 @@ async function insertItems(client, orderId, orderType, items) {
     if (orderType === 'apparel') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_apparel (order_id, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO order_items_apparel (order_id, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, product_image, style_description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [orderId, item.item, item.color || null, item.size || null, item.qty,
          item.artwork_no || null, item.artwork_size || null, item.unit_price, amount,
-         item.front_image || null, item.back_image || null, i]
+         item.front_image || null, item.back_image || null, i,
+         item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
+         item.catalog_sku || null, item.brand || null, item.model || null,
+         item.product_image || null, item.style_description || null]
       )
     } else if (orderType === 'gangsheet') {
       const amount = +(Number(item.price_per_sheet) * Number(item.qty)).toFixed(2)
@@ -42,12 +46,42 @@ async function insertItems(client, orderId, orderType, items) {
     } else if (orderType === 'dtf') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order, artwork_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [orderId, item.artwork_name, item.size || null, item.qty, item.unit_price, amount,
-         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i]
+         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i, item.artwork_no || null]
       )
     }
+  }
+}
+
+async function insertInvoiceItems(client, orderId, invoiceId, orderType) {
+  if (orderType === 'apparel') {
+    await client.query(
+      `INSERT INTO order_items_apparel
+         (order_id,item,color,size,qty,artwork_no,unit_price,amount,front_image,back_image,sort_order,
+          catalog_style_id,catalog_color_id,catalog_size_id,catalog_sku,brand,model,product_image,style_description)
+       SELECT $1,COALESCE(description,'Apparel Item'),colors,sizes,qty,artwork_no,unit_price,amount,
+              front_image,back_image,sort_order,catalog_style_id,catalog_color_id,catalog_size_id,
+              catalog_sku,brand,model,product_image,style_description
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
+  } else if (orderType === 'dtf') {
+    await client.query(
+      `INSERT INTO order_items_dtf
+         (order_id,artwork_name,artwork_no,size,qty,unit_price,amount,artwork_image,front_image,back_image,sort_order)
+       SELECT $1,COALESCE(description,'DTF Transfer'),artwork_no,sizes,qty,unit_price,amount,
+              COALESCE(artwork_image,front_image),front_image,back_image,sort_order
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
+  } else {
+    await client.query(
+      `INSERT INTO order_items_gangsheet
+         (order_id,size,no_artworks,qty,price_per_sheet,amount,front_image,back_image,sort_order)
+       SELECT $1,COALESCE(sizes,description,'Gangsheet'),GREATEST(artwork_count,1),qty,unit_price,
+              amount,COALESCE(front_image,artwork_image),back_image,sort_order
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
   }
 }
 
@@ -174,7 +208,8 @@ async function create(data) {
       ]
     )
     const order = rows[0]
-    await insertItems(client, order.id, order_type, items)
+    if (invoice_id && items.length === 0) await insertInvoiceItems(client, order.id, invoice_id, order_type)
+    else await insertItems(client, order.id, order_type, items)
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
        VALUES ($1, 'order', $2, 'created', $3)`,
