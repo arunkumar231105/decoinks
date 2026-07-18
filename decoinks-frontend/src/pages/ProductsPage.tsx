@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { Divider as MuiDivider, Menu, MenuItem } from '@mui/material'
 import {
-  ChevronLeft, ChevronRight, MoreHorizontal, Plus, Search, Upload, X,
+  ChevronLeft, ChevronRight, Image as ImageIcon, Search, X,
 } from 'lucide-react'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
@@ -25,6 +25,19 @@ interface Product {
   brand: string | null; model_number: string | null
   color: string | null; size: string | null
   is_active: boolean; created_at: string
+  image_url?: string | null
+}
+
+interface StyleColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null; active: boolean; discontinued: boolean }
+interface StyleSize { style_size_id: string; size_code: string; size_name: string; size_group: string; active: boolean; discontinued: boolean }
+interface StyleImage { style_image_id: string; image_url: string; alt_text: string | null; is_primary: boolean }
+interface StyleDetail extends Product {
+  garment_category: string; garment_type: string; gender: string | null; fit_type: string | null
+  sleeve_type: string | null; neck_type: string | null; fabric_composition: string | null
+  fabric_weight_gsm: number | null; fabric_weight_oz: number | null; fabric_type: string | null
+  total_colors: number; total_sizes: number; total_skus: number
+  colors: StyleColor[]; sizes: StyleSize[]; images: StyleImage[]
+  decorations: Array<{ process_type: string; size_range: string | null; notes: string | null }>
 }
 
 interface ImportRow {
@@ -126,6 +139,7 @@ export function ProductsPage() {
   const [filterType,  setFilterType]  = useState('')
   const [filterBrand, setFilterBrand] = useState('')
   const [page,        setPage]        = useState(1)
+  const [selectedId,  setSelectedId]  = useState<string | null>(null)
   const [showForm,    setShowForm]    = useState(false)
   const [menuAnchor,  setMenuAnchor]  = useState<{ el: HTMLElement; id: string } | null>(null)
 
@@ -152,6 +166,12 @@ export function ProductsPage() {
     queryKey: ['products', { page, search, filterType, filterBrand }],
     queryFn: () => api.get('/products', { params: { page, limit: PAGE_SIZE, search, product_type: filterType || undefined } }).then(r => r.data.data),
     placeholderData: keepPreviousData,
+  })
+
+  const { data: styleDetail, isLoading: detailLoading } = useQuery<StyleDetail>({
+    queryKey: ['product-style-detail', selectedId],
+    queryFn: () => api.get(`/products/${selectedId}`).then(r => r.data.data),
+    enabled: Boolean(selectedId),
   })
 
   const allProducts: Product[] = data?.rows ?? []
@@ -324,7 +344,7 @@ export function ProductsPage() {
               const tc = TYPE_COLORS[p.product_type] ?? TYPE_COLORS.Other
               const isActive = p.is_active
               return (
-                <tr key={p.id} className="cust-row">
+                <tr key={p.id} className="cust-row" onClick={() => setSelectedId(p.id)} style={{ cursor: 'pointer' }} title="Click to preview complete style">
                   <td>
                     <strong className="prod-name">{p.name}</strong>
                     {p.model_number && <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 6 }}>#{p.model_number}</span>}
@@ -376,6 +396,67 @@ export function ProductsPage() {
                 : <button key={n} className={cn('lb-action-btn cust-pag-btn', n===page && 'lb-action-primary')} onClick={() => setPage(n as number)}>{n}</button>
             )}
             <button className="lb-action-btn cust-pag-btn" disabled={page===totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight size={14}/></button>
+          </div>
+        </div>
+      )}
+
+      {selectedId && (
+        <div className="prod-overlay" onClick={() => setSelectedId(null)}>
+          <div className="prod-slideover" style={{ width: 'min(980px, 96vw)', maxWidth: 980 }} onClick={(e) => e.stopPropagation()}>
+            <div className="prod-so-header">
+              <div>
+                <h3>{styleDetail?.name ?? 'Style preview'}</h3>
+                {styleDetail && <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: 12 }}>{styleDetail.brand} · #{styleDetail.model_number}</p>}
+              </div>
+              <button className="lb-icon-btn" onClick={() => setSelectedId(null)}><X size={18} /></button>
+            </div>
+            <div className="prod-so-body" style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
+              {detailLoading && <div className="cust-empty-row">Loading complete style information...</div>}
+              {styleDetail && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 38%) 1fr', gap: 24 }}>
+                    <div>
+                      <div style={{ minHeight: 290, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+                        {styleDetail.images[0]
+                          ? <img src={styleDetail.images[0].image_url} alt={styleDetail.images[0].alt_text ?? styleDetail.name} style={{ width: '100%', height: 320, objectFit: 'contain' }} />
+                          : <div style={{ color: '#94a3b8', textAlign: 'center' }}><ImageIcon size={42} /><div>No image</div></div>}
+                      </div>
+                      {styleDetail.images.length > 1 && <div style={{ display: 'flex', gap: 8, marginTop: 10, overflowX: 'auto' }}>
+                        {styleDetail.images.map(img => <img key={img.style_image_id} src={img.image_url} alt={img.alt_text ?? styleDetail.name} style={{ width: 64, height: 64, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 8 }} />)}
+                      </div>}
+                    </div>
+                    <div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 18 }}>
+                        {[['Colors', styleDetail.total_colors], ['Sizes', styleDetail.total_sizes], ['SKUs', styleDetail.total_skus]].map(([label, value]) => (
+                          <div key={label} style={{ padding: 12, borderRadius: 10, background: '#f1f5f9', textAlign: 'center' }}><strong style={{ display: 'block', fontSize: 20 }}>{value}</strong><span style={{ color: '#64748b', fontSize: 11 }}>{label}</span></div>
+                        ))}
+                      </div>
+                      <h4 style={{ margin: '0 0 10px' }}>All colors ({styleDetail.total_colors})</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: 8, maxHeight: 245, overflowY: 'auto', paddingRight: 4 }}>
+                        {styleDetail.colors.map(c => <div key={c.style_color_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}>
+                          <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: c.hex_color || colorDot(c.display_name), border: '1px solid #cbd5e1' }} />
+                          <span>{c.display_name}</span>
+                        </div>)}
+                      </div>
+                      <h4 style={{ margin: '18px 0 9px' }}>Available sizes ({styleDetail.total_sizes})</h4>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                        {styleDetail.sizes.map(s => <span key={s.style_size_id} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '5px 9px', borderRadius: 6, fontWeight: 600, fontSize: 12 }}>{s.size_name}</span>)}
+                      </div>
+                    </div>
+                  </div>
+                  <h4 style={{ margin: '24px 0 10px' }}>Style information</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 1, background: '#e2e8f0', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                    {[
+                      ['Brand', styleDetail.brand], ['Style code', styleDetail.model_number], ['Category', styleDetail.garment_category],
+                      ['Garment type', styleDetail.garment_type], ['Gender', styleDetail.gender], ['Fit', styleDetail.fit_type],
+                      ['Sleeve', styleDetail.sleeve_type], ['Neck', styleDetail.neck_type], ['Fabric', styleDetail.fabric_composition],
+                      ['Fabric type', styleDetail.fabric_type], ['Weight (GSM)', styleDetail.fabric_weight_gsm], ['Weight (oz)', styleDetail.fabric_weight_oz],
+                    ].map(([label, value]) => <div key={label} style={{ background: '#fff', padding: '10px 12px' }}><span style={{ display: 'block', color: '#64748b', fontSize: 10, textTransform: 'uppercase' }}>{label}</span><strong style={{ fontSize: 12 }}>{value || '—'}</strong></div>)}
+                  </div>
+                  {styleDetail.decorations.length > 0 && <><h4 style={{ margin: '22px 0 10px' }}>Decoration methods</h4><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{styleDetail.decorations.map((d, i) => <span key={`${d.process_type}-${i}`} className="prod-type-badge" style={{ background: '#ccfbf1', color: '#0f766e' }}>{d.process_type}{d.size_range ? ` · ${d.size_range}` : ''}</span>)}</div></>}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

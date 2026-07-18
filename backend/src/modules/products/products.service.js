@@ -27,7 +27,40 @@ async function list({ page = 1, limit = 10, search = '', product_type = '', acti
 async function getById(id) {
   const { rows } = await query(`SELECT * FROM ${SOURCE} WHERE id=$1 AND deleted_at IS NULL`, [id])
   if (!rows[0]) throw Object.assign(new Error('Product not found'), { statusCode: 404 })
-  return rows[0]
+  const product = rows[0]
+  const [colors, sizes, variants, images, decorations] = await Promise.all([
+    query(`SELECT style_color_id,color_name,display_name,hex_color,color_family,
+                  supplier_color_code,internal_color_code,is_popular,is_default,active,discontinued
+             FROM blanktex.style_colors WHERE style_id=$1
+            ORDER BY sort_order,display_name`, [product.style_id]),
+    query(`SELECT z.style_size_id,z.size_code,z.size_name,z.size_group,z.display_order,
+                  z.is_default,z.active,z.discontinued,to_jsonb(sp) size_spec
+             FROM blanktex.style_sizes z
+             LEFT JOIN blanktex.style_size_specs sp ON sp.style_size_id=z.style_size_id
+            WHERE z.style_id=$1 ORDER BY z.display_order,z.size_name`, [product.style_id]),
+    query(`SELECT sku_id,sku_code,supplier_sku,barcode,weight_lbs,style_color_id,style_size_id,
+                  active,discontinued FROM blanktex.style_color_sizes
+            WHERE style_id=$1 ORDER BY sku_code`, [product.style_id]),
+    query(`SELECT style_image_id,
+                  CASE WHEN image_url ~ '^https?://' THEN image_url
+                       ELSE 'https://blanktex.decoinkssuite.com/' || ltrim(image_url,'/') END image_url,
+                  alt_text,is_primary,sort_order
+             FROM blanktex.style_images WHERE style_id=$1
+            ORDER BY is_primary DESC,sort_order,created_at`, [product.style_id]),
+    query(`SELECT process_type,supplier_color_code,size_range,notes
+             FROM blanktex.style_decorations WHERE style_id=$1 ORDER BY process_type`, [product.style_id]),
+  ])
+  return {
+    ...product,
+    colors: colors.rows,
+    sizes: sizes.rows,
+    variants: variants.rows,
+    images: images.rows,
+    decorations: decorations.rows,
+    total_colors: colors.rows.length,
+    total_sizes: sizes.rows.length,
+    total_skus: variants.rows.length,
+  }
 }
 
 async function create() { return managedInBlankTex() }
