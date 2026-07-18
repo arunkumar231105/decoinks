@@ -275,7 +275,7 @@ export function ProductsPage() {
       <div className="cust-page-header">
         <div>
           <h2 className="cust-page-title">Products</h2>
-          <p className="cust-page-sub">Manage your print catalog, types, and decoration methods.</p>
+          <p className="cust-page-sub">Live BlankTex catalog — styles, SKUs, colors, sizes, brands and images update automatically.</p>
         </div>
         <div className="cust-controls">
           <div className="cust-search">
@@ -293,13 +293,6 @@ export function ProductsPage() {
             value={filterBrand}
             onChange={e => handleFilterBrand(e.target.value)}
           />
-          <input ref={fileInputRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFileChange} />
-          <button className="lb-action-btn" onClick={() => fileInputRef.current?.click()} title="Import products from CSV (save Excel as CSV first)">
-            <Upload size={14} /> Import CSV
-          </button>
-          <button className="lb-action-btn lb-action-primary" onClick={() => setShowForm(true)}>
-            <Plus size={14} /> New Product
-          </button>
         </div>
       </div>
 
@@ -322,12 +315,11 @@ export function ProductsPage() {
               <th>Base Price</th>
               <th>Stock</th>
               <th>Status</th>
-              <th />
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={10} className="cust-empty-row">Loading...</td></tr>}
-            {!isLoading && products.length === 0 && <tr><td colSpan={10} className="cust-empty-row">No products match your search.</td></tr>}
+            {isLoading && <tr><td colSpan={9} className="cust-empty-row">Loading...</td></tr>}
+            {!isLoading && products.length === 0 && <tr><td colSpan={9} className="cust-empty-row">No products match your search.</td></tr>}
             {!isLoading && products.map((p) => {
               const tc = TYPE_COLORS[p.product_type] ?? TYPE_COLORS.Other
               const isActive = p.is_active
@@ -363,11 +355,6 @@ export function ProductsPage() {
                     <span className="cust-status-badge" style={isActive ? { background:'#dcfce7', color:'#15803d' } : { background:'#f1f5f9', color:'#64748b' }}>
                       {isActive ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="lb-icon-btn" onClick={(e) => setMenuAnchor({ el: e.currentTarget, id: p.id })}>
-                      <MoreHorizontal size={15} />
-                    </button>
                   </td>
                 </tr>
               )
