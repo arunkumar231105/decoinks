@@ -66,6 +66,7 @@ interface GangsheetRow {
 
 interface TransferRow {
   id: string
+  artworkNo: string
   width: string
   height: string
   qty: number
@@ -1134,6 +1135,7 @@ export function NewQuotationPage() {
       } else if (orderType === 'dtf') {
         setTransferRows(q.items.map((item: Record<string, any>) => ({
           id:            item.id ?? uid(),
+          artworkNo:     item.artwork_no ?? '',
           ...parseTransferSize(item.description),
           qty:           item.qty ?? 1,
           quotedCost:    item.unit_price ?? 0,
@@ -1356,6 +1358,7 @@ export function NewQuotationPage() {
       transferRows.forEach(row => {
         allItems.push({
           description:   formatTransferSize(row.width, row.height),
+          artwork_no:    row.artworkNo.trim() || null,
           qty:           row.qty,
           unit_price:    row.quotedCost,
           artwork_count: 1,
@@ -1516,10 +1519,11 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Artwork No</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Rate (USD)</th><th>Amount (USD)</th><th></th></tr></thead><tbody>
                 {transferRows.map((row, idx) => (
                   <tr key={row.id}>
                     <td className="nq-td-num">{idx + 1}</td>
+                    <td><input className="nq-table-input" placeholder={`AW-${String(idx + 1).padStart(4, '0')}`} value={row.artworkNo} onChange={e => updateTransferRow(row.id, { artworkNo: e.target.value })} /></td>
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Width" aria-label={`Transfer ${idx + 1} width in inches`} value={row.width} onChange={e => updateTransferRow(row.id, { width: e.target.value })} /></td>
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
@@ -1529,15 +1533,15 @@ export function NewQuotationPage() {
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {transferRows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
+                {transferRows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '18px 0' }}>No transfers yet — click "Add Transfer Row" below.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
-                <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                <td colSpan={4}><span className="live-summary-title">DTF Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{transfersQty}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{transferRows.length}</strong></div></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(transfersTotal)}</strong></div></td>
-                <td></td>
+                <td colSpan={2}></td>
               </tr></tfoot></table></div>
-              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, quotedCost: 0, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
+              <button className="nq-add-row-btn" onClick={() => setTransferRows(prev => [...prev, { id: uid(), artworkNo: '', width: '', height: '', qty: 1, quotedCost: 0, artwork_image: null }])}><Plus size={12} /> Add Transfer Row</button>
             </section>
           )}
 

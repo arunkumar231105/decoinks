@@ -9,6 +9,7 @@ interface QuoteItem {
   id: string; description: string; qty: number; unit_price: number
   amount: number; sizes: string | null; colors: string | null; artwork_count: number
   artwork_image: string | null; front_image: string | null; back_image: string | null
+  artwork_no: string | null
 }
 interface Artwork {
   id: string; artwork_no: string; name: string; file_url: string | null
@@ -734,124 +735,56 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
 // ── DTF TABLE ─────────────────────────────────────────────────────────────────
 
 function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[] }) {
-  if (artworks.length > 0) {
-    // Group artworks by item — distribute evenly if no direct mapping
-    const artPerItem = Math.ceil(artworks.length / Math.max(items.length, 1))
-    const rows: { item: QuoteItem; itemIdx: number; art: Artwork; artIdxInItem: number; totalArtsForItem: number }[] = []
-
-    let artIdx = 0
-    items.forEach((item, itemIdx) => {
-      const countForItem = item.artwork_count || artPerItem
-      const myArts = artworks.slice(artIdx, artIdx + countForItem)
-      if (myArts.length === 0) myArts.push(artworks[artIdx % artworks.length])
-      myArts.forEach((art, ai) => {
-        rows.push({ item, itemIdx, art, artIdxInItem: ai, totalArtsForItem: myArts.length })
-      })
-      artIdx += countForItem
-    })
-
-    return (
-      <table className="items-tbl">
-        <thead>
-          <tr>
-            <th style={{ width: 40 }}>S.No</th>
-            <th className="left" style={{ minWidth: 150 }}>
-              Item Description<br />
-              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
-            </th>
-            <th style={{ width: 80 }}>Artwork No</th>
-            <th style={{ width: 78 }}>Artwork Thumbnail</th>
-            <th style={{ width: 120 }}>
-              Artwork Size<br />
-              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(Width x Height)</span>
-            </th>
-            <th style={{ width: 70 }}>QTY</th>
-            <th style={{ width: 80 }}>
-              Rate<br />
-              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(USD)</span>
-            </th>
-            <th style={{ width: 90 }}>
-              Amount<br />
-              <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(USD)</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, ri) => {
-            const rowQty = Math.ceil(r.item.qty / r.totalArtsForItem)
-            const rowAmt = +(rowQty * r.item.unit_price).toFixed(2)
-            // Use the transfer size stored in the item description (e.g. '12" x 12"')
-            const artSize = r.item.description || r.art.name
-            return (
-              <tr key={ri}>
-                {r.artIdxInItem === 0 && (
-                  <td rowSpan={r.totalArtsForItem} style={{ fontWeight: 700, color: '#374151', verticalAlign: 'middle' }}>
-                    {r.itemIdx + 1}
-                  </td>
-                )}
-                {r.artIdxInItem === 0 && (
-                  <td rowSpan={r.totalArtsForItem} className="left" style={{ verticalAlign: 'middle' }}>
-                    <div className="item-main">{r.item.description}</div>
-                    <div className="item-sub">
-                      Premium Quality DTF<br />
-                      Ready to Press<br />
-                      Full Color
-                    </div>
-                  </td>
-                )}
-                <td><span className="aw-no">{r.art.artwork_no}</span></td>
-                <td>
-                  {r.art.file_url && r.art.file_type !== 'pdf'
-                    ? <img src={r.art.file_url} alt={r.art.name} className="art-img" />
-                    : <div className="art-empty">—</div>}
-                </td>
-                <td style={{ fontSize: 11 }}>{artSize}</td>
-                <td style={{ fontWeight: 600 }}>{rowQty} pcs</td>
-                {r.artIdxInItem === 0 && (
-                  <td rowSpan={r.totalArtsForItem} style={{ verticalAlign: 'middle', fontWeight: 700 }}>
-                    $ {r.item.unit_price.toFixed(2)}
-                  </td>
-                )}
-                <td style={{ fontWeight: 700 }}>$ {rowAmt.toFixed(2)}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    )
+  const rows = items.map((item, idx) => {
+    const art = artworks[idx] ?? null
+    return {
+      item,
+      artNo: item.artwork_no || art?.artwork_no || `AW-${String(idx + 1).padStart(4, '0')}`,
+      image: item.artwork_image || item.front_image || (art?.file_type !== 'pdf' ? art?.file_url : null),
+      size: art?.width_inches && art?.height_inches
+        ? `${art.width_inches} x ${art.height_inches} in`
+        : (item.description || '—'),
+    }
+  })
+  const rateSpanAt = (index: number) => {
+    if (index > 0 && Number(rows[index - 1].item.unit_price) === Number(rows[index].item.unit_price)) return 0
+    let span = 1
+    while (index + span < rows.length && Number(rows[index + span].item.unit_price) === Number(rows[index].item.unit_price)) span++
+    return span
   }
 
-  // Fallback: no artworks uploaded yet
   return (
     <table className="items-tbl">
       <thead>
         <tr>
           <th style={{ width: 40 }}>S.No</th>
-          <th className="left">Item Description <span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
+          <th className="left">Item Description<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
+          <th style={{ width: 90 }}>Artwork No</th>
           <th style={{ width: 100 }}>Artwork Thumbnail</th>
-          <th style={{ width: 120 }}>Size</th>
-          <th style={{ width: 70 }}>QTY</th>
-          <th style={{ width: 80 }}>Rate (USD)</th>
-          <th style={{ width: 90 }}>Amount (USD)</th>
+          <th style={{ width: 120 }}>Artwork Size<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(Width x Height)</span></th>
+          <th style={{ width: 70 }}>Qty</th>
+          <th style={{ width: 80 }}>Rate<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(USD)</span></th>
+          <th style={{ width: 90 }}>Amount<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(USD)</span></th>
         </tr>
       </thead>
       <tbody>
-        {items.map((item, idx) => (
-          <tr key={item.id}>
+        {rows.map((row, idx) => (
+          <tr key={row.item.id}>
             <td style={{ fontWeight: 700 }}>{idx + 1}</td>
-            <td className="left">
-              <div className="item-main">{item.description}</div>
+            {idx === 0 && <td rowSpan={rows.length} className="left" style={{ verticalAlign: 'middle' }}>
+              <div className="item-main">DTF Transfers</div>
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
-            </td>
+            </td>}
+            <td><span className="aw-no">{row.artNo}</span></td>
             <td>
-              {(item.artwork_image || item.front_image)
-                ? <img src={item.artwork_image || item.front_image || ''} alt="artwork" className="art-img" />
+              {row.image
+                ? <img src={row.image} alt={row.artNo} className="art-img" />
                 : <div className="art-empty">—</div>}
             </td>
-            <td style={{ fontWeight: 600, fontSize: 11 }}>{item.description}</td>
-            <td style={{ fontWeight: 600 }}>{item.qty} pcs</td>
-            <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
+            <td style={{ fontWeight: 600, fontSize: 11 }}>{row.size}</td>
+            <td style={{ fontWeight: 600 }}>{row.item.qty} pcs</td>
+            {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {row.item.unit_price.toFixed(2)}</td>}
+            <td style={{ fontWeight: 700 }}>$ {row.item.amount.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>

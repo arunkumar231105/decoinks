@@ -55,6 +55,7 @@ interface ApparelItem {
 
 interface DtfItem {
   id: string; artwork_name: string; size: string | null
+  artwork_no?: string | null
   qty: number; unit_price: number; amount: number
   artwork_image: string | null; front_image?: string | null; back_image?: string | null
 }
@@ -370,15 +371,15 @@ export function OrderPrintPage() {
   // ── Build DTF groups ───────────────────────────────────────────────────────
   const dtfGroups: DtfGroup[] = []
   dtfItems.forEach((item, idx) => {
-    const artNo  = item.artwork_name || `DTF-${String(idx + 1).padStart(3, '0')}`
+    const artNo  = item.artwork_no || `DTF-${String(idx + 1).padStart(3, '0')}`
     const sizeStr = item.size || '—'
     const row: DtfRow = { item, artNo, sizeStr }
     const last = dtfGroups[dtfGroups.length - 1]
-    if (last && last.desc === (item.artwork_name || 'DTF Transfers') && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
+    if (last && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
       last.rows.push(row)
       last.rowSpan++
     } else {
-      dtfGroups.push({ desc: item.artwork_name || 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
+      dtfGroups.push({ desc: 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
     }
   })
   const dtfFlat = dtfGroups.flatMap(g => g.rows.map((row, ri) => ({ ...row, group: g, rowIdx: ri })))
@@ -638,17 +639,16 @@ export function OrderPrintPage() {
                     Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 68 }}>Front Art</th>
-                  <th style={{ width: 68 }}>Back Art</th>
+                  <th style={{ width: 88 }}>Artwork Thumbnail</th>
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 80 }}>Qty<br />(Transfers)</th>
-                  <th style={{ width: 68 }}>Rate</th>
-                  <th style={{ width: 72 }}>Amount</th>
+                  <th style={{ width: 76 }}>Rate<br />(USD)</th>
+                  <th style={{ width: 82 }}>Amount<br />(USD)</th>
                 </tr>
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
                 ) : dtfFlat.map((r, sno) => (
                   <tr key={r.item.id}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
@@ -663,19 +663,14 @@ export function OrderPrintPage() {
                         ? <img src={r.item.front_image ?? r.item.artwork_image!} alt={r.artNo} className="art-img" />
                         : <div className="art-empty">🖼</div>}
                     </td>
-                    <td>
-                      {r.item.back_image
-                        ? <img src={r.item.back_image} alt={`${r.artNo}-back`} className="art-img" />
-                        : <div className="art-empty" style={{ color: '#d1d5db' }}>—</div>}
-                    </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
                     {r.rowIdx === 0 && (
                       <td rowSpan={r.group.rowSpan} className="td-span" style={{ fontWeight: 700 }}>
-                        {r.group.rate.toFixed(2)}
+                        {fmt(r.group.rate)}
                       </td>
                     )}
-                    <td style={{ fontWeight: 600 }}>{Number(r.item.amount).toFixed(2)}</td>
+                    <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
                   </tr>
                 ))}
               </tbody>

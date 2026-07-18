@@ -404,7 +404,8 @@ export function InvoicePrintPage() {
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(value ?? 0))
   const customerNotes = invoice.customer_notes || quotation?.customer_notes || ''
 
-  // ── Build DTF groups — consecutive items sharing desc + rate ───────────────
+  // DTF is one commercial line with artwork detail rows. Split only when the
+  // rate changes so a displayed rowspan never hides a different line rate.
   const dtfGroups: DtfGroup[] = []
   items.forEach((item, idx) => {
     const art = artworks[idx] ?? null
@@ -415,11 +416,11 @@ export function InvoicePrintPage() {
       : (item.sizes || '—')
     const row: DtfRow = { item, art, artNo, sizeStr }
     const last = dtfGroups[dtfGroups.length - 1]
-    if (last && last.desc === item.description && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
+    if (last && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
       last.rows.push(row)
       last.rowSpan++
     } else {
-      dtfGroups.push({ desc: item.description, rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
+      dtfGroups.push({ desc: 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
     }
   })
 
@@ -687,20 +688,18 @@ export function InvoicePrintPage() {
                     <span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 70 }}>Front Art</th>
-                  <th style={{ width: 70 }}>Back Art</th>
+                  <th style={{ width: 88 }}>Artwork Thumbnail</th>
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 82 }}>Qty<br />(Transfers)</th>
-                  <th style={{ width: 68 }}>Rate</th>
-                  <th style={{ width: 72 }}>Amount</th>
+                  <th style={{ width: 76 }}>Rate<br />(USD)</th>
+                  <th style={{ width: 82 }}>Amount<br />(USD)</th>
                 </tr>
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : dtfFlat.map((r, sno) => {
                   const frontUrl = (r.art?.file_url && r.art.file_type !== 'pdf') ? r.art.file_url : (r.item.front_image ?? r.item.artwork_image ?? null)
-                  const backUrl  = r.item.back_image ?? null
                   return (
                   <tr key={`${r.item.id}-${sno}`}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
@@ -715,20 +714,15 @@ export function InvoicePrintPage() {
                         ? <img src={frontUrl} alt="front" className="art-thumb" />
                         : <div className="art-empty">🖼</div>}
                     </td>
-                    <td>
-                      {backUrl
-                        ? <img src={backUrl} alt="back" className="art-thumb" />
-                        : <div className="art-empty">—</div>}
-                    </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600, color: '#111827' }}>{r.item.qty}</td>
                     {r.rowIdx === 0 && (
                       <td rowSpan={r.group.rowSpan} className="td-span" style={{ fontWeight: 700, color: '#111827' }}>
-                        {r.group.rate.toFixed(2)}
+                        {money(r.group.rate)}
                       </td>
                     )}
                     <td style={{ fontWeight: 600, color: '#374151' }}>
-                      {Number(r.item.amount).toFixed(2)}
+                      {money(r.item.amount)}
                     </td>
                   </tr>
                   )

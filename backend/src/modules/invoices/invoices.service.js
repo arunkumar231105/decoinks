@@ -241,11 +241,11 @@ async function create(fields_in) {
        `INSERT INTO invoice_items
          (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
           front_image, back_image, artwork_image, sizes, colors,
-          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model)
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
        SELECT $1, description, qty, unit_price, amount,
               COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
               front_image, back_image, artwork_image, sizes, colors,
-              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no
        FROM quotation_items WHERE quotation_id = $2
        ORDER BY sort_order, id`,
       [rows[0].id, quote_id]

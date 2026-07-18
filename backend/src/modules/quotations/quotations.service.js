@@ -95,13 +95,13 @@ async function create({
       const item = items[i]
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [qId, item.description || null, item.qty, item.unit_price, amount, i,
          item.sizes || null, item.colors || null, item.artwork_count ?? 0,
          item.front_image || null, item.back_image || null, item.artwork_image || null,
          item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
-         item.catalog_sku || null, item.brand || null, item.model || null]
+         item.catalog_sku || null, item.brand || null, item.model || null, item.artwork_no || null]
       )
     }
     await client.query('COMMIT')
@@ -171,13 +171,13 @@ async function update(id, {
         const item = itemList[i]
         const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
         await client.query(
-          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
           [id, item.description || null, item.qty, item.unit_price, amount, i,
            item.sizes || null, item.colors || null, item.artwork_count ?? 0,
            item.front_image || null, item.back_image || null, item.artwork_image || null,
            item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
-           item.catalog_sku || null, item.brand || null, item.model || null]
+           item.catalog_sku || null, item.brand || null, item.model || null, item.artwork_no || null]
         )
       }
     }
@@ -267,7 +267,7 @@ async function updateStatus(id, status, actor) {
         const { rows: qItems } = await client.query(
           `SELECT description, qty, unit_price, amount, artwork_count,
                   front_image, back_image, artwork_image, sizes, colors, sort_order,
-                  catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model
+                  catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no
            FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order, id`,
           [id]
         )
@@ -277,8 +277,8 @@ async function updateStatus(id, status, actor) {
             `INSERT INTO invoice_items
                (invoice_id, description, qty, unit_price, amount, artwork_count,
                 front_image, back_image, artwork_image, sizes, colors, sort_order,
-                catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
             [
               autoInvoiceId, it.description, Number(it.qty) || 1,
               Number(it.unit_price) || 0, Number(it.amount) || 0,
@@ -287,7 +287,7 @@ async function updateStatus(id, status, actor) {
               it.sizes || null, it.colors || null, it.sort_order ?? i,
               it.catalog_style_id || null, it.catalog_color_id || null,
               it.catalog_size_id || null, it.catalog_sku || null,
-              it.brand || null, it.model || null,
+              it.brand || null, it.model || null, it.artwork_no || null,
             ]
           )
         }
