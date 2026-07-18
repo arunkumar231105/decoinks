@@ -31,6 +31,17 @@ interface Order {
   shipping_name: string | null
   shipping_address: string | null
   shipping_method: string | null
+  production_notes?: string | null
+  packing_instructions?: string | null
+  shipping_instructions?: string | null
+  production_priority?: string | null
+  production_method?: string | null
+  production_facility?: string | null
+  assigned_team?: string | null
+  estimated_production_time?: string | null
+  total_print_locations?: number
+  purchase_orders?: Array<{ po_number: string; status: string }>
+  shipments?: Array<{ status: string; carrier?: string|null; tracking_number?: string|null }>
   agent_name: string | null
   items: ApparelItem[] | DtfItem[] | GangsheetItem[]
 }
@@ -44,6 +55,7 @@ interface ApparelItem {
 
 interface DtfItem {
   id: string; artwork_name: string; size: string | null
+  artwork_no?: string | null
   qty: number; unit_price: number; amount: number
   artwork_image: string | null; front_image?: string | null; back_image?: string | null
 }
@@ -359,15 +371,15 @@ export function OrderPrintPage() {
   // ── Build DTF groups ───────────────────────────────────────────────────────
   const dtfGroups: DtfGroup[] = []
   dtfItems.forEach((item, idx) => {
-    const artNo  = item.artwork_name || `DTF-${String(idx + 1).padStart(3, '0')}`
+    const artNo  = item.artwork_no || `DTF-${String(idx + 1).padStart(3, '0')}`
     const sizeStr = item.size || '—'
     const row: DtfRow = { item, artNo, sizeStr }
     const last = dtfGroups[dtfGroups.length - 1]
-    if (last && last.desc === (item.artwork_name || 'DTF Transfers') && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
+    if (last && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
       last.rows.push(row)
       last.rowSpan++
     } else {
-      dtfGroups.push({ desc: item.artwork_name || 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
+      dtfGroups.push({ desc: 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
     }
   })
   const dtfFlat = dtfGroups.flatMap(g => g.rows.map((row, ri) => ({ ...row, group: g, rowIdx: ri })))
@@ -446,75 +458,23 @@ export function OrderPrintPage() {
             </table>
           </div>
 
-          {/* Right: Payment Summary or Order Summary */}
+          {/* Right: production-focused work order summary */}
           <div className="hdr-right">
-            {isApparel || isGangsheet ? (
-              /* PAYMENT SUMMARY — Apparel / Gangsheet */
-              <div className="pay-summary">
-                <h4>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                  PAYMENT SUMMARY
-                </h4>
-                <table>
-                  <tbody>
-                    <tr>
-                      <td className="pl">Order Total</td>
-                      <td className="pv">{fmt(order.total)}</td>
-                    </tr>
-                    <tr>
-                      <td className="pl">Amount Paid</td>
-                      <td className="pv">{fmt(amountPaid)}</td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr className="tr-bal">
-                      <td>Balance Due</td>
-                      <td style={{ textAlign: 'right' }} className={balanceDue === 0 ? 'bal-green' : ''}>
-                        {fmt(balanceDue)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ) : (
-              /* ORDER SUMMARY — DTF */
               <div className="ord-summary">
                 <h4>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                  ORDER SUMMARY
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>
+                  PRODUCTION SUMMARY
                 </h4>
                 <table>
                   <tbody>
-                    <tr>
-                      <td className="ol">Items Total</td>
-                      <td className="ov">{fmt(itemsTotal)}</td>
-                    </tr>
-                    {shippingAmt > 0 && <>
-                      <tr>
-                        <td className="ol">Shipping Charges</td>
-                        <td className="ov">{fmt(shippingAmt)}</td>
-                      </tr>
-                      <tr>
-                        <td className="ol">Subtotal</td>
-                        <td className="ov">{fmt(subtotalPlus)}</td>
-                      </tr>
-                    </>}
-                    {Number(order.discount_amt) > 0 && (
-                      <tr>
-                        <td className="ol">Bulk Discount</td>
-                        <td className="ov neg">-{fmt(order.discount_amt)}</td>
-                      </tr>
-                    )}
+                    <tr><td className="ol">Order Status</td><td className="ov">{order.status}</td></tr>
+                    <tr><td className="ol">Artwork</td><td className="ov">{artworksApproved ? 'Approved' : 'Pending'}</td></tr>
+                    <tr><td className="ol">Purchase Order</td><td className="ov">{order.purchase_orders?.[0]?.status || 'Not Created'}</td></tr>
+                    <tr><td className="ol">Priority</td><td className="ov">{order.production_priority || 'Normal'}</td></tr>
+                    <tr><td className="ol">Required Ship Date</td><td className="ov">{fmtDate(order.due_date)}</td></tr>
                   </tbody>
-                  <tfoot>
-                    <tr className="tr-total">
-                      <td>TOTAL DUE</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(order.total)}</td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
-            )}
           </div>
 
         </div>
@@ -572,8 +532,8 @@ export function OrderPrintPage() {
             </div>
             <div className="ic-body">
               <div className="status-check">
-                <span className={paymentReceived ? 'chk-yes' : 'chk-no'}>✓</span>
-                Payment Received
+                <span className={order.purchase_orders?.length ? 'chk-yes' : 'chk-no'}>✓</span>
+                Purchase Order Created
               </div>
               <div className="status-check">
                 <span className={approvedProduction ? 'chk-yes' : 'chk-no'}>✓</span>
@@ -679,17 +639,16 @@ export function OrderPrintPage() {
                     Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 68 }}>Front Art</th>
-                  <th style={{ width: 68 }}>Back Art</th>
+                  <th style={{ width: 88 }}>Artwork Thumbnail</th>
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 80 }}>Qty<br />(Transfers)</th>
-                  <th style={{ width: 68 }}>Rate</th>
-                  <th style={{ width: 72 }}>Amount</th>
+                  <th style={{ width: 76 }}>Rate<br />(USD)</th>
+                  <th style={{ width: 82 }}>Amount<br />(USD)</th>
                 </tr>
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
                 ) : dtfFlat.map((r, sno) => (
                   <tr key={r.item.id}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
@@ -704,19 +663,14 @@ export function OrderPrintPage() {
                         ? <img src={r.item.front_image ?? r.item.artwork_image!} alt={r.artNo} className="art-img" />
                         : <div className="art-empty">🖼</div>}
                     </td>
-                    <td>
-                      {r.item.back_image
-                        ? <img src={r.item.back_image} alt={`${r.artNo}-back`} className="art-img" />
-                        : <div className="art-empty" style={{ color: '#d1d5db' }}>—</div>}
-                    </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
                     {r.rowIdx === 0 && (
                       <td rowSpan={r.group.rowSpan} className="td-span" style={{ fontWeight: 700 }}>
-                        {r.group.rate.toFixed(2)}
+                        {fmt(r.group.rate)}
                       </td>
                     )}
-                    <td style={{ fontWeight: 600 }}>{Number(r.item.amount).toFixed(2)}</td>
+                    <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -848,55 +802,37 @@ export function OrderPrintPage() {
 
         {/* ══ FOOTER ══ */}
         <div className="footer-section">
-          {/* Left: Notes (apparel) OR Amount in Words (DTF) */}
+          {/* Production instructions */}
           <div className="footer-box">
-            {isApparel || isGangsheet ? (
-              <>
                 <div className="footer-lbl">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                  Notes
+                  Production / Packing Instructions
                 </div>
                 <ul className="footer-bullets">
-                  {order.notes
-                    ? order.notes.split('\n').filter(Boolean).map((n, i) => <li key={i}>{n}</li>)
-                    : <>
-                        <li>Please review and confirm all details before production.</li>
-                        <li>Colors may vary slightly due to monitor settings.</li>
-                      </>
-                  }
+                  <li>{order.production_notes || order.notes || 'Follow approved artwork and item specifications.'}</li>
+                  <li>{order.packing_instructions || 'Pack by style, color and size.'}</li>
+                  <li>{order.shipping_instructions || 'Ship only after QC approval.'}</li>
                 </ul>
-              </>
-            ) : (
-              <>
-                <div className="footer-lbl">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  Total Amount in Words
-                </div>
-                <div className="footer-words">
-                  {numberToWords(Number(order.total ?? 0))}
-                </div>
-              </>
-            )}
           </div>
 
-          {/* Right: Payment Details */}
+          {/* Right: Production details */}
           <div className="footer-box">
             <div className="footer-lbl">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
-              Payment Details
+              Production Details
             </div>
             <div className="pay-detail-row">
-              <strong>Payment Method:</strong> {payMethodDisplay}
+              <strong>Method:</strong> {order.production_method || (isDtf ? 'DTF Transfers' : isGangsheet ? 'Gangsheet' : 'Custom Printed Apparel')}
             </div>
             <div className="pay-detail-row">
-              <strong>Order Date:</strong> {fmtDate(order.order_date)}
+              <strong>Facility:</strong> {order.production_facility || 'Decoinks Production'}
             </div>
             <div className="pay-detail-row">
-              <strong>Payment Status:</strong> {order.payment_status}
+              <strong>Assigned Team:</strong> {order.assigned_team || 'Production Team'}
             </div>
             {order.invoice_number && (
               <div className="pay-detail-row">
-                <strong>Invoice #:</strong> {order.invoice_number}
+                <strong>Invoice Reference:</strong> {order.invoice_number}
               </div>
             )}
             <div className="pay-detail-row" style={{ marginTop: 4, color: '#6b7280', fontSize: 10.5 }}>

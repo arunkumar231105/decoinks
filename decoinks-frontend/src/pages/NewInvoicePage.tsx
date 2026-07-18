@@ -8,22 +8,19 @@ import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
 import { cn } from '../utils/cn'
 import {
-  Bot,
   Check,
   ChevronDown,
-  Copy,
   Eye,
-  FileText,
   Image as ImageIcon,
   Mail,
   MessageCircle,
   MoreHorizontal,
+  Package,
   Pencil,
   Plus,
   Save,
   Send,
   Trash2,
-  UserCheck,
 } from 'lucide-react'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -41,6 +38,29 @@ interface ApparelItem {
   unitPrice: number
   front_image?: string | null
   back_image?: string | null
+  styleId?: string
+  styleCode?: string
+  brand?: string
+  productImage?: string | null
+  styleDescription?: string | null
+  colorId?: string
+  sizeId?: string
+  sku?: string
+  availableColors?: CatalogColor[]
+  availableSizes?: CatalogSize[]
+  availableVariants?: CatalogVariant[]
+  lineDiscount?: number
+  taxCode?: string
+}
+
+interface CatalogColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null }
+interface CatalogSize { style_size_id: string; size_code: string; size_name: string }
+interface CatalogVariant { sku_id: string; sku_code: string; style_color_id: string; style_size_id: string }
+interface CatalogStyle {
+  id: string; name: string; sku: string; brand: string; image_url: string | null
+  description: string | null; total_colors: number; total_sizes: number; total_skus: number
+  colors?: CatalogColor[]; sizes?: CatalogSize[]; variants?: CatalogVariant[]
+  images?: Array<{ image_url: string; is_primary: boolean }>
 }
 
 interface GangsheetItem {
@@ -60,6 +80,10 @@ interface TransferItem {
   qty: number
   unitPrice: number
   artwork_image?: string | null
+  front_image?: string | null
+  back_image?: string | null
+  artworkName?: string
+  artworkNo?: string
 }
 
 // â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -131,7 +155,7 @@ const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
 
 // â"€â"€â"€ Customer combobox â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function SupplierCombobox({ value, onChange }: { value: string; onChange: (text: string, id: string) => void }) {
+function SupplierCombobox({ value, onChange, disabled = false }: { value: string; onChange: (text: string, id: string) => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { data: suppliers = [] } = useQuery({
@@ -147,6 +171,7 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
   return (
     <div style={{ position: 'relative' }} ref={ref}>
       <input className="ni-info-select" value={value} placeholder="Search customer name..."
+        disabled={disabled}
         onChange={e => { onChange(e.target.value, ''); setOpen(true) }}
         onFocus={() => setOpen(true)}
         style={{ width: '100%' }}
@@ -160,6 +185,72 @@ function SupplierCombobox({ value, onChange }: { value: string; onChange: (text:
               {c.email && <span className="no-cust-email">{c.email}</span>}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InvoiceCatalogStyleSearch({ onSelect, disabled = false }: { onSelect: (style: CatalogStyle) => void; disabled?: boolean }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const [loadingId, setLoadingId] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const { data: styles = [], isFetching } = useQuery<CatalogStyle[]>({
+    queryKey: ['invoice-product-styles', search],
+    queryFn: () => api.get('/products', { params: { page: 1, limit: 50, search: search || undefined, product_type: 'Apparel' } })
+      .then(response => response.data.data?.rows ?? []),
+    enabled: !disabled,
+  })
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const choose = async (style: CatalogStyle) => {
+    setLoadingId(style.id)
+    try {
+      const detail = (await api.get(`/products/${style.id}`)).data.data as CatalogStyle
+      onSelect(detail)
+      setSearch('')
+      setOpen(false)
+    } catch {
+      toast.error('Could not load style colors and sizes')
+    } finally {
+      setLoadingId('')
+    }
+  }
+
+  return (
+    <div ref={ref} className="nq-style-search ni-catalog-search">
+      <div className="nq-style-search-input">
+        <Package size={15} />
+        <input
+          value={search}
+          disabled={disabled}
+          placeholder={disabled ? 'Products inherited from approved quotation' : 'Search style by name, brand, style code or SKU...'}
+          onFocus={() => setOpen(true)}
+          onChange={event => { setSearch(event.target.value); setOpen(true) }}
+        />
+        {isFetching && <span className="nq-style-searching">Searching…</span>}
+      </div>
+      {open && !disabled && (
+        <div className="nq-style-results">
+          <div className="nq-style-results-label">Available Product Styles ({styles.length})</div>
+          {styles.map(style => (
+            <button type="button" key={style.id} onMouseDown={() => choose(style)} disabled={loadingId === style.id}>
+              {style.image_url
+                ? <img src={style.image_url} alt="" />
+                : <span className="nq-style-no-image"><Package size={17} /></span>}
+              <span className="nq-style-result-main"><strong>{style.name}</strong><small>{style.brand} · Style {style.sku}</small></span>
+              <span className="nq-style-result-counts">{style.total_colors} colors · {style.total_sizes} sizes · {style.total_skus} SKUs</span>
+            </button>
+          ))}
+          {!isFetching && styles.length === 0 && <div className="nq-style-empty">No matching style found.</div>}
         </div>
       )}
     </div>
@@ -238,7 +329,7 @@ function calculateItemsTotal(
   transferItems: TransferItem[],
 ) {
   if (orderType === 'apparel') {
-    return apparelItems.reduce((sum, row) => sum + row.qty * row.unitPrice, 0)
+    return apparelItems.reduce((sum, row) => sum + Math.max(row.qty * row.unitPrice - Number(row.lineDiscount || 0), 0), 0)
   }
 
   if (orderType === 'gangsheet') {
@@ -255,6 +346,7 @@ function calculateInvoiceTotals({
   rushServices,
   discountType,
   discountValue,
+  taxPct,
 }: {
   itemsTotal: number
   rushCharges: number
@@ -262,13 +354,15 @@ function calculateInvoiceTotals({
   rushServices: number
   discountType: DiscountType
   discountValue: number
+  taxPct: number
 }) {
   const subtotal = itemsTotal + rushCharges + shippingCharges + rushServices
   const rawDiscount = discountType === 'percentage' ? subtotal * (discountValue / 100) : discountValue
   const discountAmt = +Math.min(Math.max(rawDiscount, 0), subtotal).toFixed(2)
-  const total = +(Math.max(subtotal - discountAmt, 0)).toFixed(2)
+  const taxAmt = +(Math.max(subtotal - discountAmt, 0) * (Math.max(taxPct, 0) / 100)).toFixed(2)
+  const total = +(Math.max(subtotal - discountAmt + taxAmt, 0)).toFixed(2)
 
-  return { subtotal, discountAmt, taxAmt: 0, total }
+  return { subtotal, discountAmt, taxAmt, total }
 }
 
 function getInvoiceCounters(
@@ -342,6 +436,7 @@ export function NewInvoicePage() {
   const [rushServices, setRushServices] = useState(0)
   const [discountType, setDiscountType] = useState<DiscountType>('percentage')
   const [discountValue, setDiscountValue] = useState(0)
+  const [taxPct, setTaxPct] = useState(0)
 
   // Customer details
   const [billingEmail,    setBillingEmail]    = useState('')
@@ -386,6 +481,7 @@ export function NewInvoicePage() {
     }
     // Notes
     if (sourceQuote.notes) setInternalNotes(sourceQuote.notes)
+    if (sourceQuote.customer_notes) setSupplierNotes(sourceQuote.customer_notes)
     // Totals
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
@@ -395,6 +491,7 @@ export function NewInvoicePage() {
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
       setDiscountType('fixed'); setDiscountValue(Number(sourceQuote.discount_amt))
     }
+    if (sourceQuote.tax_pct ?? sourceQuote.tax_percentage) setTaxPct(Number(sourceQuote.tax_pct ?? sourceQuote.tax_percentage))
     // Pre-populate items
     const items = sourceQuote.items ?? []
     if (sourceQuote.order_type === 'apparel') {
@@ -405,12 +502,26 @@ export function NewInvoicePage() {
         unitPrice: Number(it.unit_price) || 0,
         front_image: it.front_image ?? null,
         back_image:  it.back_image  ?? null,
+        styleId: it.catalog_style_id ?? undefined,
+        colorId: it.catalog_color_id ?? undefined,
+        sizeId: it.catalog_size_id ?? undefined,
+        sku: it.catalog_sku ?? undefined,
+        styleCode: it.model ?? undefined,
+        brand: it.brand ?? undefined,
+        productImage: it.product_image ?? null,
+        styleDescription: it.style_description ?? null,
+        lineDiscount: Number(it.line_discount) || 0,
+        taxCode: it.tax_code ?? '',
       })))
     } else if (sourceQuote.order_type === 'dtf') {
       setTransferItems(items.map((it: any) => ({
-        id: uid(), ...parseTransferSize(it.size || it.description), qty: Number(it.qty) || 1,
+        id: uid(), ...parseTransferSize(it.sizes || it.size || it.description), qty: Number(it.qty) || 1,
         unitPrice: Number(it.unit_price) || 0,
         artwork_image: it.artwork_image ?? it.front_image ?? null,
+        front_image: it.front_image ?? it.artwork_image ?? null,
+        back_image: it.back_image ?? null,
+        artworkName: it.description && !/^(DTF Transfer|\d.*x)/i.test(it.description) ? it.description : 'DTF Transfer',
+        artworkNo: it.artwork_no ?? '',
       })))
     } else if (sourceQuote.order_type === 'gangsheet') {
       setGangsheetItems(items.map((it: any) => ({
@@ -423,6 +534,47 @@ export function NewInvoicePage() {
       })))
     }
   }, [sourceQuote])
+
+  // Catalog rows saved on quotations contain stable BlankTex IDs. Hydrate the
+  // live color/size/SKU choices and product preview without changing snapshots.
+  useEffect(() => {
+    const missing = apparelItems.filter(item => item.styleId && !item.availableColors)
+    if (!missing.length) return
+    let cancelled = false
+    Promise.all(missing.map(async item => {
+      try {
+        const style = (await api.get(`/products/${item.styleId}`)).data.data as CatalogStyle
+        const color = style.colors?.find(value => value.style_color_id === item.colorId)
+        const size = style.sizes?.find(value => value.style_size_id === item.sizeId)
+        const variant = style.variants?.find(value => value.style_color_id === item.colorId && value.style_size_id === item.sizeId)
+        return {
+          id: item.id,
+          patch: {
+            description: item.description || style.name,
+            styleCode: item.styleCode || style.sku,
+            brand: item.brand || style.brand,
+            productImage: item.productImage || style.images?.[0]?.image_url || style.image_url,
+            styleDescription: item.styleDescription || style.description,
+            availableColors: style.colors ?? [],
+            availableSizes: style.sizes ?? [],
+            availableVariants: style.variants ?? [],
+            color: item.color || color?.display_name || '',
+            sizes: item.sizes || size?.size_name || '',
+            sku: item.sku || variant?.sku_code || '',
+          } as Partial<ApparelItem>,
+        }
+      } catch {
+        return null
+      }
+    })).then(results => {
+      if (cancelled) return
+      setApparelItems(previous => previous.map(item => {
+        const match = results.find(result => result?.id === item.id)
+        return match ? { ...item, ...match.patch } : item
+      }))
+    })
+    return () => { cancelled = true }
+  }, [apparelItems])
 
   // More menu
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
@@ -464,8 +616,9 @@ export function NewInvoicePage() {
       rushServices,
       discountType,
       discountValue,
+      taxPct,
     }),
-    [itemsTotal, rushCharges, shippingCharges, rushServices, discountType, discountValue],
+    [itemsTotal, rushCharges, shippingCharges, rushServices, discountType, discountValue, taxPct],
   )
 
   const invoiceCounoers = useMemo(
@@ -475,10 +628,45 @@ export function NewInvoicePage() {
 
   // â"€â"€ Apparel handlers â"€â"€
   const addApparelItem = () =>
-    setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', sizes: '', qty: 1, unitPrice: 0, front_image: null, back_image: null }])
+    setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', sizes: '', qty: 1, unitPrice: 0, front_image: null, back_image: null, lineDiscount: 0, taxCode: '' }])
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) =>
     setApparelItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeApparelItem = (id: string) => setApparelItems(prev => prev.filter(r => r.id !== id))
+
+  const addCatalogStyle = (style: CatalogStyle) => {
+    setApparelItems(previous => [...previous, {
+      id: uid(),
+      description: style.name,
+      color: '',
+      sizes: '',
+      qty: 1,
+      unitPrice: 0,
+      front_image: null,
+      back_image: null,
+      styleId: style.id,
+      styleCode: style.sku,
+      brand: style.brand,
+      productImage: style.images?.[0]?.image_url ?? style.image_url,
+      styleDescription: style.description,
+      availableColors: style.colors ?? [],
+      availableSizes: style.sizes ?? [],
+      availableVariants: style.variants ?? [],
+      lineDiscount: 0,
+      taxCode: '',
+    }])
+  }
+
+  const selectApparelColor = (item: ApparelItem, colorId: string) => {
+    const color = item.availableColors?.find(value => value.style_color_id === colorId)
+    const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.sizeId)
+    updateApparelItem(item.id, { colorId, color: color?.display_name ?? '', sku: variant?.sku_code ?? '' })
+  }
+
+  const selectApparelSize = (item: ApparelItem, sizeId: string) => {
+    const size = item.availableSizes?.find(value => value.style_size_id === sizeId)
+    const variant = item.availableVariants?.find(value => value.style_size_id === sizeId && value.style_color_id === item.colorId)
+    updateApparelItem(item.id, { sizeId, sizes: size?.size_name ?? '', sku: variant?.sku_code ?? '' })
+  }
 
   // â"€â"€ Gangsheet handlers â"€â"€
   const addGangsheetItem = () =>
@@ -489,7 +677,7 @@ export function NewInvoicePage() {
 
   // â"€â"€ Transfer handlers â"€â"€
   const addTransferItem = () =>
-    setTransferItems(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, unitPrice: 0, artwork_image: null }])
+    setTransferItems(prev => [...prev, { id: uid(), width: '', height: '', qty: 1, unitPrice: 0, artwork_image: null, front_image: null, back_image: null, artworkName: 'DTF Transfer', artworkNo: '' }])
   const updateTransferItem = (id: string, patch: Partial<TransferItem>) =>
     setTransferItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeTransferItem = (id: string) => setTransferItems(prev => prev.filter(r => r.id !== id))
@@ -513,24 +701,38 @@ export function NewInvoicePage() {
         description:   row.description,
         qty:           row.qty,
         unit_price:    row.unitPrice,
-        amount:        row.qty * row.unitPrice,
+        amount:        Math.max(row.qty * row.unitPrice - Number(row.lineDiscount || 0), 0),
         artwork_count: Number(Boolean(row.front_image)) + Number(Boolean(row.back_image)),
         sizes:          row.sizes || null,
         colors:         row.color || null,
         sort_order:    i,
         front_image:   row.front_image || null,
         back_image:    row.back_image  || null,
+        catalog_style_id: row.styleId || null,
+        catalog_color_id: row.colorId || null,
+        catalog_size_id: row.sizeId || null,
+        catalog_sku: row.sku || null,
+        brand: row.brand || null,
+        model: row.styleCode || null,
+        product_image: row.productImage || null,
+        style_description: row.styleDescription || null,
+        line_discount: Number(row.lineDiscount) || 0,
+        tax_code: row.taxCode || null,
       }))
     }
     if (orderType === 'dtf') {
       return transferItems.map((row, i) => ({
-        description:   formatTransferSize(row.width, row.height),
+        description:   row.artworkName || 'DTF Transfer',
         qty:           row.qty,
         unit_price:    row.unitPrice,
         amount:        row.qty * row.unitPrice,
-        artwork_count: row.artwork_image ? 1 : 0,
+        artwork_count: Number(Boolean(row.front_image || row.artwork_image)) + Number(Boolean(row.back_image)),
         sort_order:    i,
-        artwork_image: row.artwork_image || null,
+        sizes:          formatTransferSize(row.width, row.height),
+        artwork_image: row.artwork_image || row.front_image || null,
+        front_image:   row.front_image || row.artwork_image || null,
+        back_image:    row.back_image || null,
+        artwork_no:    row.artworkNo || null,
       }))
     }
     return undefined
@@ -540,11 +742,14 @@ export function NewInvoicePage() {
     customer_id:      supplierId || null,
     quote_id:         quoteId || null,
     notes:            internalNotes || null,
+    customer_notes:   supplierNotes || null,
+    sales_agent_name: agentText || null,
     issue_date:       invoiceDate || null,
     due_date:         dueDate || null,
     subtotal:         subtotal,
     discount_amt:     discountAmt,
     tax_amt:          taxAmt,
+    tax_pct:          taxPct,
     customer_name:    supplierText || null,
     billing_email:    billingEmail || null,
     contact_number:   contactNumber || null,
@@ -556,7 +761,10 @@ export function NewInvoicePage() {
     payment_method:   paymentMethod || null,
     currency:         currency.split(' - ')[0] || 'USD',
     rush_services:    rushServices,
-    shipping_charges: shippingCharges + rushCharges,
+    rush_charges:     rushCharges,
+    shipping_charges: shippingCharges,
+    discount_type:    discountType,
+    discount_value:   discountValue,
   })
 
   const saveDraft = () => {
@@ -576,9 +784,9 @@ export function NewInvoicePage() {
     saveMutation.mutate(buildPayload())
   }
 
-  const requestApproval = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
-
   const sendInvoice = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
+
+  const recordPayment = () => { toast.info('Save the invoice first, then record the payment from invoice details') }
 
   const togglePaid = () => {
     setIsPaid(prev => {
@@ -586,12 +794,6 @@ export function NewInvoicePage() {
       setInvoiceStatus(next ? 'Paid' : 'Sent')
       return next
     })
-  }
-
-  const cancelInvoice = () => {
-    if (!window.confirm('Cancel this invoice? The invoice status will be set to Cancelled.')) return
-    setInvoiceStatus('Cancelled')
-    setIsPaid(false)
   }
 
   return (
@@ -608,17 +810,10 @@ export function NewInvoicePage() {
           <h2 className="ni-page-title">New Invoice</h2>
         </div>
         <div className="ni-header-actions">
-          <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
-          <button className="lb-action-btn lb-action-primary" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Invoice</button>
+          <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
           <button className="lb-action-btn" title={isEditing ? 'Invoice is editable' : 'Edit invoice'} onClick={() => setIsEditing(true)}>
             <Pencil size={13} /> Edit
-          </button>
-          <button className="lb-action-btn ni-danger-action" onClick={cancelInvoice}>
-            Cancel Invoice
-          </button>
-          <button className="lb-action-btn ni-approval-action" onClick={requestApproval}>
-            <UserCheck size={13} /> Requeso Approval
           </button>
           <button
             className="lb-action-btn"
@@ -626,7 +821,7 @@ export function NewInvoicePage() {
           >
             <MoreHorizontal size={14} /> More Actions <ChevronDown size={12} />
           </button>
-          <div className="ni-send-splio">
+          <div className="ni-send-split">
             <button className="lb-action-btn lb-action-primary ni-send-main" onClick={sendInvoice}>
               <Send size={13} /> Send Invoice
             </button>
@@ -644,32 +839,29 @@ export function NewInvoicePage() {
       <div className="ni-info-bar">
         <div className="ni-info-cell">
           <span className="ni-info-label">Invoice #</span>
-          <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
-          <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
+          <div className="ni-invoice-number-row">
+            <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
+            <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
+          </div>
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
-          <span className="ni-info-label">Quooe</span>
+          <span className="ni-info-label">Quote</span>
           <input className="ni-info-select" value={quoteText} placeholder="Quote #" onChange={e => setQuoteText(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Invoice Date</span>
           <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Due Date</span>
           <input type="date" className="ni-date-input" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Customer</span>
-          <SupplierCombobox value={supplierText} onChange={(text, id) => { setsupplierText(text); setSupplierId(id) }} />
+          <SupplierCombobox disabled={ratesLocked} value={supplierText} onChange={(text, id) => { setsupplierText(text); setSupplierId(id) }} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
-          <span className="ni-info-label">Sales Ageno</span>
+          <span className="ni-info-label">Sales Agent</span>
           <div className="ni-agent-select">
             <Avatar sx={{ width: 24, height: 24, fontSize: 10, bgcolor: '#0d9488' }}>
               {agentText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'AG'}
@@ -677,19 +869,28 @@ export function NewInvoicePage() {
             <input className="ni-info-select ni-agent-dropdown" value={agentText} placeholder="Agent name" onChange={e => setAgentText(e.target.value)} />
           </div>
         </div>
+        <div className="ni-info-cell">
+          <span className="ni-info-label">Payment Status</span>
+          <span className={cn('ni-badge', isPaid ? 'ni-badge-green' : 'ni-badge-red')}>{isPaid ? 'Paid' : 'Unpaid'}</span>
+        </div>
+        <div className="ni-info-cell">
+          <span className="ni-info-label">Outstanding Balance</span>
+          <strong className="ni-info-val ni-balance-val">${fmt(isPaid ? 0 : total)}</strong>
+        </div>
       </div>
 
       {/* â"€â"€ ORDER TYPE SELECTOR â"€â"€ */}
-      <div className="ni-type-selector">
+      <div className={cn('ni-type-selector', sourceQuote && 'ni-type-selector-locked')}>
         <span className="ni-type-label">Order Type</span>
         <div className="ni-type-pills">
           {(['apparel', 'gangsheet', 'dtf'] as OrderType[]).map(o => (
             <button
               key={o}
               className={cn('ni-type-pill', orderType === o && 'ni-type-pill-active')}
+              disabled={Boolean(sourceQuote)}
               onClick={() => setOrderType(o)}
             >
-              {o === 'apparel' && 'Cusoom Printed Apparel'}
+              {o === 'apparel' && 'Custom Printed Apparel'}
               {o === 'gangsheet' && 'DTF Gangsheet'}
               {o === 'dtf' && 'DTF Transfers'}
             </button>
@@ -698,7 +899,7 @@ export function NewInvoicePage() {
       </div>
 
       {/* â"€â"€ TWO COLUMN LAYOUT â"€â"€ */}
-      <div className="ni-layouo">
+      <div className="ni-layout">
 
         {/* â"€â"€ LEFT COLUMN â"€â"€ */}
         <main className="ni-main">
@@ -716,7 +917,7 @@ export function NewInvoicePage() {
                   className="al-input"
                   style={{ fontSize: 13, marginBottom: 4 }}
                   value={supplierText}
-                  onChange={e => setsupplierText(e.target.value)}
+                  onChange={e => setsupplierText(e.target.value)} disabled={ratesLocked}
                   placeholder="Customer name..."
                 />
                 <input
@@ -724,58 +925,27 @@ export function NewInvoicePage() {
                   type="email"
                   style={{ fontSize: 13, marginBottom: 4 }}
                   value={billingEmail}
-                  onChange={e => setBillingEmail(e.target.value)}
+                  onChange={e => setBillingEmail(e.target.value)} disabled={ratesLocked}
                   placeholder="Email address (optional)"
                 />
                 <input
                   className="al-input"
                   style={{ fontSize: 13 }}
                   value={contactNumber}
-                  onChange={e => setContactNumber(e.target.value)}
+                  onChange={e => setContactNumber(e.target.value)} disabled={ratesLocked}
                   placeholder="Phone / WhatsApp (optional)"
                 />
               </div>
               <div className="ni-address-block">
                 <p className="ni-addr-block-title">Billing Address</p>
-                <textarea className="al-textarea" rows={3} placeholder="Enter billing address..." style={{ fontSize: 13 }} value={billingAddress} onChange={e => setBillingAddress(e.target.value)} />
+                <textarea className="al-textarea" rows={3} placeholder="Enter billing address..." style={{ fontSize: 13 }} value={billingAddress} onChange={e => setBillingAddress(e.target.value)} disabled={ratesLocked} />
               </div>
               <div className="ni-address-block">
                 <p className="ni-addr-block-title">Shipping Address</p>
-                <textarea className="al-textarea" rows={3} placeholder="Enter shipping address..." style={{ fontSize: 13 }} value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
+                <textarea className="al-textarea" rows={3} placeholder="Enter shipping address..." style={{ fontSize: 13 }} value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} disabled={ratesLocked} />
               </div>
             </div>
           </div>
-
-          {/* Quote Summary Panel — shown only when converting from a quote */}
-          {sourceQuote && (
-            <div className="ni-card ni-ai-panel">
-              <div className="ni-ai-header">
-                <div className="ni-ai-title">
-                  <FileText size={16} className="ni-ai-icon" />
-                  <strong>From Quotation: {sourceQuote.quote_number ?? ''}</strong>
-                </div>
-                <span className="ni-badge ni-badge-green">auto-filled</span>
-              </div>
-              <div className="ni-ai-items">
-                {[
-                  { label: 'Customer', value: sourceQuote.customer_name ?? sourceQuote.supplier_name ?? '—' },
-                  { label: 'Order Type', value: String(sourceQuote.order_type ?? '—') },
-                  { label: 'Items', value: String(Array.isArray(sourceQuote.items) ? sourceQuote.items.length : '—') },
-                  { label: 'Subtotal', value: sourceQuote.subtotal != null ? `$${Number(sourceQuote.subtotal).toFixed(2)}` : '—' },
-                  { label: 'Total', value: sourceQuote.total != null ? `$${Number(sourceQuote.total).toFixed(2)}` : '—' },
-                  sourceQuote.customer_requirement_summary
-                    ? { label: 'Requirements', value: String(sourceQuote.customer_requirement_summary) }
-                    : null,
-                ].filter(Boolean).map((item: any) => (
-                  <div key={item.label} className="ni-ai-item">
-                    <Check size={13} className="ni-ai-check" />
-                    <span className="ni-ai-label">{item.label}:</span>
-                    <strong className="ni-ai-val">{item.value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Items Table */}
           <div className="ni-card ni-section">
@@ -793,19 +963,22 @@ export function NewInvoicePage() {
             {/* -- Custom Printed Apparel -- */}
             {orderType === 'apparel' && (
               <>
+                <p className="ni-items-hint">Select a BlankTex Product Master style. Product image, brand, style code, colors, sizes and SKU fill automatically.</p>
+                <InvoiceCatalogStyleSearch onSelect={addCatalogStyle} disabled={ratesLocked} />
                 <div className="ni-table-wrap">
-                  <table className="ni-table ni-mobile-stack-table">
+                  <table className="ni-table ni-mobile-stack-table ni-catalog-items-table">
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
-                        <th>Item Description <small>Brand | Model</small></th>
+                        <th>Product <small>Image | Brand | Style</small></th>
                         <th>Color</th>
-                        <th>Qty (Shirts)</th>
-                        <th>Sizes <small>Size Ratio</small></th>
-                        <th>Front Artwork</th>
-                        <th>Back Artwork</th>
+                        <th>Size</th>
+                        <th>SKU</th>
+                        <th>Qty</th>
+                        <th>Artwork</th>
                         <th>Unit Price (USD)</th>
-                        <th>Total Amount (USD)</th>
+                        <th>Discount</th>
+                        <th>Amount (USD)</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -813,16 +986,25 @@ export function NewInvoicePage() {
                       {apparelItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                          <td data-label="Item Description"><textarea rows={2} className="ni-table-input ni-wide-input ni-description-input" value={row.description} onChange={e => updateApparelItem(row.id, { description: e.target.value })} placeholder="T-Shirt Premium — Gildan | 18500" /></td>
+                          <td data-label="Product">
+                            <div className="nq-quote-product">
+                              <div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.description} /> : <Package size={20} />}</div>
+                              <div><strong>{row.description || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>{row.styleDescription && <small title={row.styleDescription}>{row.styleDescription}</small>}</div>
+                            </div>
+                          </td>
                           <td data-label="Color">
-                            <input className="ni-table-input" value={row.color} onChange={e => updateApparelItem(row.id, { color: e.target.value })} />
+                            {row.styleId
+                              ? <select className="ni-table-select" disabled={ratesLocked} value={row.colorId ?? ''} onChange={e => selectApparelColor(row, e.target.value)}><option value="">Select color</option>{(row.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select>
+                              : <input className="ni-table-input" disabled={ratesLocked} value={row.color} onChange={e => updateApparelItem(row.id, { color: e.target.value })} />}
                           </td>
-                          <td data-label="Qty (Shirts)">
-                            <input type="number" className="ni-table-input ni-num-input" min={0} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { qty: +e.target.value })} />
+                          <td data-label="Size">
+                            {row.styleId
+                              ? <select className="ni-table-select" disabled={ratesLocked} value={row.sizeId ?? ''} onChange={e => selectApparelSize(row, e.target.value)}><option value="">Select size</option>{(row.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select>
+                              : <input className="ni-table-input" disabled={ratesLocked} value={row.sizes} onChange={e => updateApparelItem(row.id, { sizes: e.target.value })} />}
                           </td>
-                          <td data-label="Sizes"><input className="ni-table-input ni-wide-input" value={row.sizes} onChange={e => updateApparelItem(row.id, { sizes: e.target.value })} placeholder="S:10, M:20, L:15" /></td>
-                          <td data-label="Front Artwork"><InvoiceArtworkUpload imageUrl={row.front_image} label="Front" onChange={url => updateApparelItem(row.id, { front_image: url })} /></td>
-                          <td data-label="Back Artwork"><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateApparelItem(row.id, { back_image: url })} /></td>
+                          <td data-label="SKU"><code className="nq-item-sku">{row.sku || (row.colorId && row.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
+                          <td data-label="Qty"><div className="nq-qty-input"><input type="number" className="ni-table-input ni-num-input" min={1} disabled={ratesLocked} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                          <td data-label="Artwork"><div className="nq-artwork-pair"><InvoiceArtworkUpload imageUrl={row.front_image} label="Front" onChange={url => updateApparelItem(row.id, { front_image: url })} /><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateApparelItem(row.id, { back_image: url })} /></div></td>
                           <td data-label="Unit Price">
                             {ratesLocked ? (
                               <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
@@ -833,27 +1015,25 @@ export function NewInvoicePage() {
                               </div>
                             )}
                           </td>
-                          <td className="ni-amount" data-label="Amount">${fmt(row.qty * row.unitPrice)}</td>
+                          <td data-label="Discount"><div className="ni-price-cell"><span>$</span><input type="number" min={0} step={0.01} className="ni-price-input" disabled={ratesLocked} value={row.lineDiscount ?? 0} onChange={e => updateApparelItem(row.id, { lineDiscount: +e.target.value })} /></div></td>
+                          <td className="ni-amount" data-label="Amount">${fmt(Math.max(row.qty * row.unitPrice - Number(row.lineDiscount || 0), 0))}</td>
                           <td data-label="Action">
                             <button className="ni-del-btn" onClick={() => removeApparelItem(row.id)}><Trash2 size={13} /></button>
                           </td>
                         </tr>
                       ))}
+                      {apparelItems.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={3}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
-                      <td></td>
-                      <td colSpan={2}><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
-                      <td></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
+                      <td colSpan={2}></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
                   </table>
                 </div>
-                <button className="ni-add-item-btn" onClick={addApparelItem}>
-                  <Plus size={13} /> Add Item
-                </button>
               </>
             )}
 
@@ -949,12 +1129,15 @@ export function NewInvoicePage() {
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
-                        <th>Width (in)</th>
-                        <th>Height (in)</th>
+                        <th>Artwork Name <small>Artwork No.</small></th>
+                        <th>Front Art <small>Size (in)</small></th>
+                        <th>Back Art <small>Size (in)</small></th>
+                        <th>Size</th>
                         <th>Qty</th>
-                        <th>Artwork</th>
                         <th>Unit Price (USD)</th>
-                        <th>Total Amount (USD)</th>
+                        <th>Amount (USD)</th>
+                        <th>Tax</th>
+                        <th>Total (USD)</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -962,13 +1145,14 @@ export function NewInvoicePage() {
                       {transferItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
-                          <td data-label="Width (in)"><input type="number" min={0} step="any" className="ni-table-input ni-num-input" value={row.width} onChange={e => updateTransferItem(row.id, { width: e.target.value })} placeholder="Width" /></td>
-                          <td data-label="Height (in)"><input type="number" min={0} step="any" className="ni-table-input ni-num-input" value={row.height} onChange={e => updateTransferItem(row.id, { height: e.target.value })} placeholder="Height" /></td>
+                          <td data-label="Artwork Name"><div className="ni-transfer-name"><input className="ni-table-input" disabled={ratesLocked} value={row.artworkName ?? ''} onChange={e => updateTransferItem(row.id, { artworkName: e.target.value })} placeholder="Artwork name" /><input className="ni-table-input ni-artwork-no-input" disabled={ratesLocked} value={row.artworkNo ?? ''} onChange={e => updateTransferItem(row.id, { artworkNo: e.target.value })} placeholder={`AW-TF-${String(i + 1).padStart(3, '0')}`} /></div></td>
+                          <td data-label="Front Art"><div className="ni-transfer-art"><InvoiceArtworkUpload imageUrl={row.front_image || row.artwork_image} label="Front" onChange={url => updateTransferItem(row.id, { front_image: url, artwork_image: url })} /><div className="ni-transfer-size"><input type="number" min={0} step="any" className="ni-table-input ni-num-input" disabled={ratesLocked} value={row.width} onChange={e => updateTransferItem(row.id, { width: e.target.value })} placeholder="W" /><span>×</span><input type="number" min={0} step="any" className="ni-table-input ni-num-input" disabled={ratesLocked} value={row.height} onChange={e => updateTransferItem(row.id, { height: e.target.value })} placeholder="H" /></div></div></td>
+                          <td data-label="Back Art"><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateTransferItem(row.id, { back_image: url })} /></td>
+                          <td data-label="Size"><strong>{formatTransferSize(row.width, row.height)}</strong></td>
                           <td data-label="Qty">
-                            <input type="number" className="ni-table-input ni-num-input" min={0} value={row.qty} onChange={e => updateTransferItem(row.id, { qty: +e.target.value })} />
+                            <div className="nq-qty-input"><input type="number" className="ni-table-input ni-num-input" min={1} disabled={ratesLocked} value={row.qty} onChange={e => updateTransferItem(row.id, { qty: +e.target.value })} /><span>pcs</span></div>
                           </td>
-                          <td data-label="Artwork"><InvoiceArtworkUpload imageUrl={row.artwork_image} label="Artwork" onChange={url => updateTransferItem(row.id, { artwork_image: url })} /></td>
-                          <td data-label="Amount">
+                          <td data-label="Unit Price">
                             {ratesLocked ? (
                               <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
                             ) : (
@@ -978,18 +1162,21 @@ export function NewInvoicePage() {
                               </div>
                             )}
                           </td>
-                          <td className="ni-amount" data-label="Line Total">${fmt(row.qty * row.unitPrice)}</td>
+                          <td className="ni-amount" data-label="Amount">${fmt(row.qty * row.unitPrice)}</td>
+                          <td data-label="Tax">{fmt(taxPct)}%</td>
+                          <td className="ni-amount" data-label="Total">${fmt(row.qty * row.unitPrice * (1 + taxPct / 100))}</td>
                           <td data-label="Action">
                             <button className="ni-del-btn" onClick={() => removeTransferItem(row.id)}><Trash2 size={13} /></button>
                           </td>
                         </tr>
                       ))}
+                      {transferItems.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '22px 0' }}>No DTF transfers yet — click Add Item below.</td></tr>}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                      <td colSpan={4}><span className="live-summary-title">DTF Transfer Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
-                      <td></td>
+                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
@@ -1031,6 +1218,10 @@ export function NewInvoicePage() {
                   onChange={e => setSupplierNotes(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="ni-attachment-box">
+              <strong>Attachments</strong>
+              <span>Proof, receipt ya bank slip invoice save hone ke baad attach ki ja sakti hai.</span>
             </div>
           </div>
 
@@ -1086,6 +1277,16 @@ export function NewInvoicePage() {
                   <strong className="ni-discount-amt">-${fmt(discountAmt)}</strong>
                 </div>
               </div>
+              <div className="ni-summary-row">
+                <span>Tax</span>
+                <div className="ni-discount-row">
+                  <div className="ni-pct-input">
+                    <input type="number" min={0} max={100} step={0.01} value={taxPct} onChange={e => setTaxPct(+e.target.value)} />
+                    <span>%</span>
+                  </div>
+                  <strong>${fmt(taxAmt)}</strong>
+                </div>
+              </div>
             </div>
             <div className="ni-total-row">
               <span>Total</span>
@@ -1132,7 +1333,7 @@ export function NewInvoicePage() {
                 <select className="ni-select" value={currency} onChange={e => setCurrency(e.target.value)}>
                   <option>USD - US Dollar</option>
                   <option>CAD - Canadian Dollar</option>
-                  <option>GBP - Pound Soerling</option>
+                  <option>GBP - Pound Sterling</option>
                 </select>
               </div>
               <div className="ni-payment-field">
@@ -1154,14 +1355,31 @@ export function NewInvoicePage() {
                   {isPaid ? 'Paid' : 'Unpaid'}
                 </span>
                 <button
-                  className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-bon-active')}
+                  className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-btn-active')}
                   onClick={togglePaid}
                 >
                   {isPaid ? <Check size={13} /> : null}
                   {isPaid ? 'Marked Paid' : 'Mark as Paid'}
                 </button>
               </div>
+              <div className="ni-payment-ledger">
+                <div><span>Previous Payments</span><strong>$0.00</strong></div>
+                <div><span>Amount Paid</span><strong>${fmt(isPaid ? total : 0)}</strong></div>
+                <div><span>Balance Due</span><strong className="ni-balance-val">${fmt(isPaid ? 0 : total)}</strong></div>
+                <div><span>Payment Date</span><strong>—</strong></div>
+                <div><span>Reference / Transaction ID</span><strong>—</strong></div>
+              </div>
+              <div className="ni-payment-link-actions">
+                <button type="button" disabled>Copy Link</button>
+                <button type="button" disabled>Regenerate</button>
+                <button type="button" disabled>Disable Link</button>
+              </div>
             </div>
+          </div>
+
+          <div className="ni-card ni-activity-card">
+            <h3 className="ni-sidebar-title">Activity Timeline</h3>
+            <div className="ni-timeline-item"><span /> <div><strong>Draft in progress</strong><small>Save karne ke baad sent, viewed aur payment events yahan show honge.</small></div></div>
           </div>
 
         </aside>
@@ -1170,12 +1388,11 @@ export function NewInvoicePage() {
       {/* â"€â"€ BOTTOM BAR â"€â"€ */}
       <div className="ni-bottom-bar">
         <div className="ni-bottom-left">
-          <button className="lb-action-btn" onClick={() => navigate(-1)}>Cancel</button>
-          <button className="lb-action-btn lb-action-primary" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Invoice</button>
-          <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
+          <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
+          <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview Invoice</button>
         </div>
         <div className="ni-bottom-right">
-          <div className="ni-send-splio">
+          <div className="ni-send-split">
             <button className="lb-action-btn lb-action-primary ni-send-main" onClick={sendInvoice}>
               <Send size={13} /> Send Invoice
             </button>
@@ -1186,6 +1403,8 @@ export function NewInvoicePage() {
               <ChevronDown size={13} />
             </button>
           </div>
+          <button className="lb-action-btn" onClick={recordPayment}>Record Payment</button>
+          <button className="lb-action-btn" onClick={e => setMoreAnchor(e.currentTarget)}><MoreHorizontal size={14} /> More Actions <ChevronDown size={12} /></button>
         </div>
       </div>
 
@@ -1194,11 +1413,11 @@ export function NewInvoicePage() {
         <MenuItem onClick={() => { setInvoiceStatus('Approved'); toast.success('Invoice approved'); setMoreAnchor(null) }}>Mark Approved</MenuItem>
         <MenuItem onClick={() => { copyText(JSON.stringify({ supplierText, invoiceStatus }), 'Invoice link copied'); setMoreAnchor(null) }}>Duplicate Invoice</MenuItem>
         <MenuItem onClick={() => { toast.info('Template feature coming soon'); setMoreAnchor(null) }}>Apply Template</MenuItem>
-        <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Exporo PDF</MenuItem>
+        <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Export PDF</MenuItem>
         <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Print Invoice</MenuItem>
       </Menu>
 
-      {/* Send splio menu */}
+      {/* Send split menu */}
       <Menu anchorEl={sendAnchor} open={Boolean(sendAnchor)} onClose={() => setSendAnchor(null)}>
         <MenuItem onClick={() => { sendInvoice(); setSendAnchor(null) }}>
           <Mail size={14} /> Send via Email

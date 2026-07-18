@@ -27,6 +27,12 @@ interface POLineItem {
   artwork_url: string | null
   artwork_size_front: string
   artwork_size_back: string
+  catalog_style_id: string
+  catalog_color_id: string
+  catalog_size_id: string
+  catalog_sku: string
+  product_image: string | null
+  style_description: string
   sort_order: number
   // Preserved fields (no UI column, but must survive an edit round-trip)
   description: string
@@ -134,6 +140,8 @@ function newItem(idx: number): POLineItem {
     qty_ordered: 1, unit_price: 0, line_total: 0,
     artwork_id: null, artwork_no: '', artwork_url: null,
     artwork_size_front: '', artwork_size_back: '',
+    catalog_style_id: '', catalog_color_id: '', catalog_size_id: '', catalog_sku: '',
+    product_image: null, style_description: '',
     sort_order: idx,
     description: '', hsn_code: '', uom: 'pcs',
     discount_pct: 0, tax_pct: 0, remarks: '', required_by_date: '',
@@ -332,6 +340,12 @@ export function NewPurchaseOrderPage() {
           artwork_url: it.artwork_thumbnail_url || it.artwork_file_url || it.front_image || null,
           artwork_size_front: it.artwork_size_front || it.artwork_size || '',
           artwork_size_back: it.artwork_size_back || '',
+          catalog_style_id: it.catalog_style_id || '',
+          catalog_color_id: it.catalog_color_id || '',
+          catalog_size_id: it.catalog_size_id || '',
+          catalog_sku: it.catalog_sku || '',
+          product_image: it.product_image || null,
+          style_description: it.style_description || '',
           sort_order: it.sort_order ?? idx,
           // Preserve fields that have no UI column so an edit-save doesn't zero them
           description: it.description || '',
@@ -371,7 +385,7 @@ export function NewPurchaseOrderPage() {
       payload.items = (sourceOrder.items ?? []).map((it: any, idx: number): POLineItem => ({
         id: uid(),
         item_name: it.item || '',
-        brand: '',
+        brand: it.brand || '',
         color: it.color || '',
         size: it.size || '',
         qty_ordered: Number(it.qty) || 1,
@@ -383,7 +397,10 @@ export function NewPurchaseOrderPage() {
         artwork_size_front: it.artwork_size || '',
         artwork_size_back: it.artwork_size || '',
         sort_order: idx,
-        description: '', hsn_code: '', uom: 'pcs',
+        description: it.style_description || '', hsn_code: '', uom: 'pcs',
+        catalog_style_id: it.catalog_style_id || '', catalog_color_id: it.catalog_color_id || '',
+        catalog_size_id: it.catalog_size_id || '', catalog_sku: it.catalog_sku || '',
+        product_image: it.product_image || null, style_description: it.style_description || '',
         discount_pct: 0, tax_pct: 0, remarks: '', required_by_date: '',
       }))
     }
@@ -516,6 +533,13 @@ export function NewPurchaseOrderPage() {
             artwork_id: it.artwork_id,
             artwork_size_front: it.artwork_size_front || null,
             artwork_size_back: it.artwork_size_back || null,
+            artwork_no: it.artwork_no || null,
+            catalog_style_id: it.catalog_style_id || null,
+            catalog_color_id: it.catalog_color_id || null,
+            catalog_size_id: it.catalog_size_id || null,
+            catalog_sku: it.catalog_sku || null,
+            product_image: it.product_image || null,
+            style_description: it.style_description || null,
             sort_order: i,
             // Echo preserved fields so an edit-save keeps prior discount/tax/etc.
             description: it.description || null,

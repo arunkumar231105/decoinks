@@ -62,7 +62,7 @@ router.get('/', async (req, res, next) => {
          ORDER BY created_at DESC LIMIT ${L}`, [like]),
       safe(
         `SELECT id, name, sku, brand
-         FROM products
+         FROM integration.blanktex_decoinks_styles
          WHERE deleted_at IS NULL
            AND (name ILIKE $1 OR sku ILIKE $1 OR brand ILIKE $1)
          ORDER BY created_at DESC LIMIT ${L}`, [like]),

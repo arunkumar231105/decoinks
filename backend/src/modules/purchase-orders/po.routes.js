@@ -33,6 +33,13 @@ const itemSchema = z.object({
   artwork_id:         z.string().uuid().optional().nullable(),
   artwork_size_front: z.string().optional().nullable(),
   artwork_size_back:  z.string().optional().nullable(),
+  artwork_no:         z.string().optional().nullable(),
+  catalog_style_id:   z.string().uuid().optional().nullable(),
+  catalog_color_id:   z.string().uuid().optional().nullable(),
+  catalog_size_id:    z.string().uuid().optional().nullable(),
+  catalog_sku:        z.string().optional().nullable(),
+  product_image:      z.string().optional().nullable(),
+  style_description:  z.string().optional().nullable(),
 })
 
 const fragmentSchema = z.object({

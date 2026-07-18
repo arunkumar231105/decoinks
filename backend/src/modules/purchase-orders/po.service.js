@@ -40,7 +40,9 @@ async function getPoItemCols(client) {
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'purchase_order_items'
        AND column_name IN ('artwork_count','front_image','back_image','artwork_size',
-                           'brand','color','size','artwork_id','artwork_size_front','artwork_size_back')`
+                           'brand','color','size','artwork_id','artwork_size_front','artwork_size_back',
+                           'artwork_no','catalog_style_id','catalog_color_id','catalog_size_id',
+                           'catalog_sku','product_image','style_description')`
   )
   const _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
@@ -64,6 +66,9 @@ async function insertItems(client, poId, items) {
     if (cols.has('artwork_id'))         { extraCols.push('artwork_id');         extraVals.push(item.artwork_id || null) }
     if (cols.has('artwork_size_front')) { extraCols.push('artwork_size_front'); extraVals.push(item.artwork_size_front || null) }
     if (cols.has('artwork_size_back'))  { extraCols.push('artwork_size_back');  extraVals.push(item.artwork_size_back  || null) }
+    for (const key of ['artwork_no','catalog_style_id','catalog_color_id','catalog_size_id','catalog_sku','product_image','style_description']) {
+      if (cols.has(key)) { extraCols.push(key); extraVals.push(item[key] || null) }
+    }
 
     const baseCols = ['po_id','item_name','description','qty_ordered','unit_price',
                       'discount_pct','discount_amt','tax_pct','tax_amt','line_total',

@@ -4,7 +4,7 @@ const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
-function calcTotals(items, orderType, rushServices, shippingCharges, discountPct) {
+function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct = 0) {
   let itemsTotal = 0
   for (const item of items) {
     if (orderType === 'apparel' || orderType === 'dtf') {
@@ -15,8 +15,9 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
   }
   const subtotal = +(itemsTotal + Number(rushServices) + Number(shippingCharges)).toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt).toFixed(2)
-  return { subtotal, discount_amt, tax_amt: 0, total, items_total: +itemsTotal.toFixed(2) }
+  const tax_amt = +((subtotal - discount_amt) * (taxPct / 100)).toFixed(2)
+  const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
+  return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
 
 async function insertItems(client, orderId, orderType, items) {
@@ -25,11 +26,15 @@ async function insertItems(client, orderId, orderType, items) {
     if (orderType === 'apparel') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_apparel (order_id, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO order_items_apparel (order_id, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, product_image, style_description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [orderId, item.item, item.color || null, item.size || null, item.qty,
          item.artwork_no || null, item.artwork_size || null, item.unit_price, amount,
-         item.front_image || null, item.back_image || null, i]
+         item.front_image || null, item.back_image || null, i,
+         item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
+         item.catalog_sku || null, item.brand || null, item.model || null,
+         item.product_image || null, item.style_description || null]
       )
     } else if (orderType === 'gangsheet') {
       const amount = +(Number(item.price_per_sheet) * Number(item.qty)).toFixed(2)
@@ -41,12 +46,42 @@ async function insertItems(client, orderId, orderType, items) {
     } else if (orderType === 'dtf') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order, artwork_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [orderId, item.artwork_name, item.size || null, item.qty, item.unit_price, amount,
-         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i]
+         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i, item.artwork_no || null]
       )
     }
+  }
+}
+
+async function insertInvoiceItems(client, orderId, invoiceId, orderType) {
+  if (orderType === 'apparel') {
+    await client.query(
+      `INSERT INTO order_items_apparel
+         (order_id,item,color,size,qty,artwork_no,unit_price,amount,front_image,back_image,sort_order,
+          catalog_style_id,catalog_color_id,catalog_size_id,catalog_sku,brand,model,product_image,style_description)
+       SELECT $1,COALESCE(description,'Apparel Item'),colors,sizes,qty,artwork_no,unit_price,amount,
+              front_image,back_image,sort_order,catalog_style_id,catalog_color_id,catalog_size_id,
+              catalog_sku,brand,model,product_image,style_description
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
+  } else if (orderType === 'dtf') {
+    await client.query(
+      `INSERT INTO order_items_dtf
+         (order_id,artwork_name,artwork_no,size,qty,unit_price,amount,artwork_image,front_image,back_image,sort_order)
+       SELECT $1,COALESCE(description,'DTF Transfer'),artwork_no,sizes,qty,unit_price,amount,
+              COALESCE(artwork_image,front_image),front_image,back_image,sort_order
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
+  } else {
+    await client.query(
+      `INSERT INTO order_items_gangsheet
+         (order_id,size,no_artworks,qty,price_per_sheet,amount,front_image,back_image,sort_order)
+       SELECT $1,COALESCE(sizes,description,'Gangsheet'),GREATEST(artwork_count,1),qty,unit_price,
+              amount,COALESCE(front_image,artwork_image),back_image,sort_order
+       FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
+    )
   }
 }
 
@@ -99,18 +134,27 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name, i.invoice_number
+    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
+            i.invoice_number, i.quote_id, q.quote_number
      FROM orders o
      LEFT JOIN suppliers c  ON c.id = o.supplier_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u      ON u.id = o.assigned_to
      LEFT JOIN invoices i   ON i.id = o.invoice_id
+     LEFT JOIN quotations q ON q.id = COALESCE(i.quote_id, o.quotation_id)
      WHERE o.id = $1 AND o.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
   const items = await getItemsForOrder(id, rows[0].order_type)
-  return { ...rows[0], items }
+  const [artworks, purchaseOrders, shipments, activities] = await Promise.all([
+    query(`SELECT id,artwork_no,name,file_url,thumbnail_url,status,width_inches,height_inches,location_on_product,created_at FROM artworks WHERE order_id=$1 ORDER BY created_at`, [id]),
+    query(`SELECT po.id,po.po_number,po.status,po.created_at FROM purchase_orders po LEFT JOIN po_orders poo ON poo.po_id=po.id WHERE (po.order_id=$1 OR poo.order_id=$1) AND po.deleted_at IS NULL ORDER BY po.created_at`, [id]),
+    query(`SELECT id,shipment_number,status,carrier,tracking_number,ship_date,estimated_delivery,created_at FROM shipments WHERE order_id=$1 ORDER BY created_at`, [id]),
+    query(`SELECT action,description,created_at FROM activity_logs WHERE entity_type='order' AND entity_id=$1 ORDER BY created_at`, [id]),
+  ])
+  return { ...rows[0], items, artworks: artworks.rows, purchase_orders: purchaseOrders.rows,
+    shipments: shipments.rows, activities: activities.rows }
 }
 
 async function create(data) {
@@ -118,7 +162,7 @@ async function create(data) {
     supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     rush_services = 0, shipping_charges = 0,
-    discount_pct = 0,
+    discount_pct = 0, tax_pct = 0,
     notes, contact_name, contact_email, contact_phone,
     shipping_name, shipping_address,
     assigned_to, created_by,
@@ -126,7 +170,7 @@ async function create(data) {
   } = data
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
-  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct)
+  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
   let resolvedSupplierId = supplier_id || null
 
   // Pull totals from invoice when converting invoice → order
@@ -166,14 +210,15 @@ async function create(data) {
         order_date || new Date().toISOString().split('T')[0], due_date || null,
         payment_terms || 'Due on Receipt', payment_method || null, payment_status, currency,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
-        0, 0, totals.total, notes || null,
+        tax_pct, totals.tax_amt, totals.total, notes || null,
         contact_name || supplier_name_text || null, contact_email || null, contact_phone || null,
         shipping_name  || supplier_name_text || null, shipping_address || null,
         assigned_to || null, created_by,
       ]
     )
     const order = rows[0]
-    await insertItems(client, order.id, order_type, items)
+    if (invoice_id && items.length === 0) await insertInvoiceItems(client, order.id, invoice_id, order_type)
+    else await insertItems(client, order.id, order_type, items)
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
        VALUES ($1, 'order', $2, 'created', $3)`,
@@ -217,10 +262,11 @@ async function update(id, data, actorId) {
   const rush        = data.rush_services    ?? existing.rush_services
   const shipping    = data.shipping_charges ?? existing.shipping_charges
   const discPct     = data.discount_pct     ?? existing.discount_pct
+  const taxPct      = data.tax_pct          ?? existing.tax_pct
   // Recalculate only if items provided; otherwise preserve existing totals
   const totals = items.length
-    ? calcTotals(items, order_type, rush, shipping, discPct)
-    : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: 0, total: +(Number(existing.subtotal) - Number(existing.discount_amt)).toFixed(2) }
+    ? calcTotals(items, order_type, rush, shipping, discPct, taxPct)
+    : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: existing.tax_amt, total: existing.total }
 
   const client = await getClient()
   try {
@@ -247,17 +293,30 @@ async function update(id, data, actorId) {
          shipping_name    = COALESCE($18, shipping_name),
          shipping_address = COALESCE($19, shipping_address),
          assigned_to      = COALESCE($20, assigned_to),
+         production_notes = COALESCE($21, production_notes),
+         packing_instructions = COALESCE($22, packing_instructions),
+         shipping_instructions = COALESCE($23, shipping_instructions),
+         shipping_method = COALESCE($24, shipping_method), courier = COALESCE($25, courier),
+         tracking_number = COALESCE($26, tracking_number), required_ship_date = COALESCE($27, required_ship_date),
+         production_priority = COALESCE($28, production_priority), production_method = COALESCE($29, production_method),
+         production_facility = COALESCE($30, production_facility), assigned_team = COALESCE($31, assigned_team),
+         estimated_production_time = COALESCE($32, estimated_production_time),
+         total_print_locations = COALESCE($33, total_print_locations),
          updated_at       = NOW()
-       WHERE id = $21 AND deleted_at IS NULL
+       WHERE id = $34 AND deleted_at IS NULL
        RETURNING id`,
       [
         data.order_date, data.due_date, data.payment_terms, data.payment_method,
         data.payment_status ?? null,
         rush, shipping,
         totals.subtotal, discPct, totals.discount_amt,
-        0, 0, totals.total,
+        taxPct, totals.tax_amt, totals.total,
         data.notes, data.contact_name, data.contact_email, data.contact_phone,
         data.shipping_name, data.shipping_address, data.assigned_to,
+        data.production_notes, data.packing_instructions, data.shipping_instructions,
+        data.shipping_method, data.courier, data.tracking_number, data.required_ship_date,
+        data.production_priority, data.production_method, data.production_facility,
+        data.assigned_team, data.estimated_production_time, data.total_print_locations,
         id,
       ]
     )

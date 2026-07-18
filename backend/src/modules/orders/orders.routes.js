@@ -36,6 +36,14 @@ const apparelItemSchema = z.object({
   unit_price:   z.number().nonnegative(),
   front_image:  z.string().optional().nullable(),
   back_image:   z.string().optional().nullable(),
+  catalog_style_id: z.string().uuid().optional().nullable(),
+  catalog_color_id: z.string().uuid().optional().nullable(),
+  catalog_size_id: z.string().uuid().optional().nullable(),
+  catalog_sku: z.string().max(100).optional().nullable(),
+  brand: z.string().max(100).optional().nullable(),
+  model: z.string().max(100).optional().nullable(),
+  product_image: z.string().optional().nullable(),
+  style_description: z.string().optional().nullable(),
 })
 
 const gangsheetItemSchema = z.object({
@@ -52,6 +60,9 @@ const dtfItemSchema = z.object({
   qty:           z.number().int().positive(),
   unit_price:    z.number().nonnegative(),
   artwork_image: z.string().optional().nullable(),
+  artwork_no:    z.string().max(100).optional().nullable(),
+  front_image:   z.string().optional().nullable(),
+  back_image:    z.string().optional().nullable(),
 })
 
 const ITEM_SCHEMAS = { apparel: apparelItemSchema, gangsheet: gangsheetItemSchema, dtf: dtfItemSchema }
@@ -71,6 +82,7 @@ const headerFields = {
   rush_services:    z.number().nonnegative().default(0),
   shipping_charges: z.number().nonnegative().default(0),
   discount_pct:     z.number().min(0).max(100).default(0),
+  tax_pct:          z.number().min(0).max(100).default(0),
   notes:            z.string().optional().nullable(),
   contact_name:     z.string().optional().nullable(),
   contact_email:    z.string().email().optional().nullable(),
@@ -78,6 +90,19 @@ const headerFields = {
   shipping_name:    z.string().optional().nullable(),
   shipping_address: z.string().optional().nullable(),
   assigned_to:      z.string().uuid().optional().nullable(),
+  production_notes: z.string().optional().nullable(),
+  packing_instructions: z.string().optional().nullable(),
+  shipping_instructions: z.string().optional().nullable(),
+  shipping_method: z.string().max(100).optional().nullable(),
+  courier: z.string().max(100).optional().nullable(),
+  tracking_number: z.string().max(150).optional().nullable(),
+  required_ship_date: z.string().optional().nullable(),
+  production_priority: z.enum(['Low','Normal','High','Rush']).optional(),
+  production_method: z.string().max(100).optional().nullable(),
+  production_facility: z.string().max(150).optional().nullable(),
+  assigned_team: z.string().max(150).optional().nullable(),
+  estimated_production_time: z.string().max(100).optional().nullable(),
+  total_print_locations: z.number().int().min(0).optional(),
 }
 
 // Validates items array against the schema for the given order_type

@@ -6,8 +6,8 @@ const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function calcTotal(subtotal, discount_amt) {
-  return +(Number(subtotal) - Number(discount_amt)).toFixed(2)
+function calcTotal(subtotal, discount_amt, tax_amt = 0) {
+  return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
 }
 
 async function logActivity(actorId, invoiceId, action, description) {
@@ -46,12 +46,15 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
+            COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
+            o.order_number, q.quote_number
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
+     LEFT JOIN users u      ON u.id = i.created_by
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -62,12 +65,15 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
+            COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
+            o.order_number, q.quote_number
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
+     LEFT JOIN users u      ON u.id = i.created_by
      WHERE i.id = $1`,
     [id]
   )
@@ -86,12 +92,13 @@ async function getById(id) {
 
 async function create(fields_in) {
   const { quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
-          subtotal = 0, discount_amt = 0,
+          subtotal, discount_amt, tax_amt,
           notes, created_by, order_type, items } = fields_in
   const fields = fields_in
 
-  let resolvedSubtotal    = Number(subtotal)
-  let resolvedDiscountAmt = Number(discount_amt)
+  let resolvedSubtotal    = Number(subtotal ?? 0)
+  let resolvedDiscountAmt = Number(discount_amt ?? 0)
+  let resolvedTaxAmt      = Number(tax_amt ?? 0)
   let resolvedSupplierId  = supplier_id || null
   let resolvedCustomerName = fields.customer_name || null
   let resolvedCustomerId = customer_id || null
@@ -103,15 +110,17 @@ async function create(fields_in) {
     const { rows: qRows } = await query(
       `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_id, order_type, currency,
               customer_name, company_name, billing_email, contact_number,
-              shipping_address, billing_address, payment_terms, payment_method
+              shipping_address, billing_address, payment_terms, payment_method,
+              estimated_shipping, rush_services, customer_notes, discount_type, discount_value
        FROM quotations WHERE id = $1`,
       [quote_id]
     )
     if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
     const q = qRows[0]
     quoteData = q
-    resolvedSubtotal    = Number(q.subtotal)
-    resolvedDiscountAmt = Number(q.discount_amt)
+    if (subtotal === undefined) resolvedSubtotal = Number(q.subtotal)
+    if (discount_amt === undefined) resolvedDiscountAmt = Number(q.discount_amt)
+    if (tax_amt === undefined) resolvedTaxAmt = Number(q.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
     if (!resolvedCustomerId) resolvedCustomerId = q.customer_id
     if (!resolvedCustomerName) resolvedCustomerName = q.customer_name || q.company_name
@@ -123,8 +132,9 @@ async function create(fields_in) {
     )
     if (!orderRows[0]) throw Object.assign(new Error('Linked order not found'), { statusCode: 404 })
     const o = orderRows[0]
-    resolvedSubtotal    = Number(o.subtotal)
-    resolvedDiscountAmt = Number(o.discount_amt)
+    if (subtotal === undefined) resolvedSubtotal = Number(o.subtotal)
+    if (discount_amt === undefined) resolvedDiscountAmt = Number(o.discount_amt)
+    if (tax_amt === undefined) resolvedTaxAmt = Number(o.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
   }
 
@@ -144,26 +154,30 @@ async function create(fields_in) {
 
   const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
 
-  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt)
+  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
   const balance_due = total
 
   const { rows } = await query(
     `INSERT INTO invoices
        (invoice_number, internal_no, quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
-        subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
-        notes, created_by,
+        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, amount_paid, balance_due,
+        notes, customer_notes, sales_agent_name, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
-        order_type, payment_terms, payment_method, currency, rush_services, shipping_charges)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+        order_type, payment_terms, payment_method, currency, rush_services, rush_charges,
+        shipping_charges, discount_type, discount_value)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
      RETURNING *`,
     [
       invoice_number,
       `INV-INT-${invoice_number}`, quote_id || null, order_id || null, resolvedSupplierId, resolvedCustomerId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
-      resolvedSubtotal, resolvedDiscountAmt, 0,
-      total, 0, balance_due,
-      notes || null, created_by,
+      resolvedSubtotal,
+      Number(fields.discount_pct ?? (fields.discount_type === 'percentage' ? fields.discount_value : 0)) || 0,
+      resolvedDiscountAmt,
+      Number(fields.tax_pct) || 0,
+      resolvedTaxAmt, total, 0, balance_due,
+      notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
       // Contact fields: explicit value wins, otherwise fall back to the quotation's
       resolvedCustomerName || null,
       fields.billing_email   ?? quoteData?.billing_email   ?? null,
@@ -174,8 +188,11 @@ async function create(fields_in) {
       fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
       fields.payment_method || quoteData?.payment_method || null,
       fields.currency       || quoteData?.currency       || 'USD',
-      Number(fields.rush_services) || 0,
-      Number(fields.shipping_charges) || 0,
+      Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
+      Number(fields.rush_charges) || 0,
+      Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+      fields.discount_type || quoteData?.discount_type || 'percentage',
+      Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
     ]
   )
 
@@ -187,8 +204,10 @@ async function create(fields_in) {
       await query(
          `INSERT INTO invoice_items
            (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-            front_image, back_image, artwork_image, sizes, colors)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            front_image, back_image, artwork_image, sizes, colors,
+            catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
+            brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
         [
           rows[0].id,
           it.description || null,
@@ -202,6 +221,17 @@ async function create(fields_in) {
           it.artwork_image || null,
           it.sizes || null,
           it.colors || null,
+          it.catalog_style_id || null,
+          it.catalog_color_id || null,
+          it.catalog_size_id || null,
+          it.catalog_sku || null,
+          it.brand || null,
+          it.model || null,
+          it.product_image || null,
+          it.style_description || null,
+          it.artwork_no || null,
+          Number(it.line_discount) || 0,
+          it.tax_code || null,
         ]
       )
     }
@@ -210,10 +240,12 @@ async function create(fields_in) {
     await query(
        `INSERT INTO invoice_items
          (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-          front_image, back_image, artwork_image, sizes, colors)
+          front_image, back_image, artwork_image, sizes, colors,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
        SELECT $1, description, qty, unit_price, amount,
               COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
-              front_image, back_image, artwork_image, sizes, colors
+              front_image, back_image, artwork_image, sizes, colors,
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no
        FROM quotation_items WHERE quotation_id = $2
        ORDER BY sort_order, id`,
       [rows[0].id, quote_id]
@@ -236,7 +268,7 @@ async function create(fields_in) {
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'notes', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_pct', 'discount_amt', 'tax_pct', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
   const sets = []
   const params = []
 
@@ -248,7 +280,7 @@ async function update(id, fields) {
   }
   if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
-  const financialFields = ['subtotal', 'discount_amt']
+  const financialFields = ['subtotal', 'discount_amt', 'tax_amt']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
 
@@ -259,7 +291,8 @@ async function update(id, fields) {
 
     const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
-    const newTotal       = calcTotal(newSubtotal, newDiscountAmt)
+    const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
+    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
     const amountPaid     = Number(existing.amount_paid) || 0
     const newBalanceDue  = +(Math.max(0, newTotal - amountPaid)).toFixed(2)
 
@@ -290,6 +323,44 @@ async function update(id, fields) {
   return rows[0]
 }
 
+async function copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType) {
+  if (orderType === 'apparel') {
+    await q.query(
+      `INSERT INTO order_items_apparel
+         (order_id, item, color, size, qty, artwork_no, unit_price, amount,
+          front_image, back_image, sort_order, catalog_style_id, catalog_color_id,
+          catalog_size_id, catalog_sku, brand, model, product_image, style_description)
+       SELECT $2, COALESCE(description, 'Apparel Item'), colors, sizes, qty, artwork_no,
+              unit_price, amount, front_image, back_image, sort_order,
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
+              brand, model, product_image, style_description
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  } else if (orderType === 'dtf') {
+    await q.query(
+      `INSERT INTO order_items_dtf
+         (order_id, artwork_name, artwork_no, size, qty, unit_price, amount,
+          artwork_image, front_image, back_image, sort_order)
+       SELECT $2, COALESCE(description, 'DTF Transfer'), artwork_no, sizes, qty,
+              unit_price, amount, COALESCE(artwork_image, front_image), front_image,
+              back_image, sort_order
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  } else if (orderType === 'gangsheet') {
+    await q.query(
+      `INSERT INTO order_items_gangsheet
+         (order_id, size, no_artworks, qty, price_per_sheet, amount,
+          front_image, back_image, sort_order)
+       SELECT $2, COALESCE(sizes, description, 'Gangsheet'), GREATEST(artwork_count, 1),
+              qty, unit_price, amount, COALESCE(front_image, artwork_image), back_image, sort_order
+       FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+      [invoiceId, orderId]
+    )
+  }
+}
+
 async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   // Resolve order_type from the linked quotation (if any)
   const q = clientArg || { query: (...a) => query(...a) }
@@ -315,18 +386,25 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
 
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
-       (order_number, invoice_id, supplier_id, order_type, order_date,
-        subtotal, discount_amt, tax_amt, total, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+        payment_terms, payment_method, currency, contact_name, contact_email,
+        contact_phone, shipping_name, shipping_address, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
-      ordNumber, invoiceId, invoice.supplier_id, orderType,
+      ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
       new Date().toISOString().split('T')[0],
-      invoice.subtotal, invoice.discount_amt, 0, total,
+      invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
+      invoice.tax_pct || 0, invoice.tax_amt || 0, total,
+      invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',
+      invoice.customer_name, invoice.billing_email, invoice.contact_number,
+      invoice.customer_name, invoice.shipping_address, invoice.notes,
       actorId,
     ]
   )
   const orderId = ordRows[0].id
+  await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
 
   await q.query(
     `INSERT INTO pipeline_events
@@ -385,18 +463,25 @@ async function updateStatus(id, status, actor) {
           const total = +Number(invoice.total).toFixed(2)
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
-               (order_number, invoice_id, supplier_id, order_type, order_date,
-                subtotal, discount_amt, tax_amt, total, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+                subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+                payment_terms, payment_method, currency, contact_name, contact_email,
+                contact_phone, shipping_name, shipping_address, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
-              ordNumber, id, invoice.supplier_id, orderType,
+              ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
               new Date().toISOString().split('T')[0],
-              invoice.subtotal, invoice.discount_amt, 0, total,
+              invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
+              invoice.tax_pct || 0, invoice.tax_amt || 0, total,
+              invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',
+              invoice.customer_name, invoice.billing_email, invoice.contact_number,
+              invoice.customer_name, invoice.shipping_address, invoice.notes,
               actorId,
             ]
           )
           autoOrderId = ordRows[0].id
+          await copyInvoiceItemsToOrder(client, id, autoOrderId, orderType)
 
           await client.query(
             `INSERT INTO pipeline_events
