@@ -1070,6 +1070,9 @@ export function NewQuotationPage() {
       setShippingState(c.state ?? '')
       setShippingCity(c.city ?? '')
       setZipCode(c.zip ?? '')
+      setLeadId(c.lead_id ?? null)
+      setLeadNumber(c.lead_number ?? '')
+      setCustomerSource(c.lead_source ?? c.source ?? '')
       const built = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
       const billingAddr = c.billing_address || built
       if (billingAddr) setBillingAddress(billingAddr)
@@ -1095,6 +1098,7 @@ export function NewQuotationPage() {
     setWhatsapp(''); setWechat('')
     setShippingCountry(''); setShippingState(''); setShippingCity(''); setZipCode('')
     setBillingAddress(''); setShippingAddress(''); setSameAsBilling(false)
+    setLeadId(null); setLeadNumber(''); setCustomerSource('')
   }
 
   // ── Initialize form from quotation once loaded ──
@@ -1498,7 +1502,6 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
-                <button type="button" className="lb-action-btn" onClick={() => navigate('/artworks')}>Open Artwork Studio</button>
               </div>
               <CatalogStyleSearch onSelect={addCatalogStyle} />
               <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th></th></tr></thead><tbody>
