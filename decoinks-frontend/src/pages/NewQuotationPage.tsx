@@ -1,13 +1,10 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Menu, MenuItem } from '@mui/material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import {
   ChevronDown,
-  Copy,
   Edit3,
-  ExternalLink,
   MessageCircle,
   MessageSquare,
   Package,
@@ -21,7 +18,6 @@ import {
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
-import { copyText, printPanel } from '../utils/actions'
 import ArtworkUploader from '../components/ArtworkUploader'
 
 type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
@@ -553,23 +549,16 @@ function TermsSection({ paymentTerms, paymentMethod, productionTime, deliveryMet
   )
 }
 
-function ActionBar({ status, setStatus, onSave, onConvert, onPreview, activeTab, saving, onSendToCustomer, onRequestApproval }: {
-  status: QuoteStatus; setStatus: (status: QuoteStatus) => void
+function ActionBar({ status, onSave, onConvert, saving, onSendToCustomer, onRequestApproval }: {
+  status: QuoteStatus
   onSave: () => void; onConvert: () => void
-  onPreview: () => void; activeTab: QuoteTab
   saving?: boolean; onSendToCustomer: () => void; onRequestApproval: () => void
 }) {
-  const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
-  const tab = QUOTE_TABS.find(t => t.key === activeTab)!
-  const previewLabel = `${tab.icon} Preview ${tab.label} PDF`
   return (
     <div className="nq-bottom-bar">
       <div className="nq-bottom-left">
         <button className="lb-action-btn lb-action-primary" onClick={onSave} disabled={saving} style={{ gap: 6 }}>
           <Save size={14} /> {saving ? 'Saving...' : 'Save Quote'}
-        </button>
-        <button className="lb-action-btn" onClick={onPreview} title={`Preview ${tab.label} PDF`}>
-          {previewLabel}
         </button>
       </div>
       <div className="nq-bottom-center">
@@ -580,17 +569,8 @@ function ActionBar({ status, setStatus, onSave, onConvert, onPreview, activeTab,
       <div className="nq-bottom-right">
         <button className="lb-action-btn" onClick={onRequestApproval} disabled={saving}>Request Approval</button>
         <button className="lb-action-btn nq-convert-btn" onClick={onConvert}>Convert to Invoice</button>
-        <button className="lb-action-btn" onClick={e => setMoreAnchor(e.currentTarget)}>More Actions <ChevronDown size={13} /></button>
         <span className="nq-badge nq-badge-draft">{status}</span>
       </div>
-      <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-        <MenuItem onClick={() => { copyText(window.location.href, 'Quote link copied'); setMoreAnchor(null) }}>
-          <Copy size={14} style={{ marginRight: 8 }} /> Copy Link
-        </MenuItem>
-        <MenuItem onClick={() => { onPreview(); setMoreAnchor(null) }}>
-          <ExternalLink size={14} style={{ marginRight: 8 }} /> {previewLabel}
-        </MenuItem>
-      </Menu>
     </div>
   )
 }
@@ -1617,20 +1597,11 @@ export function NewQuotationPage() {
       </div>
 
       <ActionBar
-        status={status} setStatus={setStatus}
+        status={status}
         onSave={handleSave} saving={saveMutation.isPending || statusMutation.isPending}
         onSendToCustomer={handleSendToCustomer}
         onRequestApproval={handleRequestApproval}
         onConvert={() => navigate('/invoices/new', { state: { fromQuoteId: quoteId } })}
-        activeTab={activeTab}
-        onPreview={() => {
-          if (quoteId) {
-            navigateAfterSave.current = `/quotes/${quoteId}/print`
-            handleSave()
-          } else {
-            toast.error('Save the quote first, then click Preview')
-          }
-        }}
       />
     </div>
   )
