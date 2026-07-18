@@ -134,18 +134,27 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name, i.invoice_number
+    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
+            i.invoice_number, i.quote_id, q.quote_number
      FROM orders o
      LEFT JOIN suppliers c  ON c.id = o.supplier_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u      ON u.id = o.assigned_to
      LEFT JOIN invoices i   ON i.id = o.invoice_id
+     LEFT JOIN quotations q ON q.id = COALESCE(i.quote_id, o.quotation_id)
      WHERE o.id = $1 AND o.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
   const items = await getItemsForOrder(id, rows[0].order_type)
-  return { ...rows[0], items }
+  const [artworks, purchaseOrders, shipments, activities] = await Promise.all([
+    query(`SELECT id,artwork_no,name,file_url,thumbnail_url,status,width_inches,height_inches,location_on_product,created_at FROM artworks WHERE order_id=$1 ORDER BY created_at`, [id]),
+    query(`SELECT po.id,po.po_number,po.status,po.created_at FROM purchase_orders po LEFT JOIN po_orders poo ON poo.po_id=po.id WHERE (po.order_id=$1 OR poo.order_id=$1) AND po.deleted_at IS NULL ORDER BY po.created_at`, [id]),
+    query(`SELECT id,shipment_number,status,carrier,tracking_number,ship_date,estimated_delivery,created_at FROM shipments WHERE order_id=$1 ORDER BY created_at`, [id]),
+    query(`SELECT action,description,created_at FROM activity_logs WHERE entity_type='order' AND entity_id=$1 ORDER BY created_at`, [id]),
+  ])
+  return { ...rows[0], items, artworks: artworks.rows, purchase_orders: purchaseOrders.rows,
+    shipments: shipments.rows, activities: activities.rows }
 }
 
 async function create(data) {
@@ -284,8 +293,17 @@ async function update(id, data, actorId) {
          shipping_name    = COALESCE($18, shipping_name),
          shipping_address = COALESCE($19, shipping_address),
          assigned_to      = COALESCE($20, assigned_to),
+         production_notes = COALESCE($21, production_notes),
+         packing_instructions = COALESCE($22, packing_instructions),
+         shipping_instructions = COALESCE($23, shipping_instructions),
+         shipping_method = COALESCE($24, shipping_method), courier = COALESCE($25, courier),
+         tracking_number = COALESCE($26, tracking_number), required_ship_date = COALESCE($27, required_ship_date),
+         production_priority = COALESCE($28, production_priority), production_method = COALESCE($29, production_method),
+         production_facility = COALESCE($30, production_facility), assigned_team = COALESCE($31, assigned_team),
+         estimated_production_time = COALESCE($32, estimated_production_time),
+         total_print_locations = COALESCE($33, total_print_locations),
          updated_at       = NOW()
-       WHERE id = $21 AND deleted_at IS NULL
+       WHERE id = $34 AND deleted_at IS NULL
        RETURNING id`,
       [
         data.order_date, data.due_date, data.payment_terms, data.payment_method,
@@ -295,6 +313,10 @@ async function update(id, data, actorId) {
         taxPct, totals.tax_amt, totals.total,
         data.notes, data.contact_name, data.contact_email, data.contact_phone,
         data.shipping_name, data.shipping_address, data.assigned_to,
+        data.production_notes, data.packing_instructions, data.shipping_instructions,
+        data.shipping_method, data.courier, data.tracking_number, data.required_ship_date,
+        data.production_priority, data.production_method, data.production_facility,
+        data.assigned_team, data.estimated_production_time, data.total_print_locations,
         id,
       ]
     )
