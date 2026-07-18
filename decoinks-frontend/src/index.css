@@ -15258,11 +15258,12 @@ select.al-input {
   width: 100%;
   max-width: 100%;
   overflow: visible;
+  container-type: inline-size;
 }
 
 .ni-header {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(0, auto);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 14px;
 }
@@ -15270,8 +15271,9 @@ select.al-input {
 .ni-header-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
+  width: 100%;
   max-width: 100%;
   flex-wrap: wrap;
 }
@@ -15307,15 +15309,20 @@ select.al-input {
 
 .ni-info-bar {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) repeat(5, minmax(150px, 1fr));
+  grid-template-columns: minmax(180px, 1.15fr) repeat(5, minmax(0, 1fr));
   align-items: stretch;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: visible;
 }
 
 .ni-info-cell {
   min-width: 0;
   width: 100%;
+  border-right: 1px solid #e5e7eb;
+}
+
+.ni-info-cell:last-child {
+  border-right: 0;
 }
 
 .ni-info-cell-field {
@@ -15330,8 +15337,17 @@ select.al-input {
 .ni-date-input,
 .ni-agent-select,
 .ni-agent-dropdown {
+  min-width: 0;
   width: 100%;
   max-width: 100%;
+}
+
+.ni-agent-select .MuiAvatar-root {
+  flex: 0 0 auto;
+}
+
+.ni-info-val {
+  overflow-wrap: anywhere;
 }
 
 .ni-address-block,
@@ -15483,12 +15499,22 @@ select.al-input {
 }
 
 @media (max-width: 1360px) {
-  .ni-header {
-    grid-template-columns: 1fr;
-  }
-
   .ni-header-actions {
     justify-content: flex-start;
+  }
+}
+
+@container (max-width: 1180px) {
+  .ni-info-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ni-info-cell:nth-of-type(3n) {
+    border-right: 0;
+  }
+
+  .ni-info-cell:nth-of-type(n + 4) {
+    border-top: 1px solid #e5e7eb;
   }
 }
 
@@ -15507,6 +15533,19 @@ select.al-input {
 @media (max-width: 900px) {
   .ni-info-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ni-info-cell,
+  .ni-info-cell:nth-of-type(3n) {
+    border-right: 1px solid #e5e7eb;
+  }
+
+  .ni-info-cell:nth-of-type(even) {
+    border-right: 0;
+  }
+
+  .ni-info-cell:nth-of-type(n + 3) {
+    border-top: 1px solid #e5e7eb;
   }
 
   .ni-sidebar,
@@ -15540,6 +15579,31 @@ select.al-input {
 
   .ni-info-bar {
     grid-template-columns: 1fr;
+  }
+
+  .ni-info-cell,
+  .ni-info-cell:nth-of-type(3n),
+  .ni-info-cell:nth-of-type(even) {
+    border-right: 0;
+  }
+
+  .ni-info-cell + .ni-info-cell {
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .ni-type-selector {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ni-type-pills {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ni-type-pill {
+    justify-content: center;
+    width: 100%;
   }
 
   .ni-section {

@@ -618,7 +618,7 @@ export function NewInvoicePage() {
             Cancel Invoice
           </button>
           <button className="lb-action-btn ni-approval-action" onClick={requestApproval}>
-            <UserCheck size={13} /> Requeso Approval
+            <UserCheck size={13} /> Request Approval
           </button>
           <button
             className="lb-action-btn"
@@ -626,7 +626,7 @@ export function NewInvoicePage() {
           >
             <MoreHorizontal size={14} /> More Actions <ChevronDown size={12} />
           </button>
-          <div className="ni-send-splio">
+          <div className="ni-send-split">
             <button className="lb-action-btn lb-action-primary ni-send-main" onClick={sendInvoice}>
               <Send size={13} /> Send Invoice
             </button>
@@ -647,29 +647,24 @@ export function NewInvoicePage() {
           <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
           <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
-          <span className="ni-info-label">Quooe</span>
+          <span className="ni-info-label">Quote</span>
           <input className="ni-info-select" value={quoteText} placeholder="Quote #" onChange={e => setQuoteText(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Invoice Date</span>
           <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Due Date</span>
           <input type="date" className="ni-date-input" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Customer</span>
           <SupplierCombobox value={supplierText} onChange={(text, id) => { setsupplierText(text); setSupplierId(id) }} />
         </div>
-        <div className="ni-info-divider" />
         <div className="ni-info-cell ni-info-cell-field">
-          <span className="ni-info-label">Sales Ageno</span>
+          <span className="ni-info-label">Sales Agent</span>
           <div className="ni-agent-select">
             <Avatar sx={{ width: 24, height: 24, fontSize: 10, bgcolor: '#0d9488' }}>
               {agentText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'AG'}
@@ -689,7 +684,7 @@ export function NewInvoicePage() {
               className={cn('ni-type-pill', orderType === o && 'ni-type-pill-active')}
               onClick={() => setOrderType(o)}
             >
-              {o === 'apparel' && 'Cusoom Printed Apparel'}
+              {o === 'apparel' && 'Custom Printed Apparel'}
               {o === 'gangsheet' && 'DTF Gangsheet'}
               {o === 'dtf' && 'DTF Transfers'}
             </button>
@@ -698,7 +693,7 @@ export function NewInvoicePage() {
       </div>
 
       {/* â"€â"€ TWO COLUMN LAYOUT â"€â"€ */}
-      <div className="ni-layouo">
+      <div className="ni-layout">
 
         {/* â"€â"€ LEFT COLUMN â"€â"€ */}
         <main className="ni-main">
@@ -1132,7 +1127,7 @@ export function NewInvoicePage() {
                 <select className="ni-select" value={currency} onChange={e => setCurrency(e.target.value)}>
                   <option>USD - US Dollar</option>
                   <option>CAD - Canadian Dollar</option>
-                  <option>GBP - Pound Soerling</option>
+                  <option>GBP - Pound Sterling</option>
                 </select>
               </div>
               <div className="ni-payment-field">
@@ -1154,7 +1149,7 @@ export function NewInvoicePage() {
                   {isPaid ? 'Paid' : 'Unpaid'}
                 </span>
                 <button
-                  className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-bon-active')}
+                  className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-btn-active')}
                   onClick={togglePaid}
                 >
                   {isPaid ? <Check size={13} /> : null}
@@ -1175,7 +1170,7 @@ export function NewInvoicePage() {
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
         </div>
         <div className="ni-bottom-right">
-          <div className="ni-send-splio">
+          <div className="ni-send-split">
             <button className="lb-action-btn lb-action-primary ni-send-main" onClick={sendInvoice}>
               <Send size={13} /> Send Invoice
             </button>
@@ -1194,11 +1189,11 @@ export function NewInvoicePage() {
         <MenuItem onClick={() => { setInvoiceStatus('Approved'); toast.success('Invoice approved'); setMoreAnchor(null) }}>Mark Approved</MenuItem>
         <MenuItem onClick={() => { copyText(JSON.stringify({ supplierText, invoiceStatus }), 'Invoice link copied'); setMoreAnchor(null) }}>Duplicate Invoice</MenuItem>
         <MenuItem onClick={() => { toast.info('Template feature coming soon'); setMoreAnchor(null) }}>Apply Template</MenuItem>
-        <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Exporo PDF</MenuItem>
+        <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Export PDF</MenuItem>
         <MenuItem onClick={() => { previewInvoice(); setMoreAnchor(null) }}>Print Invoice</MenuItem>
       </Menu>
 
-      {/* Send splio menu */}
+      {/* Send split menu */}
       <Menu anchorEl={sendAnchor} open={Boolean(sendAnchor)} onClose={() => setSendAnchor(null)}>
         <MenuItem onClick={() => { sendInvoice(); setSendAnchor(null) }}>
           <Mail size={14} /> Send via Email
