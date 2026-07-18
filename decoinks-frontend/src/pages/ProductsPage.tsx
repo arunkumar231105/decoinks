@@ -11,14 +11,6 @@ import { api } from '../services/api'
 const PRODUCT_TYPES = ['Apparel', 'DTF', 'Gangsheet', 'Embroidery', 'Other'] as const
 type ProductType = typeof PRODUCT_TYPES[number]
 
-const TYPE_COLORS: Record<ProductType, { bg: string; color: string }> = {
-  'DTF':       { bg: '#ccfbf1', color: '#0f766e' },
-  'Gangsheet': { bg: '#ede9fe', color: '#6d28d9' },
-  'Apparel':   { bg: '#dbeafe', color: '#1d4ed8' },
-  'Embroidery':{ bg: '#d1fae5', color: '#065f46' },
-  'Other':     { bg: '#f1f5f9', color: '#475569' },
-}
-
 interface Product {
   id: string; name: string; sku: string; product_type: ProductType
   base_price: number; stock_qty: number; description: string | null
@@ -26,6 +18,8 @@ interface Product {
   color: string | null; size: string | null
   is_active: boolean; created_at: string
   image_url?: string | null
+  total_colors: number; total_sizes: number; total_skus: number
+  colors?: Array<{ name: string; hex: string | null }>
 }
 
 interface StyleColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null; active: boolean; discontinued: boolean }
@@ -326,51 +320,40 @@ export function ProductsPage() {
         <table className="cust-table prod-table">
           <thead>
             <tr>
-              <th>Product Name</th>
-              <th>SKU</th>
+              <th>Style</th>
+              <th>Style Code</th>
               <th>Brand</th>
-              <th>Color</th>
-              <th>Size</th>
-              <th>Type</th>
-              <th>Base Price</th>
-              <th>Stock</th>
+              <th>Colors</th>
+              <th>Sizes</th>
+              <th>SKUs</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={9} className="cust-empty-row">Loading...</td></tr>}
-            {!isLoading && products.length === 0 && <tr><td colSpan={9} className="cust-empty-row">No products match your search.</td></tr>}
+            {isLoading && <tr><td colSpan={7} className="cust-empty-row">Loading styles...</td></tr>}
+            {!isLoading && products.length === 0 && <tr><td colSpan={7} className="cust-empty-row">No styles match your search.</td></tr>}
             {!isLoading && products.map((p) => {
-              const tc = TYPE_COLORS[p.product_type] ?? TYPE_COLORS.Other
               const isActive = p.is_active
               return (
                 <tr key={p.id} className="cust-row" onClick={() => setSelectedId(p.id)} style={{ cursor: 'pointer' }} title="Click to preview complete style">
                   <td>
-                    <strong className="prod-name">{p.name}</strong>
-                    {p.model_number && <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 6 }}>#{p.model_number}</span>}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {p.image_url
+                        ? <img src={p.image_url} alt={p.name} style={{ width: 46, height: 46, objectFit: 'contain', borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc' }} />
+                        : <span style={{ width: 46, height: 46, display: 'grid', placeItems: 'center', borderRadius: 7, background: '#f1f5f9', color: '#94a3b8' }}><ImageIcon size={19} /></span>}
+                      <span><strong className="prod-name">{p.name}</strong><small style={{ display: 'block', color: '#94a3b8', marginTop: 3 }}>Click for full style preview</small></span>
+                    </span>
                   </td>
                   <td><code className="prod-sku">{p.sku}</code></td>
                   <td style={{ color: '#374151', fontSize: 13 }}>{p.brand ?? '—'}</td>
                   <td>
-                    {p.color
-                      ? <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12 }}>
-                          <span style={{ width:10, height:10, borderRadius:'50%', background: colorDot(p.color), border:'1px solid #e5e7eb', flexShrink:0 }} />
-                          {p.color}
-                        </span>
-                      : <span style={{ color:'#d1d5db' }}>—</span>
-                    }
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ display: 'flex' }}>{(p.colors ?? []).slice(0, 5).map((c, i) => <span key={`${c.name}-${i}`} title={c.name} style={{ width: 16, height: 16, borderRadius: '50%', marginLeft: i ? -4 : 0, background: c.hex || colorDot(c.name), border: '1px solid #cbd5e1' }} />)}</span>
+                      <strong style={{ fontSize: 12 }}>{p.total_colors}</strong>
+                    </span>
                   </td>
-                  <td style={{ fontSize: 12 }}>
-                    {p.size
-                      ? <span style={{ background:'#f1f5f9', padding:'2px 7px', borderRadius:4, fontWeight:600, fontSize:11 }}>{p.size}</span>
-                      : <span style={{ color:'#d1d5db' }}>—</span>
-                    }
-                  </td>
-                  <td>
-                    <span className="prod-type-badge" style={{ background: tc.bg, color: tc.color }}>{p.product_type}</span>
-                  </td>
-                  <td className="cust-num">${Number(p.base_price).toFixed(2)}</td>
-                  <td className="cust-num">{p.stock_qty}</td>
+                  <td><strong style={{ fontSize: 12 }}>{p.total_sizes}</strong></td>
+                  <td><strong style={{ fontSize: 12 }}>{p.total_skus}</strong></td>
                   <td>
                     <span className="cust-status-badge" style={isActive ? { background:'#dcfce7', color:'#15803d' } : { background:'#f1f5f9', color:'#64748b' }}>
                       {isActive ? 'Active' : 'Inactive'}

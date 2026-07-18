@@ -1,6 +1,6 @@
 const { query } = require('../../config/db')
 
-const SOURCE = 'integration.blanktex_decoinks_products'
+const SOURCE = 'integration.blanktex_decoinks_styles'
 const managedInBlankTex = (message = 'Products are managed in BlankTex and appear here automatically') => {
   throw Object.assign(new Error(message), { statusCode: 409 })
 }
