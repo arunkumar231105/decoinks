@@ -650,8 +650,10 @@ export function NewInvoicePage() {
       <div className="ni-info-bar">
         <div className="ni-info-cell">
           <span className="ni-info-label">Invoice #</span>
-          <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
-          <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
+          <div className="ni-invoice-number-row">
+            <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
+            <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
+          </div>
         </div>
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Quote</span>
