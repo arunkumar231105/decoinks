@@ -97,6 +97,17 @@ const addDays = (date: string, days: number) => {
 
 const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
 const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
+const APPAREL_SIZE_OPTIONS = [
+  'XS',
+  'S',
+  'M',
+  'L',
+  'XL',
+  '2XL',
+  '3XL',
+  'One Size',
+  'S:10, M:20, L:15',
+]
 
 const parseTransferSize = (size: unknown): Pick<TransferRow, 'width' | 'height'> => {
   const match = String(size ?? '').match(/([\d.]+)\s*(?:"|in(?:ches)?)?\s*[x×]\s*([\d.]+)/i)
@@ -681,6 +692,48 @@ function CustomerInfoSection({
 }
 
 // ── Item image upload cell ─────────────────────────────────────────────────
+function ApparelSizePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const isPreset = APPAREL_SIZE_OPTIONS.includes(value)
+  const [isCustom, setIsCustom] = useState(Boolean(value) && !isPreset)
+
+  useEffect(() => {
+    if (value && !APPAREL_SIZE_OPTIONS.includes(value)) setIsCustom(true)
+  }, [value])
+
+  return (
+    <div className="nq-size-picker">
+      <select
+        className="nq-table-input nq-size-select"
+        aria-label="Select apparel size or size ratio"
+        value={isCustom ? '__custom__' : value}
+        onChange={event => {
+          if (event.target.value === '__custom__') {
+            setIsCustom(true)
+            if (isPreset) onChange('')
+            return
+          }
+          setIsCustom(false)
+          onChange(event.target.value)
+        }}
+      >
+        <option value="">Select</option>
+        {APPAREL_SIZE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+        <option value="__custom__">Custom…</option>
+      </select>
+      {isCustom && (
+        <input
+          autoFocus
+          className="nq-table-input nq-size-custom-input"
+          aria-label="Custom apparel size ratio"
+          placeholder="e.g. XS:5, S:10"
+          value={value}
+          onChange={event => onChange(event.target.value)}
+        />
+      )}
+    </div>
+  )
+}
+
 function ImageUploadCell({
   imageUrl, label, onUpload, onRemove, uploading,
 }: {
@@ -1311,14 +1364,14 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Custom Printed Apparel</span>
               </div>
-              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table"><thead><tr><th>#</th><th>Item Description <small>Brand | Model</small></th><th>Color</th><th>Qty (Shirts)</th><th>Sizes <small>Size Ratio</small></th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table"><thead><tr><th>#</th><th title="Item Description — Brand / Model">Item <small>Brand / Model</small></th><th>Color</th><th title="Quantity (Shirts)">Qty</th><th title="Sizes — Size Ratio">Size Mix <small>Size / Ratio</small></th><th title="Front Artwork">Front Art</th><th title="Back Artwork">Back Art</th><th title="Unit Price (USD)">Unit $</th><th title="Total Amount (USD)">Total $</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
                     <td><textarea className="nq-table-input nq-description-input" rows={2} placeholder="T-Shirt Premium — Gildan | 18500" value={item.description} onChange={e => updateApparelItem(item.id, { description: e.target.value })} /></td>
                     <td><input className="nq-table-input" placeholder="e.g. Black" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} /></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
-                    <td><input className="nq-table-input nq-size-ratio-input" placeholder="S:10, M:20, L:15" value={item.sizes} onChange={e => updateApparelItem(item.id, { sizes: e.target.value })} /></td>
+                    <td><ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} /></td>
                     <td><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>

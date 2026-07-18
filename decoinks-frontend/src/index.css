@@ -10988,13 +10988,26 @@ select.al-input {
   line-height: 1.35;
 }
 
-.nq-size-ratio-input {
-  width: 165px;
+.nq-size-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 150px;
+}
+
+.nq-size-select,
+.nq-size-custom-input {
+  width: 100%;
   text-align: left;
 }
 
+.nq-size-select {
+  cursor: pointer;
+  padding-right: 22px;
+}
+
 .nq-apparel-table {
-  min-width: 1120px;
+  min-width: 980px;
 }
 
 .nq-table tfoot td,
