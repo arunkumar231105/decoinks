@@ -6,8 +6,8 @@ const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function calcTotal(subtotal, discount_amt) {
-  return +(Number(subtotal) - Number(discount_amt)).toFixed(2)
+function calcTotal(subtotal, discount_amt, tax_amt = 0) {
+  return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
 }
 
 async function logActivity(actorId, invoiceId, action, description) {
@@ -46,12 +46,15 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
+            COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
+            o.order_number, q.quote_number
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
+     LEFT JOIN users u      ON u.id = i.created_by
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -62,12 +65,15 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name, o.order_number, q.quote_number
+    `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
+            COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
+            o.order_number, q.quote_number
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
+     LEFT JOIN users u      ON u.id = i.created_by
      WHERE i.id = $1`,
     [id]
   )
@@ -86,12 +92,13 @@ async function getById(id) {
 
 async function create(fields_in) {
   const { quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
-          subtotal = 0, discount_amt = 0,
+          subtotal, discount_amt, tax_amt,
           notes, created_by, order_type, items } = fields_in
   const fields = fields_in
 
-  let resolvedSubtotal    = Number(subtotal)
-  let resolvedDiscountAmt = Number(discount_amt)
+  let resolvedSubtotal    = Number(subtotal ?? 0)
+  let resolvedDiscountAmt = Number(discount_amt ?? 0)
+  let resolvedTaxAmt      = Number(tax_amt ?? 0)
   let resolvedSupplierId  = supplier_id || null
   let resolvedCustomerName = fields.customer_name || null
   let resolvedCustomerId = customer_id || null
@@ -103,15 +110,17 @@ async function create(fields_in) {
     const { rows: qRows } = await query(
       `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_id, order_type, currency,
               customer_name, company_name, billing_email, contact_number,
-              shipping_address, billing_address, payment_terms, payment_method
+              shipping_address, billing_address, payment_terms, payment_method,
+              estimated_shipping, rush_services, customer_notes, discount_type, discount_value
        FROM quotations WHERE id = $1`,
       [quote_id]
     )
     if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
     const q = qRows[0]
     quoteData = q
-    resolvedSubtotal    = Number(q.subtotal)
-    resolvedDiscountAmt = Number(q.discount_amt)
+    if (subtotal === undefined) resolvedSubtotal = Number(q.subtotal)
+    if (discount_amt === undefined) resolvedDiscountAmt = Number(q.discount_amt)
+    if (tax_amt === undefined) resolvedTaxAmt = Number(q.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = q.supplier_id
     if (!resolvedCustomerId) resolvedCustomerId = q.customer_id
     if (!resolvedCustomerName) resolvedCustomerName = q.customer_name || q.company_name
@@ -123,8 +132,9 @@ async function create(fields_in) {
     )
     if (!orderRows[0]) throw Object.assign(new Error('Linked order not found'), { statusCode: 404 })
     const o = orderRows[0]
-    resolvedSubtotal    = Number(o.subtotal)
-    resolvedDiscountAmt = Number(o.discount_amt)
+    if (subtotal === undefined) resolvedSubtotal = Number(o.subtotal)
+    if (discount_amt === undefined) resolvedDiscountAmt = Number(o.discount_amt)
+    if (tax_amt === undefined) resolvedTaxAmt = Number(o.tax_amt)
     if (!resolvedSupplierId) resolvedSupplierId = o.supplier_id
   }
 
@@ -144,26 +154,27 @@ async function create(fields_in) {
 
   const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
 
-  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt)
+  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
   const balance_due = total
 
   const { rows } = await query(
     `INSERT INTO invoices
        (invoice_number, internal_no, quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
         subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
-        notes, created_by,
+        notes, customer_notes, sales_agent_name, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
-        order_type, payment_terms, payment_method, currency, rush_services, shipping_charges)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+        order_type, payment_terms, payment_method, currency, rush_services, rush_charges,
+        shipping_charges, discount_type, discount_value)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
      RETURNING *`,
     [
       invoice_number,
       `INV-INT-${invoice_number}`, quote_id || null, order_id || null, resolvedSupplierId, resolvedCustomerId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
-      resolvedSubtotal, resolvedDiscountAmt, 0,
+      resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt,
       total, 0, balance_due,
-      notes || null, created_by,
+      notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
       // Contact fields: explicit value wins, otherwise fall back to the quotation's
       resolvedCustomerName || null,
       fields.billing_email   ?? quoteData?.billing_email   ?? null,
@@ -174,8 +185,11 @@ async function create(fields_in) {
       fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
       fields.payment_method || quoteData?.payment_method || null,
       fields.currency       || quoteData?.currency       || 'USD',
-      Number(fields.rush_services) || 0,
-      Number(fields.shipping_charges) || 0,
+      Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
+      Number(fields.rush_charges) || 0,
+      Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+      fields.discount_type || quoteData?.discount_type || 'percentage',
+      Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
     ]
   )
 
@@ -236,7 +250,7 @@ async function create(fields_in) {
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'notes', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
   const sets = []
   const params = []
 
@@ -248,7 +262,7 @@ async function update(id, fields) {
   }
   if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
-  const financialFields = ['subtotal', 'discount_amt']
+  const financialFields = ['subtotal', 'discount_amt', 'tax_amt']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
 
@@ -259,7 +273,8 @@ async function update(id, fields) {
 
     const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
-    const newTotal       = calcTotal(newSubtotal, newDiscountAmt)
+    const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
+    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
     const amountPaid     = Number(existing.amount_paid) || 0
     const newBalanceDue  = +(Math.max(0, newTotal - amountPaid)).toFixed(2)
 

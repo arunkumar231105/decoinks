@@ -386,6 +386,7 @@ export function NewInvoicePage() {
     }
     // Notes
     if (sourceQuote.notes) setInternalNotes(sourceQuote.notes)
+    if (sourceQuote.customer_notes) setSupplierNotes(sourceQuote.customer_notes)
     // Totals
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
@@ -540,6 +541,8 @@ export function NewInvoicePage() {
     customer_id:      supplierId || null,
     quote_id:         quoteId || null,
     notes:            internalNotes || null,
+    customer_notes:   supplierNotes || null,
+    sales_agent_name: agentText || null,
     issue_date:       invoiceDate || null,
     due_date:         dueDate || null,
     subtotal:         subtotal,
@@ -556,7 +559,10 @@ export function NewInvoicePage() {
     payment_method:   paymentMethod || null,
     currency:         currency.split(' - ')[0] || 'USD',
     rush_services:    rushServices,
-    shipping_charges: shippingCharges + rushCharges,
+    rush_charges:     rushCharges,
+    shipping_charges: shippingCharges,
+    discount_type:    discountType,
+    discount_value:   discountValue,
   })
 
   const saveDraft = () => {

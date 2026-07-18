@@ -14,16 +14,24 @@ interface InvoiceItem {
 interface Invoice {
   id: string; invoice_number: string; status: string
   issue_date: string | null; due_date: string | null
-  subtotal: number; discount_amt: number
+  subtotal: number; discount_amt: number; tax_amt: number
   total: number
   shipping_charges?: number | null
+  rush_services?: number | null
+  rush_charges?: number | null
   payment_method?: string | null
   payment_terms?: string | null
+  currency?: string | null
+  discount_type?: 'percentage' | 'fixed' | null
+  discount_value?: number | null
   notes: string | null; supplier_name: string | null
+  customer_notes?: string | null
+  sales_agent_display_name?: string | null
   customer_name: string | null
   billing_email: string | null; contact_number: string | null
   billing_address: string | null; shipping_address: string | null
   order_type: string | null
+  quote_number?: string | null
   quote_id: string | null; order_id: string | null
   payments: Payment[]
   items: InvoiceItem[]
@@ -41,6 +49,7 @@ interface Quotation {
   billing_address: string | null; shipping_address: string | null
   shipping_city: string | null; shipping_state: string | null
   shipping_country: string | null; zip_code: string | null
+  customer_notes?: string | null
   items: QuoteItem[]
 }
 interface Artwork {
@@ -92,6 +101,16 @@ function colorHex(c: string | null) {
   if (l.includes('orange')) return '#f97316'
   return '#d1d5db'
 }
+
+function itemArtworkCount(item: InvoiceItem | QuoteItem): number {
+  const imageCount = new Set(
+    [item.front_image, item.back_image, item.artwork_image].filter((url): url is string => Boolean(url))
+  ).size
+  return Math.max(Number(item.artwork_count) || 0, imageCount)
+}
+
+const titleCase = (value: string | null | undefined) =>
+  value ? value.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) : '—'
 
 // ── Company constants ─────────────────────────────────────────────────────────
 const CO = {
@@ -328,31 +347,60 @@ export function InvoicePrintPage() {
     </div>
   )
 
-  // Items: prefer quotation items, fall back to invoice's own items
-  const items       = (quotation?.items?.length ? quotation.items : invoice.items) ?? []
-  const invoiceArtworks = invoiceArtworkData?.artworks ?? artworkData?.artworks ?? []
-  const artworks    = artworkData?.artworks ?? []
-  const effectiveOrderType = quotation?.order_type ?? invoice.order_type
+  // The saved invoice is the authoritative form snapshot. Linked quotation
+  // data is only a compatibility fallback for invoices created by older flows.
+  const items = invoice.items?.length
+    ? invoice.items.map((item, index) => {
+        const quoteItem = quotation?.items?.[index]
+        return {
+          ...quoteItem,
+          ...item,
+          description: item.description || quoteItem?.description || '',
+          sizes: item.sizes ?? quoteItem?.sizes ?? null,
+          colors: item.colors ?? quoteItem?.colors ?? null,
+          front_image: item.front_image ?? quoteItem?.front_image ?? null,
+          back_image: item.back_image ?? quoteItem?.back_image ?? null,
+          artwork_image: item.artwork_image ?? quoteItem?.artwork_image ?? null,
+          artwork_count: Math.max(Number(item.artwork_count) || 0, Number(quoteItem?.artwork_count) || 0),
+        }
+      })
+    : (quotation?.items ?? [])
+  const invoiceArtworks = invoiceArtworkData?.artworks?.length
+    ? invoiceArtworkData.artworks
+    : (artworkData?.artworks ?? [])
+  const artworks = invoiceArtworks
+  const effectiveOrderType = invoice.order_type ?? quotation?.order_type
   const isDtf       = effectiveOrderType === 'dtf'
   const isGangsheet = effectiveOrderType === 'gangsheet'
   const totalQty    = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
   const totalSheets = isGangsheet ? items.reduce((s, i) => s + (Number(i.qty) || 0), 0) : 0
-  const totalArts   = isGangsheet ? items.reduce((s, i) => s + (Number(i.artwork_count) || 0), 0) : 0
+  const itemArtworkTotal = items.reduce((sum, item) => sum + itemArtworkCount(item), 0)
+  // Standalone artwork records and item images can represent the same files;
+  // use the larger complete source rather than double-counting both stores.
+  const totalArts = Math.max(itemArtworkTotal, invoiceArtworks.length)
 
-  const payMethod = invoice.payments?.[0]?.method
-    ?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) ?? '—'
+  const payMethod = titleCase(invoice.payment_method || invoice.payments?.[0]?.method)
 
-  // Bill To: prefer quotation data, fall back to invoice's own fields
-  const billName     = quotation?.customer_name || quotation?.company_name || invoice.customer_name || invoice.supplier_name || '—'
-  const billAddr     = quotation?.billing_address || invoice.billing_address || '—'
-  const billEmail    = quotation?.billing_email || invoice.billing_email || ''
-  const billPhone    = quotation?.contact_number || invoice.contact_number || ''
-  const shipAddr     = quotation?.shipping_address || invoice.shipping_address || '—'
-  const shipCityLine = [quotation?.shipping_city, quotation?.shipping_state, quotation?.zip_code].filter(Boolean).join(', ')
-  const shipCountry  = quotation?.shipping_country || ''
+  const billName     = invoice.customer_name || invoice.supplier_name || quotation?.customer_name || quotation?.company_name || '—'
+  const billAddr     = invoice.billing_address || quotation?.billing_address || '—'
+  const billEmail    = invoice.billing_email || quotation?.billing_email || ''
+  const billPhone    = invoice.contact_number || quotation?.contact_number || ''
+  const shipAddr     = invoice.shipping_address || quotation?.shipping_address || '—'
+  const hasInvoiceShippingSnapshot = Boolean(invoice.shipping_address)
+  const shipCityLine = hasInvoiceShippingSnapshot ? '' : [quotation?.shipping_city, quotation?.shipping_state, quotation?.zip_code].filter(Boolean).join(', ')
+  const shipCountry  = hasInvoiceShippingSnapshot ? '' : (quotation?.shipping_country || '')
 
   const shippingAmt = Number(invoice.shipping_charges ?? 0)
-  const itemsOnly   = Number(invoice.subtotal) - shippingAmt
+  const rushServicesAmt = Number(invoice.rush_services ?? 0)
+  const rushChargesAmt = Number(invoice.rush_charges ?? 0)
+  const calculatedItemsTotal = items.reduce((sum, item) => sum + (Number(item.amount) || Number(item.qty) * Number(item.unit_price) || 0), 0)
+  const itemsOnly = items.length
+    ? calculatedItemsTotal
+    : Math.max(0, Number(invoice.subtotal) - shippingAmt - rushServicesAmt - rushChargesAmt)
+  const currency = invoice.currency || 'USD'
+  const money = (value: number | string | null | undefined) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(value ?? 0))
+  const customerNotes = invoice.customer_notes || quotation?.customer_notes || ''
 
   // ── Build DTF groups — consecutive items sharing desc + rate ───────────────
   const dtfGroups: DtfGroup[] = []
@@ -441,6 +489,21 @@ export function InvoicePrintPage() {
                       <td className="ms" style={{ padding: '3px 4px' }}>:</td>
                       <td className="mv">{fmtDate(invoice.due_date)}</td>
                     </tr>
+                    {invoice.quote_number && <tr>
+                      <td className="ml">Quote #</td>
+                      <td className="ms" style={{ padding: '3px 4px' }}>:</td>
+                      <td className="mv">{invoice.quote_number}</td>
+                    </tr>}
+                    <tr>
+                      <td className="ml">Order Type</td>
+                      <td className="ms" style={{ padding: '3px 4px' }}>:</td>
+                      <td className="mv">{titleCase(effectiveOrderType)}</td>
+                    </tr>
+                    {invoice.sales_agent_display_name && <tr>
+                      <td className="ml">Sales Agent</td>
+                      <td className="ms" style={{ padding: '3px 4px' }}>:</td>
+                      <td className="mv">{invoice.sales_agent_display_name}</td>
+                    </tr>}
                   </tbody>
                 </table>
               </div>
@@ -454,29 +517,45 @@ export function InvoicePrintPage() {
                   <tbody>
                     <tr>
                       <td className="sl">Items Total</td>
-                      <td className="sv">{fmt(itemsOnly)}</td>
+                      <td className="sv">{money(itemsOnly)}</td>
                     </tr>
-                    {shippingAmt > 0 && <>
+                    {rushChargesAmt > 0 && <tr>
+                      <td className="sl">Rush Charges</td>
+                      <td className="sv">{money(rushChargesAmt)}</td>
+                    </tr>}
+                    {rushServicesAmt > 0 && <tr>
+                      <td className="sl">Rush Services</td>
+                      <td className="sv">{money(rushServicesAmt)}</td>
+                    </tr>}
+                    {shippingAmt > 0 && (
                       <tr>
                         <td className="sl">Shipping Charges</td>
-                        <td className="sv">{fmt(shippingAmt)}</td>
-                      </tr>
-                      <tr>
-                        <td className="sl">Subtotal</td>
-                        <td className="sv">{fmt(invoice.subtotal)}</td>
-                      </tr>
-                    </>}
-                    {Number(invoice.discount_amt) > 0 && (
-                      <tr>
-                        <td className="sl">Bulk Discount</td>
-                        <td className="sv neg">-{fmt(invoice.discount_amt)}</td>
+                        <td className="sv">{money(shippingAmt)}</td>
                       </tr>
                     )}
+                    {(shippingAmt > 0 || rushChargesAmt > 0 || rushServicesAmt > 0) && (
+                      <tr>
+                        <td className="sl">Subtotal</td>
+                        <td className="sv">{money(invoice.subtotal)}</td>
+                      </tr>
+                    )}
+                    {Number(invoice.discount_amt) > 0 && (
+                      <tr>
+                        <td className="sl">
+                          Discount{invoice.discount_type === 'percentage' && Number(invoice.discount_value) > 0 ? ` (${invoice.discount_value}%)` : ''}
+                        </td>
+                        <td className="sv neg">-{money(invoice.discount_amt)}</td>
+                      </tr>
+                    )}
+                    {Number(invoice.tax_amt) > 0 && <tr>
+                      <td className="sl">Tax</td>
+                      <td className="sv">{money(invoice.tax_amt)}</td>
+                    </tr>}
                   </tbody>
                   <tfoot>
                     <tr className="tr-total">
                       <td>TOTAL DUE</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(invoice.total)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(invoice.total)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -526,7 +605,7 @@ export function InvoicePrintPage() {
               <span className="ic-label">Payment</span>
             </div>
             <div className="ic-body">
-              <p className="ic-name">{invoice.payment_method || payMethod || '—'}</p>
+              <p className="ic-name">{payMethod}</p>
               {invoice.payment_terms && <p style={{ color: '#6b7280', fontSize: 11 }}>{invoice.payment_terms}</p>}
               {invoice.payments?.[0]?.reference && <p>Ref: {invoice.payments[0].reference}</p>}
             </div>
@@ -595,8 +674,8 @@ export function InvoicePrintPage() {
                   <th style={{ width: 90 }}>Qty Sheets</th>
                   <th style={{ width: 78 }}>Front Art</th>
                   <th style={{ width: 78 }}>Back Art</th>
-                  <th style={{ width: 90 }}>Price/Sheet<br />(USD)</th>
-                  <th style={{ width: 90 }}>Amount<br />(USD)</th>
+                  <th style={{ width: 90 }}>Price/Sheet<br />({currency})</th>
+                  <th style={{ width: 90 }}>Amount<br />({currency})</th>
                 </tr>
               </thead>
               <tbody>
@@ -622,8 +701,8 @@ export function InvoicePrintPage() {
                           ? <img src={backUrl} alt="back" className="art-thumb" />
                           : <div className="art-empty">—</div>}
                       </td>
-                      <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
-                      <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
+                      <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
+                      <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>
                   )
                 })}
@@ -697,7 +776,7 @@ export function InvoicePrintPage() {
                   <th className="th-l" style={{ minWidth: 150 }}>
                     Item Description<br />
                     <span style={{ fontSize: 8, opacity: 0.75 }}>
-                      ({quotation?.order_type === 'gangsheet' ? 'Gangsheet' : 'DTF Transfers'})
+                      ({effectiveOrderType === 'gangsheet' ? 'Gangsheet' : 'Custom Printed Apparel'})
                     </span>
                   </th>
                   <th style={{ width: 68 }}>Color</th>
@@ -706,8 +785,8 @@ export function InvoicePrintPage() {
                   <th style={{ width: 62 }}>Size (IN)</th>
                   <th style={{ width: 70 }}>Artwork Back</th>
                   <th style={{ width: 62 }}>Size (IN)</th>
-                  <th style={{ width: 74 }}>Unit Rate<br />(USD)</th>
-                  <th style={{ width: 74 }}>Amount<br />(USD)</th>
+                  <th style={{ width: 74 }}>Unit Rate<br />({currency})</th>
+                  <th style={{ width: 74 }}>Amount<br />({currency})</th>
                 </tr>
               </thead>
               <tbody>
@@ -743,8 +822,8 @@ export function InvoicePrintPage() {
                           : <div className="art-empty">—</div>}
                       </td>
                       <td style={{ fontSize: 10 }}>{artBSz}</td>
-                      <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
-                      <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
+                      <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
+                      <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>
                   )
                 })}
@@ -770,7 +849,7 @@ export function InvoicePrintPage() {
                     <div className="stat-icon">🖼</div>
                     <div>
                       <div className="stat-lbl">Total Artworks</div>
-                      <div className="stat-val">{isGangsheet ? totalArts : isDtf ? items.length : artworks.length}</div>
+                      <div className="stat-val">{totalArts}</div>
                     </div>
                   </div>
                 </td>
@@ -788,7 +867,7 @@ export function InvoicePrintPage() {
                     <div className="stat-icon">🧮</div>
                     <div>
                       <div className="stat-lbl">Items Total</div>
-                      <div className="stat-val">{fmt(invoice.subtotal)}</div>
+                      <div className="stat-val">{money(itemsOnly)}</div>
                     </div>
                   </div>
                 </td>
@@ -796,6 +875,13 @@ export function InvoicePrintPage() {
             </tbody>
           </table>
         </div>
+
+        {customerNotes && (
+          <div style={{ marginTop: 14, border: '1px solid #dbe3f1', borderRadius: 8, padding: '12px 16px', background: '#f8faff' }}>
+            <div className="pay-lbl">Customer Notes</div>
+            <div style={{ marginTop: 5, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{customerNotes}</div>
+          </div>
+        )}
 
         {/* ══ PAYMENT FOOTER ══ */}
         <div className="pay-section">

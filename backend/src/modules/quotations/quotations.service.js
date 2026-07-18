@@ -266,7 +266,7 @@ async function updateStatus(id, status, actor) {
         // with no detail lines.
         const { rows: qItems } = await client.query(
           `SELECT description, qty, unit_price, amount, artwork_count,
-                  front_image, back_image, artwork_image, sort_order
+                  front_image, back_image, artwork_image, sizes, colors, sort_order
            FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order, id`,
           [id]
         )
@@ -275,14 +275,14 @@ async function updateStatus(id, status, actor) {
           await client.query(
             `INSERT INTO invoice_items
                (invoice_id, description, qty, unit_price, amount, artwork_count,
-                front_image, back_image, artwork_image, sort_order)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+                front_image, back_image, artwork_image, sizes, colors, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [
               autoInvoiceId, it.description, Number(it.qty) || 1,
               Number(it.unit_price) || 0, Number(it.amount) || 0,
               Number(it.artwork_count) || 0,
               it.front_image || null, it.back_image || null, it.artwork_image || null,
-              it.sort_order ?? i,
+              it.sizes || null, it.colors || null, it.sort_order ?? i,
             ]
           )
         }
