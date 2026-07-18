@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Edit3, Plus, Send, Trash2, X, Check } from 'lucide-react'
+import { ChevronDown, Edit3, Eye, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -112,6 +112,8 @@ export function NewOrderPage() {
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
   const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
+  const [quotationId, setQuotationId] = useState('')
+  const [invoiceId, setInvoiceId] = useState(fromInvoiceId ?? '')
 
   // Table data
   const [apparel,   setApparel]   = useState<ApparelItem[]>(initApparel)
@@ -130,6 +132,7 @@ export function NewOrderPage() {
   const [rushServices,    setRushServices]    = useState(0)
   const [shippingCharges, setShippingCharges] = useState(0)
   const [discountPct,     setDiscountPct]     = useState(0)
+  const [taxPct,          setTaxPct]          = useState(0)
 
   // Contact panel
   const [contactName,  setContactName]  = useState('')
@@ -194,6 +197,9 @@ export function NewOrderPage() {
     setRushServices(Number(existingOrder.rush_services ?? 0))
     setShippingCharges(Number(existingOrder.shipping_charges ?? 0))
     setDiscountPct(Number(existingOrder.discount_pct ?? 0))
+    setTaxPct(Number(existingOrder.tax_pct ?? 0))
+    setQuotationId(existingOrder.quotation_id ?? '')
+    setInvoiceId(existingOrder.invoice_id ?? '')
     setContactName(existingOrder.contact_name ?? '')
     setContactEmail(existingOrder.contact_email ?? '')
     setContactPhone(existingOrder.contact_phone ?? '')
@@ -300,6 +306,17 @@ export function NewOrderPage() {
   })
   const agents: Agent[] = agentData ?? []
 
+  const { data: quoteData } = useQuery({
+    queryKey: ['order-quote-options'],
+    queryFn: () => api.get('/quotations', { params: { limit: 200 } }).then(r => r.data.data.rows),
+  })
+  const { data: invoiceData } = useQuery({
+    queryKey: ['order-invoice-options'],
+    queryFn: () => api.get('/invoices', { params: { limit: 200 } }).then(r => r.data.data.rows),
+  })
+  const quoteOptions: any[] = quoteData ?? []
+  const invoiceOptions: any[] = invoiceData ?? []
+
   // Set default agent once list loads (no auto-select for customer)
 
 
@@ -338,7 +355,8 @@ export function NewOrderPage() {
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
   const discountAmt = useMemo(() => +(subtotal * (discountPct / 100)).toFixed(2), [subtotal, discountPct])
-  const total       = useMemo(() => +(subtotal - discountAmt).toFixed(2), [subtotal, discountAmt])
+  const taxAmt      = useMemo(() => +((subtotal - discountAmt) * (taxPct / 100)).toFixed(2), [subtotal, discountAmt, taxPct])
+  const total       = useMemo(() => +(subtotal - discountAmt + taxAmt).toFixed(2), [subtotal, discountAmt, taxAmt])
 
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
@@ -412,8 +430,8 @@ export function NewOrderPage() {
     return {
       supplier_id:        supplierId || null,
       supplier_name_text: !supplierId ? supplierText.trim() : null,
-      invoice_id:         fromInvoiceId || null,
-      quotation_id:       sourceInvoice?.quote_id || null,
+      invoice_id:         invoiceId || null,
+      quotation_id:       quotationId || sourceInvoice?.quote_id || null,
       order_type:       orderType,
       order_date:       orderDate,
       due_date:         dueDate || null,
@@ -424,6 +442,7 @@ export function NewOrderPage() {
       rush_services:    rushServices,
       shipping_charges: shippingCharges,
       discount_pct:     discountPct,
+      tax_pct:          taxPct,
       notes:            orderNotes || null,
       assigned_to:      agentId || null,
       contact_name:     contactName || null,
@@ -484,14 +503,16 @@ export function NewOrderPage() {
 
       {/* â"€â"€ Top action bar â"€â"€ */}
       <div className="no-topbar">
-        <button className="no-topbar-btn no-topbar-cancel" onClick={() => navigate(-1)}>Cancel</button>
+        <button className="no-topbar-btn" onClick={() => editOrderId ? navigate(`/orders/${editOrderId}/print`) : toast.info('Save the order to preview it')}><Eye size={14} /> Preview</button>
         {!editOrderId && (
-          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}>Save</button>
+          <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}><Save size={14} /> Save Draft</button>
         )}
+        <button className="no-topbar-btn" onClick={() => toast.info('All fields are already editable')}><Edit3 size={14} /> Edit</button>
+        <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to permanently delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
         {!editOrderId && (
           <div className="no-split-wrap">
             <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
-              <Send size={13} /> Send to Supplier
+              <Send size={13} /> Send to Customer
             </button>
             <button className="no-topbar-btn no-topbar-send no-split-chevron" onClick={e => setSendAnchor(e.currentTarget)}>
               <ChevronDown size={13} />
@@ -504,20 +525,49 @@ export function NewOrderPage() {
           <MenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Order link copied'); setSendAnchor(null) }}>Copy Link</MenuItem>
         </Menu>
         <button className="no-topbar-btn no-topbar-save" onClick={() => handleSave()} disabled={createOrder.isPending || updateOrder.isPending}>
-          {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
+          <Save size={14} /> {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update' : 'Save'}
         </button>
+        <button className="no-topbar-btn no-topbar-approval" onClick={() => toast.success('Approval request will be available after saving the order')}><UserCheck size={14} /> Request Approval</button>
       </div>
 
       {/* â"€â"€ Info bar â"€â"€ */}
       <div className="no-info-bar">
+        <div className="no-info-field no-order-type-field">
+          <span className="no-info-label">Order Type <span style={{ color: '#ef4444' }}>*</span></span>
+          {([
+            { key: 'apparel', label: 'Custom Printed Apparel' },
+            { key: 'gangsheet', label: 'DTF Gangsheet' },
+            { key: 'dtf', label: 'DTF Transfers' },
+          ] as { key: OrderType; label: string }[]).map(({ key, label }) => (
+            <label key={key} className="no-type-inline">
+              <input type="radio" name="headerOrderType" checked={orderType === key} onChange={() => setOrderType(key)} />
+              {label}
+            </label>
+          ))}
+        </div>
         <div className="no-info-field">
           <span className="no-info-label">Order #</span>
           <strong className="no-info-value no-order-badge">Auto</strong>
           <small>Auto generated</small>
         </div>
 
+        <div className="no-info-field no-info-select-field">
+          <span className="no-info-label">{orderType === 'apparel' ? 'Invoice' : 'Quote'}</span>
+          {orderType === 'apparel' ? (
+            <select className="no-info-select" value={invoiceId} onChange={e => setInvoiceId(e.target.value)}>
+              <option value="">Select invoice</option>
+              {invoiceOptions.map(inv => <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>)}
+            </select>
+          ) : (
+            <select className="no-info-select" value={quotationId} onChange={e => setQuotationId(e.target.value)}>
+              <option value="">Select quote</option>
+              {quoteOptions.map(q => <option key={q.id} value={q.id}>{q.quotation_number ?? q.quote_number}</option>)}
+            </select>
+          )}
+        </div>
+
         <div className="no-info-field no-info-select-field" style={{ position: 'relative' }}>
-          <span className="no-info-label">Supplier <span style={{ color: '#ef4444' }}>*</span></span>
+          <span className="no-info-label">Customer <span style={{ color: '#ef4444' }}>*</span></span>
           <input
             className="no-info-select no-customer-input"
             placeholder="Type supplier name..."
@@ -585,21 +635,6 @@ export function NewOrderPage() {
         </div>
       </div>
 
-      {/* â"€â"€ Order Type pills â"€â"€ */}
-      <div className="no-order-type-row">
-        <span className="no-type-row-label">Order Type</span>
-        {([
-          { key: 'apparel',   label: 'Custom Printed Apparel' },
-          { key: 'gangsheet', label: 'DTF Gangsheet' },
-          { key: 'dtf',       label: 'DTF Transfers' },
-        ] as { key: OrderType; label: string }[]).map(({ key, label }) => (
-          <label key={key} className={`no-type-pill${orderType === key ? ' no-type-pill-active' : ''}`}>
-            <input type="radio" name="orderType" value={key} checked={orderType === key} onChange={() => setOrderType(key)} className="no-type-radio" />
-            {label}
-          </label>
-        ))}
-      </div>
-
       {/* â"€â"€ Two-column body â"€â"€ */}
       <div className="no-body no-body-cols">
 
@@ -626,8 +661,10 @@ export function NewOrderPage() {
                         <th>Color</th>
                         <th>Size</th>
                         <th>Qty</th>
-                        <th>FR AW Image</th>
-                        <th>BK AW Image</th>
+                        <th>FR AW Image (Front)</th>
+                        <th>Artwork No</th>
+                        <th>Artwork Size</th>
+                        <th>BK AW Image (Back)</th>
                         <th>Artwork No</th>
                         <th>Artwork Size</th>
                         <th>Unit Price (USD)</th>
@@ -658,7 +695,6 @@ export function NewOrderPage() {
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
                           <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /></td>
-                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></td>
                           <td>
                             <input
                               type="text"
@@ -668,6 +704,9 @@ export function NewOrderPage() {
                               onChange={e => updateApparel(row.id, { artworkNo: e.target.value })}
                             />
                           </td>
+                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></td>
+                          <td><input type="text" className="no-table-input" placeholder="AW-0001" value={row.artworkNo} onChange={e => updateApparel(row.id, { artworkNo: e.target.value })} /></td>
+                          <td><input className="no-table-input" placeholder="e.g. 12x16 in" value={row.artworkSize} onChange={e => updateApparel(row.id, { artworkSize: e.target.value })} style={{ width: '110px' }} /></td>
                           <td>
                             <input
                               className="no-table-input"
@@ -695,9 +734,9 @@ export function NewOrderPage() {
                     <tfoot><tr className="live-summary-row">
                       <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
@@ -718,8 +757,6 @@ export function NewOrderPage() {
                         <th>Gangsheet Size</th>
                         <th>No. Artworks</th>
                         <th>Qty (Sheets)</th>
-                        <th>Front Art</th>
-                        <th>Back Art</th>
                         <th>Price/Sheet (USD)</th>
                         <th>Amount (USD)</th>
                         <th></th>
@@ -744,8 +781,6 @@ export function NewOrderPage() {
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
-                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { backImage: null })} /></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -765,13 +800,30 @@ export function NewOrderPage() {
                       <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
-                      <td colSpan={3}></td>
+                      <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
                   </table>
                 </div>
                 <button className="no-add-item-btn" onClick={addGangsheet}><Plus size={13} /> Add Item</button>
+                <h3 className="no-subsection-title">Artworks in Gangsheet</h3>
+                <div className="no-table-wrap">
+                  <table className="no-table no-gangsheet-art-table">
+                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>FR AW Image (Front)</th><th>Artwork Size</th><th>BK AW Image (Back)</th><th>Artwork Size</th><th>Total Qty</th></tr></thead>
+                    <tbody>{gangsheet.map((row, idx) => (
+                      <tr key={`art-${row.id}`}>
+                        <td className="no-td-num">{idx + 1}</td>
+                        <td><strong>AW-GS-{String(idx + 1).padStart(3, '0')}</strong></td>
+                        <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
+                        <td>{row.size || '-'}</td>
+                        <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { backImage: null })} /></td>
+                        <td>{row.size || '-'}</td><td>{row.qty}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <button className="no-add-item-btn" onClick={addGangsheet}><Plus size={13} /> Add Artwork</button>
               </>
             )}
 
@@ -783,9 +835,9 @@ export function NewOrderPage() {
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
-                        <th>Front Art</th>
-                        <th>Back Art</th>
-                        <th>Artwork Name</th>
+                        <th>Item</th>
+                        <th>Artwork No.</th>
+                        <th>Artwork Image</th>
                         <th>Size</th>
                         <th>Qty</th>
                         <th>Unit Price (USD)</th>
@@ -797,11 +849,11 @@ export function NewOrderPage() {
                       {dtf.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
-                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { backImage: null })} /></td>
+                          <td><strong>DTF Transfer</strong></td>
                           <td>
-                            <input type="text" className="no-table-input no-table-input-wide" placeholder="Artwork name" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
+                            <input type="text" className="no-table-input no-table-input-wide" placeholder="AW-TF-001" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
+                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
                           <td>
                             <input
                               className="no-table-input"
@@ -830,7 +882,7 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={3}><span className="live-summary-title">DTF Summary</span></td>
+                      <td colSpan={2}><span className="live-summary-title">DTF Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{dtf.length}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{dtfQty}</strong></div></td>
@@ -941,6 +993,14 @@ export function NewOrderPage() {
                 <input type="number" className="no-pricing-input no-pricing-pct" min={0} max={100} value={discountPct} onFocus={e => e.target.select()} onChange={e => setDiscountPct(+e.target.value)} />
                 <span className="no-pricing-sym">%</span>
                 <span className="no-pricing-neg">-${fmt(discountAmt)}</span>
+              </div>
+            </div>
+            <div className="no-pricing-row">
+              <span>Tax</span>
+              <div className="no-pricing-input-group">
+                <input type="number" className="no-pricing-input no-pricing-pct" min={0} max={100} value={taxPct} onFocus={e => e.target.select()} onChange={e => setTaxPct(+e.target.value)} />
+                <span className="no-pricing-sym">%</span>
+                <strong>${fmt(taxAmt)}</strong>
               </div>
             </div>
             <div className="no-pricing-total-row">

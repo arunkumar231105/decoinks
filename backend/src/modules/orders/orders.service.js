@@ -4,7 +4,7 @@ const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
-function calcTotals(items, orderType, rushServices, shippingCharges, discountPct) {
+function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct = 0) {
   let itemsTotal = 0
   for (const item of items) {
     if (orderType === 'apparel' || orderType === 'dtf') {
@@ -15,8 +15,9 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
   }
   const subtotal = +(itemsTotal + Number(rushServices) + Number(shippingCharges)).toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt).toFixed(2)
-  return { subtotal, discount_amt, tax_amt: 0, total, items_total: +itemsTotal.toFixed(2) }
+  const tax_amt = +((subtotal - discount_amt) * (taxPct / 100)).toFixed(2)
+  const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
+  return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
 
 async function insertItems(client, orderId, orderType, items) {
@@ -118,7 +119,7 @@ async function create(data) {
     supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     rush_services = 0, shipping_charges = 0,
-    discount_pct = 0,
+    discount_pct = 0, tax_pct = 0,
     notes, contact_name, contact_email, contact_phone,
     shipping_name, shipping_address,
     assigned_to, created_by,
@@ -126,7 +127,7 @@ async function create(data) {
   } = data
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
-  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct)
+  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
   let resolvedSupplierId = supplier_id || null
 
   // Pull totals from invoice when converting invoice → order
@@ -166,7 +167,7 @@ async function create(data) {
         order_date || new Date().toISOString().split('T')[0], due_date || null,
         payment_terms || 'Due on Receipt', payment_method || null, payment_status, currency,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
-        0, 0, totals.total, notes || null,
+        tax_pct, totals.tax_amt, totals.total, notes || null,
         contact_name || supplier_name_text || null, contact_email || null, contact_phone || null,
         shipping_name  || supplier_name_text || null, shipping_address || null,
         assigned_to || null, created_by,
@@ -217,10 +218,11 @@ async function update(id, data, actorId) {
   const rush        = data.rush_services    ?? existing.rush_services
   const shipping    = data.shipping_charges ?? existing.shipping_charges
   const discPct     = data.discount_pct     ?? existing.discount_pct
+  const taxPct      = data.tax_pct          ?? existing.tax_pct
   // Recalculate only if items provided; otherwise preserve existing totals
   const totals = items.length
-    ? calcTotals(items, order_type, rush, shipping, discPct)
-    : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: 0, total: +(Number(existing.subtotal) - Number(existing.discount_amt)).toFixed(2) }
+    ? calcTotals(items, order_type, rush, shipping, discPct, taxPct)
+    : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: existing.tax_amt, total: existing.total }
 
   const client = await getClient()
   try {
@@ -255,7 +257,7 @@ async function update(id, data, actorId) {
         data.payment_status ?? null,
         rush, shipping,
         totals.subtotal, discPct, totals.discount_amt,
-        0, 0, totals.total,
+        taxPct, totals.tax_amt, totals.total,
         data.notes, data.contact_name, data.contact_email, data.contact_phone,
         data.shipping_name, data.shipping_address, data.assigned_to,
         id,

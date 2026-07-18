@@ -71,6 +71,7 @@ const headerFields = {
   rush_services:    z.number().nonnegative().default(0),
   shipping_charges: z.number().nonnegative().default(0),
   discount_pct:     z.number().min(0).max(100).default(0),
+  tax_pct:          z.number().min(0).max(100).default(0),
   notes:            z.string().optional().nullable(),
   contact_name:     z.string().optional().nullable(),
   contact_email:    z.string().email().optional().nullable(),
