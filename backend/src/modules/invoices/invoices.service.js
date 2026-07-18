@@ -160,20 +160,23 @@ async function create(fields_in) {
   const { rows } = await query(
     `INSERT INTO invoices
        (invoice_number, internal_no, quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
-        subtotal, discount_amt, tax_amt, total, amount_paid, balance_due,
+        subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, amount_paid, balance_due,
         notes, customer_notes, sales_agent_name, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
         order_type, payment_terms, payment_method, currency, rush_services, rush_charges,
         shipping_charges, discount_type, discount_value)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
      RETURNING *`,
     [
       invoice_number,
       `INV-INT-${invoice_number}`, quote_id || null, order_id || null, resolvedSupplierId, resolvedCustomerId,
       issue_date || new Date().toISOString().split('T')[0],
       due_date || null,
-      resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt,
-      total, 0, balance_due,
+      resolvedSubtotal,
+      Number(fields.discount_pct ?? (fields.discount_type === 'percentage' ? fields.discount_value : 0)) || 0,
+      resolvedDiscountAmt,
+      Number(fields.tax_pct) || 0,
+      resolvedTaxAmt, total, 0, balance_due,
       notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
       // Contact fields: explicit value wins, otherwise fall back to the quotation's
       resolvedCustomerName || null,
@@ -201,8 +204,10 @@ async function create(fields_in) {
       await query(
          `INSERT INTO invoice_items
            (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-            front_image, back_image, artwork_image, sizes, colors)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            front_image, back_image, artwork_image, sizes, colors,
+            catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
+            brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
         [
           rows[0].id,
           it.description || null,
@@ -216,6 +221,17 @@ async function create(fields_in) {
           it.artwork_image || null,
           it.sizes || null,
           it.colors || null,
+          it.catalog_style_id || null,
+          it.catalog_color_id || null,
+          it.catalog_size_id || null,
+          it.catalog_sku || null,
+          it.brand || null,
+          it.model || null,
+          it.product_image || null,
+          it.style_description || null,
+          it.artwork_no || null,
+          Number(it.line_discount) || 0,
+          it.tax_code || null,
         ]
       )
     }
@@ -224,10 +240,12 @@ async function create(fields_in) {
     await query(
        `INSERT INTO invoice_items
          (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
-          front_image, back_image, artwork_image, sizes, colors)
+          front_image, back_image, artwork_image, sizes, colors,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model)
        SELECT $1, description, qty, unit_price, amount,
               COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
-              front_image, back_image, artwork_image, sizes, colors
+              front_image, back_image, artwork_image, sizes, colors,
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model
        FROM quotation_items WHERE quotation_id = $2
        ORDER BY sort_order, id`,
       [rows[0].id, quote_id]
@@ -250,7 +268,7 @@ async function create(fields_in) {
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_amt', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
+  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_pct', 'discount_amt', 'tax_pct', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
   const sets = []
   const params = []
 

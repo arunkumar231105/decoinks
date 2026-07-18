@@ -10,6 +10,8 @@ interface InvoiceItem {
   unit_price: number; amount: number; artwork_count: number
   sizes?: string | null; colors?: string | null
   front_image?: string | null; back_image?: string | null; artwork_image?: string | null
+  artwork_no?: string | null; catalog_sku?: string | null
+  brand?: string | null; model?: string | null; style_description?: string | null
 }
 interface Invoice {
   id: string; invoice_number: string; status: string
@@ -407,7 +409,7 @@ export function InvoicePrintPage() {
   items.forEach((item, idx) => {
     const art = artworks[idx] ?? null
     const invSuffix = invoice.invoice_number.replace(/\D/g, '').slice(-4) || '0001'
-    const artNo  = art?.artwork_no || `DTF-${invSuffix}-${String(idx + 1).padStart(3, '0')}`
+    const artNo  = item.artwork_no || art?.artwork_no || `DTF-${invSuffix}-${String(idx + 1).padStart(3, '0')}`
     const sizeStr = art?.width_inches && art?.height_inches
       ? `${art.width_inches} x ${art.height_inches}`
       : (item.sizes || '—')
@@ -627,40 +629,6 @@ export function InvoicePrintPage() {
           )}
         </div>
 
-        {/* ══ ARTWORKS SECTION ══ */}
-        {invoiceArtworks.length > 0 && (
-          <div className="aw-section">
-            <div className="aw-section-hdr">
-              <div className="aw-section-num">★</div>
-              <div className="aw-section-title">ARTWORKS ({invoiceArtworks.length})</div>
-            </div>
-            <div className="aw-grid" style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${invoiceArtworks.length <= 2 ? 2 : invoiceArtworks.length <= 6 ? 3 : invoiceArtworks.length <= 12 ? 4 : 5}, 1fr)`,
-              gap: 8,
-              padding: '12px',
-            }}>
-              {invoiceArtworks.slice(0, 20).map((aw) => {
-                const imgHeight = invoiceArtworks.length <= 2 ? 120 : invoiceArtworks.length <= 6 ? 90 : invoiceArtworks.length <= 12 ? 70 : 55
-                return (
-                  <div key={aw.id} className="aw-card">
-                    <div className="aw-img-wrap" style={{ height: imgHeight }}>
-                      {aw.file_url && aw.file_type !== 'pdf'
-                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
-                        : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
-                      }
-                    </div>
-                    <div className="aw-meta">
-                      <div className="aw-no">{aw.artwork_no}</div>
-                      <div className="aw-name">{aw.name}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
         {/* ══ ITEMS TABLE ══ */}
         <div className="tbl-wrap">
           {isGangsheet ? (
@@ -804,7 +772,14 @@ export function InvoicePrintPage() {
                   return (
                     <tr key={item.id}>
                       <td>{idx + 1}</td>
-                      <td className="td-l" style={{ fontWeight: 500 }}>{item.description}</td>
+                      <td className="td-l" style={{ fontWeight: 500 }}>
+                        <div>{item.description}</div>
+                        {(item.brand || item.model || item.catalog_sku) && (
+                          <div style={{ marginTop: 3, color: '#64748b', fontSize: 8.5, lineHeight: 1.45 }}>
+                            {[item.brand && `Brand: ${item.brand}`, item.model && `Style: ${item.model}`, item.catalog_sku && `SKU: ${item.catalog_sku}`].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <span className="color-dot" style={{ background: dotColor, border: isWhite ? '1.5px solid #d1d5db' : `1px solid ${dotColor}` }} />
                         <span style={{ fontSize: 11 }}>{item.colors || '—'}</span>
