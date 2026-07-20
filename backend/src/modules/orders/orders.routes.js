@@ -76,6 +76,7 @@ const ITEM_SCHEMAS = { apparel: apparelItemSchema, gangsheet: gangsheetItemSchem
 
 // ── Shared header fields ──────────────────────────────────────────────────────
 const headerFields = {
+  customer_id:        z.string().uuid().optional().nullable(),
   supplier_id:        z.string().uuid().optional().nullable(),
   supplier_name_text: z.string().optional().nullable(),
   quotation_id:       z.string().uuid().optional().nullable(),

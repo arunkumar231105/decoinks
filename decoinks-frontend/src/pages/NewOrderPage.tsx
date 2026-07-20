@@ -15,9 +15,11 @@ import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, typ
 type OrderType = 'apparel' | 'gangsheet' | 'dtf'
 type PaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Refunded'
 
-interface Supplier {
-  id: string; name: string; email: string; phone: string; company?: string
+interface Customer {
+  id: string; name: string; email?: string; phone?: string; company?: string; company_name?: string
+  company_phone_number?: string; mobile_number?: string
   address_line1?: string; address_line2?: string; city?: string; state?: string; zip?: string; country?: string
+  billing_address?: string; addresses?: Array<{ address_type?: string; line1?: string; line2?: string; city?: string; state?: string; zipcode?: string; country?: string; is_default?: boolean }>
 }
 interface Agent { id: string; name: string; role: string }
 
@@ -143,9 +145,9 @@ export function NewOrderPage() {
   const editOrderId: string | undefined = (location.state as any)?.editOrderId
 
   // Header fields
-  const [supplierId, setSupplierId]       = useState<string | null>(null)
-  const [supplierText, setSupplierText]   = useState('')
-  const [supplierOpen, setSupplierOpen]   = useState(false)
+  const [customerId, setCustomerId]       = useState<string | null>(null)
+  const [customerText, setCustomerText]   = useState('')
+  const [customerOpen, setCustomerOpen]   = useState(false)
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
   const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
@@ -235,8 +237,8 @@ export function NewOrderPage() {
   useEffect(() => {
     if (!existingOrder) return
     setOrderType(existingOrder.order_type as OrderType)
-    setSupplierId(existingOrder.supplier_id ?? null)
-    setSupplierText(existingOrder.supplier_name ?? '')
+    setCustomerId(existingOrder.customer_id ?? null)
+    setCustomerText(existingOrder.customer_name ?? existingOrder.contact_name ?? '')
     setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
     setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
@@ -289,9 +291,9 @@ export function NewOrderPage() {
 
   useEffect(() => {
     if (!sourceInvoice) return
-    if (sourceInvoice.supplier_id) setSupplierId(sourceInvoice.supplier_id)
+    if (sourceInvoice.customer_id) setCustomerId(sourceInvoice.customer_id)
     const custName = sourceInvoice.customer_name || sourceInvoice.supplier_name || ''
-    if (custName) { setSupplierText(custName); setContactName(custName); setShippingName(custName) }
+    if (custName) { setCustomerText(custName); setContactName(custName); setShippingName(custName) }
     if (sourceInvoice.billing_email)    setContactEmail(sourceInvoice.billing_email)
     if (sourceInvoice.contact_number)   setContactPhone(sourceInvoice.contact_number)
     if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
@@ -359,11 +361,11 @@ export function NewOrderPage() {
   }, [sourceQuote])
 
   // ── Load customers & agents ──
-  const { data: supplierData } = useQuery({
-    queryKey: ['suppliers-list'],
-    queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data.rows as Supplier[]),
+  const { data: customerData } = useQuery({
+    queryKey: ['customers-list'],
+    queryFn: () => api.get('/customers', { params: { limit: 200 } }).then(r => r.data.data.rows as Customer[]),
   })
-  const suppliers: Supplier[] = supplierData ?? []
+  const customers: Customer[] = customerData ?? []
 
   const { data: agentData } = useQuery({
     queryKey: ['users-list'],
@@ -392,20 +394,30 @@ export function NewOrderPage() {
     }
   }, [agents, me?.id])
 
-  // Auto-fill contact/shipping when a supplier is selected from suggestions
+  // Load the complete customer record so contact and the default shipping
+  // address always come from Customers, not from the supplier directory.
   useEffect(() => {
-    if (!supplierId) return
-    const c = suppliers.find(x => x.id === supplierId)
-    if (!c) return
-    setContactName(c.name)
-    setContactEmail(c.email ?? '')
-    setContactPhone(c.phone ?? '')
-    setShippingName(c.name)
-    const addrParts = [c.address_line1, c.address_line2, c.city, c.state && c.zip ? `${c.state} ${c.zip}` : (c.state ?? c.zip), c.country].filter(Boolean)
-    setShippingAddress(addrParts.join(', '))
-    setEditingContact(false)
-    setEditingShipping(false)
-  }, [supplierId])
+    if (!customerId) return
+    let cancelled = false
+    api.get(`/customers/${customerId}`).then(response => {
+      if (cancelled) return
+      const c = response.data.data as Customer
+      const shipping = c.addresses?.find(a => a.address_type === 'shipping' && a.is_default)
+        ?? c.addresses?.find(a => a.address_type === 'shipping')
+      const address = shipping ?? c
+      const zip = 'zipcode' in address ? address.zipcode : c.zip
+      setCustomerText(c.name)
+      setContactName(c.name)
+      setContactEmail(c.email ?? '')
+      setContactPhone(c.mobile_number ?? c.company_phone_number ?? c.phone ?? '')
+      setShippingName(c.company_name ?? c.company ?? c.name)
+      const addrParts = [address.line1 ?? c.address_line1, address.line2 ?? c.address_line2, address.city ?? c.city, (address.state ?? c.state) && zip ? `${address.state ?? c.state} ${zip}` : (address.state ?? c.state ?? zip), address.country ?? c.country].filter(Boolean)
+      setShippingAddress(addrParts.join(', '))
+      setEditingContact(false)
+      setEditingShipping(false)
+    }).catch(() => toast.error('Could not load the selected customer details'))
+    return () => { cancelled = true }
+  }, [customerId])
 
   // â"€â"€ Derived totals â"€â"€
   const itemsTotal  = useMemo(() => {
@@ -453,30 +465,15 @@ export function NewOrderPage() {
   const addDtf         = () => setDtf(prev => [...prev, { id: uid(), artworkName: '', size: '12 x 16 in', qty: 1, unitPrice: 0 }])
 
   // â"€â"€ Save â"€â"€
-  const [sendToPortalAfterSave, setSendToPortalAfterSave] = useState(false)
-
   const createOrder = useMutation({
     mutationFn: (payload: object) => api.post('/orders', payload),
     onSuccess: async (res) => {
       const order = res.data.data
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      if (sendToPortalAfterSave && order.supplier_id) {
-        try {
-          await api.post(`/orders/${order.id}/send-to-portal`)
-          toast.success(`Order ${order.order_number ?? ''} created and sent to supplier portal!`)
-        } catch {
-          toast.success(`Order ${order.order_number ?? ''} created!`)
-          toast.error('Could not send to portal - open the order and try again')
-        }
-        navigate(`/orders/${order.id}`)
-      } else {
-        toast.success(`Order ${order.order_number ?? ''} created!`)
-        navigate('/orders')
-      }
-      setSendToPortalAfterSave(false)
+      toast.success(`Order ${order.order_number ?? ''} created!`)
+      navigate('/orders')
     },
     onError: (err: any) => {
-      setSendToPortalAfterSave(false)
       const data = err?.response?.data
       if (data?.details?.length) {
         const first = data.details[0]
@@ -516,8 +513,9 @@ export function NewOrderPage() {
         : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
 
     return {
-      supplier_id:        supplierId || null,
-      supplier_name_text: !supplierId ? supplierText.trim() : null,
+      customer_id:        customerId,
+      supplier_id:        null,
+      supplier_name_text: null,
       invoice_id:         invoiceId || null,
       quotation_id:       quotationId || sourceInvoice?.quote_id || null,
       order_type:       orderType,
@@ -562,7 +560,7 @@ export function NewOrderPage() {
   }
 
   const handleSave = (_asDraft = false) => {
-    if (!supplierId && !supplierText.trim()) { toast.error('Please enter a supplier name'); return }
+    if (!customerId) { toast.error('Please select a customer'); return }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
     if (activeItems.length > 0) {
       const itemErr = validateItems()
@@ -575,13 +573,12 @@ export function NewOrderPage() {
     }
   }
 
-  const handleSendToSupplier = () => {
-    if (!supplierId) { toast.error('Please select a supplier to send the order to their portal'); return }
+  const handleSendToCustomer = () => {
+    if (!customerId) { toast.error('Please select a customer'); return }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
     if (!activeItems.length) { toast.error('Add at least one item'); return }
     const itemErr = validateItems()
     if (itemErr) { toast.error(itemErr); return }
-    setSendToPortalAfterSave(true)
     createOrder.mutate(buildPayload())
   }
 
@@ -604,7 +601,7 @@ export function NewOrderPage() {
         <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to permanently delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
         {!editOrderId && (
           <div className="no-split-wrap">
-            <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
+            <button className="no-topbar-btn no-topbar-send" onClick={handleSendToCustomer} disabled={createOrder.isPending}>
               <Send size={13} /> Send to Customer
             </button>
             <button className="no-topbar-btn no-topbar-send no-split-chevron" onClick={e => setSendAnchor(e.currentTarget)}>
@@ -663,33 +660,34 @@ export function NewOrderPage() {
           <span className="no-info-label">Customer <span style={{ color: '#ef4444' }}>*</span></span>
           <input
             className="no-info-select no-customer-input"
-            placeholder="Type supplier name..."
-            value={supplierText}
+            placeholder="Search customer name, company, email or phone..."
+            value={customerText}
             autoComplete="off"
             onChange={e => {
-              setSupplierText(e.target.value)
-              setSupplierId(null)
-              setSupplierOpen(true)
+              setCustomerText(e.target.value)
+              setCustomerId(null)
+              setCustomerOpen(true)
             }}
-            onFocus={() => setSupplierOpen(true)}
-            onBlur={() => setTimeout(() => setSupplierOpen(false), 150)}
+            onFocus={() => setCustomerOpen(true)}
+            onBlur={() => setTimeout(() => setCustomerOpen(false), 150)}
           />
-          {supplierOpen && suppliers.filter(c => c.name.toLowerCase().includes(supplierText.toLowerCase())).length > 0 && (
+          {customerOpen && customers.filter(c => [c.name, c.company_name, c.email, c.company_phone_number, c.mobile_number].some(value => value?.toLowerCase().includes(customerText.toLowerCase()))).length > 0 && (
             <ul className="no-customer-suggestions">
-              {suppliers
-                .filter(c => c.name.toLowerCase().includes(supplierText.toLowerCase()))
+              {customers
+                .filter(c => [c.name, c.company_name, c.email, c.company_phone_number, c.mobile_number].some(value => value?.toLowerCase().includes(customerText.toLowerCase())))
                 .slice(0, 8)
                 .map(c => (
                   <li
                     key={c.id}
                     className="no-customer-suggestion-item"
                     onMouseDown={() => {
-                      setSupplierId(c.id)
-                      setSupplierText(c.name)
-                      setSupplierOpen(false)
+                      setCustomerId(c.id)
+                      setCustomerText(c.name)
+                      setCustomerOpen(false)
                     }}
                   >
                     <span className="no-cust-name">{c.name}</span>
+                    {c.company_name && <span className="no-cust-email">{c.company_name}</span>}
                     {c.email && <span className="no-cust-email">{c.email}</span>}
                   </li>
                 ))}
