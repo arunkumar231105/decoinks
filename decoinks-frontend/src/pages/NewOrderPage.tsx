@@ -197,14 +197,25 @@ export function NewOrderPage() {
     field: 'frontImage' | 'backImage' | 'artworkImage',
     file: File,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    updater: (id: string, patch: any) => void
+    updater: (id: string, patch: any) => void,
+    autoSizeField?: 'artworkSize' | 'size'
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     try {
       const form = new FormData()
       form.append('file', file)
       const res = await api.post('/upload/image', form)
-      updater(rowId, { [field]: res.data.url })
+      const autoSize = res.data?.dimensions?.artwork_size
+      updater(rowId, {
+        [field]: res.data.url,
+        ...(autoSizeField && autoSize ? { [autoSizeField]: autoSize } : {}),
+      })
+      if (autoSizeField && autoSize) {
+        const dpiNote = res.data.dimensions.dpi_source === 'embedded'
+          ? `${res.data.dimensions.dpi} DPI`
+          : '300 DPI default'
+        toast.success(`Artwork size detected: ${autoSize} (${dpiNote})`)
+      }
     } catch (error: any) {
       toast.error(error?.response?.data?.error ?? 'Image upload failed. Use JPG, PNG, WEBP or SVG up to 10 MB.')
     } finally {
@@ -769,7 +780,7 @@ export function NewOrderPage() {
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></div></td>
+                          <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { frontImage: null })} /><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { backImage: null })} /></div></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -857,7 +868,7 @@ export function NewOrderPage() {
                       <tr key={`art-${row.id}`}>
                         <td className="no-td-num">{idx + 1}</td>
                         <td><input className="no-table-input no-artwork-number-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} /></td>
-                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage }))} onRemove={() => updateGangsheetArtwork(row.id, { image: null })} /></td>
+                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage, size: patch.size }), 'size')} onRemove={() => updateGangsheetArtwork(row.id, { image: null, size: '' })} /></td>
                         <td><ArtworkSizePicker value={row.size} onChange={size => updateGangsheetArtwork(row.id, { size })} /></td>
                         <td><button type="button" className="no-action-icon-btn no-delete-icon" onClick={() => removeGangsheetArtwork(row.id)} title="Delete artwork"><Trash2 size={13} /></button></td>
                       </tr>
@@ -894,7 +905,7 @@ export function NewOrderPage() {
                           <td>
                             <input type="text" className="no-table-input no-table-input-wide" placeholder="AW-TF-001" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf, 'size')} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null, size: '' })} /></td>
                           <td>
                             <input
                               className="no-table-input"
