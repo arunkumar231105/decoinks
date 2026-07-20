@@ -204,7 +204,7 @@ export function NewOrderPage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await api.post('/upload/image', form)
+      const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       const autoSize = res.data?.dimensions?.artwork_size
       updater(rowId, {
         [field]: res.data.url,
