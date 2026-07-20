@@ -29,7 +29,7 @@ interface ApparelItem {
   colorId?: string; sizeId?: string; sku?: string
   availableColors?: CatalogColor[]; availableSizes?: CatalogSize[]; availableVariants?: CatalogVariant[]
 }
-interface GangsheetArtwork { id: string; artworkNo: string; size: string; sizeAuto?: boolean; image?: string | null }
+interface GangsheetArtwork { id: string; artworkNo: string; size: string; qty: number; sizeAuto?: boolean; image?: string | null }
 interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
 interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
 
@@ -59,7 +59,7 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
 
 const initApparel  = (): ApparelItem[]   => []
 const initGangsheet= (): GangsheetItem[] => [{ id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }]
-const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', image: null }]
+const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', qty: 1, image: null }]
 const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -267,7 +267,7 @@ export function NewOrderPage() {
         return { id: uid(), width: 22, height, qty: gangsheetSheetQty(height), pricePerSheet: Number(r.price_per_sheet) }
       }))
       const savedArtworks = items.flatMap((r: any) => Array.isArray(r.artworks) ? r.artworks : [])
-      setGangsheetArtworks(savedArtworks.length ? savedArtworks.map((art: any, index: number) => ({ id: uid(), artworkNo: art.artwork_no || `AW-GS-${String(index + 1).padStart(3, '0')}`, size: art.size ?? '', image: art.image ?? null })) : items.filter((r: any) => r.front_image).map((r: any, index: number) => ({ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', image: r.front_image })))
+      setGangsheetArtworks(savedArtworks.length ? savedArtworks.map((art: any, index: number) => ({ id: uid(), artworkNo: art.artwork_no || `AW-GS-${String(index + 1).padStart(3, '0')}`, size: art.size ?? '', qty: Math.max(1, Number(art.qty) || 1), image: art.image ?? null })) : items.filter((r: any) => r.front_image).map((r: any, index: number) => ({ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: 1, image: r.front_image })))
     } else {
       setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null, frontImage: r.front_image ?? r.artwork_image ?? null, backImage: r.back_image ?? null })))
     }
@@ -342,7 +342,7 @@ export function NewOrderPage() {
       })))
       setGangsheetArtworks(qItems.flatMap((it, index) => {
         const image = (it as any).front_image ?? (it as any).artwork_image ?? null
-        return image ? [{ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', image }] : []
+        return image ? [{ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: Math.max(1, Number(it.qty) || 1), image }] : []
       }))
     } else {
       setDtf(qItems.map(it => ({
@@ -415,7 +415,7 @@ export function NewOrderPage() {
   }, [orderType, apparel, gangsheet, dtf])
   const apparelQty = useMemo(() => apparel.reduce((sum, row) => sum + row.qty, 0), [apparel])
   const gangsheetQty = useMemo(() => gangsheet.reduce((sum, row) => sum + row.qty, 0), [gangsheet])
-  const gangsheetArtworkCount = gangsheetArtworks.length
+  const gangsheetArtworkCount = useMemo(() => gangsheetArtworks.reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0), [gangsheetArtworks])
   const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
@@ -444,7 +444,7 @@ export function NewOrderPage() {
   }
   const removeGangsheet= (id: string) => setGangsheet(prev => prev.filter(r => r.id !== id))
   const addGangsheet   = () => setGangsheet(prev => [...prev, { id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }])
-  const addGangsheetArtwork = () => setGangsheetArtworks(prev => [...prev, { id: uid(), artworkNo: `AW-GS-${String(prev.length + 1).padStart(3, '0')}`, size: '', image: null }])
+  const addGangsheetArtwork = () => setGangsheetArtworks(prev => [...prev, { id: uid(), artworkNo: `AW-GS-${String(prev.length + 1).padStart(3, '0')}`, size: '', qty: 1, image: null }])
   const updateGangsheetArtwork = (id: string, patch: Partial<GangsheetArtwork>) => setGangsheetArtworks(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
   const removeGangsheetArtwork = (id: string) => setGangsheetArtworks(prev => prev.filter(row => row.id !== id))
 
@@ -511,7 +511,7 @@ export function NewOrderPage() {
             qty: r.qty,
             price_per_sheet: r.pricePerSheet,
             front_image: index === 0 ? gangsheetArtworks[0]?.image || null : null,
-            artworks: index === 0 ? gangsheetArtworks.map(art => ({ artwork_no: art.artworkNo, size: art.size, image: art.image || null })) : [],
+            artworks: index === 0 ? gangsheetArtworks.map(art => ({ artwork_no: art.artworkNo, size: art.size, image: art.image || null, qty: Math.max(1, Number(art.qty) || 1) })) : [],
           }))
         : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
 
@@ -865,13 +865,14 @@ export function NewOrderPage() {
                 <h3 className="no-subsection-title">Artworks in Gangsheet</h3>
                 <div className="no-table-wrap">
                   <table className="no-table no-gangsheet-art-table">
-                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>Artwork</th><th>Artwork Size</th><th>Action</th></tr></thead>
+                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>Artwork</th><th>Artwork Size</th><th>Qty</th><th>Action</th></tr></thead>
                     <tbody>{gangsheetArtworks.map((row, idx) => (
                       <tr key={`art-${row.id}`}>
                         <td className="no-td-num">{idx + 1}</td>
                         <td><input className="no-table-input no-artwork-number-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} /></td>
                         <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage, size: patch.size, sizeAuto: Boolean(patch.size) }), 'size')} onRemove={() => updateGangsheetArtwork(row.id, { image: null, size: '', sizeAuto: false })} /></td>
                         <td><ArtworkSizePicker value={row.size} autoDetected={row.sizeAuto} onChange={size => updateGangsheetArtwork(row.id, { size, sizeAuto: false })} /></td>
+                        <td><input type="number" className="no-table-input" min={1} value={row.qty} onFocus={event => event.currentTarget.select()} onChange={event => updateGangsheetArtwork(row.id, { qty: Math.max(1, Number(event.target.value) || 1) })} aria-label={`Quantity for ${row.artworkNo || `artwork ${idx + 1}`}`} /></td>
                         <td><button type="button" className="no-action-icon-btn no-delete-icon" onClick={() => removeGangsheetArtwork(row.id)} title="Delete artwork"><Trash2 size={13} /></button></td>
                       </tr>
                     ))}</tbody>

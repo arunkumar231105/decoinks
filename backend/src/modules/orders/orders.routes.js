@@ -57,6 +57,7 @@ const gangsheetItemSchema = z.object({
     artwork_no: z.string().max(100).optional().nullable(),
     size:       z.string().max(100).optional().nullable(),
     image:      z.string().optional().nullable(),
+    qty:        z.number().int().positive().default(1),
   })).optional().default([]),
 })
 
