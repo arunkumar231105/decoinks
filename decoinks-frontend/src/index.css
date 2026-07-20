@@ -16024,11 +16024,16 @@ body .no-type-inline { display: flex; align-items: center; gap: 8px; color: #102
 body .no-type-inline input { width: 16px; height: 16px; accent-color: #2b21ff; }
 body .no-info-label { color: #111d4e; text-transform: none; letter-spacing: 0; }
 body .no-info-select { height: 38px; color: #102052; background: #fff; border-color: #dbe3ee; }
-body .no-body-cols { display: grid; grid-template-columns: minmax(0,1fr) 300px; grid-template-areas: "contact sidebar" "items sidebar"; gap: 12px 16px; align-items: start; }
+body .no-body-cols { display: grid; grid-template-columns: minmax(0,1fr) 320px; grid-template-areas: "contact sidebar" "items sidebar"; gap: 12px 16px; align-items: start; }
 body .no-main { display: contents; }
 body .no-main > .no-bottom-panels { grid-area: contact; }
 body .no-main > .no-card { grid-area: items; }
-body .no-sidebar { grid-area: sidebar; width: auto; position: sticky; top: 92px; gap: 12px; }
+body .no-sidebar { grid-area: sidebar; display: flex; flex-direction: column; width: auto; min-width: 0; position: sticky; top: 92px; gap: 12px; }
+body .no-sidebar > .no-card { width: 100%; min-width: 0; }
+body .no-sidebar .no-section-title,
+body .no-sidebar .no-pricing-row > span,
+body .no-sidebar .no-payment-label { overflow-wrap: normal; word-break: normal; }
+body .no-sidebar .no-info-select { min-width: 0; text-overflow: ellipsis; }
 body .no-bottom-panels { display: grid; grid-template-columns: .9fr 1.15fr 1.15fr; gap: 10px; }
 body .no-card { padding: 15px 16px; border-color: #dfe6ef; border-radius: 8px; box-shadow: none; }
 body .no-contact-card, body .no-shipping-card, body .no-notes-card { min-height: 174px; }
@@ -16043,7 +16048,7 @@ body .no-bottom-bar { display: none; }
 }
 @media (max-width: 1180px) {
   body .no-body-cols { grid-template-columns: 1fr; grid-template-areas: "contact" "items" "sidebar"; }
-  body .no-sidebar { position: static; display: grid; grid-template-columns: 1fr 1fr; }
+  body .no-sidebar { position: static; display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); }
 }
 @media (max-width: 760px) {
   body .no-topbar { justify-content: stretch; }
