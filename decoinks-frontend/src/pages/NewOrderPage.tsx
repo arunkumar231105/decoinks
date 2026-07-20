@@ -29,7 +29,7 @@ interface ApparelItem {
   colorId?: string; sizeId?: string; sku?: string
   availableColors?: CatalogColor[]; availableSizes?: CatalogSize[]; availableVariants?: CatalogVariant[]
 }
-interface GangsheetArtwork { id: string; artworkNo: string; size: string; image?: string | null }
+interface GangsheetArtwork { id: string; artworkNo: string; size: string; sizeAuto?: boolean; image?: string | null }
 interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
 interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
 
@@ -96,13 +96,14 @@ function ImageUploadCell({
   )
 }
 
-function ArtworkSizePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function ArtworkSizePicker({ value, onChange, autoDetected = false }: { value: string; onChange: (value: string) => void; autoDetected?: boolean }) {
   const isPreset = DTF_SIZES.includes(value)
-  const [custom, setCustom] = useState(Boolean(value) && !isPreset)
+  const [custom, setCustom] = useState(Boolean(value) && !isPreset && !autoDetected)
 
   useEffect(() => {
-    if (value && !DTF_SIZES.includes(value)) setCustom(true)
-  }, [value])
+    if (autoDetected) setCustom(false)
+    else if (value && !DTF_SIZES.includes(value)) setCustom(true)
+  }, [value, autoDetected])
 
   return (
     <div className="no-artwork-size-picker">
@@ -117,6 +118,7 @@ function ArtworkSizePicker({ value, onChange }: { value: string; onChange: (valu
       }}>
         <option value="">Select size</option>
         {DTF_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+        {autoDetected && value && !isPreset && <option value={value}>{value}</option>}
         <option value="__custom__">Custom…</option>
       </select>
       {custom && <input autoFocus className="no-table-input" placeholder="e.g. 5 x 7 in" value={value} onChange={event => onChange(event.target.value)} />}
@@ -868,8 +870,8 @@ export function NewOrderPage() {
                       <tr key={`art-${row.id}`}>
                         <td className="no-td-num">{idx + 1}</td>
                         <td><input className="no-table-input no-artwork-number-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} /></td>
-                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage, size: patch.size }), 'size')} onRemove={() => updateGangsheetArtwork(row.id, { image: null, size: '' })} /></td>
-                        <td><ArtworkSizePicker value={row.size} onChange={size => updateGangsheetArtwork(row.id, { size })} /></td>
+                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage, size: patch.size, sizeAuto: Boolean(patch.size) }), 'size')} onRemove={() => updateGangsheetArtwork(row.id, { image: null, size: '', sizeAuto: false })} /></td>
+                        <td><ArtworkSizePicker value={row.size} autoDetected={row.sizeAuto} onChange={size => updateGangsheetArtwork(row.id, { size, sizeAuto: false })} /></td>
                         <td><button type="button" className="no-action-icon-btn no-delete-icon" onClick={() => removeGangsheetArtwork(row.id)} title="Delete artwork"><Trash2 size={13} /></button></td>
                       </tr>
                     ))}</tbody>
