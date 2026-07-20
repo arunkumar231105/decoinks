@@ -1,11 +1,12 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Edit3, Eye, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
+import { ChevronDown, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
+import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
@@ -14,18 +15,24 @@ import { useAuthStore } from '../store/authStore'
 type OrderType = 'apparel' | 'gangsheet' | 'dtf'
 type PaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Refunded'
 
-interface Supplier {
-  id: string; name: string; email: string; phone: string; company?: string
+interface Customer {
+  id: string; name: string; email?: string; phone?: string; company?: string; company_name?: string
+  company_phone_number?: string; mobile_number?: string
   address_line1?: string; address_line2?: string; city?: string; state?: string; zip?: string; country?: string
+  billing_address?: string; addresses?: Array<{ address_type?: string; line1?: string; line2?: string; city?: string; state?: string; zipcode?: string; country?: string; is_default?: boolean }>
 }
 interface Agent { id: string; name: string; role: string }
 
 interface ApparelItem {
-  id: string; item: string; color: string; size: string; qty: number
+  id: string; category: string; item: string; color: string; size: string; qty: number
   artworkNo: string; artworkSize: string; unitPrice: number
   frontImage?: string | null; backImage?: string | null
+  styleId?: string; styleCode?: string; brand?: string; productImage?: string | null; styleDescription?: string | null
+  colorId?: string; sizeId?: string; sku?: string
+  availableColors?: CatalogColor[]; availableSizes?: CatalogSize[]; availableVariants?: CatalogVariant[]
 }
-interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null; backImage?: string | null }
+interface GangsheetArtwork { id: string; artworkNo: string; size: string; qty: number; sizeAuto?: boolean; image?: string | null }
+interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
 interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -36,11 +43,12 @@ const uid = () => Math.random().toString(36).slice(2, 9)
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const todayISO = () => new Date().toISOString().split('T')[0]
 
-const ITEMS = ['T-Shirt (Premium)', 'Hoodie', 'Cap', 'Sweatshirt', 'Polo Shirt', 'Tank Top']
-const COLORS = ['White', 'Black', 'Navy Blue', 'Grey', 'Red', 'Forest Green']
-const SIZES = ['S', 'M', 'L', 'XL', '2XL', 'One Size']
-const GS_SIZES = ['22" x 60"', '22" x 120"', '13" x 19"', '22" x 36"']
 const DTF_SIZES = ['4 x 4 in', '6 x 6 in', '8 x 10 in', '10 x 12 in', '12 x 16 in', '13 x 17 in']
+const GANGSHEET_BREAK_HEIGHT = 108
+const gangsheetSheetQty = (height: string | number) => {
+  const inches = Math.max(0, Number(height) || 0)
+  return inches > 0 ? Math.floor(inches / GANGSHEET_BREAK_HEIGHT) + 1 : 1
+}
 const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
@@ -51,8 +59,9 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
   Refunded: { bg: '#f5f3ff', color: '#7c3aed' },
 }
 
-const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premium)', color: 'White', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }]
-const initGangsheet= (): GangsheetItem[] => [{ id: uid(), size: '', noArtworks: 1, qty: 1, pricePerSheet: 0 }]
+const initApparel  = (): ApparelItem[]   => []
+const initGangsheet= (): GangsheetItem[] => [{ id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }]
+const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', qty: 1, image: null }]
 const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -68,23 +77,53 @@ function ImageUploadCell({
   const inputRef = useRef<HTMLInputElement>(null)
   return (
     <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
       {imageUrl ? (
         <div className="nq-img-thumb-wrap">
           <img src={imageUrl} className="nq-img-thumb" alt={label} />
-          <button className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
+          <button type="button" className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
         </div>
       ) : (
-        <div className="nq-img-placeholder" onClick={() => inputRef.current?.click()}>
+        <button type="button" className="nq-img-placeholder" disabled={uploading} onClick={() => inputRef.current?.click()}>
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
             <rect width="20" height="20" rx="4" fill="#e2e8f0" />
             <path d="M4 14l4-4 3 3 2-2 3 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
             <circle cx="7" cy="7" r="1.5" fill="#94a3b8" />
           </svg>
-          <span>{label}</span>
-        </div>
+          <span>{uploading ? 'Uploading…' : label}</span>
+        </button>
       )}
+    </div>
+  )
+}
+
+function ArtworkSizePicker({ value, onChange, autoDetected = false }: { value: string; onChange: (value: string) => void; autoDetected?: boolean }) {
+  const isPreset = DTF_SIZES.includes(value)
+  const [custom, setCustom] = useState(Boolean(value) && !isPreset && !autoDetected)
+
+  useEffect(() => {
+    if (autoDetected) setCustom(false)
+    else if (value && !DTF_SIZES.includes(value)) setCustom(true)
+  }, [value, autoDetected])
+
+  return (
+    <div className="no-artwork-size-picker">
+      <select className="no-table-select" aria-label="Artwork size" value={custom ? '__custom__' : value} onChange={event => {
+        if (event.target.value === '__custom__') {
+          setCustom(true)
+          if (isPreset) onChange('')
+        } else {
+          setCustom(false)
+          onChange(event.target.value)
+        }
+      }}>
+        <option value="">Select size</option>
+        {DTF_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+        {autoDetected && value && !isPreset && <option value={value}>{value}</option>}
+        <option value="__custom__">Custom…</option>
+      </select>
+      {custom && <input autoFocus className="no-table-input" placeholder="e.g. 5 x 7 in" value={value} onChange={event => onChange(event.target.value)} />}
     </div>
   )
 }
@@ -106,9 +145,9 @@ export function NewOrderPage() {
   const editOrderId: string | undefined = (location.state as any)?.editOrderId
 
   // Header fields
-  const [supplierId, setSupplierId]       = useState<string | null>(null)
-  const [supplierText, setSupplierText]   = useState('')
-  const [supplierOpen, setSupplierOpen]   = useState(false)
+  const [customerId, setCustomerId]       = useState<string | null>(null)
+  const [customerText, setCustomerText]   = useState('')
+  const [customerOpen, setCustomerOpen]   = useState(false)
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
   const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
@@ -118,6 +157,7 @@ export function NewOrderPage() {
   // Table data
   const [apparel,   setApparel]   = useState<ApparelItem[]>(initApparel)
   const [gangsheet, setGangsheet] = useState<GangsheetItem[]>(initGangsheet)
+  const [gangsheetArtworks, setGangsheetArtworks] = useState<GangsheetArtwork[]>(initGangsheetArtworks)
   const [dtf,       setDtf]       = useState<DtfItem[]>(initDtf)
 
   // Payment
@@ -161,16 +201,27 @@ export function NewOrderPage() {
     field: 'frontImage' | 'backImage' | 'artworkImage',
     file: File,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    updater: (id: string, patch: any) => void
+    updater: (id: string, patch: any) => void,
+    autoSizeField?: 'artworkSize' | 'size'
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     try {
       const form = new FormData()
       form.append('file', file)
       const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      updater(rowId, { [field]: res.data.url })
-    } catch {
-      toast.error('Image upload failed')
+      const autoSize = res.data?.dimensions?.artwork_size
+      updater(rowId, {
+        [field]: res.data.url,
+        ...(autoSizeField && autoSize ? { [autoSizeField]: autoSize } : {}),
+      })
+      if (autoSizeField && autoSize) {
+        const dpiNote = res.data.dimensions.dpi_source === 'embedded'
+          ? `${res.data.dimensions.dpi} DPI`
+          : '300 DPI default'
+        toast.success(`Artwork size detected: ${autoSize} (${dpiNote})`)
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error ?? 'Image upload failed. Use JPG, PNG, WEBP or SVG up to 10 MB.')
     } finally {
       setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
     }
@@ -186,8 +237,8 @@ export function NewOrderPage() {
   useEffect(() => {
     if (!existingOrder) return
     setOrderType(existingOrder.order_type as OrderType)
-    setSupplierId(existingOrder.supplier_id ?? null)
-    setSupplierText(existingOrder.supplier_name ?? '')
+    setCustomerId(existingOrder.customer_id ?? null)
+    setCustomerText(existingOrder.customer_name ?? existingOrder.contact_name ?? '')
     setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
     setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
@@ -210,9 +261,15 @@ export function NewOrderPage() {
 
     const items = existingOrder.items ?? []
     if (existingOrder.order_type === 'apparel') {
-      setApparel(items.map((r: any) => ({ id: uid(), item: r.item ?? '', color: r.color ?? 'Black', size: r.size ?? 'M', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
+      setApparel(items.map((r: any) => ({ id: uid(), category: r.category ?? 'T-Shirt', item: r.item ?? '', color: r.color ?? '', size: r.size ?? '', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null, styleId: r.catalog_style_id, styleCode: r.model, brand: r.brand, productImage: r.product_image, styleDescription: r.style_description, colorId: r.catalog_color_id, sizeId: r.catalog_size_id, sku: r.catalog_sku })))
     } else if (existingOrder.order_type === 'gangsheet') {
-      setGangsheet(items.map((r: any) => ({ id: uid(), size: r.size ?? '', noArtworks: Number(r.no_artworks ?? 1), qty: Number(r.qty), pricePerSheet: Number(r.price_per_sheet), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
+      setGangsheet(items.map((r: any) => {
+        const dimensions = String(r.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
+        const height = dimensions?.[2] ?? ''
+        return { id: uid(), width: 22, height, qty: gangsheetSheetQty(height), pricePerSheet: Number(r.price_per_sheet) }
+      }))
+      const savedArtworks = items.flatMap((r: any) => Array.isArray(r.artworks) ? r.artworks : [])
+      setGangsheetArtworks(savedArtworks.length ? savedArtworks.map((art: any, index: number) => ({ id: uid(), artworkNo: art.artwork_no || `AW-GS-${String(index + 1).padStart(3, '0')}`, size: art.size ?? '', qty: Math.max(1, Number(art.qty) || 1), image: art.image ?? null })) : items.filter((r: any) => r.front_image).map((r: any, index: number) => ({ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: 1, image: r.front_image })))
     } else {
       setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null, frontImage: r.front_image ?? r.artwork_image ?? null, backImage: r.back_image ?? null })))
     }
@@ -234,9 +291,9 @@ export function NewOrderPage() {
 
   useEffect(() => {
     if (!sourceInvoice) return
-    if (sourceInvoice.supplier_id) setSupplierId(sourceInvoice.supplier_id)
+    if (sourceInvoice.customer_id) setCustomerId(sourceInvoice.customer_id)
     const custName = sourceInvoice.customer_name || sourceInvoice.supplier_name || ''
-    if (custName) { setSupplierText(custName); setContactName(custName); setShippingName(custName) }
+    if (custName) { setCustomerText(custName); setContactName(custName); setShippingName(custName) }
     if (sourceInvoice.billing_email)    setContactEmail(sourceInvoice.billing_email)
     if (sourceInvoice.contact_number)   setContactPhone(sourceInvoice.contact_number)
     if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
@@ -259,7 +316,8 @@ export function NewOrderPage() {
     if (type === 'apparel') {
       setApparel(qItems.map(it => ({
         id:          uid(),
-        item:        it.description || 'T-Shirt (Premium)',
+        category:    (it as any).category || 'T-Shirt',
+        item:        it.description || '',
         color:       it.colors     ?? '',
         size:        it.sizes      ?? '',
         qty:         Number(it.qty),
@@ -268,17 +326,26 @@ export function NewOrderPage() {
         unitPrice:   Number(it.unit_price),
         frontImage:  (it as any).front_image ?? null,
         backImage:   (it as any).back_image  ?? null,
+        styleId:     (it as any).catalog_style_id,
+        styleCode:   (it as any).model,
+        brand:       (it as any).brand,
+        productImage:(it as any).product_image,
+        colorId:     (it as any).catalog_color_id,
+        sizeId:      (it as any).catalog_size_id,
+        sku:         (it as any).catalog_sku,
       })))
     } else if (type === 'gangsheet') {
       setGangsheet(qItems.map(it => ({
         id:            uid(),
-        size:          it.sizes ?? it.description ?? '',
-        noArtworks:    Number(it.artwork_count ?? 1),
-        qty:           Number(it.qty),
+        width:         22,
+        height:        String(it.sizes ?? it.description ?? '').match(/[x×]\s*([\d.]+)/i)?.[1] ?? '',
+        qty:           gangsheetSheetQty(String(it.sizes ?? it.description ?? '').match(/[x×]\s*([\d.]+)/i)?.[1] ?? ''),
         pricePerSheet: Number(it.unit_price),
-        frontImage:    (it as any).front_image ?? null,
-        backImage:     (it as any).back_image  ?? null,
       })))
+      setGangsheetArtworks(qItems.flatMap((it, index) => {
+        const image = (it as any).front_image ?? (it as any).artwork_image ?? null
+        return image ? [{ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: Math.max(1, Number(it.qty) || 1), image }] : []
+      }))
     } else {
       setDtf(qItems.map(it => ({
         id:            uid(),
@@ -294,11 +361,11 @@ export function NewOrderPage() {
   }, [sourceQuote])
 
   // ── Load customers & agents ──
-  const { data: supplierData } = useQuery({
-    queryKey: ['suppliers-list'],
-    queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data.rows as Supplier[]),
+  const { data: customerData } = useQuery({
+    queryKey: ['customers-list'],
+    queryFn: () => api.get('/customers', { params: { limit: 200 } }).then(r => r.data.data.rows as Customer[]),
   })
-  const suppliers: Supplier[] = supplierData ?? []
+  const customers: Customer[] = customerData ?? []
 
   const { data: agentData } = useQuery({
     queryKey: ['users-list'],
@@ -327,20 +394,30 @@ export function NewOrderPage() {
     }
   }, [agents, me?.id])
 
-  // Auto-fill contact/shipping when a supplier is selected from suggestions
+  // Load the complete customer record so contact and the default shipping
+  // address always come from Customers, not from the supplier directory.
   useEffect(() => {
-    if (!supplierId) return
-    const c = suppliers.find(x => x.id === supplierId)
-    if (!c) return
-    setContactName(c.name)
-    setContactEmail(c.email ?? '')
-    setContactPhone(c.phone ?? '')
-    setShippingName(c.name)
-    const addrParts = [c.address_line1, c.address_line2, c.city, c.state && c.zip ? `${c.state} ${c.zip}` : (c.state ?? c.zip), c.country].filter(Boolean)
-    setShippingAddress(addrParts.join(', '))
-    setEditingContact(false)
-    setEditingShipping(false)
-  }, [supplierId])
+    if (!customerId) return
+    let cancelled = false
+    api.get(`/customers/${customerId}`).then(response => {
+      if (cancelled) return
+      const c = response.data.data as Customer
+      const shipping = c.addresses?.find(a => a.address_type === 'shipping' && a.is_default)
+        ?? c.addresses?.find(a => a.address_type === 'shipping')
+      const address = shipping ?? c
+      const zip = 'zipcode' in address ? address.zipcode : c.zip
+      setCustomerText(c.name)
+      setContactName(c.name)
+      setContactEmail(c.email ?? '')
+      setContactPhone(c.mobile_number ?? c.company_phone_number ?? c.phone ?? '')
+      setShippingName(c.company_name ?? c.company ?? c.name)
+      const addrParts = [address.line1 ?? c.address_line1, address.line2 ?? c.address_line2, address.city ?? c.city, (address.state ?? c.state) && zip ? `${address.state ?? c.state} ${zip}` : (address.state ?? c.state ?? zip), address.country ?? c.country].filter(Boolean)
+      setShippingAddress(addrParts.join(', '))
+      setEditingContact(false)
+      setEditingShipping(false)
+    }).catch(() => toast.error('Could not load the selected customer details'))
+    return () => { cancelled = true }
+  }, [customerId])
 
   // â"€â"€ Derived totals â"€â"€
   const itemsTotal  = useMemo(() => {
@@ -350,7 +427,7 @@ export function NewOrderPage() {
   }, [orderType, apparel, gangsheet, dtf])
   const apparelQty = useMemo(() => apparel.reduce((sum, row) => sum + row.qty, 0), [apparel])
   const gangsheetQty = useMemo(() => gangsheet.reduce((sum, row) => sum + row.qty, 0), [gangsheet])
-  const gangsheetArtworks = useMemo(() => gangsheet.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheet])
+  const gangsheetArtworkCount = useMemo(() => gangsheetArtworks.reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0), [gangsheetArtworks])
   const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
@@ -361,41 +438,42 @@ export function NewOrderPage() {
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeApparel  = (id: string) => setApparel(prev => prev.filter(r => r.id !== id))
-  const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }])
+  const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])
+  const selectOrderApparelColor = (item: ApparelItem, colorId: string) => {
+    const color = item.availableColors?.find(value => value.style_color_id === colorId)
+    const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.sizeId)
+    updateApparel(item.id, { colorId, color: color?.display_name ?? '', sku: variant?.sku_code ?? '' })
+  }
+  const selectOrderApparelSize = (item: ApparelItem, sizeId: string) => {
+    const size = item.availableSizes?.find(value => value.style_size_id === sizeId)
+    const variant = item.availableVariants?.find(value => value.style_size_id === sizeId && value.style_color_id === item.colorId)
+    updateApparel(item.id, { sizeId, size: size?.size_name ?? '', sku: variant?.sku_code ?? '' })
+  }
 
   const updateGangsheet= (id: string, p: Partial<GangsheetItem>) => setGangsheet(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
+  const updateGangsheetHeight = (id: string, height: string) => {
+    updateGangsheet(id, { height, qty: gangsheetSheetQty(height) })
+  }
   const removeGangsheet= (id: string) => setGangsheet(prev => prev.filter(r => r.id !== id))
-  const addGangsheet   = () => setGangsheet(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qty: 1, pricePerSheet: 0 }])
+  const addGangsheet   = () => setGangsheet(prev => [...prev, { id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }])
+  const addGangsheetArtwork = () => setGangsheetArtworks(prev => [...prev, { id: uid(), artworkNo: `AW-GS-${String(prev.length + 1).padStart(3, '0')}`, size: '', qty: 1, image: null }])
+  const updateGangsheetArtwork = (id: string, patch: Partial<GangsheetArtwork>) => setGangsheetArtworks(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const removeGangsheetArtwork = (id: string) => setGangsheetArtworks(prev => prev.filter(row => row.id !== id))
 
   const updateDtf      = (id: string, p: Partial<DtfItem>)       => setDtf(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeDtf      = (id: string) => setDtf(prev => prev.filter(r => r.id !== id))
   const addDtf         = () => setDtf(prev => [...prev, { id: uid(), artworkName: '', size: '12 x 16 in', qty: 1, unitPrice: 0 }])
 
   // â"€â"€ Save â"€â"€
-  const [sendToPortalAfterSave, setSendToPortalAfterSave] = useState(false)
-
   const createOrder = useMutation({
     mutationFn: (payload: object) => api.post('/orders', payload),
     onSuccess: async (res) => {
       const order = res.data.data
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      if (sendToPortalAfterSave && order.supplier_id) {
-        try {
-          await api.post(`/orders/${order.id}/send-to-portal`)
-          toast.success(`Order ${order.order_number ?? ''} created and sent to supplier portal!`)
-        } catch {
-          toast.success(`Order ${order.order_number ?? ''} created!`)
-          toast.error('Could not send to portal - open the order and try again')
-        }
-        navigate(`/orders/${order.id}`)
-      } else {
-        toast.success(`Order ${order.order_number ?? ''} created!`)
-        navigate('/orders')
-      }
-      setSendToPortalAfterSave(false)
+      toast.success(`Order ${order.order_number ?? ''} created!`)
+      navigate('/orders')
     },
     onError: (err: any) => {
-      setSendToPortalAfterSave(false)
       const data = err?.response?.data
       if (data?.details?.length) {
         const first = data.details[0]
@@ -422,14 +500,22 @@ export function NewOrderPage() {
 
   const buildPayload = () => {
     const itemsPayload = orderType === 'apparel'
-      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null }))
+      ? apparel.map(r => ({ category: r.category, item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null, catalog_style_id: r.styleId || null, catalog_color_id: r.colorId || null, catalog_size_id: r.sizeId || null, catalog_sku: r.sku || null, brand: r.brand || null, model: r.styleCode || null, product_image: r.productImage || null, style_description: r.styleDescription || null }))
       : orderType === 'gangsheet'
-        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: r.frontImage || null, back_image: r.backImage || null }))
+        ? gangsheet.map((r, index) => ({
+            size: `22" x ${Number(r.height) || 0}"`,
+            no_artworks: Math.max(1, gangsheetArtworkCount),
+            qty: r.qty,
+            price_per_sheet: r.pricePerSheet,
+            front_image: index === 0 ? gangsheetArtworks[0]?.image || null : null,
+            artworks: index === 0 ? gangsheetArtworks.map(art => ({ artwork_no: art.artworkNo, size: art.size, image: art.image || null, qty: Math.max(1, Number(art.qty) || 1) })) : [],
+          }))
         : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
 
     return {
-      supplier_id:        supplierId || null,
-      supplier_name_text: !supplierId ? supplierText.trim() : null,
+      customer_id:        customerId,
+      supplier_id:        null,
+      supplier_name_text: null,
       invoice_id:         invoiceId || null,
       quotation_id:       quotationId || sourceInvoice?.quote_id || null,
       order_type:       orderType,
@@ -465,11 +551,16 @@ export function NewOrderPage() {
         if (!dtf[i].artworkName.trim()) return `Row ${i + 1}: Artwork Name is required`
       }
     }
+    if (orderType === 'gangsheet') {
+      for (let i = 0; i < gangsheet.length; i++) {
+        if (!(Number(gangsheet[i].height) > 0)) return `Gangsheet ${i + 1}: Height is required`
+      }
+    }
     return null
   }
 
   const handleSave = (_asDraft = false) => {
-    if (!supplierId && !supplierText.trim()) { toast.error('Please enter a supplier name'); return }
+    if (!customerId) { toast.error('Please select a customer'); return }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
     if (activeItems.length > 0) {
       const itemErr = validateItems()
@@ -482,13 +573,12 @@ export function NewOrderPage() {
     }
   }
 
-  const handleSendToSupplier = () => {
-    if (!supplierId) { toast.error('Please select a supplier to send the order to their portal'); return }
+  const handleSendToCustomer = () => {
+    if (!customerId) { toast.error('Please select a customer'); return }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
     if (!activeItems.length) { toast.error('Add at least one item'); return }
     const itemErr = validateItems()
     if (itemErr) { toast.error(itemErr); return }
-    setSendToPortalAfterSave(true)
     createOrder.mutate(buildPayload())
   }
 
@@ -511,7 +601,7 @@ export function NewOrderPage() {
         <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to permanently delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
         {!editOrderId && (
           <div className="no-split-wrap">
-            <button className="no-topbar-btn no-topbar-send" onClick={handleSendToSupplier} disabled={createOrder.isPending}>
+            <button className="no-topbar-btn no-topbar-send" onClick={handleSendToCustomer} disabled={createOrder.isPending}>
               <Send size={13} /> Send to Customer
             </button>
             <button className="no-topbar-btn no-topbar-send no-split-chevron" onClick={e => setSendAnchor(e.currentTarget)}>
@@ -570,33 +660,34 @@ export function NewOrderPage() {
           <span className="no-info-label">Customer <span style={{ color: '#ef4444' }}>*</span></span>
           <input
             className="no-info-select no-customer-input"
-            placeholder="Type supplier name..."
-            value={supplierText}
+            placeholder="Search customer name, company, email or phone..."
+            value={customerText}
             autoComplete="off"
             onChange={e => {
-              setSupplierText(e.target.value)
-              setSupplierId(null)
-              setSupplierOpen(true)
+              setCustomerText(e.target.value)
+              setCustomerId(null)
+              setCustomerOpen(true)
             }}
-            onFocus={() => setSupplierOpen(true)}
-            onBlur={() => setTimeout(() => setSupplierOpen(false), 150)}
+            onFocus={() => setCustomerOpen(true)}
+            onBlur={() => setTimeout(() => setCustomerOpen(false), 150)}
           />
-          {supplierOpen && suppliers.filter(c => c.name.toLowerCase().includes(supplierText.toLowerCase())).length > 0 && (
+          {customerOpen && customers.filter(c => [c.name, c.company_name, c.email, c.company_phone_number, c.mobile_number].some(value => value?.toLowerCase().includes(customerText.toLowerCase()))).length > 0 && (
             <ul className="no-customer-suggestions">
-              {suppliers
-                .filter(c => c.name.toLowerCase().includes(supplierText.toLowerCase()))
+              {customers
+                .filter(c => [c.name, c.company_name, c.email, c.company_phone_number, c.mobile_number].some(value => value?.toLowerCase().includes(customerText.toLowerCase())))
                 .slice(0, 8)
                 .map(c => (
                   <li
                     key={c.id}
                     className="no-customer-suggestion-item"
                     onMouseDown={() => {
-                      setSupplierId(c.id)
-                      setSupplierText(c.name)
-                      setSupplierOpen(false)
+                      setCustomerId(c.id)
+                      setCustomerText(c.name)
+                      setCustomerOpen(false)
                     }}
                   >
                     <span className="no-cust-name">{c.name}</span>
+                    {c.company_name && <span className="no-cust-email">{c.company_name}</span>}
                     {c.email && <span className="no-cust-email">{c.email}</span>}
                   </li>
                 ))}
@@ -652,23 +743,22 @@ export function NewOrderPage() {
             {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
               <>
+                <p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, brand and preview fill automatically.</p>
+                <ApparelCatalogPicker onSelect={addApparel} />
                 <div className="no-table-wrap">
-                  <table className="no-table">
+                  <table className="no-table no-catalog-apparel-table">
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
+                        <th>Category</th>
                         <th>Item</th>
                         <th>Color</th>
                         <th>Size</th>
+                        <th>SKU</th>
                         <th>Qty</th>
-                        <th>FR AW Image (Front)</th>
-                        <th>Artwork No</th>
-                        <th>Artwork Size</th>
-                        <th>BK AW Image (Back)</th>
-                        <th>Artwork No</th>
-                        <th>Artwork Size</th>
-                        <th>Unit Price (USD)</th>
-                        <th>Amount (USD)</th>
+                        <th>Artwork</th>
+                        <th>Unit Price</th>
+                        <th>Amount</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -676,46 +766,21 @@ export function NewOrderPage() {
                       {apparel.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
+                          <td><select className="no-table-select" value={row.category} onChange={e => updateApparel(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td>
-                            <select className="no-table-select" value={row.item} onChange={e => updateApparel(row.id, { item: e.target.value })}>
-                              {ITEMS.map(i => <option key={i}>{i}</option>)}
-                            </select>
+                            <div className="nq-quote-product"><div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.item} /> : <Package size={20} />}</div><div><strong>{row.item || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span></div></div>
                           </td>
                           <td>
-                            <select className="no-table-select" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })}>
-                              {COLORS.map(c => <option key={c}>{c}</option>)}
-                            </select>
+                            {row.styleId ? <select className="no-table-select" value={row.colorId ?? ''} onChange={e => selectOrderApparelColor(row, e.target.value)}><option value="">Select color</option>{(row.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="no-table-input" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })} />}
                           </td>
                           <td>
-                            <select className="no-table-select no-size-select" value={row.size} onChange={e => updateApparel(row.id, { size: e.target.value })}>
-                              {SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            {row.styleId ? <select className="no-table-select no-size-select" value={row.sizeId ?? ''} onChange={e => selectOrderApparelSize(row, e.target.value)}><option value="">Select size</option>{(row.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <input className="no-table-input" value={row.size} onChange={e => updateApparel(row.id, { size: e.target.value })} />}
                           </td>
+                          <td><code className="nq-item-sku">{row.sku || (row.colorId && row.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /></td>
-                          <td>
-                            <input
-                              type="text"
-                              className="no-table-input"
-                              placeholder="AW-0001"
-                              value={row.artworkNo}
-                              onChange={e => updateApparel(row.id, { artworkNo: e.target.value })}
-                            />
-                          </td>
-                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></td>
-                          <td><input type="text" className="no-table-input" placeholder="AW-0001" value={row.artworkNo} onChange={e => updateApparel(row.id, { artworkNo: e.target.value })} /></td>
-                          <td><input className="no-table-input" placeholder="e.g. 12x16 in" value={row.artworkSize} onChange={e => updateApparel(row.id, { artworkSize: e.target.value })} style={{ width: '110px' }} /></td>
-                          <td>
-                            <input
-                              className="no-table-input"
-                              placeholder="e.g. 12x16 in"
-                              value={row.artworkSize}
-                              onChange={e => updateApparel(row.id, { artworkSize: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </td>
+                          <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { frontImage: null })} /><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { backImage: null })} /></div></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -732,17 +797,15 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
-                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
-                      <td colSpan={3}></td>
+                      <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
                   </table>
                 </div>
-                <button className="no-add-item-btn" onClick={addApparel}><Plus size={13} /> Add Item</button>
               </>
             )}
 
@@ -750,13 +813,14 @@ export function NewOrderPage() {
             {orderType === 'gangsheet' && (
               <>
                 <div className="no-table-wrap">
-                  <table className="no-table">
+                  <table className="no-table no-gangsheet-spec-table">
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
-                        <th>Gangsheet Size</th>
-                        <th>No. Artworks</th>
-                        <th>Qty (Sheets)</th>
+                        <th>Width (in)</th>
+                        <th>Height (in)</th>
+                        <th>Artworks</th>
+                        <th>Sheets <small>Auto / 108 in</small></th>
                         <th>Price/Sheet (USD)</th>
                         <th>Amount (USD)</th>
                         <th></th>
@@ -766,21 +830,10 @@ export function NewOrderPage() {
                       {gangsheet.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td>
-                            <input
-                              className="no-table-input"
-                              placeholder='e.g. 22" x 60"'
-                              value={row.size}
-                              onChange={e => updateGangsheet(row.id, { size: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </td>
-                          <td>
-                            <input type="number" className="no-table-input" min={1} value={row.noArtworks} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { noArtworks: Math.max(1, +e.target.value) })} />
-                          </td>
-                          <td>
-                            <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { qty: Math.max(1, +e.target.value) })} />
-                          </td>
+                          <td><div className="no-fixed-dimension"><strong>22</strong><span>in</span></div></td>
+                          <td><div className="no-dimension-field"><input type="number" className="no-table-input" min={1} step="any" placeholder="Height" value={row.height} onChange={e => updateGangsheetHeight(row.id, e.target.value)} /><span>in</span></div></td>
+                          <td><strong>{gangsheetArtworkCount}</strong></td>
+                          <td><output className="no-auto-sheets" title={`One sheet per ${GANGSHEET_BREAK_HEIGHT} inches`}>{row.qty}</output></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -797,8 +850,8 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
-                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks}</strong></div></td>
+                      <td colSpan={3}><span className="live-summary-title">Gangsheet Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworkCount}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
@@ -810,20 +863,20 @@ export function NewOrderPage() {
                 <h3 className="no-subsection-title">Artworks in Gangsheet</h3>
                 <div className="no-table-wrap">
                   <table className="no-table no-gangsheet-art-table">
-                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>FR AW Image (Front)</th><th>Artwork Size</th><th>BK AW Image (Back)</th><th>Artwork Size</th><th>Total Qty</th></tr></thead>
-                    <tbody>{gangsheet.map((row, idx) => (
+                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>Artwork</th><th>Artwork Size</th><th>Qty</th><th>Action</th></tr></thead>
+                    <tbody>{gangsheetArtworks.map((row, idx) => (
                       <tr key={`art-${row.id}`}>
                         <td className="no-td-num">{idx + 1}</td>
-                        <td><strong>AW-GS-{String(idx + 1).padStart(3, '0')}</strong></td>
-                        <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
-                        <td>{row.size || '-'}</td>
-                        <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { backImage: null })} /></td>
-                        <td>{row.size || '-'}</td><td>{row.qty}</td>
+                        <td><input className="no-table-input no-artwork-number-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} /></td>
+                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage, size: patch.size, sizeAuto: Boolean(patch.size) }), 'size')} onRemove={() => updateGangsheetArtwork(row.id, { image: null, size: '', sizeAuto: false })} /></td>
+                        <td><ArtworkSizePicker value={row.size} autoDetected={row.sizeAuto} onChange={size => updateGangsheetArtwork(row.id, { size, sizeAuto: false })} /></td>
+                        <td><input type="number" className="no-table-input" min={1} value={row.qty} onFocus={event => event.currentTarget.select()} onChange={event => updateGangsheetArtwork(row.id, { qty: Math.max(1, Number(event.target.value) || 1) })} aria-label={`Quantity for ${row.artworkNo || `artwork ${idx + 1}`}`} /></td>
+                        <td><button type="button" className="no-action-icon-btn no-delete-icon" onClick={() => removeGangsheetArtwork(row.id)} title="Delete artwork"><Trash2 size={13} /></button></td>
                       </tr>
                     ))}</tbody>
                   </table>
                 </div>
-                <button className="no-add-item-btn" onClick={addGangsheet}><Plus size={13} /> Add Artwork</button>
+                <button className="no-add-item-btn" onClick={addGangsheetArtwork}><Plus size={13} /> Add Artwork</button>
               </>
             )}
 
@@ -853,7 +906,7 @@ export function NewOrderPage() {
                           <td>
                             <input type="text" className="no-table-input no-table-input-wide" placeholder="AW-TF-001" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf)} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
+                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf, 'size')} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null, size: '' })} /></td>
                           <td>
                             <input
                               className="no-table-input"

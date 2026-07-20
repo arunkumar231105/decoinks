@@ -47,7 +47,8 @@ interface Order {
 }
 
 interface ApparelItem {
-  id: string; item: string; color: string | null; size: string | null
+  id: string; category?: string | null; item: string; color: string | null; size: string | null
+  brand?: string | null; model?: string | null; catalog_sku?: string | null
   qty: number; artwork_no: string | null; artwork_size: string | null
   unit_price: number; amount: number
   front_image: string | null; back_image: string | null
@@ -551,80 +552,24 @@ export function OrderPrintPage() {
         {/* ══ ITEMS TABLE ══ */}
         <div className="tbl-wrap">
           {isApparel && (
-            /* Apparel — 2-row header with SIZE BREAKDOWN sub-columns */
             <table className="so-tbl">
               <thead>
                 <tr>
-                  <th rowSpan={2} style={{ width: 34 }}>#</th>
-                  <th rowSpan={2} className="th-l" style={{ minWidth: 120 }}>
-                    Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
-                  </th>
-                  <th rowSpan={2} style={{ width: 60 }}>Color</th>
-                  <th rowSpan={2} style={{ width: 52 }}>QTY<br />(Transfers)</th>
-                  <th colSpan={6} style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                    Size Breakdown (Transfers)
-                  </th>
-                  <th rowSpan={2} style={{ width: 60 }}>Front Artwork<br />(Thumbnail)</th>
-                  <th rowSpan={2} style={{ width: 60 }}>Back Artwork<br />(Thumbnail)</th>
-                  <th rowSpan={2} style={{ width: 60 }}>Front<br />Mockup</th>
-                  <th rowSpan={2} style={{ width: 60 }}>Back<br />Mockup</th>
-                  <th rowSpan={2} style={{ width: 64 }}>Unit Price<br />(USD)</th>
-                  <th rowSpan={2} style={{ width: 64 }}>Total<br />(USD)</th>
-                </tr>
-                <tr>
-                  {SIZE_COLS.map(s => (
-                    <th key={s} style={{ width: 36, borderTop: '1px solid rgba(255,255,255,0.2)' }}>{s}</th>
-                  ))}
+                  <th style={{ width: 34 }}>#</th><th>Category</th><th className="th-l">Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Front Art</th><th>Back Art</th><th>Unit Price</th><th>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {apparelItems.length === 0 ? (
-                  <tr><td colSpan={16} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
-                ) : apparelItems.map((item, idx) => {
-                  const sizes = parseSizes(item.size, item.qty)
-                  const dotColor = colorHex(item.color)
-                  const isWhite = item.color?.toLowerCase().includes('white')
-                  return (
+                  <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                ) : apparelItems.map((item, idx) => (
                     <tr key={item.id}>
                       <td>{idx + 1}</td>
-                      <td className="td-l" style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.4 }}>{item.item}</td>
-                      <td>
-                        <span className="clr-dot" style={{ background: dotColor, border: isWhite ? '1.5px solid #d1d5db' : undefined }} />
-                        <span style={{ fontSize: 10.5 }}>{item.color || '—'}</span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{item.qty}</td>
-                      {SIZE_COLS.map(s => (
-                        <td key={s} className={sizes[s] > 0 ? 'sz-num' : 'sz-zero'}>
-                          {sizes[s]}
-                        </td>
-                      ))}
-                      <td>
-                        {item.front_image
-                          ? <img src={item.front_image} alt="front" className="art-img" />
-                          : <div className="art-empty">🖼</div>}
-                      </td>
-                      <td>
-                        {item.back_image
-                          ? <img src={item.back_image} alt="back" className="art-img" />
-                          : <div className="art-empty">—</div>}
-                      </td>
-                      {/* Front Mockup = same as front artwork for now */}
-                      <td>
-                        {item.front_image
-                          ? <img src={item.front_image} alt="mockup" className="art-img" />
-                          : <div className="art-empty">—</div>}
-                      </td>
-                      {/* Back Mockup */}
-                      <td>
-                        {item.back_image
-                          ? <img src={item.back_image} alt="back-mockup" className="art-img" />
-                          : <div className="art-empty">—</div>}
-                      </td>
+                      <td>{item.category || '—'}</td><td className="td-l"><strong>{item.item}</strong><br /><small>{[item.brand, item.model].filter(Boolean).join(' · ')}</small></td><td>{item.color || '—'}</td><td>{item.size || '—'}</td><td>{item.catalog_sku || '—'}</td><td>{item.qty}</td>
+                      <td>{item.front_image ? <img src={item.front_image} alt="front" className="art-img" /> : '—'}</td><td>{item.back_image ? <img src={item.back_image} alt="back" className="art-img" /> : '—'}</td>
                       <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     </tr>
-                  )
-                })}
+                ))}
               </tbody>
             </table>
           )}

@@ -27,6 +27,7 @@ router.use(verifyToken)
 
 // ── Item schemas (per type) ───────────────────────────────────────────────────
 const apparelItemSchema = z.object({
+  category:     z.string().max(100).optional().nullable(),
   item:         z.string().min(1),
   color:        z.string().optional().nullable(),
   size:         z.string().optional().nullable(),
@@ -52,6 +53,12 @@ const gangsheetItemSchema = z.object({
   qty:             z.number().int().positive(),
   price_per_sheet: z.number().nonnegative(),
   front_image:     z.string().optional().nullable(),
+  artworks:        z.array(z.object({
+    artwork_no: z.string().max(100).optional().nullable(),
+    size:       z.string().max(100).optional().nullable(),
+    image:      z.string().optional().nullable(),
+    qty:        z.number().int().positive().default(1),
+  })).optional().default([]),
 })
 
 const dtfItemSchema = z.object({
@@ -69,6 +76,7 @@ const ITEM_SCHEMAS = { apparel: apparelItemSchema, gangsheet: gangsheetItemSchem
 
 // ── Shared header fields ──────────────────────────────────────────────────────
 const headerFields = {
+  customer_id:        z.string().uuid().optional().nullable(),
   supplier_id:        z.string().uuid().optional().nullable(),
   supplier_name_text: z.string().optional().nullable(),
   quotation_id:       z.string().uuid().optional().nullable(),

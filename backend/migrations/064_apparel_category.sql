@@ -1,0 +1,4 @@
+ALTER TABLE quotation_items ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE order_items_apparel ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS category VARCHAR(100);

@@ -10,6 +10,7 @@ router.use(verifyToken)
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
 const itemSchema = z.object({
+  category:           z.string().max(100).optional().nullable(),
   item_name:        z.string().min(1),
   description:      z.string().optional().nullable(),
   hsn_code:         z.string().optional().nullable(),

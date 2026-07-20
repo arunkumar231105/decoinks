@@ -203,13 +203,14 @@ async function create(fields_in) {
       const it = items[i]
       await query(
          `INSERT INTO invoice_items
-           (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
+           (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
             front_image, back_image, artwork_image, sizes, colors,
             catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
             brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
         [
           rows[0].id,
+          it.category || null,
           it.description || null,
           Number(it.qty) || 1,
           Number(it.unit_price) || 0,
@@ -239,10 +240,10 @@ async function create(fields_in) {
     // Copy quotation_items → invoice_items (description, qty, price, images, artwork count)
     await query(
        `INSERT INTO invoice_items
-         (invoice_id, description, qty, unit_price, amount, artwork_count, sort_order,
+         (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
           front_image, back_image, artwork_image, sizes, colors,
           catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
-       SELECT $1, description, qty, unit_price, amount,
+       SELECT $1, category, description, qty, unit_price, amount,
               COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
               front_image, back_image, artwork_image, sizes, colors,
               catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no
@@ -327,10 +328,10 @@ async function copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType) {
   if (orderType === 'apparel') {
     await q.query(
       `INSERT INTO order_items_apparel
-         (order_id, item, color, size, qty, artwork_no, unit_price, amount,
+         (order_id, category, item, color, size, qty, artwork_no, unit_price, amount,
           front_image, back_image, sort_order, catalog_style_id, catalog_color_id,
           catalog_size_id, catalog_sku, brand, model, product_image, style_description)
-       SELECT $2, COALESCE(description, 'Apparel Item'), colors, sizes, qty, artwork_no,
+       SELECT $2, category, COALESCE(description, 'Apparel Item'), colors, sizes, qty, artwork_no,
               unit_price, amount, front_image, back_image, sort_order,
               catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
               brand, model, product_image, style_description

@@ -7,6 +7,7 @@ import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
 import { cn } from '../utils/cn'
+import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
 import {
   Check,
   ChevronDown,
@@ -31,6 +32,7 @@ type DiscountType = 'percentage' | 'fixed'
 
 interface ApparelItem {
   id: string
+  category: string
   description: string
   color: string
   sizes: string
@@ -496,7 +498,7 @@ export function NewInvoicePage() {
     const items = sourceQuote.items ?? []
     if (sourceQuote.order_type === 'apparel') {
       setApparelItems(items.map((it: any) => ({
-        id: uid(), description: it.description || it.item || '',
+        id: uid(), category: it.category || 'T-Shirt', description: it.description || it.item || '',
         color: it.colors || it.color || '', sizes: it.sizes || it.size || '',
         qty: Number(it.qty) || 1,
         unitPrice: Number(it.unit_price) || 0,
@@ -628,7 +630,7 @@ export function NewInvoicePage() {
 
   // â"€â"€ Apparel handlers â"€â"€
   const addApparelItem = () =>
-    setApparelItems(prev => [...prev, { id: uid(), description: '', color: '', sizes: '', qty: 1, unitPrice: 0, front_image: null, back_image: null, lineDiscount: 0, taxCode: '' }])
+    setApparelItems(prev => [...prev, { id: uid(), category: 'T-Shirt', description: '', color: '', sizes: '', qty: 1, unitPrice: 0, front_image: null, back_image: null, lineDiscount: 0, taxCode: '' }])
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) =>
     setApparelItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeApparelItem = (id: string) => setApparelItems(prev => prev.filter(r => r.id !== id))
@@ -636,6 +638,7 @@ export function NewInvoicePage() {
   const addCatalogStyle = (style: CatalogStyle) => {
     setApparelItems(previous => [...previous, {
       id: uid(),
+      category: 'T-Shirt',
       description: style.name,
       color: '',
       sizes: '',
@@ -699,6 +702,7 @@ export function NewInvoicePage() {
     if (orderType === 'apparel') {
       return apparelItems.map((row, i) => ({
         description:   row.description,
+        category:      row.category,
         qty:           row.qty,
         unit_price:    row.unitPrice,
         amount:        Math.max(row.qty * row.unitPrice - Number(row.lineDiscount || 0), 0),
@@ -970,6 +974,7 @@ export function NewInvoicePage() {
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
+                        <th>Category</th>
                         <th>Product <small>Image | Brand | Style</small></th>
                         <th>Color</th>
                         <th>Size</th>
@@ -986,6 +991,7 @@ export function NewInvoicePage() {
                       {apparelItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
+                          <td data-label="Category"><select className="ni-table-select" disabled={ratesLocked} value={row.category} onChange={e => updateApparelItem(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td data-label="Product">
                             <div className="nq-quote-product">
                               <div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.description} /> : <Package size={20} />}</div>
@@ -1022,10 +1028,10 @@ export function NewInvoicePage() {
                           </td>
                         </tr>
                       ))}
-                      {apparelItems.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
+                      {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
                       <td colSpan={2}></td>

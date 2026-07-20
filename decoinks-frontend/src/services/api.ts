@@ -20,6 +20,11 @@ export const api = axios.create({
 
 // ── Request interceptor — attach access token ─────────────────────────────────
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  // Axios serializes FormData as JSON when the instance-level JSON content type
+  // is left in place. Let the browser set multipart/form-data with its boundary.
+  if (config.data instanceof FormData) {
+    config.headers.delete('Content-Type')
+  }
   const token = tokenMemory.get()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`

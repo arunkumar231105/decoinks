@@ -40,7 +40,7 @@ async function getPoItemCols(client) {
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'purchase_order_items'
        AND column_name IN ('artwork_count','front_image','back_image','artwork_size',
-                           'brand','color','size','artwork_id','artwork_size_front','artwork_size_back',
+                           'category','brand','color','size','artwork_id','artwork_size_front','artwork_size_back',
                            'artwork_no','catalog_style_id','catalog_color_id','catalog_size_id',
                            'catalog_sku','product_image','style_description')`
   )
@@ -60,6 +60,7 @@ async function insertItems(client, poId, items) {
     if (cols.has('artwork_size'))  { extraCols.push('artwork_size');  extraVals.push(item.artwork_size  || null) }
     if (cols.has('front_image'))   { extraCols.push('front_image');   extraVals.push(item.front_image || null) }
     if (cols.has('back_image'))    { extraCols.push('back_image');    extraVals.push(item.back_image  || null) }
+    if (cols.has('category'))           { extraCols.push('category');           extraVals.push(item.category || null) }
     if (cols.has('brand'))              { extraCols.push('brand');              extraVals.push(item.brand || null) }
     if (cols.has('color'))              { extraCols.push('color');              extraVals.push(item.color || null) }
     if (cols.has('size'))               { extraCols.push('size');               extraVals.push(item.size  || null) }
