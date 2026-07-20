@@ -52,6 +52,11 @@ const gangsheetItemSchema = z.object({
   qty:             z.number().int().positive(),
   price_per_sheet: z.number().nonnegative(),
   front_image:     z.string().optional().nullable(),
+  artworks:        z.array(z.object({
+    artwork_no: z.string().max(100).optional().nullable(),
+    size:       z.string().max(100).optional().nullable(),
+    image:      z.string().optional().nullable(),
+  })).optional().default([]),
 })
 
 const dtfItemSchema = z.object({

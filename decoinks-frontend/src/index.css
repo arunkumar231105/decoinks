@@ -11428,7 +11428,11 @@ select.al-input {
   width: 44px; height: 44px; border: 1px dashed #cbd5e1; border-radius: 6px;
   cursor: pointer; gap: 2px; color: #94a3b8; font-size: 9px;
   transition: border-color 120ms, background 120ms;
+  padding: 0;
+  font-family: inherit;
+  background: #fff;
 }
+.nq-img-placeholder:disabled { cursor: wait; opacity: 0.7; }
 .nq-img-placeholder:hover { border-color: #0d9488; background: #f0fdf4; color: #0d9488; }
 .nq-img-thumb-wrap { position: relative; width: 44px; height: 44px; }
 .nq-img-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #e2e8f0; display: block; }
@@ -11438,6 +11442,61 @@ select.al-input {
   cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;
 }
 .nq-img-uploading { opacity: 0.5; pointer-events: none; }
+
+/* Order gangsheet: fixed-width rolls, automatic 108in sheet breaks and single artwork rows. */
+.no-gangsheet-spec-table { min-width: 760px !important; }
+.no-gangsheet-art-table { min-width: 620px !important; }
+.no-gangsheet-spec-table th small {
+  display: block;
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 600;
+}
+.no-fixed-dimension,
+.no-dimension-field {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.no-fixed-dimension {
+  min-width: 74px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #dbe3ee;
+  border-radius: 7px;
+  background: #f1f5f9;
+}
+.no-fixed-dimension span,
+.no-dimension-field span { color: #64748b; font-size: 11px; font-weight: 700; }
+.no-dimension-field .no-table-input { width: 88px; height: 36px; }
+.no-auto-sheets {
+  display: inline-grid;
+  min-width: 44px;
+  height: 36px;
+  place-items: center;
+  border-radius: 7px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 14px;
+  font-weight: 800;
+}
+.no-artwork-number-input { width: 116px; text-align: left; }
+.no-artwork-size-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.no-artwork-size-picker .no-table-select { min-width: 128px; }
+.no-artwork-size-picker .no-table-input { width: 112px; text-align: left; }
+
+@media (max-width: 700px) {
+  .no-gangsheet-spec-table { min-width: 680px !important; }
+  .no-gangsheet-art-table { min-width: 560px !important; }
+  .no-artwork-size-picker { align-items: stretch; flex-direction: column; }
+}
 
 /* Other Than Items */
 .nq-other-header {

@@ -25,7 +25,8 @@ interface ApparelItem {
   artworkNo: string; artworkSize: string; unitPrice: number
   frontImage?: string | null; backImage?: string | null
 }
-interface GangsheetItem { id: string; size: string; noArtworks: number; qty: number; pricePerSheet: number; frontImage?: string | null; backImage?: string | null }
+interface GangsheetArtwork { id: string; artworkNo: string; size: string; image?: string | null }
+interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
 interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -39,8 +40,12 @@ const todayISO = () => new Date().toISOString().split('T')[0]
 const ITEMS = ['T-Shirt (Premium)', 'Hoodie', 'Cap', 'Sweatshirt', 'Polo Shirt', 'Tank Top']
 const COLORS = ['White', 'Black', 'Navy Blue', 'Grey', 'Red', 'Forest Green']
 const SIZES = ['S', 'M', 'L', 'XL', '2XL', 'One Size']
-const GS_SIZES = ['22" x 60"', '22" x 120"', '13" x 19"', '22" x 36"']
 const DTF_SIZES = ['4 x 4 in', '6 x 6 in', '8 x 10 in', '10 x 12 in', '12 x 16 in', '13 x 17 in']
+const GANGSHEET_BREAK_HEIGHT = 108
+const gangsheetSheetQty = (height: string | number) => {
+  const inches = Math.max(0, Number(height) || 0)
+  return inches > 0 ? Math.floor(inches / GANGSHEET_BREAK_HEIGHT) + 1 : 1
+}
 const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
@@ -52,7 +57,8 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
 }
 
 const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premium)', color: 'White', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }]
-const initGangsheet= (): GangsheetItem[] => [{ id: uid(), size: '', noArtworks: 1, qty: 1, pricePerSheet: 0 }]
+const initGangsheet= (): GangsheetItem[] => [{ id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }]
+const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', image: null }]
 const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -68,23 +74,51 @@ function ImageUploadCell({
   const inputRef = useRef<HTMLInputElement>(null)
   return (
     <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
       {imageUrl ? (
         <div className="nq-img-thumb-wrap">
           <img src={imageUrl} className="nq-img-thumb" alt={label} />
-          <button className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
+          <button type="button" className="nq-img-remove" onClick={e => { e.stopPropagation(); onRemove() }}><X size={8} /></button>
         </div>
       ) : (
-        <div className="nq-img-placeholder" onClick={() => inputRef.current?.click()}>
+        <button type="button" className="nq-img-placeholder" disabled={uploading} onClick={() => inputRef.current?.click()}>
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
             <rect width="20" height="20" rx="4" fill="#e2e8f0" />
             <path d="M4 14l4-4 3 3 2-2 3 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
             <circle cx="7" cy="7" r="1.5" fill="#94a3b8" />
           </svg>
-          <span>{label}</span>
-        </div>
+          <span>{uploading ? 'Uploading…' : label}</span>
+        </button>
       )}
+    </div>
+  )
+}
+
+function ArtworkSizePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const isPreset = DTF_SIZES.includes(value)
+  const [custom, setCustom] = useState(Boolean(value) && !isPreset)
+
+  useEffect(() => {
+    if (value && !DTF_SIZES.includes(value)) setCustom(true)
+  }, [value])
+
+  return (
+    <div className="no-artwork-size-picker">
+      <select className="no-table-select" aria-label="Artwork size" value={custom ? '__custom__' : value} onChange={event => {
+        if (event.target.value === '__custom__') {
+          setCustom(true)
+          if (isPreset) onChange('')
+        } else {
+          setCustom(false)
+          onChange(event.target.value)
+        }
+      }}>
+        <option value="">Select size</option>
+        {DTF_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+        <option value="__custom__">Custom…</option>
+      </select>
+      {custom && <input autoFocus className="no-table-input" placeholder="e.g. 5 x 7 in" value={value} onChange={event => onChange(event.target.value)} />}
     </div>
   )
 }
@@ -118,6 +152,7 @@ export function NewOrderPage() {
   // Table data
   const [apparel,   setApparel]   = useState<ApparelItem[]>(initApparel)
   const [gangsheet, setGangsheet] = useState<GangsheetItem[]>(initGangsheet)
+  const [gangsheetArtworks, setGangsheetArtworks] = useState<GangsheetArtwork[]>(initGangsheetArtworks)
   const [dtf,       setDtf]       = useState<DtfItem[]>(initDtf)
 
   // Payment
@@ -167,10 +202,10 @@ export function NewOrderPage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await api.post('/upload/image', form)
       updater(rowId, { [field]: res.data.url })
-    } catch {
-      toast.error('Image upload failed')
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error ?? 'Image upload failed. Use JPG, PNG, WEBP or SVG up to 10 MB.')
     } finally {
       setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
     }
@@ -212,7 +247,13 @@ export function NewOrderPage() {
     if (existingOrder.order_type === 'apparel') {
       setApparel(items.map((r: any) => ({ id: uid(), item: r.item ?? '', color: r.color ?? 'Black', size: r.size ?? 'M', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
     } else if (existingOrder.order_type === 'gangsheet') {
-      setGangsheet(items.map((r: any) => ({ id: uid(), size: r.size ?? '', noArtworks: Number(r.no_artworks ?? 1), qty: Number(r.qty), pricePerSheet: Number(r.price_per_sheet), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
+      setGangsheet(items.map((r: any) => {
+        const dimensions = String(r.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
+        const height = dimensions?.[2] ?? ''
+        return { id: uid(), width: 22, height, qty: gangsheetSheetQty(height), pricePerSheet: Number(r.price_per_sheet) }
+      }))
+      const savedArtworks = items.flatMap((r: any) => Array.isArray(r.artworks) ? r.artworks : [])
+      setGangsheetArtworks(savedArtworks.length ? savedArtworks.map((art: any, index: number) => ({ id: uid(), artworkNo: art.artwork_no || `AW-GS-${String(index + 1).padStart(3, '0')}`, size: art.size ?? '', image: art.image ?? null })) : items.filter((r: any) => r.front_image).map((r: any, index: number) => ({ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', image: r.front_image })))
     } else {
       setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null, frontImage: r.front_image ?? r.artwork_image ?? null, backImage: r.back_image ?? null })))
     }
@@ -272,13 +313,15 @@ export function NewOrderPage() {
     } else if (type === 'gangsheet') {
       setGangsheet(qItems.map(it => ({
         id:            uid(),
-        size:          it.sizes ?? it.description ?? '',
-        noArtworks:    Number(it.artwork_count ?? 1),
-        qty:           Number(it.qty),
+        width:         22,
+        height:        String(it.sizes ?? it.description ?? '').match(/[x×]\s*([\d.]+)/i)?.[1] ?? '',
+        qty:           gangsheetSheetQty(String(it.sizes ?? it.description ?? '').match(/[x×]\s*([\d.]+)/i)?.[1] ?? ''),
         pricePerSheet: Number(it.unit_price),
-        frontImage:    (it as any).front_image ?? null,
-        backImage:     (it as any).back_image  ?? null,
       })))
+      setGangsheetArtworks(qItems.flatMap((it, index) => {
+        const image = (it as any).front_image ?? (it as any).artwork_image ?? null
+        return image ? [{ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', image }] : []
+      }))
     } else {
       setDtf(qItems.map(it => ({
         id:            uid(),
@@ -350,7 +393,7 @@ export function NewOrderPage() {
   }, [orderType, apparel, gangsheet, dtf])
   const apparelQty = useMemo(() => apparel.reduce((sum, row) => sum + row.qty, 0), [apparel])
   const gangsheetQty = useMemo(() => gangsheet.reduce((sum, row) => sum + row.qty, 0), [gangsheet])
-  const gangsheetArtworks = useMemo(() => gangsheet.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheet])
+  const gangsheetArtworkCount = gangsheetArtworks.length
   const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
 
   const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
@@ -364,8 +407,14 @@ export function NewOrderPage() {
   const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }])
 
   const updateGangsheet= (id: string, p: Partial<GangsheetItem>) => setGangsheet(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
+  const updateGangsheetHeight = (id: string, height: string) => {
+    updateGangsheet(id, { height, qty: gangsheetSheetQty(height) })
+  }
   const removeGangsheet= (id: string) => setGangsheet(prev => prev.filter(r => r.id !== id))
-  const addGangsheet   = () => setGangsheet(prev => [...prev, { id: uid(), size: '22" x 60"', noArtworks: 1, qty: 1, pricePerSheet: 0 }])
+  const addGangsheet   = () => setGangsheet(prev => [...prev, { id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }])
+  const addGangsheetArtwork = () => setGangsheetArtworks(prev => [...prev, { id: uid(), artworkNo: `AW-GS-${String(prev.length + 1).padStart(3, '0')}`, size: '', image: null }])
+  const updateGangsheetArtwork = (id: string, patch: Partial<GangsheetArtwork>) => setGangsheetArtworks(prev => prev.map(row => row.id === id ? { ...row, ...patch } : row))
+  const removeGangsheetArtwork = (id: string) => setGangsheetArtworks(prev => prev.filter(row => row.id !== id))
 
   const updateDtf      = (id: string, p: Partial<DtfItem>)       => setDtf(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeDtf      = (id: string) => setDtf(prev => prev.filter(r => r.id !== id))
@@ -424,7 +473,14 @@ export function NewOrderPage() {
     const itemsPayload = orderType === 'apparel'
       ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null }))
       : orderType === 'gangsheet'
-        ? gangsheet.map(r => ({ size: r.size, no_artworks: r.noArtworks, qty: r.qty, price_per_sheet: r.pricePerSheet, front_image: r.frontImage || null, back_image: r.backImage || null }))
+        ? gangsheet.map((r, index) => ({
+            size: `22" x ${Number(r.height) || 0}"`,
+            no_artworks: Math.max(1, gangsheetArtworkCount),
+            qty: r.qty,
+            price_per_sheet: r.pricePerSheet,
+            front_image: index === 0 ? gangsheetArtworks[0]?.image || null : null,
+            artworks: index === 0 ? gangsheetArtworks.map(art => ({ artwork_no: art.artworkNo, size: art.size, image: art.image || null })) : [],
+          }))
         : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
 
     return {
@@ -463,6 +519,11 @@ export function NewOrderPage() {
     if (orderType === 'dtf') {
       for (let i = 0; i < dtf.length; i++) {
         if (!dtf[i].artworkName.trim()) return `Row ${i + 1}: Artwork Name is required`
+      }
+    }
+    if (orderType === 'gangsheet') {
+      for (let i = 0; i < gangsheet.length; i++) {
+        if (!(Number(gangsheet[i].height) > 0)) return `Gangsheet ${i + 1}: Height is required`
       }
     }
     return null
@@ -750,13 +811,14 @@ export function NewOrderPage() {
             {orderType === 'gangsheet' && (
               <>
                 <div className="no-table-wrap">
-                  <table className="no-table">
+                  <table className="no-table no-gangsheet-spec-table">
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
-                        <th>Gangsheet Size</th>
-                        <th>No. Artworks</th>
-                        <th>Qty (Sheets)</th>
+                        <th>Width (in)</th>
+                        <th>Height (in)</th>
+                        <th>Artworks</th>
+                        <th>Sheets <small>Auto / 108 in</small></th>
                         <th>Price/Sheet (USD)</th>
                         <th>Amount (USD)</th>
                         <th></th>
@@ -766,21 +828,10 @@ export function NewOrderPage() {
                       {gangsheet.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td>
-                            <input
-                              className="no-table-input"
-                              placeholder='e.g. 22" x 60"'
-                              value={row.size}
-                              onChange={e => updateGangsheet(row.id, { size: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </td>
-                          <td>
-                            <input type="number" className="no-table-input" min={1} value={row.noArtworks} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { noArtworks: Math.max(1, +e.target.value) })} />
-                          </td>
-                          <td>
-                            <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { qty: Math.max(1, +e.target.value) })} />
-                          </td>
+                          <td><div className="no-fixed-dimension"><strong>22</strong><span>in</span></div></td>
+                          <td><div className="no-dimension-field"><input type="number" className="no-table-input" min={1} step="any" placeholder="Height" value={row.height} onChange={e => updateGangsheetHeight(row.id, e.target.value)} /><span>in</span></div></td>
+                          <td><strong>{gangsheetArtworkCount}</strong></td>
+                          <td><output className="no-auto-sheets" title={`One sheet per ${GANGSHEET_BREAK_HEIGHT} inches`}>{row.qty}</output></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -797,8 +848,8 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
-                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworks}</strong></div></td>
+                      <td colSpan={3}><span className="live-summary-title">Gangsheet Summary</span></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{gangsheetArtworkCount}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{gangsheetQty}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
@@ -810,20 +861,19 @@ export function NewOrderPage() {
                 <h3 className="no-subsection-title">Artworks in Gangsheet</h3>
                 <div className="no-table-wrap">
                   <table className="no-table no-gangsheet-art-table">
-                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>FR AW Image (Front)</th><th>Artwork Size</th><th>BK AW Image (Back)</th><th>Artwork Size</th><th>Total Qty</th></tr></thead>
-                    <tbody>{gangsheet.map((row, idx) => (
+                    <thead><tr><th>S.No</th><th>Artwork No.</th><th>Artwork</th><th>Artwork Size</th><th>Action</th></tr></thead>
+                    <tbody>{gangsheetArtworks.map((row, idx) => (
                       <tr key={`art-${row.id}`}>
                         <td className="no-td-num">{idx + 1}</td>
-                        <td><strong>AW-GS-{String(idx + 1).padStart(3, '0')}</strong></td>
-                        <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { frontImage: null })} /></td>
-                        <td>{row.size || '-'}</td>
-                        <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateGangsheet)} onRemove={() => updateGangsheet(row.id, { backImage: null })} /></td>
-                        <td>{row.size || '-'}</td><td>{row.qty}</td>
+                        <td><input className="no-table-input no-artwork-number-input" value={row.artworkNo} onChange={e => updateGangsheetArtwork(row.id, { artworkNo: e.target.value })} /></td>
+                        <td><ImageUploadCell imageUrl={row.image} label="Upload" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, (id, patch) => updateGangsheetArtwork(id, { image: patch.frontImage }))} onRemove={() => updateGangsheetArtwork(row.id, { image: null })} /></td>
+                        <td><ArtworkSizePicker value={row.size} onChange={size => updateGangsheetArtwork(row.id, { size })} /></td>
+                        <td><button type="button" className="no-action-icon-btn no-delete-icon" onClick={() => removeGangsheetArtwork(row.id)} title="Delete artwork"><Trash2 size={13} /></button></td>
                       </tr>
                     ))}</tbody>
                   </table>
                 </div>
-                <button className="no-add-item-btn" onClick={addGangsheet}><Plus size={13} /> Add Artwork</button>
+                <button className="no-add-item-btn" onClick={addGangsheetArtwork}><Plus size={13} /> Add Artwork</button>
               </>
             )}
 
