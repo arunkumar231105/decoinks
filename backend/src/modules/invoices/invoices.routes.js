@@ -8,6 +8,7 @@ const router = Router()
 router.use(verifyToken)
 
 const itemSchema = z.object({
+  category: z.string().max(100).optional().nullable(),
   description:   z.string().optional().nullable(),
   qty:           z.number().nonnegative().default(1),
   unit_price:    z.number().nonnegative().default(0),

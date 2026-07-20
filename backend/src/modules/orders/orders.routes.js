@@ -27,6 +27,7 @@ router.use(verifyToken)
 
 // ── Item schemas (per type) ───────────────────────────────────────────────────
 const apparelItemSchema = z.object({
+  category:     z.string().max(100).optional().nullable(),
   item:         z.string().min(1),
   color:        z.string().optional().nullable(),
   size:         z.string().optional().nullable(),

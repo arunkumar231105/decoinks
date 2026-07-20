@@ -11491,6 +11491,8 @@ select.al-input {
 }
 .no-artwork-size-picker .no-table-select { min-width: 128px; }
 .no-artwork-size-picker .no-table-input { width: 112px; text-align: left; }
+.np-inline-artwork { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.no-catalog-apparel-table { min-width: 1040px !important; }
 
 @media (max-width: 700px) {
   .no-gangsheet-spec-table { min-width: 680px !important; }

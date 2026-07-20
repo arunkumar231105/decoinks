@@ -95,9 +95,9 @@ async function create({
       const item = items[i]
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-        [qId, item.description || null, item.qty, item.unit_price, amount, i,
+        `INSERT INTO quotation_items (quotation_id, category, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        [qId, item.category || null, item.description || null, item.qty, item.unit_price, amount, i,
          item.sizes || null, item.colors || null, item.artwork_count ?? 0,
          item.front_image || null, item.back_image || null, item.artwork_image || null,
          item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
@@ -171,9 +171,9 @@ async function update(id, {
         const item = itemList[i]
         const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
         await client.query(
-          `INSERT INTO quotation_items (quotation_id, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-          [id, item.description || null, item.qty, item.unit_price, amount, i,
+          `INSERT INTO quotation_items (quotation_id, category, description, qty, unit_price, amount, sort_order, sizes, colors, artwork_count, front_image, back_image, artwork_image, catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          [id, item.category || null, item.description || null, item.qty, item.unit_price, amount, i,
            item.sizes || null, item.colors || null, item.artwork_count ?? 0,
            item.front_image || null, item.back_image || null, item.artwork_image || null,
            item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,

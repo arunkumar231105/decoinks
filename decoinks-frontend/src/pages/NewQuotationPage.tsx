@@ -19,11 +19,13 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ArtworkUploader from '../components/ArtworkUploader'
+import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
 
 type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
 
 interface ApparelItem {
   id: string
+  category: string
   description: string
   variant: string
   sizes: string
@@ -1118,6 +1120,7 @@ export function NewQuotationPage() {
       if (orderType === 'apparel') {
         setApparelItems(q.items.map((item: Record<string, any>) => ({
           id:           item.id ?? uid(),
+          category:     item.category ?? 'T-Shirt',
           description:  item.description ?? '',
           variant:      item.colors ?? '',
           sizes:        item.sizes ?? '',
@@ -1284,6 +1287,7 @@ export function NewQuotationPage() {
   const addCatalogStyle = (style: CatalogStyle) => {
     setApparelItems(prev => [...prev, {
       id: uid(),
+      category: 'T-Shirt',
       description: style.name,
       variant: '', sizes: '', qty: 1, quotedCost: 0,
       front_image: null, back_image: null,
@@ -1338,6 +1342,7 @@ export function NewQuotationPage() {
         const color = (item.variant || '').trim() || undefined
         allItems.push({
           description:   item.description || 'Apparel Item',
+          category:      item.category,
           qty:           item.qty,
           unit_price:    item.quotedCost,
           colors:        color,
@@ -1487,10 +1492,11 @@ export function NewQuotationPage() {
                 <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
               </div>
               <CatalogStyleSearch onSelect={addCatalogStyle} />
-              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
+                    <td><select className="nq-table-select" value={item.category} onChange={e => updateApparelItem(item.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td><div className="nq-quote-product"><div className="nq-quote-product-image">{item.productImage ? <img src={item.productImage} alt={item.description} /> : <Package size={20} />}</div><div><strong>{item.description || 'Legacy apparel item'}</strong><span>Brand: {item.brand || '—'}</span><span>Style: {item.styleCode || '—'}</span>{item.styleDescription && <small title={item.styleDescription}>{item.styleDescription}</small>}</div></div></td>
                     <td>{item.styleId ? <select className="nq-table-select" value={item.colorId ?? ''} onChange={e => selectApparelColor(item, e.target.value)}><option value="">Select color</option>{(item.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="nq-table-input" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} />}</td>
                     <td>{item.styleId ? <select className="nq-table-select" value={item.sizeId ?? ''} onChange={e => selectApparelSize(item, e.target.value)}><option value="">Select size</option>{(item.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} />}</td>
@@ -1502,9 +1508,9 @@ export function NewQuotationPage() {
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {apparelItems.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
+                {apparelItems.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
-                <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
+                <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Artworks</span><strong>{apparelArtwork}</strong></div></td>
                 <td></td>

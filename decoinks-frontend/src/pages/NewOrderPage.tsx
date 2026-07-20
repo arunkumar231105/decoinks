@@ -1,11 +1,12 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Edit3, Eye, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
+import { ChevronDown, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
+import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
@@ -21,9 +22,12 @@ interface Supplier {
 interface Agent { id: string; name: string; role: string }
 
 interface ApparelItem {
-  id: string; item: string; color: string; size: string; qty: number
+  id: string; category: string; item: string; color: string; size: string; qty: number
   artworkNo: string; artworkSize: string; unitPrice: number
   frontImage?: string | null; backImage?: string | null
+  styleId?: string; styleCode?: string; brand?: string; productImage?: string | null; styleDescription?: string | null
+  colorId?: string; sizeId?: string; sku?: string
+  availableColors?: CatalogColor[]; availableSizes?: CatalogSize[]; availableVariants?: CatalogVariant[]
 }
 interface GangsheetArtwork { id: string; artworkNo: string; size: string; image?: string | null }
 interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
@@ -37,9 +41,6 @@ const uid = () => Math.random().toString(36).slice(2, 9)
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const todayISO = () => new Date().toISOString().split('T')[0]
 
-const ITEMS = ['T-Shirt (Premium)', 'Hoodie', 'Cap', 'Sweatshirt', 'Polo Shirt', 'Tank Top']
-const COLORS = ['White', 'Black', 'Navy Blue', 'Grey', 'Red', 'Forest Green']
-const SIZES = ['S', 'M', 'L', 'XL', '2XL', 'One Size']
 const DTF_SIZES = ['4 x 4 in', '6 x 6 in', '8 x 10 in', '10 x 12 in', '12 x 16 in', '13 x 17 in']
 const GANGSHEET_BREAK_HEIGHT = 108
 const gangsheetSheetQty = (height: string | number) => {
@@ -56,7 +57,7 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
   Refunded: { bg: '#f5f3ff', color: '#7c3aed' },
 }
 
-const initApparel  = (): ApparelItem[]   => [{ id: uid(), item: 'T-Shirt (Premium)', color: 'White', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }]
+const initApparel  = (): ApparelItem[]   => []
 const initGangsheet= (): GangsheetItem[] => [{ id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }]
 const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', image: null }]
 const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
@@ -245,7 +246,7 @@ export function NewOrderPage() {
 
     const items = existingOrder.items ?? []
     if (existingOrder.order_type === 'apparel') {
-      setApparel(items.map((r: any) => ({ id: uid(), item: r.item ?? '', color: r.color ?? 'Black', size: r.size ?? 'M', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null })))
+      setApparel(items.map((r: any) => ({ id: uid(), category: r.category ?? 'T-Shirt', item: r.item ?? '', color: r.color ?? '', size: r.size ?? '', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null, styleId: r.catalog_style_id, styleCode: r.model, brand: r.brand, productImage: r.product_image, styleDescription: r.style_description, colorId: r.catalog_color_id, sizeId: r.catalog_size_id, sku: r.catalog_sku })))
     } else if (existingOrder.order_type === 'gangsheet') {
       setGangsheet(items.map((r: any) => {
         const dimensions = String(r.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
@@ -300,7 +301,8 @@ export function NewOrderPage() {
     if (type === 'apparel') {
       setApparel(qItems.map(it => ({
         id:          uid(),
-        item:        it.description || 'T-Shirt (Premium)',
+        category:    (it as any).category || 'T-Shirt',
+        item:        it.description || '',
         color:       it.colors     ?? '',
         size:        it.sizes      ?? '',
         qty:         Number(it.qty),
@@ -309,6 +311,13 @@ export function NewOrderPage() {
         unitPrice:   Number(it.unit_price),
         frontImage:  (it as any).front_image ?? null,
         backImage:   (it as any).back_image  ?? null,
+        styleId:     (it as any).catalog_style_id,
+        styleCode:   (it as any).model,
+        brand:       (it as any).brand,
+        productImage:(it as any).product_image,
+        colorId:     (it as any).catalog_color_id,
+        sizeId:      (it as any).catalog_size_id,
+        sku:         (it as any).catalog_sku,
       })))
     } else if (type === 'gangsheet') {
       setGangsheet(qItems.map(it => ({
@@ -404,7 +413,17 @@ export function NewOrderPage() {
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeApparel  = (id: string) => setApparel(prev => prev.filter(r => r.id !== id))
-  const addApparel     = () => setApparel(prev => [...prev, { id: uid(), item: 'T-Shirt (Premium)', color: 'Black', size: 'M', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0 }])
+  const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])
+  const selectOrderApparelColor = (item: ApparelItem, colorId: string) => {
+    const color = item.availableColors?.find(value => value.style_color_id === colorId)
+    const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.sizeId)
+    updateApparel(item.id, { colorId, color: color?.display_name ?? '', sku: variant?.sku_code ?? '' })
+  }
+  const selectOrderApparelSize = (item: ApparelItem, sizeId: string) => {
+    const size = item.availableSizes?.find(value => value.style_size_id === sizeId)
+    const variant = item.availableVariants?.find(value => value.style_size_id === sizeId && value.style_color_id === item.colorId)
+    updateApparel(item.id, { sizeId, size: size?.size_name ?? '', sku: variant?.sku_code ?? '' })
+  }
 
   const updateGangsheet= (id: string, p: Partial<GangsheetItem>) => setGangsheet(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const updateGangsheetHeight = (id: string, height: string) => {
@@ -471,7 +490,7 @@ export function NewOrderPage() {
 
   const buildPayload = () => {
     const itemsPayload = orderType === 'apparel'
-      ? apparel.map(r => ({ item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null }))
+      ? apparel.map(r => ({ category: r.category, item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null, catalog_style_id: r.styleId || null, catalog_color_id: r.colorId || null, catalog_size_id: r.sizeId || null, catalog_sku: r.sku || null, brand: r.brand || null, model: r.styleCode || null, product_image: r.productImage || null, style_description: r.styleDescription || null }))
       : orderType === 'gangsheet'
         ? gangsheet.map((r, index) => ({
             size: `22" x ${Number(r.height) || 0}"`,
@@ -713,23 +732,22 @@ export function NewOrderPage() {
             {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
               <>
+                <p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, brand and preview fill automatically.</p>
+                <ApparelCatalogPicker onSelect={addApparel} />
                 <div className="no-table-wrap">
-                  <table className="no-table">
+                  <table className="no-table no-catalog-apparel-table">
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
+                        <th>Category</th>
                         <th>Item</th>
                         <th>Color</th>
                         <th>Size</th>
+                        <th>SKU</th>
                         <th>Qty</th>
-                        <th>FR AW Image (Front)</th>
-                        <th>Artwork No</th>
-                        <th>Artwork Size</th>
-                        <th>BK AW Image (Back)</th>
-                        <th>Artwork No</th>
-                        <th>Artwork Size</th>
-                        <th>Unit Price (USD)</th>
-                        <th>Amount (USD)</th>
+                        <th>Artwork</th>
+                        <th>Unit Price</th>
+                        <th>Amount</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -737,46 +755,21 @@ export function NewOrderPage() {
                       {apparel.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
+                          <td><select className="no-table-select" value={row.category} onChange={e => updateApparel(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td>
-                            <select className="no-table-select" value={row.item} onChange={e => updateApparel(row.id, { item: e.target.value })}>
-                              {ITEMS.map(i => <option key={i}>{i}</option>)}
-                            </select>
+                            <div className="nq-quote-product"><div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.item} /> : <Package size={20} />}</div><div><strong>{row.item || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span></div></div>
                           </td>
                           <td>
-                            <select className="no-table-select" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })}>
-                              {COLORS.map(c => <option key={c}>{c}</option>)}
-                            </select>
+                            {row.styleId ? <select className="no-table-select" value={row.colorId ?? ''} onChange={e => selectOrderApparelColor(row, e.target.value)}><option value="">Select color</option>{(row.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="no-table-input" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })} />}
                           </td>
                           <td>
-                            <select className="no-table-select no-size-select" value={row.size} onChange={e => updateApparel(row.id, { size: e.target.value })}>
-                              {SIZES.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            {row.styleId ? <select className="no-table-select no-size-select" value={row.sizeId ?? ''} onChange={e => selectOrderApparelSize(row, e.target.value)}><option value="">Select size</option>{(row.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <input className="no-table-input" value={row.size} onChange={e => updateApparel(row.id, { size: e.target.value })} />}
                           </td>
+                          <td><code className="nq-item-sku">{row.sku || (row.colorId && row.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /></td>
-                          <td>
-                            <input
-                              type="text"
-                              className="no-table-input"
-                              placeholder="AW-0001"
-                              value={row.artworkNo}
-                              onChange={e => updateApparel(row.id, { artworkNo: e.target.value })}
-                            />
-                          </td>
-                          <td><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></td>
-                          <td><input type="text" className="no-table-input" placeholder="AW-0001" value={row.artworkNo} onChange={e => updateApparel(row.id, { artworkNo: e.target.value })} /></td>
-                          <td><input className="no-table-input" placeholder="e.g. 12x16 in" value={row.artworkSize} onChange={e => updateApparel(row.id, { artworkSize: e.target.value })} style={{ width: '110px' }} /></td>
-                          <td>
-                            <input
-                              className="no-table-input"
-                              placeholder="e.g. 12x16 in"
-                              value={row.artworkSize}
-                              onChange={e => updateApparel(row.id, { artworkSize: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </td>
+                          <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontImage: null })} /><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel)} onRemove={() => updateApparel(row.id, { backImage: null })} /></div></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -793,17 +786,15 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={4}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
-                      <td colSpan={3}></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
-                      <td colSpan={3}></td>
+                      <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
                     </tr></tfoot>
                   </table>
                 </div>
-                <button className="no-add-item-btn" onClick={addApparel}><Plus size={13} /> Add Item</button>
               </>
             )}
 

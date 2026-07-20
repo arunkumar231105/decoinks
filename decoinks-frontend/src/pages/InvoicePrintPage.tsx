@@ -40,6 +40,7 @@ interface Invoice {
 }
 interface QuoteItem {
   id: string; description: string; qty: number
+  category?: string | null; artwork_no?: string | null; brand?: string | null; model?: string | null; catalog_sku?: string | null
   unit_price: number; amount: number
   sizes: string | null; colors: string | null; artwork_count: number
   front_image?: string | null; back_image?: string | null; artwork_image?: string | null
@@ -637,7 +638,7 @@ export function InvoicePrintPage() {
             <table className="inv-tbl">
               <thead>
                 <tr>
-                  <th style={{ width: 40 }}>S.No</th>
+                  <th style={{ width: 40 }}>S.No</th><th style={{ width: 70 }}>Category</th>
                   <th style={{ minWidth: 120 }}>Gangsheet Size</th>
                   <th style={{ width: 100 }}>No. Artworks</th>
                   <th style={{ width: 90 }}>Qty Sheets</th>
@@ -744,16 +745,14 @@ export function InvoicePrintPage() {
                   <th style={{ width: 68 }}>Color</th>
                   <th style={{ width: 110 }}>Size &amp; QTY</th>
                   <th style={{ width: 70 }}>Artwork Front</th>
-                  <th style={{ width: 62 }}>Size (IN)</th>
                   <th style={{ width: 70 }}>Artwork Back</th>
-                  <th style={{ width: 62 }}>Size (IN)</th>
                   <th style={{ width: 74 }}>Unit Rate<br />({currency})</th>
                   <th style={{ width: 74 }}>Amount<br />({currency})</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art     = artworks[idx] ?? null
                   const artBack = artworks[idx + items.length] ?? null
@@ -766,6 +765,7 @@ export function InvoicePrintPage() {
                   return (
                     <tr key={item.id}>
                       <td>{idx + 1}</td>
+                      <td>{item.category || '—'}</td>
                       <td className="td-l" style={{ fontWeight: 500 }}>
                         <div>{item.description}</div>
                         {(item.brand || item.model || item.catalog_sku) && (
@@ -784,13 +784,11 @@ export function InvoicePrintPage() {
                           ? <img src={frontUrl} alt="front" className="art-thumb" />
                           : <div className="art-empty">—</div>}
                       </td>
-                      <td style={{ fontSize: 10 }}>{artSz}</td>
                       <td>
                         {backUrl
                           ? <img src={backUrl} alt="back" className="art-thumb" />
                           : <div className="art-empty">—</div>}
                       </td>
-                      <td style={{ fontSize: 10 }}>{artBSz}</td>
                       <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>

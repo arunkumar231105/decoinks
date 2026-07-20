@@ -26,10 +26,10 @@ async function insertItems(client, orderId, orderType, items) {
     if (orderType === 'apparel') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_apparel (order_id, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order,
+        `INSERT INTO order_items_apparel (order_id, category, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order,
           catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, product_image, style_description)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [orderId, item.item, item.color || null, item.size || null, item.qty,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+        [orderId, item.category || null, item.item, item.color || null, item.size || null, item.qty,
          item.artwork_no || null, item.artwork_size || null, item.unit_price, amount,
          item.front_image || null, item.back_image || null, i,
          item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
@@ -59,9 +59,9 @@ async function insertInvoiceItems(client, orderId, invoiceId, orderType) {
   if (orderType === 'apparel') {
     await client.query(
       `INSERT INTO order_items_apparel
-         (order_id,item,color,size,qty,artwork_no,unit_price,amount,front_image,back_image,sort_order,
+         (order_id,category,item,color,size,qty,artwork_no,unit_price,amount,front_image,back_image,sort_order,
           catalog_style_id,catalog_color_id,catalog_size_id,catalog_sku,brand,model,product_image,style_description)
-       SELECT $1,COALESCE(description,'Apparel Item'),colors,sizes,qty,artwork_no,unit_price,amount,
+       SELECT $1,category,COALESCE(description,'Apparel Item'),colors,sizes,qty,artwork_no,unit_price,amount,
               front_image,back_image,sort_order,catalog_style_id,catalog_color_id,catalog_size_id,
               catalog_sku,brand,model,product_image,style_description
        FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]

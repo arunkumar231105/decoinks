@@ -7,6 +7,11 @@ import { usePrintAuth } from '../hooks/usePrintAuth'
 
 interface POItem {
   id: string
+  category?: string | null
+  brand?: string | null
+  color?: string | null
+  size?: string | null
+  catalog_sku?: string | null
   item_name: string
   description: string | null
   qty_ordered: number
@@ -782,7 +787,9 @@ export function PurchaseOrderPrintPage() {
               <thead>
                 <tr>
                   <th style={{ width: 36 }}>S.No</th>
+                  <th style={{ width: 68 }}>Category</th>
                   <th className="left">Item / Description</th>
+                  <th style={{ width: 60 }}>Color</th><th style={{ width: 54 }}>Size</th><th style={{ width: 74 }}>SKU</th>
                   <th style={{ width: 68 }}>Front Art</th>
                   <th style={{ width: 68 }}>Back Art</th>
                   <th style={{ width: 60 }}>Qty</th>
@@ -794,11 +801,12 @@ export function PurchaseOrderPrintPage() {
                 {items.map((it, idx) => (
                   <tr key={it.id}>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
+                    <td>{it.category || '—'}</td>
                     <td className="left">
                       <div style={{ fontWeight: 600, fontSize: 11 }}>{it.item_name}</div>
-                      {it.artwork_size && <div style={{ fontSize: 10, color: '#0f1f3d', fontWeight: 600, marginTop: 2 }}>Size: {it.artwork_size}</div>}
-                      {it.description && <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{it.description}</div>}
+                      <div style={{ fontSize: 9, color: '#64748b' }}>{it.brand || ''}</div>
                     </td>
+                    <td>{it.color || '—'}</td><td>{it.size || '—'}</td><td>{it.catalog_sku || '—'}</td>
                     <td style={{ textAlign: 'center' }}>
                       {it.front_image
                         ? <img src={it.front_image} alt="front" className="art-thumb" />

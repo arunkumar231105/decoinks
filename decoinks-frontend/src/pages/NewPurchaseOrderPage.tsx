@@ -4,10 +4,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import {
   ChevronRight, Plus, Save, Trash2, Info, Mail, MessageCircle,
-  ExternalLink, UploadCloud, Pencil, X, FileText,
+  ExternalLink, UploadCloud, Pencil, X, FileText, Package,
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ type POType = 'gangsheet' | 'apparel'
 
 interface POLineItem {
   id: string
+  category: string
   item_name: string
   brand: string
   color: string
@@ -33,6 +35,9 @@ interface POLineItem {
   catalog_sku: string
   product_image: string | null
   style_description: string
+  availableColors?: CatalogColor[]
+  availableSizes?: CatalogSize[]
+  availableVariants?: CatalogVariant[]
   sort_order: number
   // Preserved fields (no UI column, but must survive an edit round-trip)
   description: string
@@ -110,6 +115,7 @@ interface POFormState {
 type Action =
   | { type: 'SET'; field: keyof POFormState; value: any }
   | { type: 'ADD_ITEM' }
+  | { type: 'ADD_CATALOG_ITEM'; style: ApparelCatalogStyle }
   | { type: 'UPDATE_ITEM'; id: string; patch: Partial<POLineItem> }
   | { type: 'REMOVE_ITEM'; id: string }
   | { type: 'ADD_ORDER'; order: CoveredOrder }
@@ -136,7 +142,7 @@ function parseSheetSize(size?: string | null): { width: string; length: string }
 
 function newItem(idx: number): POLineItem {
   return {
-    id: uid(), item_name: '', brand: '', color: '', size: '',
+    id: uid(), category: 'T-Shirt', item_name: '', brand: '', color: '', size: '',
     qty_ordered: 1, unit_price: 0, line_total: 0,
     artwork_id: null, artwork_no: '', artwork_url: null,
     artwork_size_front: '', artwork_size_back: '',
@@ -189,6 +195,11 @@ function reducer(state: POFormState, action: Action): POFormState {
       return { ...state, [action.field]: action.value }
     case 'ADD_ITEM':
       return { ...state, items: [...state.items, newItem(state.items.length)] }
+    case 'ADD_CATALOG_ITEM': {
+      const item = newItem(state.items.length)
+      const style = action.style
+      return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
+    }
     case 'UPDATE_ITEM': {
       const items = state.items.map(it => {
         if (it.id !== action.id) return it
@@ -247,6 +258,16 @@ export function NewPurchaseOrderPage() {
   const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
 
   const set = (field: keyof POFormState, value: any) => dispatch({ type: 'SET', field, value })
+  const selectPOColor = (item: POLineItem, colorId: string) => {
+    const color = item.availableColors?.find(value => value.style_color_id === colorId)
+    const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.catalog_size_id)
+    dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { catalog_color_id: colorId, color: color?.display_name ?? '', catalog_sku: variant?.sku_code ?? item.catalog_sku } })
+  }
+  const selectPOSize = (item: POLineItem, sizeId: string) => {
+    const size = item.availableSizes?.find(value => value.style_size_id === sizeId)
+    const variant = item.availableVariants?.find(value => value.style_size_id === sizeId && value.style_color_id === item.catalog_color_id)
+    dispatch({ type: 'UPDATE_ITEM', id: item.id, patch: { catalog_size_id: sizeId, size: size?.size_name ?? '', catalog_sku: variant?.sku_code ?? item.catalog_sku } })
+  }
 
   // ── Reference data ──────────────────────────────────────────────────────────
 
@@ -328,6 +349,7 @@ export function NewPurchaseOrderPage() {
         })),
         items: (existingPO.items ?? []).map((it: any, idx: number): POLineItem => ({
           id: uid(),
+          category: it.category || 'T-Shirt',
           item_name: it.item_name || '',
           brand: it.brand || '',
           color: it.color || '',
@@ -384,6 +406,7 @@ export function NewPurchaseOrderPage() {
     if (poType === 'apparel') {
       payload.items = (sourceOrder.items ?? []).map((it: any, idx: number): POLineItem => ({
         id: uid(),
+        category: it.category || 'T-Shirt',
         item_name: it.item || '',
         brand: it.brand || '',
         color: it.color || '',
@@ -523,7 +546,8 @@ export function NewPurchaseOrderPage() {
           }))
         : [],
       items: state.po_type === 'apparel'
-        ? state.items.map((it, i) => ({
+          ? state.items.map((it, i) => ({
+            category: it.category,
             item_name: it.item_name,
             brand: it.brand || null,
             color: it.color || null,
@@ -1047,24 +1071,20 @@ export function NewPurchaseOrderPage() {
               <span className="np-section-num">1</span>
               <h3>Custom Printed Shirt Order Items</h3>
             </div>
-            <button className="lb-action-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}>
-              <Plus size={13} /> Add Item
-            </button>
           </div>
+          <ApparelCatalogPicker onSelect={style => dispatch({ type: 'ADD_CATALOG_ITEM', style })} />
           <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
             <table className="np-table" style={{ minWidth: 1050 }}>
               <thead>
                 <tr>
                   <th style={{ width: 36 }}>#</th>
-                  <th style={{ minWidth: 160 }}>Item</th>
-                  <th style={{ width: 110 }}>Brand</th>
+                  <th style={{ width: 120 }}>Category</th>
+                  <th style={{ minWidth: 190 }}>Product</th>
                   <th style={{ width: 100 }}>Color</th>
                   <th style={{ width: 80 }}>Size</th>
+                  <th style={{ width: 100 }}>SKU</th>
                   <th style={{ width: 80 }}>Qty (Shirts)</th>
-                  <th style={{ width: 120 }}>Artwork No</th>
-                  <th style={{ width: 64 }}>Preview</th>
-                  <th style={{ width: 90 }}>FR Size</th>
-                  <th style={{ width: 90 }}>BK Size</th>
+                  <th style={{ width: 150 }}>Artwork</th>
                   <th style={{ width: 96 }}>Unit Price (USD)</th>
                   <th style={{ width: 96 }}>Total (USD)</th>
                   <th style={{ width: 40 }} />
@@ -1072,63 +1092,42 @@ export function NewPurchaseOrderPage() {
               </thead>
               <tbody>
                 {state.items.length === 0 && (
-                  <tr><td colSpan={13} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
-                    No items yet — click "Add Item"
+                  <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                    Search and select a Product Master style above.
                   </td></tr>
                 )}
                 {state.items.map((it, i) => (
                   <tr key={it.id}>
                     <td className="np-td-num">{i + 1}</td>
+                    <td><select className="np-table-select" value={it.category} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { category: e.target.value } })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td>
-                      <input className="np-table-input" placeholder="100% Cotton S/s T-shirt..."
-                        value={it.item_name}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { item_name: e.target.value } })} />
+                      <div className="nq-quote-product"><div className="nq-quote-product-image">{it.product_image ? <img src={it.product_image} alt={it.item_name} /> : <Package size={20} />}</div><div><strong>{it.item_name}</strong><span>Brand: {it.brand || '—'}</span></div></div>
                     </td>
                     <td>
-                      <input className="np-table-input" placeholder="Gildan 5000"
-                        value={it.brand}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { brand: e.target.value } })} />
+                      {it.availableColors?.length ? <select className="np-table-select" value={it.catalog_color_id} onChange={e => selectPOColor(it, e.target.value)}><option value="">Select color</option>{it.availableColors.map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="np-table-input" value={it.color} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { color: e.target.value } })} />}
                     </td>
                     <td>
-                      <input className="np-table-input" placeholder="Black"
-                        value={it.color}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { color: e.target.value } })} />
+                      {it.availableSizes?.length ? <select className="np-table-select" value={it.catalog_size_id} onChange={e => selectPOSize(it, e.target.value)}><option value="">Select size</option>{it.availableSizes.map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <input className="np-table-input" value={it.size} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { size: e.target.value } })} />}
                     </td>
-                    <td>
-                      <input className="np-table-input" placeholder="L"
-                        value={it.size}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { size: e.target.value } })} />
-                    </td>
+                    <td><code className="nq-item-sku">{it.catalog_sku || 'Select color + size'}</code></td>
                     <td>
                       <input type="number" className="np-table-input np-num-input" min={1}
                         value={it.qty_ordered}
                         onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { qty_ordered: +e.target.value || 1 } })} />
                     </td>
                     <td>
-                      <ArtworkCellPicker
+                      <div className="np-inline-artwork"><ArtworkCellPicker
                         value={it.artwork_no}
                         attached={state.artworks}
                         onPick={(a) => dispatch({
                           type: 'UPDATE_ITEM', id: it.id,
                           patch: { artwork_id: a?.id ?? null, artwork_no: a?.artwork_no ?? '', artwork_url: a?.thumbnail_url ?? a?.file_url ?? null },
                         })} />
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
                       {it.artwork_url && it.artwork_url.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i) !== null
                         ? <img src={it.artwork_url} alt="" style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
                         : it.artwork_no
                           ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
-                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
-                    </td>
-                    <td>
-                      <input className="np-table-input" placeholder="12 x 16"
-                        value={it.artwork_size_front}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { artwork_size_front: e.target.value } })} />
-                    </td>
-                    <td>
-                      <input className="np-table-input" placeholder="12 x 16"
-                        value={it.artwork_size_back}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { artwork_size_back: e.target.value } })} />
+                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}</div>
                     </td>
                     <td>
                       <input type="number" className="np-table-input np-num-input" min={0} step={0.01}
@@ -1147,10 +1146,10 @@ export function NewPurchaseOrderPage() {
                 ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
-                <td colSpan={5}><span className="live-summary-title">Apparel Summary</span></td>
+                <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.items.reduce((sum, item) => sum + item.qty_ordered, 0)}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
-                <td colSpan={4}></td>
+                <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                 <td></td>
               </tr></tfoot>

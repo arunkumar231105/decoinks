@@ -7,6 +7,7 @@ import { usePrintAuth } from '../hooks/usePrintAuth'
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
   id: string; description: string; qty: number; unit_price: number
+  category?: string | null; brand?: string | null; model?: string | null; catalog_sku?: string | null
   amount: number; sizes: string | null; colors: string | null; artwork_count: number
   artwork_image: string | null; front_image: string | null; back_image: string | null
   artwork_no: string | null
@@ -651,7 +652,7 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
     <table className="items-tbl">
       <thead>
         <tr>
-          <th style={{ width: 32 }}>#</th>
+          <th style={{ width: 32 }}>#</th><th style={{ width: 72 }}>Category</th>
           <th className="left" style={{ minWidth: 160 }}>
             Item Description<br />
             <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>Brand | Model</span>
@@ -680,7 +681,7 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
       <tbody>
         {items.length === 0 ? (
           <tr>
-            <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td>
+            <td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td>
           </tr>
         ) : items.map((item, idx) => {
           // Apparel front/back images are stored inline on the item row,
@@ -692,8 +693,9 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
           return (
             <tr key={item.id}>
               <td style={{ fontWeight: 700, color: '#374151' }}>{idx + 1}</td>
+              <td>{item.category || '—'}</td>
               <td className="left">
-                <div className="item-main">{item.description}</div>
+                <div className="item-main">{item.description}</div><small>{[item.brand, item.model, item.catalog_sku].filter(Boolean).join(' · ')}</small>
               </td>
               <td>
                 {colors.length > 0 ? colors.map(c => (
