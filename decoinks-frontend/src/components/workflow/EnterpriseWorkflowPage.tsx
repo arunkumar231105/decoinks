@@ -274,8 +274,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       ]}/>
       <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full Details</button>
     </aside>}
-    <BulkUploadModal open={quoteImport} onClose={() => setQuoteImport(false)} />
-    <BulkUploadOrdersModal open={orderImport} onClose={() => setOrderImport(false)} onSuccess={() => { setOrderImport(false); load() }} />
+    {kind === 'quotations' && quoteImport && (
+      <BulkUploadModal onClose={() => setQuoteImport(false)} />
+    )}
+    {kind === 'orders' && orderImport && (
+      <BulkUploadOrdersModal onClose={() => setOrderImport(false)} />
+    )}
   </div>
 }
 
