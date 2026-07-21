@@ -1,229 +1,64 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Avatar } from '@mui/material'
-import { Divider as MuiDivider, Menu, MenuItem } from '@mui/material'
-import {
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-  MoreHorizontal,
-  Plus,
-  Search,
-} from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider, Menu, MenuItem, Skeleton } from '@mui/material'
+import { Archive, ArrowDownUp, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleDollarSign, Download, FileText, FileUp, Gem, MoreHorizontal, Repeat, Search, SlidersHorizontal, Trash2, UserPlus, Users, X } from 'lucide-react'
 import toast from '../utils/toast'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import { CustomerDetailsDrawer } from '../components/customers/CustomerDetailsDrawer'
 
-interface Customer {
-  id: string
-  name: string
-  company: string | null
-  email: string | null
-  phone: string | null
-  city: string | null
-  state: string | null
-  status: 'Active' | 'Inactive' | 'Blocked'
-  quotes_count: number
-}
+type Customer = { id:string; customer_number?:string; name:string; display_name:string; contact_person?:string; job_title?:string; company_name?:string; email?:string; primary_phone?:string; customer_type?:string; segment?:string; status:string; created_at:string; total_orders:number; total_spent?:number; last_order_date?:string; last_order_number?:string; outstanding_balance?:number; overdue_balance?:number }
+type ListResponse = { rows: Customer[]; total:number; page:number; limit:number }
+type Stats = { total_customers:number; new_customers:number; new_customers_prev:number; active_customers:number; repeat_customers:number; avg_order_value:number; lifetime_value:number; outstanding_balance:number }
+type Filters = { customer_type:string; segment:string; status:string; state:string; country:string; payment_terms:string; has_balance:string; has_overdue:string; min_orders:string; min_spent:string; date_from:string; date_to:string }
+const EMPTY_FILTERS: Filters = { customer_type:'', segment:'', status:'', state:'', country:'', payment_terms:'', has_balance:'', has_overdue:'', min_orders:'', min_spent:'', date_from:'', date_to:'' }
 
-function initials(name: string) {
-  return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-}
+const fmtDate = (v?:string) => v ? new Date(v).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—'
+const money = (v?:number|string|null) => v==null ? '—' : Number(v).toLocaleString('en-US', { style:'currency', currency:'USD' })
+const title = (v?:string) => v ? v.split(/[_\s]+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ').replace('Non Profit','Non-Profit') : '—'
 
-const AVATAR_COLORS = ['#0D9488','#2563EB','#7C3AED','#F59E0B','#EF4444','#10B981','#6366F1','#EC4899','#F97316','#0891B2','#16A34A','#9333EA']
-
-function avatarColor(id: string) {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
-}
-
-const PAGE_SIZE = 10
-
-type StatusFilter = 'All' | 'Active' | 'Inactive' | 'Blocked'
-
-function statusBadgeClass(status: string) {
-  if (status === 'Active') return 'cust-status-active'
-  if (status === 'Blocked') return 'cust-status-blocked'
-  return 'cust-status-inactive'
-}
-
-export function CustomersPage() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
-  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
-  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null)
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['customers', { page, search, statusFilter }],
-    queryFn: async () => {
-      const params: Record<string, unknown> = { page, limit: PAGE_SIZE }
-      if (search) params.search = search
-      if (statusFilter !== 'All') params.status = statusFilter
-      return api.get('/customers', { params }).then(r => r.data.data)
-    },
-    placeholderData: keepPreviousData,
-  })
-
-  const customers: Customer[] = data?.rows ?? []
-  const total: number = data?.total ?? 0
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  const deactivateMutation = useMutation({
-    mutationFn: (id: string) => api.put(`/customers/${id}`, { status: 'Inactive' }),
-    onSuccess: () => {
-      toast.success('Customer deactivated')
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
-      setMenuAnchor(null)
-    },
-    onError: () => toast.error('Failed to deactivate customer'),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/customers/${id}`),
-    onSuccess: () => {
-      toast.success('Customer deleted')
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
-      setMenuAnchor(null)
-    },
-    onError: () => toast.error('Failed to delete customer'),
-  })
-
-  const handleSearch = (v: string) => { setSearch(v); setPage(1) }
-  const handleStatusFilter = (sf: StatusFilter) => { setStatusFilter(sf); setPage(1); setFilterAnchor(null) }
-  const handleDeactivate = (id: string) => deactivateMutation.mutate(id)
-
-  return (
-    <div className="cust-page">
-      <div className="cust-page-header">
-        <div>
-          <h2 className="cust-page-title">Customers</h2>
-          <p className="cust-page-sub">Manage customer accounts, contacts, and quotation history.</p>
-        </div>
-        <div className="cust-controls">
-          <div className="cust-search">
-            <Search size={14} />
-            <input
-              placeholder="Search by name, email or company..."
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
-          </div>
-          <button
-            className={cn('lb-action-btn', statusFilter !== 'All' && 'lb-action-btn-filtered')}
-            onClick={(e) => setFilterAnchor(e.currentTarget)}
-          >
-            <Filter size={14} />
-            {statusFilter === 'All' ? 'Filter' : statusFilter}
-            <ChevronRight size={12} className="cust-filter-chevron" />
-          </button>
-          <button
-            className="lb-action-btn lb-action-primary"
-            onClick={() => navigate('/customers/new')}
-          >
-            <Plus size={14} /> New Customer
-          </button>
-        </div>
-      </div>
-
-      <div className="al-panel cust-table-wrap">
-        <table className="cust-table">
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Company</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>City</th>
-              <th>Status</th>
-              <th>Quotes</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr><td colSpan={8} className="cust-empty-row">Loading...</td></tr>
-            )}
-            {!isLoading && customers.length === 0 && (
-              <tr><td colSpan={8} className="cust-empty-row">No customers match your search.</td></tr>
-            )}
-            {!isLoading && customers.map((c) => (
-              <tr key={c.id} className="cust-row" onClick={() => navigate(`/customers/${c.id}`)}>
-                <td>
-                  <div className="cust-name-cell">
-                    <Avatar sx={{ width: 32, height: 32, fontSize: 12, bgcolor: avatarColor(c.id) }}>
-                      {initials(c.name)}
-                    </Avatar>
-                    <span>{c.name}</span>
-                  </div>
-                </td>
-                <td className="cust-muted">{c.company ?? '-'}</td>
-                <td className="cust-muted">{c.email ?? '-'}</td>
-                <td className="cust-muted">{c.phone ?? '-'}</td>
-                <td>{c.city ?? '-'}</td>
-                <td>
-                  <span className={cn('cust-status-badge', statusBadgeClass(c.status))}>
-                    {c.status}
-                  </span>
-                </td>
-                <td className="cust-num">{c.quotes_count ?? 0}</td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <button className="lb-icon-btn" onClick={(e) => setMenuAnchor({ el: e.currentTarget, id: c.id })}>
-                    <MoreHorizontal size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="cust-pagination">
-          <span className="cust-pag-info">
-            Showing {Math.min((page - 1) * PAGE_SIZE + 1, total)}-{Math.min(page * PAGE_SIZE, total)} of {total} customers
-          </span>
-          <div className="cust-pag-controls">
-            <button className="lb-action-btn cust-pag-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
-              <ChevronLeft size={14} />
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                className={cn('lb-action-btn cust-pag-btn', n === page && 'lb-action-primary')}
-                onClick={() => setPage(n)}
-              >
-                {n}
-              </button>
-            ))}
-            <button className="lb-action-btn cust-pag-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <Menu anchorEl={menuAnchor?.el} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { navigate(`/customers/${menuAnchor?.id}`); setMenuAnchor(null) }}>View Profile</MenuItem>
-        <MenuItem onClick={() => { navigate(`/customers/${menuAnchor?.id}`); setMenuAnchor(null) }}>Edit Customer</MenuItem>
-        <MenuItem onClick={() => { navigate('/quotes/new'); setMenuAnchor(null) }}>New Quotation</MenuItem>
-        <MuiDivider />
-        <MenuItem onClick={() => handleDeactivate(menuAnchor?.id ?? '')} sx={{ color: '#D97706' }}>Deactivate</MenuItem>
-        <MenuItem onClick={() => { deleteMutation.mutate(menuAnchor?.id ?? ''); }} sx={{ color: '#DC2626' }}>Delete</MenuItem>
-      </Menu>
-
-      <Menu anchorEl={filterAnchor} open={Boolean(filterAnchor)} onClose={() => setFilterAnchor(null)}>
-        {(['All', 'Active', 'Inactive', 'Blocked'] as const).map((s) => (
-          <MenuItem key={s} selected={statusFilter === s} onClick={() => handleStatusFilter(s)}>
-            {s}
-          </MenuItem>
-        ))}
-      </Menu>
-    </div>
-  )
+export function CustomersPage(){
+  const nav=useNavigate(), qc=useQueryClient(), importInput=useRef<HTMLInputElement>(null); const [input,setInput]=useState(''),[search,setSearch]=useState(''),[filters,setFilters]=useState(EMPTY_FILTERS),[page,setPage]=useState(1),[limit,setLimit]=useState(10),[sort,setSort]=useState({by:'created_at',dir:'desc'}),[selected,setSelected]=useState<Set<string>>(new Set()),[drawer,setDrawer]=useState<string|null>(null),[menu,setMenu]=useState<{el:HTMLElement;customer:Customer}|null>(null),[confirm,setConfirm]=useState<Customer|null>(null),[exportEl,setExportEl]=useState<HTMLElement|null>(null),[importing,setImporting]=useState(false),[advancedOpen,setAdvancedOpen]=useState(false)
+  useEffect(()=>{const id=setTimeout(()=>{setSearch(input.trim());setPage(1)},300);return()=>clearTimeout(id)},[input])
+  const params=useMemo(()=>({page,limit,search,...filters,sort_by:sort.by,sort_dir:sort.dir}),[page,limit,search,filters,sort])
+  const list=useQuery<ListResponse>({queryKey:['customers','workspace',params],queryFn:()=>api.get('/customers',{params}).then(r=>r.data.data),placeholderData:p=>p})
+  const stats=useQuery<Stats>({queryKey:['customers','stats'],queryFn:()=>api.get('/customers/stats').then(r=>r.data.data)})
+  const options=useQuery<any>({queryKey:['customers','filters'],queryFn:()=>api.get('/customers/filters').then(r=>r.data.data)})
+  const remove=useMutation({mutationFn:(id:string)=>api.delete(`/customers/${id}`),onSuccess:()=>{toast.success('Customer deleted');setConfirm(null);setDrawer(null);qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Could not delete customer')})
+  const archive=useMutation({mutationFn:(id:string)=>api.put(`/customers/${id}`,{status:'archived'}),onSuccess:()=>{toast.success('Customer archived');qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Could not archive customer')})
+  const rows=list.data?.rows||[], total=list.data?.total||0, pages=Math.max(1,Math.ceil(total/limit)), start=total?(page-1)*limit+1:0, end=Math.min(page*limit,total)
+  const clear=()=>{setInput('');setSearch('');setFilters(EMPTY_FILTERS);setSort({by:'created_at',dir:'desc'});setPage(1)}
+  const active=Boolean(search||Object.values(filters).some(Boolean))
+  const setFilter=(key:keyof Filters,value:string)=>{setFilters(f=>({...f,[key]:value}));setPage(1)}
+  const toggleSort=(by:string)=>{setSort(s=>({by,dir:s.by===by&&s.dir==='desc'?'asc':'desc'}));setPage(1)}
+  const exportCsv=async()=>{try{const res=await api.get('/customers/export',{params:{search,...filters,sort_by:sort.by,sort_dir:sort.dir},responseType:'blob'});const url=URL.createObjectURL(res.data);const a=document.createElement('a');a.href=url;a.download=`customers-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);setExportEl(null)}catch{toast.error('Could not export customers')}}
+  const importCsv=async(file?:File)=>{if(!file)return;setImporting(true);try{const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error('CSV has no data rows');const parse=(line:string)=>{const out:string[]=[];let cell='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&line[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=!quoted;else if(c===','&&!quoted){out.push(cell.trim());cell=''}else cell+=c}out.push(cell.trim());return out};const headers=parse(lines[0]).map(x=>x.toLowerCase().replace(/[^a-z0-9]+/g,'_'));let ok=0,failed=0;for(const line of lines.slice(1)){const values=parse(line),row=Object.fromEntries(headers.map((h,i)=>[h,values[i]||'']));const name=row.name||row.customer_name||[row.first_name,row.last_name].filter(Boolean).join(' ')||row.company_name||row.company;if(!name){failed++;continue}try{await api.post('/customers',{name,first_name:row.first_name||undefined,last_name:row.last_name||undefined,company_name:row.company_name||row.company||null,email:row.email||null,phone:row.phone||null,mobile_number:row.mobile||row.mobile_number||null,whatsapp:row.whatsapp||null,customer_segment:row.segment||row.customer_segment||null,customer_type:['business','individual','non_profit'].includes(row.customer_type||row.type)?(row.customer_type||row.type):null,city:row.city||null,state:row.state||null,zip:row.zip||row.zipcode||null,country:row.country||null,internal_notes:row.notes||null});ok++}catch{failed++}}toast.success(`Import complete: ${ok} succeeded, ${failed} failed`);qc.invalidateQueries({queryKey:['customers']})}catch(e:any){toast.error(e.message||'Could not import CSV')}finally{setImporting(false);if(importInput.current)importInput.current.value=''}}
+  const field=(label:string,key:keyof Filters,items:string[],display?:(v:string)=>string)=><label className="leads-filter"><span>{label}</span><select value={filters[key]} onChange={e=>setFilter(key,e.target.value)}><option value="">All</option>{items.filter(Boolean).map(v=><option key={v} value={v}>{display?display(v):v}</option>)}</select></label>
+  const pct=(part:number)=>{const t=Number(stats.data?.total_customers||0);return t>0?`${Math.round(part/t*1000)/10}% of total`:'Current total'}
+  const s=stats.data
+  const metrics:[string,string,any,string][] = s?[
+    ['Total Customers',Number(s.total_customers).toLocaleString(),Users,'Current total'],
+    ['New Customers',Number(s.new_customers).toLocaleString(),UserPlus,`vs ${Number(s.new_customers_prev)} last month`],
+    ['Active Customers',Number(s.active_customers).toLocaleString(),BadgeCheck,pct(Number(s.active_customers))],
+    ['Repeat Customers',Number(s.repeat_customers).toLocaleString(),Repeat,pct(Number(s.repeat_customers))],
+    ['Avg. Order Value',money(s.avg_order_value),CircleDollarSign,'Eligible orders'],
+    ['Outstanding Balance',money(s.outstanding_balance),FileText,'Open invoices'],
+    ['Customer Lifetime Value',money(s.lifetime_value),Gem,'Avg per customer'],
+  ]:[]
+  return <div className="leads-page">
+    <header className="leads-actionbar cw-actionbar"><label className="leads-search"><Search size={20}/><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Search by name, contact, email, phone, company or customer number…"/>{input&&<button onClick={()=>setInput('')} aria-label="Clear search"><X size={18}/></button>}</label><input ref={importInput} hidden type="file" accept=".csv,text/csv" onChange={e=>importCsv(e.target.files?.[0])}/><button className="leads-btn" disabled={importing} onClick={()=>importInput.current?.click()}><FileUp size={19}/> {importing?'Importing…':'Import Customers'}</button><button className="leads-btn" onClick={e=>setExportEl(e.currentTarget)}><Download size={19}/> Export <ChevronDown size={16}/></button><button className="leads-btn primary" onClick={()=>nav('/customers/new')}><UserPlus size={19}/> Add Customer</button></header>
+    <section className="leads-compact-kpis cols-7">{stats.isLoading?Array.from({length:7}).map((_,i)=><article key={i}><Skeleton width="75%"/></article>):metrics.map(([label,value,Icon,sub])=><article key={label}><span><Icon size={21}/></span><div><small>{label}</small><strong>{value}</strong><em>{sub}</em></div></article>)}</section>
+    <section className="leads-filters"><div className="leads-filter-row">{field('Customer Type','customer_type',(options.data?.types||[]).map((x:any)=>x.value),title)}{field('Segment','segment',(options.data?.segments||[]).map((x:any)=>x.value),title)}{field('State / Country','state',(options.data?.states||[]).map((x:any)=>x.value))}{field('Status','status',(options.data?.statuses||[]).map((x:any)=>x.value),title)}<label className="leads-filter date"><span>Created Date</span><div><input aria-label="From date" type="date" value={filters.date_from} onChange={e=>setFilter('date_from',e.target.value)}/><input aria-label="To date" type="date" value={filters.date_to} onChange={e=>setFilter('date_to',e.target.value)}/></div></label><button className="leads-btn filter-more" onClick={()=>setAdvancedOpen(v=>!v)} aria-expanded={advancedOpen}><SlidersHorizontal size={18}/> More Filters <ChevronDown size={16} className={advancedOpen?'open':''}/></button><button className="leads-btn clear" onClick={clear} disabled={!active}><X size={18}/> Clear</button></div>{advancedOpen&&<div className="leads-filter-row advanced">{field('Country','country',(options.data?.countries||[]).map((x:any)=>x.value))}{field('Payment Terms','payment_terms',(options.data?.payment_terms||[]).map((x:any)=>x.value))}<label className="leads-filter"><span>Outstanding Balance</span><select value={filters.has_balance} onChange={e=>setFilter('has_balance',e.target.value)}><option value="">All</option><option value="true">Has balance</option><option value="false">No balance</option></select></label><label className="leads-filter"><span>Overdue</span><select value={filters.has_overdue} onChange={e=>setFilter('has_overdue',e.target.value)}><option value="">All</option><option value="true">Has overdue balance</option></select></label><label className="leads-filter"><span>Min Orders</span><input type="number" min={0} value={filters.min_orders} onChange={e=>setFilter('min_orders',e.target.value)}/></label><label className="leads-filter"><span>Min Total Spent</span><input type="number" min={0} value={filters.min_spent} onChange={e=>setFilter('min_spent',e.target.value)}/></label></div>}</section>
+    <section className="leads-table-card"><div className="leads-table-scroll"><table className="leads-table cw-table"><thead><tr><th><input type="checkbox" aria-label="Select page" checked={rows.length>0&&rows.every(r=>selected.has(r.id))} onChange={e=>setSelected(e.target.checked?new Set(rows.map(r=>r.id)):new Set())}/></th><th><button onClick={()=>toggleSort('name')}>Customer <ArrowDownUp size={12}/></button></th><th><button onClick={()=>toggleSort('contact')}>Contact Person <ArrowDownUp size={12}/></button></th><th>Phone</th><th>Email</th><th>Type</th><th>Segment</th><th><button onClick={()=>toggleSort('status')}>Status <ArrowDownUp size={12}/></button></th><th><button onClick={()=>toggleSort('last_order')}>Last Order <ArrowDownUp size={12}/></button></th><th><button onClick={()=>toggleSort('total_orders')}>Total Orders <ArrowDownUp size={12}/></button></th><th><button onClick={()=>toggleSort('outstanding_balance')}>Outstanding Balance <ArrowDownUp size={12}/></button></th><th>Actions</th></tr></thead><tbody>
+      {list.isLoading&&Array.from({length:7}).map((_,i)=><tr key={i}><td colSpan={12}><Skeleton height={38}/></td></tr>)}
+      {list.isError&&<tr><td colSpan={12}><div className="leads-state"><strong>Unable to load customers.</strong><button onClick={()=>list.refetch()}>Retry</button></div></td></tr>}
+      {!list.isLoading&&!list.isError&&!rows.length&&<tr><td colSpan={12}><div className="leads-state"><strong>{active?'No customers match the selected filters.':'No customers in the system yet.'}</strong><p>{active?'Try clearing one or more filters.':'Add or import customers to start building your customer base.'}</p><button onClick={active?clear:()=>nav('/customers/new')}>{active?'Clear Filters':'Add Customer'}</button>{!active&&<button onClick={()=>importInput.current?.click()}>Import Customers</button>}</div></td></tr>}
+      {rows.map(r=>{const balance=Number(r.outstanding_balance||0);return <tr key={r.id} className={drawer===r.id?'active':''} onClick={()=>setDrawer(r.id)}><td onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.display_name}`} checked={selected.has(r.id)} onChange={e=>setSelected(s=>{const n=new Set(s);e.target.checked?n.add(r.id):n.delete(r.id);return n})}/></td><td><div className="leads-customer"><span>{(r.display_name||'?').slice(0,1).toUpperCase()}</span><div><b>{r.display_name}</b><small>{r.customer_number||'—'}</small></div></div></td><td>{r.contact_person&&r.contact_person!==r.display_name?<> {r.contact_person}<small className="leads-cell-sub">{r.job_title||'—'}</small></>:r.contact_person||'—'}</td><td>{r.primary_phone||'—'}</td><td>{r.email||'—'}</td><td>{r.customer_type?<span className="leads-pill type">{title(r.customer_type)}</span>:'—'}</td><td>{r.segment?<span className="leads-pill seg">{title(r.segment)}</span>:'—'}</td><td><span className={`leads-pill st-${(r.status||'').toLowerCase()}`}>{title(r.status)}</span></td><td>{r.last_order_date?<>{fmtDate(r.last_order_date)}<small className="leads-cell-sub">{r.last_order_number||'—'}</small></>:'—'}</td><td className="cw-num">{Number(r.total_orders||0)}</td><td><span className={`cw-balance ${balance>0?'due':'zero'}`}>{money(balance)}</span></td><td onClick={e=>e.stopPropagation()}><button className="leads-icon-btn" aria-label="Customer actions" onClick={e=>setMenu({el:e.currentTarget,customer:r})}><MoreHorizontal size={17}/></button></td></tr>})}
+    </tbody></table></div>
+    <footer className="leads-pagination"><p>Showing <b>{start}</b> to <b>{end}</b> of <b>{total}</b> customers</p><label>Rows per page <select value={limit} onChange={e=>{setLimit(+e.target.value);setPage(1)}}><option>10</option><option>20</option><option>50</option></select></label><div><button disabled={page===1||list.isLoading} onClick={()=>setPage(1)} aria-label="First page"><ChevronsLeft size={16}/></button><button disabled={page===1||list.isLoading} onClick={()=>setPage(p=>p-1)} aria-label="Previous page"><ChevronLeft size={16}/></button>{Array.from({length:Math.min(5,pages)},(_,i)=>Math.max(1,Math.min(pages-4,page-2))+i).filter(n=>n>=1&&n<=pages).map(n=><button key={n} className={n===page?'active':''} onClick={()=>setPage(n)}>{n}</button>)}<button disabled={page===pages||list.isLoading} onClick={()=>setPage(p=>p+1)} aria-label="Next page"><ChevronRight size={16}/></button><button disabled={page===pages||list.isLoading} onClick={()=>setPage(pages)} aria-label="Last page"><ChevronsRight size={16}/></button></div></footer></section>
+    <CustomerDetailsDrawer customerId={drawer} onClose={()=>setDrawer(null)}/>
+    <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={()=>setExportEl(null)}><MenuItem onClick={exportCsv}>Export filtered results as CSV</MenuItem></Menu>
+    <Menu anchorEl={menu?.el} open={Boolean(menu)} onClose={()=>setMenu(null)}><MenuItem onClick={()=>{setDrawer(menu!.customer.id);setMenu(null)}}>View details</MenuItem><MenuItem onClick={()=>{nav(`/customers/${menu!.customer.id}`);setMenu(null)}}>Open full profile</MenuItem><MenuItem onClick={()=>{nav('/quotes/new');setMenu(null)}}>New quotation</MenuItem><Divider/><MenuItem onClick={()=>{archive.mutate(menu!.customer.id);setMenu(null)}}><Archive size={14} style={{marginRight:8}}/> Archive customer</MenuItem><MenuItem sx={{color:'#dc2626'}} onClick={()=>{setConfirm(menu!.customer);setMenu(null)}}><Trash2 size={14} style={{marginRight:8}}/> Delete customer</MenuItem></Menu>
+    <Dialog open={Boolean(confirm)} onClose={()=>setConfirm(null)}><DialogTitle>Delete Customer</DialogTitle><DialogContent><DialogContentText>Delete <strong>{confirm?.display_name}</strong> ({confirm?.customer_number||'no number'})? This action cannot be undone.</DialogContentText></DialogContent><DialogActions><button className="leads-btn" onClick={()=>setConfirm(null)}>Cancel</button><button className="leads-btn danger" disabled={remove.isPending} onClick={()=>confirm&&remove.mutate(confirm.id)}>Delete</button></DialogActions></Dialog>
+  </div>
 }

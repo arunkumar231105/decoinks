@@ -46,7 +46,7 @@ interface Customer {
   buyer_type: string | null
   source: string | null
   internal_notes: string | null
-  status: 'Active' | 'Inactive' | 'Blocked'
+  status: string
   lead_id: string | null
   lead_number: string | null
   lead_source: string | null
@@ -71,9 +71,14 @@ const QUOTE_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   Cancelled: { bg: '#FEE2E2', text: '#DC2626' },
 }
 
+const STATUS_OPTIONS = ['prospect', 'active', 'inactive', 'blocked', 'archived'] as const
+const statusLabel = (status: string) => status ? status.charAt(0).toUpperCase() + status.slice(1) : '—'
+
 function statusBadgeStyle(status: string): React.CSSProperties {
-  if (status === 'Active')   return { background: '#DCFCE7', color: '#16A34A' }
-  if (status === 'Blocked')  return { background: '#FEE2E2', color: '#DC2626' }
+  const s = (status || '').toLowerCase()
+  if (s === 'active')   return { background: '#DCFCE7', color: '#16A34A' }
+  if (s === 'blocked')  return { background: '#FEE2E2', color: '#DC2626' }
+  if (s === 'prospect') return { background: '#EFF6FF', color: '#1D4ED8' }
   return { background: '#F1F5F9', color: '#64748B' }
 }
 
@@ -102,7 +107,7 @@ export function CustomerDetailPage() {
   const [buyerType,      setBuyerType]      = useState(BUYER_TYPES[0])
   const [source,         setSource]         = useState('')
   const [notes,          setNotes]          = useState('')
-  const [status,         setStatus]         = useState<'Active' | 'Inactive' | 'Blocked'>('Active')
+  const [status,         setStatus]         = useState<string>('active')
 
   const { data: customerData, isLoading, isError } = useQuery({
     queryKey: ['customer', id],
@@ -290,7 +295,7 @@ export function CustomerDetailPage() {
                 <div style={{ fontSize: 18, fontWeight: 700, color: '#0F172A' }}>{customer.name}</div>
                 {customer.company && <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>{customer.company}</div>}
                 <span style={{ display: 'inline-block', marginTop: 6, fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 999, ...statusBadgeStyle(customer.status) }}>
-                  {customer.status}
+                  {statusLabel(customer.status)}
                 </span>
               </div>
             </div>
@@ -444,10 +449,8 @@ export function CustomerDetailPage() {
                   </div>
                   <div className="al-field">
                     <label>Status</label>
-                    <select className="al-input" value={status} onChange={e => setStatus(e.target.value as 'Active' | 'Inactive' | 'Blocked')}>
-                      <option>Active</option>
-                      <option>Inactive</option>
-                      <option>Blocked</option>
+                    <select className="al-input" value={status} onChange={e => setStatus(e.target.value)}>
+                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
                   </div>
                 </div>

@@ -110,7 +110,7 @@ export const router = createBrowserRouter([
               {
                 path: '/customers',
                 element: <CustomersPage />,
-                handle: { title: 'Customers', subtitle: 'Manage client profiles linked to leads and quotations.' },
+                handle: { title: 'Customers', subtitle: 'Manage customer accounts, contacts, order history and outstanding balances.' },
               },
               {
                 path: '/customers/new',

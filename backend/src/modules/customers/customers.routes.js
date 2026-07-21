@@ -35,6 +35,11 @@ const customerFields = {
   preferred_language: z.string().optional().nullable(),
   customer_segment: z.string().optional().nullable(),
   tier:             z.string().optional().nullable(),
+  customer_type:    z.enum(['business', 'individual', 'non_profit']).optional().nullable(),
+  job_title:        z.string().max(120).optional().nullable(),
+  payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60']).optional().nullable(),
+  credit_limit:     z.number().nonnegative().optional().nullable(),
+  assigned_agent_id: z.string().uuid().optional().nullable(),
   addresses: z.array(z.object({
     address_type: z.enum(['billing', 'shipping']),
     line1: z.string().optional().nullable(), line2: z.string().optional().nullable(),
@@ -44,14 +49,26 @@ const customerFields = {
   })).optional(),
 }
 
-const createSchema = z.object(customerFields)
+const STATUS_VALUES = [
+  'prospect', 'active', 'inactive', 'blocked', 'archived',
+  // legacy capitalised values still accepted; the service normalises them
+  'Active', 'Inactive', 'Blocked',
+]
+
+const createSchema = z.object({
+  ...customerFields,
+  status: z.enum(STATUS_VALUES).optional(),
+})
 const updateSchema = z.object({
   ...Object.fromEntries(Object.entries(customerFields).map(([k, v]) => [k, v.optional()])),
-  status: z.enum(['prospect', 'active', 'inactive', 'archived', 'Active', 'Inactive']).optional(),
+  status: z.enum(STATUS_VALUES).optional(),
 })  // no .strict() — unknown fields are safely stripped
 
-router.get('/',    controller.list)
-router.get('/:id', controller.getOne)
+router.get('/',        controller.list)
+router.get('/stats',   controller.stats)
+router.get('/filters', controller.filters)
+router.get('/export',  controller.exportCsv)
+router.get('/:id',     controller.getOne)
 router.post('/',   validate(createSchema), controller.create)
 router.put('/:id', validate(updateSchema), controller.update)
 router.delete('/:id', controller.remove)
