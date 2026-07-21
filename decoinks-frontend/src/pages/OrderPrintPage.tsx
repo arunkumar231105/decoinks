@@ -18,6 +18,7 @@ interface Order {
   subtotal: number
   discount_pct: number
   discount_amt: number
+  tax_amt: number
   rush_services: number
   shipping_charges: number
   notes: string | null
@@ -52,6 +53,13 @@ interface ApparelItem {
   qty: number; artwork_no: string | null; artwork_size: string | null
   unit_price: number; amount: number
   front_image: string | null; back_image: string | null
+  product_image?: string | null; style_description?: string | null
+}
+
+interface OrderInvoice {
+  id: string; invoice_number: string; total: number; amount_paid: number; balance_due: number
+  status: string
+  payments?: Array<{ amount: number; payment_method: string | null; reference_no: string | null; paid_at: string }>
 }
 
 interface DtfItem {
@@ -188,7 +196,7 @@ const CSS = `
   .so-meta-tbl .mv { color: #1a2b5c; font-weight: 700; }
 
   /* PAYMENT SUMMARY box (apparel) */
-  .pay-summary { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; min-width: 220px; }
+  .pay-summary { border: 1.5px solid #c7d7f5; border-radius: 10px; padding: 14px 16px; min-width: 220px; }
   .pay-summary h4 { font-size: 10px; font-weight: 800; letter-spacing: 1.2px; color: #1a2b5c; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
   .pay-summary table { width: 100%; border-collapse: collapse; }
   .pay-summary td { padding: 3px 0; font-size: 12px; }
@@ -209,7 +217,7 @@ const CSS = `
 
   /* ── Info cards (4-column) ── */
   .info-cards { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
-  .ic { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; }
+  .ic { border: 1.5px solid #c7d7f5; border-radius: 10px; padding: 12px 14px; }
   .ic-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .ic-icon { background: #1a2b5c; border-radius: 7px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .ic-label { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; color: #9ca3af; text-transform: uppercase; }
@@ -234,8 +242,8 @@ const CSS = `
   }
   .so-tbl thead th:last-child { border-right: none; }
   .th-l { text-align: left !important; }
-  .so-tbl tbody tr { border-bottom: 1px solid #f0f0f0; }
-  .so-tbl tbody td { padding: 7px 5px; text-align: center; vertical-align: middle; border-right: 1px solid #f0f0f0; }
+  .so-tbl tbody tr { border-bottom: 1px solid #dbe4f5; }
+  .so-tbl tbody td { padding: 7px 5px; text-align: center; vertical-align: middle; border-right: 1px solid #dbe4f5; }
   .so-tbl tbody td:last-child { border-right: none; }
   .td-l { text-align: left !important; }
   .td-span { background: #eef2ff !important; }
@@ -258,7 +266,7 @@ const CSS = `
 
   /* ── Footer section ── */
   .footer-section { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .footer-box { border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+  .footer-box { border: 1.5px solid #c7d7f5; border-radius: 8px; padding: 12px 14px; }
   .footer-lbl { font-size: 9px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #6b7280; margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
   .footer-words { font-size: 12px; font-weight: 600; color: #111827; line-height: 1.55; }
   .footer-bullets { list-style: none; }
@@ -302,16 +310,28 @@ export function OrderPrintPage() {
   const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
 
+  // staleTime 0 + always refetch: edits made on the order form must show up
+  // immediately when the preview is reopened.
   const { data: order, isLoading } = useQuery<Order>({
     queryKey: ['order', id],
     queryFn:  () => api.get(`/orders/${id}`).then(r => r.data.data ?? r.data.order ?? r.data),
     enabled: !!id && authReady,
+    staleTime: 0, refetchOnMount: 'always',
+  })
+
+  // Linked invoice (if any) supplies the real amount-paid / balance / payment refs
+  const { data: invoice } = useQuery<OrderInvoice | null>({
+    queryKey: ['order-invoice-print', id, order?.invoice_id],
+    queryFn:  () => api.get(`/invoices/${order!.invoice_id}`).then(r => r.data.data ?? r.data).catch(() => null),
+    enabled:  !!order?.invoice_id && authReady,
+    staleTime: 0, refetchOnMount: 'always',
   })
 
   const { data: artworkData } = useQuery<{ artworks: ArtworkItem[] }>({
     queryKey: ['order-artworks-print', id],
     queryFn:  () => api.get(`/orders/${id}/artworks`).then(r => r.data),
     enabled:  !!id && authReady,
+    staleTime: 0, refetchOnMount: 'always',
   })
   const orderArtworks = artworkData?.artworks ?? []
 
@@ -346,11 +366,12 @@ export function OrderPrintPage() {
   const shippingAmt = Number(order.shipping_charges ?? 0)
   const subtotalPlus = itemsTotal + shippingAmt
 
-  // PAYMENT SUMMARY (apparel)
+  // PAYMENT SUMMARY — prefer the linked invoice's real ledger figures; fall
+  // back to the order's own payment_status (Paid = fully paid, else unpaid).
   const isPaid = order.payment_status === 'Paid'
-  const isPartial = order.payment_status === 'Partial'
-  const amountPaid = isPaid ? Number(order.total) : isPartial ? Number(order.total) * 0.5 : 0
-  const balanceDue = Number(order.total) - amountPaid
+  const amountPaid = invoice ? Number(invoice.amount_paid || 0) : isPaid ? Number(order.total) : 0
+  const balanceDue = invoice ? Number(invoice.balance_due || 0) : Number(order.total) - amountPaid
+  const lastPayment = invoice?.payments?.length ? invoice.payments[invoice.payments.length - 1] : null
 
   // ORDER STATUS checks
   const statusOrder = ['Draft', 'Confirmed', 'In Production', 'Ready to Ship', 'Shipped', 'Delivered']
@@ -363,7 +384,7 @@ export function OrderPrintPage() {
   const custName    = order.supplier_name || order.contact_name || '—'
   const shipName    = order.shipping_name || custName
   const shipAddr    = order.shipping_address || '—'
-  const shipMethod  = order.shipping_method || order.payment_terms || 'Standard Shipping'
+  const shipMethod  = order.shipping_method || 'Standard Shipping'
 
   // Payment method display
   const payMethodDisplay = order.payment_method
@@ -459,23 +480,46 @@ export function OrderPrintPage() {
             </table>
           </div>
 
-          {/* Right: production-focused work order summary */}
+          {/* Right: financial summary — Payment Summary for apparel, Order
+              Summary for DTF / gangsheet (matches the approved templates) */}
           <div className="hdr-right">
-              <div className="ord-summary">
+            {isApparel ? (
+              <div className="pay-summary">
                 <h4>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>
-                  PRODUCTION SUMMARY
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                  PAYMENT SUMMARY
                 </h4>
                 <table>
                   <tbody>
-                    <tr><td className="ol">Order Status</td><td className="ov">{order.status}</td></tr>
-                    <tr><td className="ol">Artwork</td><td className="ov">{artworksApproved ? 'Approved' : 'Pending'}</td></tr>
-                    <tr><td className="ol">Purchase Order</td><td className="ov">{order.purchase_orders?.[0]?.status || 'Not Created'}</td></tr>
-                    <tr><td className="ol">Priority</td><td className="ov">{order.production_priority || 'Normal'}</td></tr>
-                    <tr><td className="ol">Required Ship Date</td><td className="ov">{fmtDate(order.due_date)}</td></tr>
+                    <tr><td className="pl">Order Total</td><td className="pv">{fmt(order.total)}</td></tr>
+                    <tr><td className="pl">Amount Paid</td><td className="pv">{fmt(amountPaid)}</td></tr>
+                    <tr className="tr-bal">
+                      <td>Balance Due</td>
+                      <td className={`pv ${balanceDue <= 0 ? 'bal-green' : ''}`} style={balanceDue > 0 ? { color: '#dc2626' } : undefined}>{fmt(balanceDue)}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
+            ) : (
+              <div className="ord-summary">
+                <h4>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  ORDER SUMMARY
+                </h4>
+                <table>
+                  <tbody>
+                    <tr><td className="ol">Items Total</td><td className="ov">{fmt(itemsTotal)}</td></tr>
+                    <tr><td className="ol">Shipping Charges</td><td className="ov">{fmt(shippingAmt)}</td></tr>
+                    <tr><td className="ol">Subtotal</td><td className="ov">{fmt(subtotalPlus)}</td></tr>
+                    {Number(order.discount_amt) > 0 && (
+                      <tr><td className="ol">Bulk Discount</td><td className="ov neg">{'-' + fmt(order.discount_amt)}</td></tr>
+                    )}
+                    <tr><td className="ol">Tax</td><td className="ov">{fmt(order.tax_amt)}</td></tr>
+                    <tr className="tr-total"><td>TOTAL DUE</td><td className="ov" style={{ fontWeight: 800 }}>{fmt(order.total)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
         </div>
@@ -533,8 +577,8 @@ export function OrderPrintPage() {
             </div>
             <div className="ic-body">
               <div className="status-check">
-                <span className={order.purchase_orders?.length ? 'chk-yes' : 'chk-no'}>✓</span>
-                Purchase Order Created
+                <span className={paymentReceived ? 'chk-yes' : 'chk-no'}>✓</span>
+                Payment Received
               </div>
               <div className="status-check">
                 <span className={approvedProduction ? 'chk-yes' : 'chk-no'}>✓</span>
@@ -555,21 +599,53 @@ export function OrderPrintPage() {
             <table className="so-tbl">
               <thead>
                 <tr>
-                  <th style={{ width: 34 }}>#</th><th>Category</th><th className="th-l">Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Front Art</th><th>Back Art</th><th>Unit Price</th><th>Total</th>
+                  <th rowSpan={2} style={{ width: 34 }}>#</th>
+                  <th rowSpan={2} className="th-l" style={{ minWidth: 130 }}>Item Description</th>
+                  <th rowSpan={2} style={{ width: 84 }}>Color</th>
+                  <th rowSpan={2} style={{ width: 62 }}>Qty<br />(Pcs)</th>
+                  <th colSpan={6} style={{ borderBottom: '1px solid rgba(255,255,255,0.25)' }}>Size Breakdown</th>
+                  <th rowSpan={2} style={{ width: 74 }}>Front Artwork<br />(Thumbnail)</th>
+                  <th rowSpan={2} style={{ width: 74 }}>Back Artwork<br />(Thumbnail)</th>
+                  <th rowSpan={2} style={{ width: 74 }}>Front Mockup</th>
+                  <th rowSpan={2} style={{ width: 74 }}>Back Mockup</th>
+                  <th rowSpan={2} style={{ width: 74 }}>Unit Price<br />(USD)</th>
+                  <th rowSpan={2} style={{ width: 78 }}>Total<br />(USD)</th>
+                </tr>
+                <tr>
+                  {SIZE_COLS.map(s => <th key={s} style={{ width: 34 }}>{s}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {apparelItems.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
-                ) : apparelItems.map((item, idx) => (
+                  <tr><td colSpan={16} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                ) : apparelItems.map((item, idx) => {
+                  const sizes = parseSizes(item.size, Number(item.qty) || 0)
+                  return (
                     <tr key={item.id}>
-                      <td>{idx + 1}</td>
-                      <td>{item.category || '—'}</td><td className="td-l"><strong>{item.item}</strong><br /><small>{[item.brand, item.model].filter(Boolean).join(' · ')}</small></td><td>{item.color || '—'}</td><td>{item.size || '—'}</td><td>{item.catalog_sku || '—'}</td><td>{item.qty}</td>
-                      <td>{item.front_image ? <img src={item.front_image} alt="front" className="art-img" /> : '—'}</td><td>{item.back_image ? <img src={item.back_image} alt="back" className="art-img" /> : '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{idx + 1}</td>
+                      <td className="td-l">
+                        <strong style={{ color: '#1a2b5c' }}>{item.item}</strong>
+                        {(item.brand || item.model || item.catalog_sku) && (
+                          <><br /><small style={{ color: '#6b7280' }}>{[item.brand, item.model, item.catalog_sku].filter(Boolean).join(' · ')}</small></>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <span className="clr-dot" style={{ background: colorHex(item.color) }} />
+                        {item.color || '—'}
+                      </td>
+                      <td style={{ fontWeight: 700 }}>{item.qty}</td>
+                      {SIZE_COLS.map(s => (
+                        <td key={s} className={sizes[s] ? 'sz-num' : 'sz-zero'}>{sizes[s]}</td>
+                      ))}
+                      <td>{item.front_image ? <img src={item.front_image} alt="front artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
+                      <td>{item.back_image ? <img src={item.back_image} alt="back artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
+                      <td>{item.product_image ? <img src={item.product_image} alt="front mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>
+                      <td><div className="art-empty">—</div></td>
                       <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}
@@ -711,8 +787,8 @@ export function OrderPrintPage() {
           </table>
         </div>
 
-        {/* ══ ARTWORKS SECTION ══ */}
-        {orderArtworks.length > 0 && (
+        {/* ══ ARTWORKS SECTION (gangsheet only — apparel/DTF tables carry thumbnails inline) ══ */}
+        {isGangsheet && orderArtworks.length > 0 && (
           <div className="aw-section">
             <div className="aw-section-hdr">
               <div className="aw-section-num">★</div>
@@ -747,38 +823,56 @@ export function OrderPrintPage() {
 
         {/* ══ FOOTER ══ */}
         <div className="footer-section">
-          {/* Production instructions */}
-          <div className="footer-box">
-                <div className="footer-lbl">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                  Production / Packing Instructions
-                </div>
-                <ul className="footer-bullets">
-                  <li>{order.production_notes || order.notes || 'Follow approved artwork and item specifications.'}</li>
-                  <li>{order.packing_instructions || 'Pack by style, color and size.'}</li>
-                  <li>{order.shipping_instructions || 'Ship only after QC approval.'}</li>
-                </ul>
-          </div>
+          {/* Left: amount in words (DTF/gangsheet) or notes (apparel) */}
+          {isApparel ? (
+            <div className="footer-box">
+              <div className="footer-lbl">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Notes
+              </div>
+              <ul className="footer-bullets">
+                {order.notes
+                  ? order.notes.split(/\r?\n/).filter(Boolean).map((line, i) => <li key={i}>{line}</li>)
+                  : <>
+                      <li>Please review and confirm all details before production.</li>
+                      <li>Colors may vary slightly due to monitor settings.</li>
+                    </>}
+              </ul>
+            </div>
+          ) : (
+            <div className="footer-box">
+              <div className="footer-lbl">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Total Amount in Words
+              </div>
+              <div className="footer-words">{numberToWords(Number(order.total || 0))}</div>
+            </div>
+          )}
 
-          {/* Right: Production details */}
+          {/* Right: payment details from the real ledger */}
           <div className="footer-box">
             <div className="footer-lbl">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
-              Production Details
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              Payment Details
             </div>
-            <div className="pay-detail-row">
-              <strong>Method:</strong> {order.production_method || (isDtf ? 'DTF Transfers' : isGangsheet ? 'Gangsheet' : 'Custom Printed Apparel')}
-            </div>
-            <div className="pay-detail-row">
-              <strong>Facility:</strong> {order.production_facility || 'Decoinks Production'}
-            </div>
-            <div className="pay-detail-row">
-              <strong>Assigned Team:</strong> {order.assigned_team || 'Production Team'}
-            </div>
+            {lastPayment ? (
+              <>
+                <div className="pay-detail-row">
+                  <strong>Paid thru {(lastPayment.payment_method || 'payment').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> as on {fmtDate(lastPayment.paid_at)}
+                </div>
+                {lastPayment.reference_no && (
+                  <div className="pay-detail-row"><strong>Transaction ID:</strong> {lastPayment.reference_no}</div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="pay-detail-row"><strong>Payment Status:</strong> {order.payment_status}</div>
+                <div className="pay-detail-row"><strong>Payment Terms:</strong> {order.payment_terms || 'Due on Receipt'}</div>
+                {order.payment_method && <div className="pay-detail-row"><strong>Method:</strong> {payMethodDisplay}</div>}
+              </>
+            )}
             {order.invoice_number && (
-              <div className="pay-detail-row">
-                <strong>Invoice Reference:</strong> {order.invoice_number}
-              </div>
+              <div className="pay-detail-row"><strong>Invoice Reference:</strong> {order.invoice_number}</div>
             )}
             <div className="pay-detail-row" style={{ marginTop: 4, color: '#6b7280', fontSize: 10.5 }}>
               {CO.email}

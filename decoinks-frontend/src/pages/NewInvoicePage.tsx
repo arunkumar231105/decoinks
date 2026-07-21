@@ -582,8 +582,9 @@ export function NewInvoicePage() {
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null)
   const [sendAnchor, setSendAnchor] = useState<null | HTMLElement>(null)
 
-  // After save, navigate to print if preview was triggered — otherwise go to invoice detail
-  const navigateAfterSave = useRef<'print' | null>(null)
+  // After save, navigate to print/receipt if preview or short invoice was
+  // triggered — otherwise go to invoice detail
+  const navigateAfterSave = useRef<'print' | 'receipt' | null>(null)
 
   // Save mutation
   const saveMutation = useMutation({
@@ -592,6 +593,11 @@ export function NewInvoicePage() {
       if (navigateAfterSave.current === 'print' && inv?.id) {
         navigateAfterSave.current = null
         navigate(`/invoices/${inv.id}/print`)
+        return
+      }
+      if (navigateAfterSave.current === 'receipt' && inv?.id) {
+        navigateAfterSave.current = null
+        navigate(`/invoices/${inv.id}/receipt`)
         return
       }
       navigateAfterSave.current = null
@@ -788,6 +794,16 @@ export function NewInvoicePage() {
     saveMutation.mutate(buildPayload())
   }
 
+  // Saves the invoice, then opens the compact receipt-style view
+  const shortInvoice = () => {
+    if (!supplierId && !supplierText) {
+      toast.error('Please select a customer before saving')
+      return
+    }
+    navigateAfterSave.current = 'receipt'
+    saveMutation.mutate(buildPayload())
+  }
+
   const sendInvoice = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
 
   const recordPayment = () => { toast.info('Save the invoice first, then record the payment from invoice details') }
@@ -815,6 +831,7 @@ export function NewInvoicePage() {
         </div>
         <div className="ni-header-actions">
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
+          <button className="lb-action-btn" onClick={shortInvoice} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
           <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
           <button className="lb-action-btn" title={isEditing ? 'Invoice is editable' : 'Edit invoice'} onClick={() => setIsEditing(true)}>
             <Pencil size={13} /> Edit
@@ -1396,6 +1413,7 @@ export function NewInvoicePage() {
         <div className="ni-bottom-left">
           <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
           <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview Invoice</button>
+          <button className="lb-action-btn" onClick={shortInvoice} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
         </div>
         <div className="ni-bottom-right">
           <div className="ni-send-split">
