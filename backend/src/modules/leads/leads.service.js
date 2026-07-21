@@ -69,6 +69,7 @@ function buildListWhere(filters) {
   if (filters.qualification === 'unqualified') conditions.push('COALESCE(l.conversion_score, 0) < 30')
   if (filters.date_from) add(filters.date_from, n => `l.created_at >= $${n}::date`)
   if (filters.date_to) add(filters.date_to, n => `l.created_at < ($${n}::date + INTERVAL '1 day')`)
+  if (filters.active_only === 'true' || filters.active_only === true) conditions.push("l.stage <> 'confirmed' AND l.status <> 'Confirmed'")
 
   return { where: `WHERE ${conditions.join(' AND ')}`, params }
 }
@@ -76,12 +77,12 @@ function buildListWhere(filters) {
 async function list({
   page = 1, limit = 10, search = '', stage = '', status = '', assigned_to = '',
   source = '', qualification = '', purchase_intent = '', product_interest = '',
-  temperature = '', date_from = '', date_to = '', sort_by = 'created_at', sort_dir = 'desc',
+  temperature = '', date_from = '', date_to = '', sort_by = 'created_at', sort_dir = 'desc', active_only = '',
 }) {
   page = Math.max(1, Number(page) || 1)
   limit = Math.min(10000, Math.max(1, Number(limit) || 10))
   const offset = (page - 1) * limit
-  const { where, params } = buildListWhere({ search, stage, status, assigned_to, source, qualification, purchase_intent, product_interest, temperature, date_from, date_to })
+  const { where, params } = buildListWhere({ search, stage, status, assigned_to, source, qualification, purchase_intent, product_interest, temperature, date_from, date_to, active_only })
   const countRes = await query(
     `SELECT COUNT(*) FROM leads l ${where}`, params
   )
@@ -124,9 +125,10 @@ async function list({
 }
 
 async function getStats() {
-  const { rows } = await query(
-    `SELECT
+  const [totals, trend] = await Promise.all([
+    query(`SELECT
        COUNT(*)::INT AS total_inquiries,
+       COUNT(*) FILTER (WHERE l.stage <> 'confirmed' AND l.status NOT IN ('Confirmed'))::INT AS active_leads,
        COUNT(*) FILTER (WHERE l.auto_responded)::INT AS auto_responded,
        COUNT(*) FILTER (WHERE l.message_count > 0 OR l.last_contact_at IS NOT NULL)::INT AS engaged,
        COUNT(*) FILTER (WHERE l.qualified_at IS NOT NULL OR COALESCE(l.conversion_score, 0) >= 60)::INT AS qualified,
@@ -137,10 +139,18 @@ async function getStats() {
        COUNT(*) FILTER (WHERE l.stage = 'payment')::INT AS payment_pending,
        COUNT(*) FILTER (WHERE EXISTS (
          SELECT 1 FROM quotations q JOIN orders o ON o.quotation_id = q.id AND o.deleted_at IS NULL WHERE q.lead_id = l.id
-       ))::INT AS orders_created
-     FROM leads l WHERE l.deleted_at IS NULL`
-  )
-  return rows[0]
+       ))::INT AS orders_created,
+       COALESCE(SUM(l.estimated_value) FILTER (WHERE l.stage <> 'confirmed'), 0)::NUMERIC AS revenue_pipeline,
+       COUNT(*) FILTER (WHERE l.created_at >= date_trunc('month', CURRENT_DATE))::INT AS leads_this_month,
+       COUNT(*) FILTER (WHERE l.created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month' AND l.created_at < date_trunc('month', CURRENT_DATE))::INT AS leads_last_month
+     FROM leads l WHERE l.deleted_at IS NULL`),
+    query(`WITH weeks AS (
+       SELECT generate_series(date_trunc('week', CURRENT_DATE) - INTERVAL '7 weeks', date_trunc('week', CURRENT_DATE), INTERVAL '1 week') AS week
+     ) SELECT TO_CHAR(w.week, 'YYYY-MM-DD') AS week, COUNT(l.id)::INT AS value
+       FROM weeks w LEFT JOIN leads l ON l.deleted_at IS NULL AND l.created_at >= w.week AND l.created_at < w.week + INTERVAL '1 week'
+       GROUP BY w.week ORDER BY w.week`),
+  ])
+  return { ...totals.rows[0], lead_trend: trend.rows.map(row => row.value) }
 }
 
 async function getFilterOptions() {

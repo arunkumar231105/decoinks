@@ -95,7 +95,7 @@ export const router = createBrowserRouter([
               {
                 path: '/leads',
                 element: <LeadsListPage />,
-                handle: { title: 'Leads', subtitle: 'Track every prospect from first contact to confirmed order.' },
+                handle: { title: 'Leads', subtitle: '' },
               },
               {
                 path: '/leads/new',
