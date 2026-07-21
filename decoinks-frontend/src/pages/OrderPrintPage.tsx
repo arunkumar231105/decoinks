@@ -54,6 +54,7 @@ interface ApparelItem {
   unit_price: number; amount: number
   front_image: string | null; back_image: string | null
   product_image?: string | null; style_description?: string | null
+  front_mockup?: string | null; back_mockup?: string | null
 }
 
 interface OrderInvoice {
@@ -358,6 +359,10 @@ export function OrderPrintPage() {
 
   const allItems    = order.items ?? []
   const apparelItems = isApparel ? (allItems as ApparelItem[]) : []
+  // Mockup columns only render when at least one item actually has a mockup
+  const hasFrontMockup = apparelItems.some(i => i.front_mockup)
+  const hasBackMockup  = apparelItems.some(i => i.back_mockup)
+  const apparelCols = 14 + (hasFrontMockup ? 1 : 0) + (hasBackMockup ? 1 : 0)
   const dtfItems     = isDtf     ? (allItems as DtfItem[])     : []
   const gsItems      = isGangsheet ? (allItems as GangsheetItem[]) : []
 
@@ -606,8 +611,8 @@ export function OrderPrintPage() {
                   <th colSpan={6} style={{ borderBottom: '1px solid rgba(255,255,255,0.25)' }}>Size Breakdown</th>
                   <th rowSpan={2} style={{ width: 74 }}>Front Artwork<br />(Thumbnail)</th>
                   <th rowSpan={2} style={{ width: 74 }}>Back Artwork<br />(Thumbnail)</th>
-                  <th rowSpan={2} style={{ width: 74 }}>Front Mockup</th>
-                  <th rowSpan={2} style={{ width: 74 }}>Back Mockup</th>
+                  {hasFrontMockup && <th rowSpan={2} style={{ width: 74 }}>Front Mockup</th>}
+                  {hasBackMockup && <th rowSpan={2} style={{ width: 74 }}>Back Mockup</th>}
                   <th rowSpan={2} style={{ width: 74 }}>Unit Price<br />(USD)</th>
                   <th rowSpan={2} style={{ width: 78 }}>Total<br />(USD)</th>
                 </tr>
@@ -617,7 +622,7 @@ export function OrderPrintPage() {
               </thead>
               <tbody>
                 {apparelItems.length === 0 ? (
-                  <tr><td colSpan={16} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+                  <tr><td colSpan={apparelCols} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
                 ) : apparelItems.map((item, idx) => {
                   const sizes = parseSizes(item.size, Number(item.qty) || 0)
                   return (
@@ -639,8 +644,8 @@ export function OrderPrintPage() {
                       ))}
                       <td>{item.front_image ? <img src={item.front_image} alt="front artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
                       <td>{item.back_image ? <img src={item.back_image} alt="back artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
-                      <td>{item.product_image ? <img src={item.product_image} alt="front mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>
-                      <td><div className="art-empty">—</div></td>
+                      {hasFrontMockup && <td>{item.front_mockup ? <img src={item.front_mockup} alt="front mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>}
+                      {hasBackMockup && <td>{item.back_mockup ? <img src={item.back_mockup} alt="back mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>}
                       <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     </tr>

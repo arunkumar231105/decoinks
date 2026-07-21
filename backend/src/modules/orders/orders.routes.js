@@ -45,6 +45,8 @@ const apparelItemSchema = z.object({
   model: z.string().max(100).optional().nullable(),
   product_image: z.string().optional().nullable(),
   style_description: z.string().optional().nullable(),
+  front_mockup: z.string().optional().nullable(),
+  back_mockup:  z.string().optional().nullable(),
 })
 
 const gangsheetItemSchema = z.object({

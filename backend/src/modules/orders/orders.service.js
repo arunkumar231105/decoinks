@@ -27,14 +27,15 @@ async function insertItems(client, orderId, orderType, items) {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
         `INSERT INTO order_items_apparel (order_id, category, item, color, size, qty, artwork_no, artwork_size, unit_price, amount, front_image, back_image, sort_order,
-          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, product_image, style_description)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, product_image, style_description, front_mockup, back_mockup)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
         [orderId, item.category || null, item.item, item.color || null, item.size || null, item.qty,
          item.artwork_no || null, item.artwork_size || null, item.unit_price, amount,
          item.front_image || null, item.back_image || null, i,
          item.catalog_style_id || null, item.catalog_color_id || null, item.catalog_size_id || null,
          item.catalog_sku || null, item.brand || null, item.model || null,
-         item.product_image || null, item.style_description || null]
+         item.product_image || null, item.style_description || null,
+         item.front_mockup || null, item.back_mockup || null]
       )
     } else if (orderType === 'gangsheet') {
       const amount = +(Number(item.price_per_sheet) * Number(item.qty)).toFixed(2)

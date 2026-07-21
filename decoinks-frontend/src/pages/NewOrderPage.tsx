@@ -27,6 +27,7 @@ interface ApparelItem {
   id: string; category: string; item: string; color: string; size: string; qty: number
   artworkNo: string; artworkSize: string; unitPrice: number
   frontImage?: string | null; backImage?: string | null
+  frontMockup?: string | null; backMockup?: string | null
   styleId?: string; styleCode?: string; brand?: string; productImage?: string | null; styleDescription?: string | null
   colorId?: string; sizeId?: string; sku?: string
   availableColors?: CatalogColor[]; availableSizes?: CatalogSize[]; availableVariants?: CatalogVariant[]
@@ -198,7 +199,7 @@ export function NewOrderPage() {
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
   const uploadItemImage = async (
     rowId: string,
-    field: 'frontImage' | 'backImage' | 'artworkImage',
+    field: 'frontImage' | 'backImage' | 'artworkImage' | 'frontMockup' | 'backMockup',
     file: File,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     updater: (id: string, patch: any) => void,
@@ -261,7 +262,7 @@ export function NewOrderPage() {
 
     const items = existingOrder.items ?? []
     if (existingOrder.order_type === 'apparel') {
-      setApparel(items.map((r: any) => ({ id: uid(), category: r.category ?? 'T-Shirt', item: r.item ?? '', color: r.color ?? '', size: r.size ?? '', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null, styleId: r.catalog_style_id, styleCode: r.model, brand: r.brand, productImage: r.product_image, styleDescription: r.style_description, colorId: r.catalog_color_id, sizeId: r.catalog_size_id, sku: r.catalog_sku })))
+      setApparel(items.map((r: any) => ({ id: uid(), category: r.category ?? 'T-Shirt', item: r.item ?? '', color: r.color ?? '', size: r.size ?? '', qty: Number(r.qty), artworkNo: r.artwork_no ?? '', artworkSize: r.artwork_size ?? '', unitPrice: Number(r.unit_price), frontImage: r.front_image ?? null, backImage: r.back_image ?? null, frontMockup: r.front_mockup ?? null, backMockup: r.back_mockup ?? null, styleId: r.catalog_style_id, styleCode: r.model, brand: r.brand, productImage: r.product_image, styleDescription: r.style_description, colorId: r.catalog_color_id, sizeId: r.catalog_size_id, sku: r.catalog_sku })))
     } else if (existingOrder.order_type === 'gangsheet') {
       setGangsheet(items.map((r: any) => {
         const dimensions = String(r.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
@@ -500,7 +501,7 @@ export function NewOrderPage() {
 
   const buildPayload = () => {
     const itemsPayload = orderType === 'apparel'
-      ? apparel.map(r => ({ category: r.category, item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null, catalog_style_id: r.styleId || null, catalog_color_id: r.colorId || null, catalog_size_id: r.sizeId || null, catalog_sku: r.sku || null, brand: r.brand || null, model: r.styleCode || null, product_image: r.productImage || null, style_description: r.styleDescription || null }))
+      ? apparel.map(r => ({ category: r.category, item: r.item, color: r.color, size: r.size, qty: r.qty, artwork_no: r.artworkNo || null, artwork_size: r.artworkSize || null, unit_price: r.unitPrice, front_image: r.frontImage || null, back_image: r.backImage || null, front_mockup: r.frontMockup || null, back_mockup: r.backMockup || null, catalog_style_id: r.styleId || null, catalog_color_id: r.colorId || null, catalog_size_id: r.sizeId || null, catalog_sku: r.sku || null, brand: r.brand || null, model: r.styleCode || null, product_image: r.productImage || null, style_description: r.styleDescription || null }))
       : orderType === 'gangsheet'
         ? gangsheet.map((r, index) => ({
             size: `22" x ${Number(r.height) || 0}"`,
@@ -757,6 +758,7 @@ export function NewOrderPage() {
                         <th>SKU</th>
                         <th>Qty</th>
                         <th>Artwork</th>
+                        <th>Mockup <small>Optional</small></th>
                         <th>Unit Price</th>
                         <th>Amount</th>
                         <th></th>
@@ -781,6 +783,7 @@ export function NewOrderPage() {
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
                           <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontImage} label="Front" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { frontImage: null })} /><ImageUploadCell imageUrl={row.backImage} label="Back" uploading={uploadingImg[`${row.id}-backImage`]} onUpload={f => uploadItemImage(row.id, 'backImage', f, updateApparel, 'artworkSize')} onRemove={() => updateApparel(row.id, { backImage: null })} /></div></td>
+                          <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={row.frontMockup} label="Front" uploading={uploadingImg[`${row.id}-frontMockup`]} onUpload={f => uploadItemImage(row.id, 'frontMockup', f, updateApparel)} onRemove={() => updateApparel(row.id, { frontMockup: null })} /><ImageUploadCell imageUrl={row.backMockup} label="Back" uploading={uploadingImg[`${row.id}-backMockup`]} onUpload={f => uploadItemImage(row.id, 'backMockup', f, updateApparel)} onRemove={() => updateApparel(row.id, { backMockup: null })} /></div></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -800,6 +803,7 @@ export function NewOrderPage() {
                       <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
+                      <td></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                       <td></td>
