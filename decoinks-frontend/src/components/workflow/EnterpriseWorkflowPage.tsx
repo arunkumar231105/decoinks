@@ -26,7 +26,7 @@ const date = (value: any) => {
 }
 const titleCase = (value: any) => String(value || '—').replaceAll('_', ' ').replace(/\b\w/g, s => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')
-const countStatus = (rows: AnyRow[], ...needles: string[]) => rows.filter(r => needles.some(n => String(r.status || '').toLowerCase().includes(n.toLowerCase()))).length
+const countStatus = (rows: AnyRow[], ...statuses: string[]) => rows.filter(r => statuses.some(status => String(r.status || '').trim().toLowerCase() === status.trim().toLowerCase())).length
 
 const statusTone = (value: any) => {
   const text = String(value || '').toLowerCase()
@@ -54,12 +54,13 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
     kpis: [
       { label: 'Total Quotes', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Saved (Draft)', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
+      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
       { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'green' },
-      { label: 'Sent via Messenger', icon: Send, value: r => r.filter(x => /messenger/i.test(String(pick(x, 'sent_via', 'source') || ''))).length, tone: 'blue' },
-      { label: 'Converted', icon: BadgeCheck, value: r => countStatus(r, 'approved', 'converted'), tone: 'green' },
-      { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending'), tone: 'amber' },
-      { label: 'Discontinued', icon: X, value: r => countStatus(r, 'rejected', 'expired', 'discontinued'), tone: 'red' },
+      { label: 'Approved', icon: BadgeCheck, value: r => countStatus(r, 'approved'), tone: 'green' },
+      { label: 'Rejected', icon: X, value: r => countStatus(r, 'rejected'), tone: 'red' },
+      { label: 'Expired', icon: Clock3, value: r => countStatus(r, 'expired'), tone: 'amber' },
+      { label: 'Total Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
+      { label: 'Average Quote', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.total || 0), 0) / r.length : 0), tone: 'purple' },
     ],
     columns: [
       { key: 'quote_number', label: 'Quotation No.', render: r => <strong className="ew-link">{r.quote_number}</strong> },
@@ -81,13 +82,13 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void'],
     kpis: [
       { label: 'Total Invoices', icon: FileText, value: (_, t) => t, tone: 'blue' },
+      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
       { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'blue' },
-      { label: 'Positive', icon: BadgeCheck, value: r => r.filter(x => /positive/i.test(String(x.customer_response || ''))).length, tone: 'green' },
-      { label: 'Negative', icon: X, value: r => r.filter(x => /negative/i.test(String(x.customer_response || ''))).length, tone: 'red' },
-      { label: 'Unresponsive', icon: Clock3, value: r => r.filter(x => /unresponsive/i.test(String(x.customer_response || ''))).length, tone: 'amber' },
+      { label: 'Partially Paid', icon: Clock3, value: r => countStatus(r, 'partially paid'), tone: 'amber' },
       { label: 'Paid', icon: CircleDollarSign, value: r => countStatus(r, 'paid'), tone: 'green' },
-      { label: 'Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
-      { label: 'Outstanding', icon: Clock3, value: r => money(r.reduce((a, x) => a + Number(x.balance_due || 0), 0)), tone: 'purple' },
+      { label: 'Overdue', icon: Clock3, value: r => countStatus(r, 'overdue'), tone: 'red' },
+      { label: 'Total Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
+      { label: 'Balance Due', icon: Clock3, value: r => money(r.reduce((a, x) => a + Number(x.balance_due || 0), 0)), tone: 'purple' },
     ],
     columns: [
       { key: 'invoice_number', label: 'Invoice #', render: r => <strong className="ew-link">{r.invoice_number}</strong> },
@@ -110,13 +111,13 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled'],
     kpis: [
       { label: 'Orders', icon: ShoppingBag, value: (_, t) => t, tone: 'blue' },
-      { label: 'Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'purple' },
-      { label: 'Approved', icon: BadgeCheck, value: r => countStatus(r, 'approved'), tone: 'green' },
-      { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending', 'draft'), tone: 'amber' },
-      { label: 'PO Issued', icon: FileText, value: r => r.filter(x => pick(x, 'po_number', 'purchase_order_number')).length, tone: 'red' },
-      { label: 'In Production', icon: Box, value: r => countStatus(r, 'production'), tone: 'purple' },
-      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'ship', 'transit'), tone: 'blue' },
-      { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'deliver', 'complete'), tone: 'green' },
+      { label: 'Order Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'purple' },
+      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
+      { label: 'Confirmed', icon: BadgeCheck, value: r => countStatus(r, 'confirmed'), tone: 'green' },
+      { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
+      { label: 'Ready to Ship', icon: PackageCheck, value: r => countStatus(r, 'ready to ship'), tone: 'amber' },
+      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
+      { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'delivered'), tone: 'green' },
     ],
     columns: [
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
@@ -139,14 +140,14 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     search: 'Search PO by number, vendor, order or tracking ID…', numberKey: 'po_number', dateKey: 'order_date',
     statuses: ['Draft', 'Pending Approval', 'Approved', 'Sent', 'Accepted', 'In Production', 'Shipped', 'Partially Received', 'Received', 'Closed', 'Cancelled'],
     kpis: [
-      { label: 'Total PO Issued', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'PO Issued', icon: FileText, value: r => countStatus(r, 'issued', 'approved'), tone: 'red' },
-      { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending', 'draft'), tone: 'amber' },
-      { label: 'In Production', icon: Box, value: r => countStatus(r, 'production'), tone: 'purple' },
-      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'ship', 'transit'), tone: 'blue' },
-      { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'deliver', 'received'), tone: 'green' },
-      { label: 'On Hold', icon: Clock3, value: r => countStatus(r, 'hold'), tone: 'amber' },
-      { label: 'Cancelled', icon: X, value: r => countStatus(r, 'cancel'), tone: 'red' },
+      { label: 'Total Purchase Orders', icon: FileText, value: (_, t) => t, tone: 'blue' },
+      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
+      { label: 'Pending Approval', icon: Clock3, value: r => countStatus(r, 'pending approval'), tone: 'amber' },
+      { label: 'Approved / Sent', icon: Send, value: r => countStatus(r, 'approved', 'sent'), tone: 'blue' },
+      { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
+      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
+      { label: 'Received / Closed', icon: PackageCheck, value: r => countStatus(r, 'received', 'closed'), tone: 'green' },
+      { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(pick(x, 'grand_total', 'total') || 0), 0)), tone: 'green' },
     ],
     columns: [
       { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'source_po_number', 'po_number')}</strong> },
