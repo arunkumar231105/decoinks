@@ -36,36 +36,122 @@ async function getKanban() {
   return { columns }
 }
 
-async function list({ page = 1, limit = 10, search = '', stage = '', status = '', assigned_to = '' }) {
-  const offset = (page - 1) * limit
+const LEAD_SORT_COLUMNS = {
+  created_at: 'l.created_at',
+  qualification_score: 'l.conversion_score',
+  estimated_value: 'l.estimated_value',
+  last_activity: 'last_activity_at',
+  lead_number: 'l.display_number',
+}
+
+function buildListWhere(filters) {
   const conditions = ['l.deleted_at IS NULL']
   const params = []
-
-  if (search) {
-    params.push(`%${search}%`)
-    conditions.push(`(l.lead_number ILIKE $${params.length} OR l.supplier_name ILIKE $${params.length} OR l.customer_name ILIKE $${params.length} OR l.description ILIKE $${params.length})`)
+  const add = (value, sql) => {
+    params.push(value)
+    conditions.push(sql(params.length))
   }
-  if (stage) { params.push(stage); conditions.push(`l.stage = $${params.length}`) }
-  if (status) { params.push(status); conditions.push(`l.status = $${params.length}`) }
-  if (assigned_to) { params.push(assigned_to); conditions.push(`l.assigned_to = $${params.length}`) }
 
-  const where = 'WHERE ' + conditions.join(' AND ')
+  if (filters.search) {
+    add(`%${filters.search}%`, n => `(l.display_number ILIKE $${n} OR l.lead_number ILIKE $${n} OR l.supplier_name ILIKE $${n} OR l.customer_name ILIKE $${n} OR l.company_name ILIKE $${n} OR l.email ILIKE $${n} OR l.phone ILIKE $${n})`)
+  }
+  if (filters.stage) add(filters.stage, n => `l.stage = $${n}`)
+  if (filters.status) add(filters.status, n => `l.status = $${n}`)
+  if (filters.assigned_to) add(filters.assigned_to, n => `l.assigned_to = $${n}`)
+  if (filters.source) add(filters.source, n => `l.source = $${n}`)
+  if (filters.purchase_intent) add(filters.purchase_intent, n => `l.customer_intent ILIKE $${n}`)
+  if (filters.temperature) add(filters.temperature, n => `l.urgency ILIKE $${n}`)
+  if (filters.product_interest) {
+    add(`%${filters.product_interest}%`, n => `(l.product_interest ILIKE $${n} OR EXISTS (SELECT 1 FROM lead_product_interest lpi_f WHERE lpi_f.lead_id = l.id AND lpi_f.product_type ILIKE $${n}))`)
+  }
+  if (filters.qualification === 'qualified') conditions.push('COALESCE(l.conversion_score, 0) >= 60')
+  if (filters.qualification === 'developing') conditions.push('COALESCE(l.conversion_score, 0) BETWEEN 30 AND 59')
+  if (filters.qualification === 'unqualified') conditions.push('COALESCE(l.conversion_score, 0) < 30')
+  if (filters.date_from) add(filters.date_from, n => `l.created_at >= $${n}::date`)
+  if (filters.date_to) add(filters.date_to, n => `l.created_at < ($${n}::date + INTERVAL '1 day')`)
+
+  return { where: `WHERE ${conditions.join(' AND ')}`, params }
+}
+
+async function list({
+  page = 1, limit = 10, search = '', stage = '', status = '', assigned_to = '',
+  source = '', qualification = '', purchase_intent = '', product_interest = '',
+  temperature = '', date_from = '', date_to = '', sort_by = 'created_at', sort_dir = 'desc',
+}) {
+  page = Math.max(1, Number(page) || 1)
+  limit = Math.min(10000, Math.max(1, Number(limit) || 10))
+  const offset = (page - 1) * limit
+  const { where, params } = buildListWhere({ search, stage, status, assigned_to, source, qualification, purchase_intent, product_interest, temperature, date_from, date_to })
   const countRes = await query(
     `SELECT COUNT(*) FROM leads l ${where}`, params
   )
   const total = parseInt(countRes.rows[0].count, 10)
 
-  params.push(limit, offset)
+  const dataParams = [...params, limit, offset]
+  const orderColumn = LEAD_SORT_COLUMNS[sort_by] || LEAD_SORT_COLUMNS.created_at
+  const orderDirection = String(sort_dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC'
   const { rows } = await query(
-    `SELECT l.*, u.name AS agent_name
+    `SELECT l.*, u.name AS agent_name,
+       COALESCE(NULLIF(l.customer_name, ''), NULLIF(l.supplier_name, ''), NULLIF(l.company_name, ''), l.email, 'Unknown lead') AS display_name,
+       COALESCE(l.product_interest, pi.product_types) AS product_interest_display,
+       COALESCE(activity.last_activity_at, l.last_contact_at, l.updated_at, l.created_at) AS last_activity_at,
+       activity.last_activity_description,
+       COALESCE(l.next_action, next_task.title) AS next_action_display,
+       COALESCE(l.next_followup_date, next_task.due_at) AS next_action_at
      FROM leads l
      LEFT JOIN users u ON u.id = l.assigned_to
+     LEFT JOIN LATERAL (
+       SELECT STRING_AGG(DISTINCT lpi.product_type, ', ') AS product_types
+       FROM lead_product_interest lpi WHERE lpi.lead_id = l.id
+     ) pi ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT al.created_at AS last_activity_at, al.description AS last_activity_description
+       FROM activity_logs al
+       WHERE al.entity_type = 'lead' AND al.entity_id = l.id
+       ORDER BY al.created_at DESC LIMIT 1
+     ) activity ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT t.title, t.due_at
+       FROM tasks t WHERE t.lead_id = l.id AND COALESCE(t.status, '') NOT IN ('completed', 'Completed', 'cancelled', 'Cancelled')
+       ORDER BY t.due_at NULLS LAST, t.created_at DESC LIMIT 1
+     ) next_task ON TRUE
      ${where}
-     ORDER BY l.created_at DESC
-     LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
+     ORDER BY ${orderColumn} ${orderDirection} NULLS LAST, l.id DESC
+     LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+    dataParams
   )
   return { rows, total }
+}
+
+async function getStats() {
+  const { rows } = await query(
+    `SELECT
+       COUNT(*)::INT AS total_inquiries,
+       COUNT(*) FILTER (WHERE l.auto_responded)::INT AS auto_responded,
+       COUNT(*) FILTER (WHERE l.message_count > 0 OR l.last_contact_at IS NOT NULL)::INT AS engaged,
+       COUNT(*) FILTER (WHERE l.qualified_at IS NOT NULL OR COALESCE(l.conversion_score, 0) >= 60)::INT AS qualified,
+       COUNT(*) FILTER (WHERE EXISTS (
+         SELECT 1 FROM quotations q WHERE q.lead_id = l.id AND (q.sent_at IS NOT NULL OR q.status <> 'Draft')
+       ))::INT AS quotes_sent,
+       COUNT(*) FILTER (WHERE l.stage = 'confirmed')::INT AS ready_to_order,
+       COUNT(*) FILTER (WHERE l.stage = 'payment')::INT AS payment_pending,
+       COUNT(*) FILTER (WHERE EXISTS (
+         SELECT 1 FROM quotations q JOIN orders o ON o.quotation_id = q.id AND o.deleted_at IS NULL WHERE q.lead_id = l.id
+       ))::INT AS orders_created
+     FROM leads l WHERE l.deleted_at IS NULL`
+  )
+  return rows[0]
+}
+
+async function getFilterOptions() {
+  const [sources, products, intents, temperatures, agents] = await Promise.all([
+    query(`SELECT DISTINCT source::TEXT AS value FROM leads WHERE deleted_at IS NULL ORDER BY value`),
+    query(`SELECT DISTINCT product_type AS value FROM lead_product_interest WHERE product_type IS NOT NULL UNION SELECT DISTINCT product_interest FROM leads WHERE product_interest IS NOT NULL ORDER BY value`),
+    query(`SELECT DISTINCT customer_intent AS value FROM leads WHERE deleted_at IS NULL AND customer_intent IS NOT NULL ORDER BY value`),
+    query(`SELECT DISTINCT urgency AS value FROM leads WHERE deleted_at IS NULL AND urgency IS NOT NULL ORDER BY value`),
+    query(`SELECT id AS value, name AS label FROM users WHERE is_active = TRUE ORDER BY name`),
+  ])
+  return { sources: sources.rows, products: products.rows, intents: intents.rows, temperatures: temperatures.rows, agents: agents.rows }
 }
 
 async function getById(id) {
@@ -125,6 +211,8 @@ async function create({
   country, state, city, zip, shipping_address, billing_address,
   buyer_type, internal_notes,
   instagram_id, facebook_id, priority, source_campaign, next_followup_date, last_contact_at,
+  conversion_score, estimated_value, urgency, customer_intent, next_action,
+  auto_responded, auto_responded_at, qualified_at,
   qualification,
   productInterest = [],
 }) {
@@ -139,8 +227,10 @@ async function create({
           company_name, email, phone, whatsapp,
           country, state, city, zip, shipping_address, billing_address,
           buyer_type, internal_notes, instagram_id, facebook_id, priority,
-          source_campaign, next_followup_date, last_contact_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+          source_campaign, next_followup_date, last_contact_at, conversion_score,
+          estimated_value, urgency, customer_intent, next_action, auto_responded,
+          auto_responded_at, qualified_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
        RETURNING *`,
       [
         lead_number, supplier_id || null, customer_name || null, source, description || null, assigned_to || null,
@@ -149,6 +239,9 @@ async function create({
         shipping_address || null, billing_address || null,
         buyer_type || null, internal_notes || null, instagram_id || null, facebook_id || null,
         priority || 'medium', source_campaign || null, next_followup_date || null, last_contact_at || null,
+        conversion_score ?? null, estimated_value ?? null, urgency || null,
+        customer_intent || null, next_action || null, !!auto_responded,
+        auto_responded_at || null, qualified_at || null,
       ]
     )
     const lead = rows[0]
@@ -174,6 +267,8 @@ async function update(id, fields, actorId) {
     'country', 'state', 'city', 'zip', 'shipping_address', 'billing_address',
     'buyer_type', 'internal_notes',
     'instagram_id', 'facebook_id', 'priority', 'source_campaign', 'next_followup_date', 'last_contact_at',
+    'conversion_score', 'estimated_value', 'urgency', 'customer_intent', 'next_action',
+    'auto_responded', 'auto_responded_at', 'qualified_at',
   ]
   const sets = []
   const params = []
@@ -496,6 +591,6 @@ async function updateStatus(id, status, actor) {
 }
 
 module.exports = {
-  getKanban, list, getById, create, update, updateStatus, convertToQuote, move, remove,
+  getKanban, list, getStats, getFilterOptions, getById, create, update, updateStatus, convertToQuote, move, remove,
   getComments, addComment, deleteComment, addAttachment, deleteAttachment,
 }

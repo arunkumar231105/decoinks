@@ -1,289 +1,55 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider as MuiDivider, Menu, MenuItem } from '@mui/material'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Loader2, MoreHorizontal, Plus, Search, Zap } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider, Menu, MenuItem, Skeleton } from '@mui/material'
+import { ArrowDownUp, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileUp, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2, UserRound, X } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
+import { LeadDetailsDrawer } from '../components/leads/LeadDetailsDrawer'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+type Lead = { id:string; display_number?:string; lead_number:string; display_name:string; company_name?:string; email?:string; phone?:string; source?:string; stage:string; status:string; created_at:string; conversion_score?:number; urgency?:string; customer_intent?:string; product_interest_display?:string; estimated_value?:number; last_activity_at?:string; last_activity_description?:string; next_action_display?:string; next_action_at?:string; customer_id?:string }
+type ListResponse = { rows: Lead[]; total:number; page:number; limit:number }
+type Filters = { stage:string; status:string; qualification:string; purchase_intent:string; source:string; product_interest:string; date_from:string; date_to:string }
+const EMPTY_FILTERS: Filters = { stage:'', status:'', qualification:'', purchase_intent:'', source:'', product_interest:'', date_from:'', date_to:'' }
+const STAGES = ['initiated','quotation','artwork','gangsheet','payment','confirmed']
+const STATUSES = ['New','Quotation','Pending','Payment Sent','Partial','Confirmed','Quotation Generated','Quotation Sent','Quotation Approved']
+const metricConfig = [
+  ['total_inquiries','Total Inquiries','blue'],['auto_responded','Auto Responded','green'],['engaged','Engaged','purple'],['qualified','Qualified','orange'],
+  ['quotes_sent','Quotes Sent','blue'],['ready_to_order','Ready to Order','green'],['payment_pending','Payment Pending','red'],['orders_created','Orders Created','purple'],
+] as const
+const fmt = (v?:string, time=false) => v ? new Date(v).toLocaleString('en-US', time ? { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' } : { month:'short', day:'numeric', year:'numeric' }) : '—'
+const relative = (v?:string) => { if(!v)return '—'; const days=Math.floor((Date.now()-new Date(v).getTime())/86400000); return days<1?'Today':days===1?'1d ago':`${days}d ago` }
 
-interface Lead {
-  id: string
-  lead_number: string
-  supplier_name: string
-  customer_name: string | null
-  company_name: string | null
-  source: string | null
-  status: string
-  stage: string
-  created_at: string
-  agent_name: string | null
-  customer_id: string | null
-}
-
-const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
-  'New':                  { bg: '#f1f5f9', color: '#475569' },
-  'Quotation':            { bg: '#dbeafe', color: '#1d4ed8' },
-  'Pending':              { bg: '#fef3c7', color: '#b45309' },
-  'Payment Sent':         { bg: '#ede9fe', color: '#6d28d9' },
-  'Partial':              { bg: '#fed7aa', color: '#c2410c' },
-  'Confirmed':            { bg: '#dcfce7', color: '#15803d' },
-  'Quotation Generated':  { bg: '#ccfbf1', color: '#0d9488' },
-  'Quotation Sent':       { bg: '#bfdbfe', color: '#2563eb' },
-  'Quotation Approved':   { bg: '#bbf7d0', color: '#16a34a' },
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
-export function LeadsListPage() {
-  const navigate     = useNavigate()
-  const queryClient  = useQueryClient()
-  const [search, setSearch]         = useState('')
-  const [page, setPage]             = useState(1)
-  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; lead: Lead } | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; number: string } | null>(null)
-
-  const { data, isLoading } = useQuery<{ rows: Lead[]; total: number }>({
-    queryKey: ['leads', 'list', page, search],
-    queryFn: () =>
-      api.get('/leads/list', { params: { page, limit: 20, search } })
-         .then(r => r.data.data),
-    placeholderData: prev => prev,
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/leads/${id}`),
-    onSuccess: () => {
-      toast.success('Lead deleted')
-      queryClient.invalidateQueries({ queryKey: ['leads', 'list'] })
-      setConfirmDelete(null)
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.message ?? 'Could not delete lead')
-      setConfirmDelete(null)
-    },
-  })
-
-  // Converts lead to customer (if needed) then opens New Quotation form with customer pre-filled
-  const convertMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
-    onSuccess: (res: any) => {
-      const customer = res.data?.data
-      const existingId: string | undefined = res.data?.customer_id
-      queryClient.invalidateQueries({ queryKey: ['leads', 'list'] })
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
-      const customerId = customer?.id ?? existingId
-      if (customerId) navigate('/quotes/new', { state: { fromCustomerId: customerId } })
-      else navigate('/quotes/new')
-    },
-    onError: (err: any) => {
-      const existingId: string | undefined = err.response?.data?.data?.customer_id
-      if (existingId) navigate('/quotes/new', { state: { fromCustomerId: existingId } })
-      else toast.error(err.response?.data?.message ?? 'Could not create quotation from lead')
-    },
-  })
-
-  const leads     = data?.rows ?? []
-  const total     = data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / 20))
-
-  const fmtDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-
-  return (
-    <div className="cust-page">
-      {/* ── Header ── */}
-      <div className="cust-page-header">
-        <div>
-          <h1 className="cust-page-title">
-            <Zap size={18} style={{ marginRight: 8, color: '#0d9488', verticalAlign: 'middle' }} />
-            Leads
-          </h1>
-          <p className="cust-page-sub">Track every prospect from first contact to confirmed order.</p>
-        </div>
-        <div className="cust-controls">
-          <div className="cust-search">
-            <Search size={14} />
-            <input
-              placeholder="Search by lead #, name, or description…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-            />
-          </div>
-          <button
-            className="lb-action-btn lb-action-primary"
-            onClick={() => navigate('/leads/new')}
-          >
-            <Plus size={14} /> Add Lead
-          </button>
-        </div>
-      </div>
-
-      {/* ── Table ── */}
-      <div className="cust-table-wrap">
-        <table className="cust-table">
-          <thead>
-            <tr>
-              <th>Lead #</th>
-              <th>Customer / Company</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th>Stage</th>
-              <th>Agent</th>
-              <th>Created</th>
-              <th style={{ width: 40 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr>
-                <td colSpan={8} className="cust-empty-row">Loading…</td>
-              </tr>
-            )}
-            {!isLoading && leads.length === 0 && (
-              <tr>
-                <td colSpan={8} className="cust-empty-row">
-                  No leads found.{' '}
-                  <button
-                    className="nq-link-btn"
-                    onClick={() => navigate('/leads/new')}
-                  >
-                    Add your first lead
-                  </button>
-                </td>
-              </tr>
-            )}
-            {leads.map(lead => {
-              const sc = STATUS_COLORS[lead.status]
-              return (
-                <tr
-                  key={lead.id}
-                  className="cust-row"
-                  style={{ cursor: 'default' }}
-                >
-                  <td>
-                    <span className="lb-lead-id">{lead.lead_number}</span>
-                  </td>
-                  <td className="cust-name-cell">
-                    <span>{lead.supplier_name ?? lead.customer_name ?? '—'}</span>
-                    {lead.company_name && (
-                      <span className="cust-muted">{lead.company_name}</span>
-                    )}
-                  </td>
-                  <td className="cust-muted">{lead.source ?? '—'}</td>
-                  <td>
-                    <span
-                      className="cust-status-badge"
-                      style={sc
-                        ? { background: sc.bg, color: sc.color }
-                        : { background: '#f1f5f9', color: '#475569' }}
-                    >
-                      {lead.status}
-                    </span>
-                  </td>
-                  <td className="cust-muted" style={{ textTransform: 'capitalize' }}>
-                    {lead.stage}
-                  </td>
-                  <td className="cust-muted">{lead.agent_name ?? '—'}</td>
-                  <td className="cust-muted">{fmtDate(lead.created_at)}</td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <button
-                      className="lb-icon-btn"
-                      onClick={e => setMenuAnchor({ el: e.currentTarget, lead })}
-                    >
-                      <MoreHorizontal size={15} />
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── Pagination ── */}
-      {totalPages > 1 && (
-        <div className="cust-pagination" style={{ display: 'flex', gap: 6, padding: '12px 0', justifyContent: 'center' }}>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-            <button
-              key={n}
-              className={`lb-action-btn ${n === page ? 'lb-action-primary' : ''}`}
-              style={{ minWidth: 36, padding: '0 10px' }}
-              onClick={() => setPage(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Row context menu ── */}
-      <Menu
-        anchorEl={menuAnchor?.el}
-        open={Boolean(menuAnchor)}
-        onClose={() => setMenuAnchor(null)}
-      >
-        <MenuItem
-          onClick={() => {
-            navigate('/leads/board')
-            setMenuAnchor(null)
-          }}
-        >
-          <FileText size={14} style={{ marginRight: 8 }} /> Open in Board View
-        </MenuItem>
-        <MuiDivider />
-        <MenuItem
-          onClick={() => {
-            const lead = menuAnchor!.lead
-            setMenuAnchor(null)
-            if (lead.customer_id) {
-              // Already a customer — go straight to new quote form with customer pre-filled
-              navigate('/quotes/new', { state: { fromCustomerId: lead.customer_id } })
-            } else {
-              // Convert to customer first, then open quote form
-              convertMutation.mutate(lead.id)
-            }
-          }}
-          disabled={convertMutation.isPending}
-        >
-          {convertMutation.isPending
-            ? <><Loader2 size={14} style={{ marginRight: 8, animation: 'spin 1s linear infinite' }} /> Converting…</>
-            : <><Zap size={14} style={{ marginRight: 8, color: '#0d9488' }} /> New Quotation</>
-          }
-        </MenuItem>
-        <MuiDivider />
-        <MenuItem
-          sx={{ color: '#dc2626' }}
-          onClick={() => {
-            const lead = menuAnchor!.lead
-            setMenuAnchor(null)
-            setConfirmDelete({ id: lead.id, number: lead.lead_number })
-          }}
-        >
-          Delete Lead
-        </MenuItem>
-      </Menu>
-
-      <Dialog open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}>
-        <DialogTitle>Delete Lead</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Permanently delete lead <strong>{confirmDelete?.number}</strong>? This cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <button className="lb-action-btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-          <button
-            className="lb-action-btn"
-            style={{ color: '#dc2626', borderColor: '#fca5a5' }}
-            disabled={deleteMutation.isPending}
-            onClick={() => confirmDelete && deleteMutation.mutate(confirmDelete.id)}
-          >
-            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-          </button>
-        </DialogActions>
-      </Dialog>
-    </div>
-  )
+export function LeadsListPage(){
+  const nav=useNavigate(), qc=useQueryClient(), importInput=useRef<HTMLInputElement>(null); const [input,setInput]=useState(''),[search,setSearch]=useState(''),[filters,setFilters]=useState(EMPTY_FILTERS),[page,setPage]=useState(1),[limit,setLimit]=useState(10),[sort,setSort]=useState({by:'created_at',dir:'desc'}),[selected,setSelected]=useState<Set<string>>(new Set()),[drawer,setDrawer]=useState<string|null>(null),[menu,setMenu]=useState<{el:HTMLElement;lead:Lead}|null>(null),[confirm,setConfirm]=useState<Lead|null>(null),[exportEl,setExportEl]=useState<HTMLElement|null>(null),[importing,setImporting]=useState(false)
+  useEffect(()=>{const id=setTimeout(()=>{setSearch(input.trim());setPage(1)},300);return()=>clearTimeout(id)},[input])
+  const params=useMemo(()=>({page,limit,search,...filters,sort_by:sort.by,sort_dir:sort.dir}),[page,limit,search,filters,sort])
+  const list=useQuery<ListResponse>({queryKey:['leads','workspace',params],queryFn:()=>api.get('/leads/list',{params}).then(r=>r.data.data),placeholderData:p=>p})
+  const stats=useQuery<Record<string,number>>({queryKey:['leads','stats'],queryFn:()=>api.get('/leads/stats').then(r=>r.data.data)})
+  const options=useQuery<any>({queryKey:['leads','filters'],queryFn:()=>api.get('/leads/filters').then(r=>r.data.data)})
+  const remove=useMutation({mutationFn:(id:string)=>api.delete(`/leads/${id}`),onSuccess:()=>{toast.success('Lead deleted');setConfirm(null);setDrawer(null);qc.invalidateQueries({queryKey:['leads']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Could not delete lead')})
+  const rows=list.data?.rows||[], total=list.data?.total||0, pages=Math.max(1,Math.ceil(total/limit)), start=total?(page-1)*limit+1:0, end=Math.min(page*limit,total)
+  const clear=()=>{setInput('');setSearch('');setFilters(EMPTY_FILTERS);setPage(1)}
+  const active=Boolean(search||Object.values(filters).some(Boolean))
+  const setFilter=(key:keyof Filters,value:string)=>{setFilters(f=>({...f,[key]:value}));setPage(1)}
+  const toggleSort=(by:string)=>setSort(s=>({by,dir:s.by===by&&s.dir==='desc'?'asc':'desc'}))
+  const exportCsv=async()=>{try{const res=await api.get('/leads/export',{params:{search,...filters,sort_by:sort.by,sort_dir:sort.dir},responseType:'blob'});const url=URL.createObjectURL(res.data);const a=document.createElement('a');a.href=url;a.download=`leads-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);setExportEl(null)}catch{toast.error('Could not export leads')}}
+  const importCsv=async(file?:File)=>{if(!file)return;setImporting(true);try{const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error('CSV has no data rows');const parse=(line:string)=>{const out:string[]=[];let cell='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&line[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=!quoted;else if(c===','&&!quoted){out.push(cell.trim());cell=''}else cell+=c}out.push(cell.trim());return out};const headers=parse(lines[0]).map(x=>x.toLowerCase().replace(/[^a-z0-9]+/g,'_'));let ok=0,failed=0;for(const line of lines.slice(1)){const values=parse(line),row=Object.fromEntries(headers.map((h,i)=>[h,values[i]||'']));const customer_name=row.customer_name||row.name;const source=row.source||'Email';if(!customer_name){failed++;continue}try{await api.post('/leads',{customer_name,source,company_name:row.company_name||row.company||null,email:row.email||null,phone:row.phone||null,description:row.description||null});ok++}catch{failed++}}toast.success(`Import complete: ${ok} succeeded, ${failed} failed`);qc.invalidateQueries({queryKey:['leads']})}catch(e:any){toast.error(e.message||'Could not import CSV')}finally{setImporting(false);if(importInput.current)importInput.current.value=''}}
+  const field=(label:string,key:keyof Filters,items:string[])=><label className="leads-filter"><span>{label}</span><select value={filters[key]} onChange={e=>setFilter(key,e.target.value)}><option value="">All</option>{items.filter(Boolean).map(v=><option key={v} value={v}>{v}</option>)}</select></label>
+  return <div className="leads-page">
+    <header className="leads-page-head"><div><h1>Leads</h1><p>Track and manage every prospect from first contact to confirmed order.</p></div><div className="leads-head-tools"><label className="leads-search"><Search size={17}/><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Search leads by name, email, phone or company…"/>{input&&<button onClick={()=>setInput('')} aria-label="Clear search"><X size={15}/></button>}</label><input ref={importInput} hidden type="file" accept=".csv,text/csv" onChange={e=>importCsv(e.target.files?.[0])}/><button className="leads-btn" disabled={importing} onClick={()=>importInput.current?.click()}><FileUp size={16}/> {importing?'Importing…':'Import Leads'}</button><button className="leads-btn" onClick={e=>setExportEl(e.currentTarget)}><Download size={16}/> Export <ChevronDown size={14}/></button><button className="leads-btn primary" onClick={()=>nav('/leads/new')}><Plus size={17}/> Add Lead</button></div></header>
+    <section className="leads-stats">{metricConfig.map(([key,label,tone])=><article key={key}>{stats.isLoading?<Skeleton width="70%"/>:<><span className={`leads-stat-icon ${tone}`}><UserRound size={19}/></span><div><small>{label}</small><strong>{stats.data?.[key]??0}</strong><p>Current total</p></div></>}</article>)}</section>
+    <section className="leads-filters">{field('Lead Stage','stage',STAGES)}{field('Lead Status','status',STATUSES)}{field('Qualification','qualification',['qualified','developing','unqualified'])}{field('Purchase Intent','purchase_intent',(options.data?.intents||[]).map((x:any)=>x.value))}{field('Source','source',(options.data?.sources||[]).map((x:any)=>x.value))}{field('Product Interest','product_interest',(options.data?.products||[]).map((x:any)=>x.value))}<label className="leads-filter date"><span>Date Range</span><div><input type="date" value={filters.date_from} onChange={e=>setFilter('date_from',e.target.value)}/><input type="date" value={filters.date_to} onChange={e=>setFilter('date_to',e.target.value)}/></div></label><button className="leads-btn filter-more" title="Additional filters are represented by the available fields"><SlidersHorizontal size={15}/> More Filters</button><button className="leads-btn clear" onClick={clear} disabled={!active}><X size={15}/> Clear Filters</button></section>
+    <section className="leads-table-card"><div className="leads-table-scroll"><table className="leads-table"><thead><tr><th><input type="checkbox" aria-label="Select page" checked={rows.length>0&&rows.every(r=>selected.has(r.id))} onChange={e=>setSelected(e.target.checked?new Set(rows.map(r=>r.id)):new Set())}/></th><th>Lead No</th><th><button onClick={()=>toggleSort('created_at')}>Lead Date & Time <ArrowDownUp size={12}/></button></th><th>Customer Name</th><th>Source</th><th>Stage</th><th>Lead Status</th><th><button onClick={()=>toggleSort('qualification_score')}>Qualification <ArrowDownUp size={12}/></button></th><th>Temperature</th><th>Product / Purchase Intent</th><th><button onClick={()=>toggleSort('estimated_value')}>Est. Value <ArrowDownUp size={12}/></button></th><th><button onClick={()=>toggleSort('last_activity')}>Last Activity <ArrowDownUp size={12}/></button></th><th>Next Action</th><th>Actions</th></tr></thead><tbody>
+      {list.isLoading&&Array.from({length:7}).map((_,i)=><tr key={i}><td colSpan={14}><Skeleton height={38}/></td></tr>)}
+      {list.isError&&<tr><td colSpan={14}><div className="leads-state"><strong>Unable to load leads.</strong><button onClick={()=>list.refetch()}>Retry</button></div></td></tr>}
+      {!list.isLoading&&!list.isError&&!rows.length&&<tr><td colSpan={14}><div className="leads-state"><strong>{active?'No leads match the selected filters.':'No leads in the system yet.'}</strong><p>{active?'Try clearing one or more filters.':'Add a lead to start your sales pipeline.'}</p><button onClick={active?clear:()=>nav('/leads/new')}>{active?'Clear Filters':'Add Lead'}</button></div></td></tr>}
+      {rows.map(r=>{const score=Number(r.conversion_score||0);return <tr key={r.id} className={drawer===r.id?'active':''} onClick={()=>setDrawer(r.id)}><td onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.display_number||r.lead_number}`} checked={selected.has(r.id)} onChange={e=>setSelected(s=>{const n=new Set(s);e.target.checked?n.add(r.id):n.delete(r.id);return n})}/></td><td><b className="leads-no">{r.display_number||r.lead_number}</b></td><td>{fmt(r.created_at,true)}</td><td><div className="leads-customer"><span>{(r.display_name||'?').slice(0,1).toUpperCase()}</span><div><b>{r.display_name}</b><small>{r.company_name||r.email||'—'}</small></div></div></td><td>{r.source||'—'}</td><td><span className="leads-pill stage">{r.stage}</span></td><td><span className="leads-pill status">{r.status}</span></td><td><div className="leads-score"><b>{score}<small>/100</small></b><span><i style={{width:`${score}%`}}/></span></div></td><td><span className={`leads-pill temp ${(r.urgency||'').toLowerCase()}`}>{r.urgency||'—'}</span></td><td><b>{r.product_interest_display||'—'}</b><small className="leads-cell-sub">{r.customer_intent||'—'}</small></td><td>{r.estimated_value==null?'—':`$${Number(r.estimated_value).toLocaleString()}`}</td><td>{relative(r.last_activity_at)}<small className="leads-cell-sub">{r.last_activity_description||'—'}</small></td><td>{r.next_action_display||'—'}<small className="leads-cell-sub">{fmt(r.next_action_at)}</small></td><td onClick={e=>e.stopPropagation()}><button className="leads-icon-btn" aria-label="Lead actions" onClick={e=>setMenu({el:e.currentTarget,lead:r})}><MoreHorizontal size={17}/></button></td></tr>})}
+    </tbody></table></div>
+    <footer className="leads-pagination"><p>Showing <b>{start}</b> to <b>{end}</b> of <b>{total}</b> leads</p><label>Rows per page <select value={limit} onChange={e=>{setLimit(+e.target.value);setPage(1)}}><option>10</option><option>20</option><option>50</option></select></label><div><button disabled={page===1} onClick={()=>setPage(1)}><ChevronsLeft size={16}/></button><button disabled={page===1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button>{Array.from({length:Math.min(5,pages)},(_,i)=>Math.max(1,Math.min(pages-4,page-2))+i).filter(n=>n<=pages).map(n=><button key={n} className={n===page?'active':''} onClick={()=>setPage(n)}>{n}</button>)}<button disabled={page===pages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button><button disabled={page===pages} onClick={()=>setPage(pages)}><ChevronsRight size={16}/></button></div></footer></section>
+    <LeadDetailsDrawer leadId={drawer} onClose={()=>setDrawer(null)}/>
+    <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={()=>setExportEl(null)}><MenuItem onClick={exportCsv}>Export filtered results as CSV</MenuItem></Menu>
+    <Menu anchorEl={menu?.el} open={Boolean(menu)} onClose={()=>setMenu(null)}><MenuItem onClick={()=>{setDrawer(menu!.lead.id);setMenu(null)}}>View details</MenuItem><MenuItem onClick={()=>{nav('/leads/board');setMenu(null)}}>Open in board</MenuItem><Divider/><MenuItem sx={{color:'#dc2626'}} onClick={()=>{setConfirm(menu!.lead);setMenu(null)}}><Trash2 size={14} style={{marginRight:8}}/> Delete lead</MenuItem></Menu>
+    <Dialog open={Boolean(confirm)} onClose={()=>setConfirm(null)}><DialogTitle>Delete Lead</DialogTitle><DialogContent><DialogContentText>Delete <strong>{confirm?.display_number||confirm?.lead_number}</strong>? This action cannot be undone.</DialogContentText></DialogContent><DialogActions><button className="leads-btn" onClick={()=>setConfirm(null)}>Cancel</button><button className="leads-btn danger" disabled={remove.isPending} onClick={()=>confirm&&remove.mutate(confirm.id)}>Delete</button></DialogActions></Dialog>
+  </div>
 }
