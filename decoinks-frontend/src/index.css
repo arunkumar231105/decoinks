@@ -16219,15 +16219,16 @@ body .no-bottom-bar { display: none; }
 @media(max-width:680px){.leads-compact-kpis{grid-template-columns:repeat(2,1fr)}}
 
 /* ── Customers workspace — reuses the Leads design system verbatim ──────── */
-/* 7-card KPI row (Leads uses 8); collapses on the same breakpoints. */
-.leads-compact-kpis.cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
-@media(max-width:1500px){.leads-compact-kpis.cols-7{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:1180px){.leads-compact-kpis.cols-7{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:760px){.leads-compact-kpis.cols-7{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:680px){.leads-compact-kpis.cols-7{grid-template-columns:repeat(2,1fr)}}
-/* Outstanding-balance KPI icon uses the danger accent (6th card). */
-.leads-compact-kpis.cols-7 article:nth-child(6)>span{color:#dc2626;background:#fef2f2}
-.leads-compact-kpis.cols-7 article:nth-child(7)>span{color:#7c3aed;background:#f5f3ff}
+/* 5-card KPI row in a single line; collapses on the same breakpoints. */
+.leads-compact-kpis.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.leads-compact-kpis.cols-5 article{height:92px;padding:12px 12px;gap:10px}
+.leads-compact-kpis.cols-5 small{font-size:11.5px}
+.leads-compact-kpis.cols-5 strong{font-size:22px}
+.leads-compact-kpis.cols-5 em{font-size:10px}
+.leads-compact-kpis.cols-5 article:nth-child(3)>span{color:#0d9488;background:#f0fdfa}
+.leads-compact-kpis.cols-5 article:nth-child(5)>span{color:#15803d;background:#ecfdf5}
+@media(max-width:1180px){.leads-compact-kpis.cols-5{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.leads-compact-kpis.cols-5{grid-template-columns:repeat(2,1fr)}}
 /* Customer badges on the shared pill component. */
 .leads-pill.type{color:#3730a3;background:#eef2ff}
 .leads-pill.seg{color:#7c3aed;background:#f5f3ff}
@@ -16235,12 +16236,11 @@ body .no-bottom-bar { display: none; }
 .leads-pill.st-prospect{color:#1d4ed8;background:#eff6ff}
 .leads-pill.st-inactive,.leads-pill.st-archived{color:#475569;background:#f1f5f9}
 .leads-pill.st-blocked{color:#dc2626;background:#fef2f2}
-/* Customers table: slightly narrower than Leads (12 columns). */
-.leads-table.cw-table{min-width:1560px}
+/* Customers table: slightly narrower than Leads (11 columns). */
+.leads-table.cw-table{min-width:1320px}
 .cw-table td.cw-num{text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
-.cw-balance{font-variant-numeric:tabular-nums;font-weight:750;white-space:nowrap}
-.cw-balance.due{color:var(--crm-danger)}
-.cw-balance.zero{color:#334155;font-weight:500}
+/* Leads aligns its 11th column (Est. Value) right; here it is Actions. */
+.leads-table.cw-table td:nth-child(11){text-align:left}
 .leads-state button+button{margin-left:14px}
 /* Drawer additions shared with the Leads drawer shell. */
 .leads-drawer .badge.seg{color:#7c3aed;background:#f5f3ff}
