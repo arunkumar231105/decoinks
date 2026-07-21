@@ -10,9 +10,42 @@ async function getKanban(req, res, next) {
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 10, search = '', stage = '', status = '', assigned_to = '' } = req.query
-    const { rows, total } = await service.list({ page: +page, limit: +limit, search, stage, status, assigned_to })
+    const { page = 1, limit = 10 } = req.query
+    const { rows, total } = await service.list({ ...req.query, page: +page, limit: +limit })
     return paginated(res, rows, total, +page, +limit)
+  } catch (err) { next(err) }
+}
+
+async function stats(req, res, next) {
+  try { return success(res, await service.getStats()) } catch (err) { next(err) }
+}
+
+async function filters(req, res, next) {
+  try { return success(res, await service.getFilterOptions()) } catch (err) { next(err) }
+}
+
+function csvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`
+}
+
+async function exportCsv(req, res, next) {
+  try {
+    const { rows } = await service.list({ ...req.query, page: 1, limit: 10000 })
+    const columns = [
+      ['Lead No', 'display_number'], ['Source ID', 'lead_number'], ['Created', 'created_at'],
+      ['Customer', 'display_name'], ['Company', 'company_name'], ['Email', 'email'], ['Phone', 'phone'],
+      ['Source', 'source'], ['Stage', 'stage'], ['Status', 'status'], ['Qualification Score', 'conversion_score'],
+      ['Temperature', 'urgency'], ['Purchase Intent', 'customer_intent'], ['Product Interest', 'product_interest_display'],
+      ['Estimated Value', 'estimated_value'], ['Assigned Agent', 'agent_name'], ['Last Activity', 'last_activity_at'],
+      ['Next Action', 'next_action_display'], ['Next Action At', 'next_action_at'],
+    ]
+    const csv = [
+      columns.map(([label]) => csvCell(label)).join(','),
+      ...rows.map(row => columns.map(([, key]) => csvCell(row[key])).join(',')),
+    ].join('\n')
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.csv"`)
+    return res.send(csv)
   } catch (err) { next(err) }
 }
 
@@ -107,4 +140,4 @@ async function convertToQuote(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { getKanban, list, getOne, create, update, updateStatus, convertToQuote, move, remove, getComments, addComment, deleteComment, addAttachment, deleteAttachment }
+module.exports = { getKanban, list, stats, filters, exportCsv, getOne, create, update, updateStatus, convertToQuote, move, remove, getComments, addComment, deleteComment, addAttachment, deleteAttachment }

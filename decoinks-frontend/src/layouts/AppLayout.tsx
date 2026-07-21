@@ -259,14 +259,16 @@ export function AppLayout() {
 
           <div className="topbar-actions">
             <GlobalSearch />
-            <button
-              className="lb-action-btn"
-              onClick={() => setImportOpen(true)}
-              style={{ gap: 6, whiteSpace: 'nowrap' }}
-              title="Import any CSV — AI routes it to the right module"
-            >
-              <Sparkles size={15} /> Import CSV
-            </button>
+            {title !== 'Leads' && (
+              <button
+                className="lb-action-btn"
+                onClick={() => setImportOpen(true)}
+                style={{ gap: 6, whiteSpace: 'nowrap' }}
+                title="Import any CSV — AI routes it to the right module"
+              >
+                <Sparkles size={15} /> Import CSV
+              </button>
+            )}
             <Tooltip title="Notifications (Coming Soon)">
               <span>
                 <IconButton disabled sx={{ opacity: 0.4 }}>

@@ -41,6 +41,14 @@ const contactFields = {
   source_campaign: z.string().optional().nullable(),
   next_followup_date: z.string().optional().nullable(),
   last_contact_at: z.string().optional().nullable(),
+  conversion_score: z.number().int().min(0).max(100).optional().nullable(),
+  estimated_value: z.number().nonnegative().optional().nullable(),
+  urgency: z.string().max(30).optional().nullable(),
+  customer_intent: z.string().max(120).optional().nullable(),
+  next_action: z.string().max(500).optional().nullable(),
+  auto_responded: z.boolean().optional(),
+  auto_responded_at: z.string().optional().nullable(),
+  qualified_at: z.string().optional().nullable(),
   qualification: z.object({
     sizes_received: z.boolean().optional(), artwork_received: z.boolean().optional(),
     delivery_date_confirmed: z.boolean().optional(), shipping_address_confirmed: z.boolean().optional(),
@@ -84,6 +92,9 @@ const commentSchema = z.object({
 
 router.get('/',         controller.getKanban)
 router.get('/list',     controller.list)
+router.get('/stats',    controller.stats)
+router.get('/filters',  controller.filters)
+router.get('/export',   controller.exportCsv)
 router.get('/:id',      controller.getOne)
 router.post('/',        validate(createSchema), controller.create)
 router.post('/:id/convert-to-quote', controller.convertToQuote)
