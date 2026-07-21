@@ -460,8 +460,10 @@ async function convertToPO(orderId, actorId) {
   let items = []
   if (po_type === 'apparel') {
     const { rows: orderItems } = await query(
-      `SELECT oi.item, oi.color, oi.size, oi.qty, oi.artwork_no, oi.artwork_size,
+      `SELECT oi.item, oi.category, oi.color, oi.size, oi.qty, oi.artwork_no, oi.artwork_size,
               oi.unit_price, oi.front_image, oi.back_image, oi.sort_order,
+              oi.brand, oi.model, oi.catalog_sku, oi.product_image, oi.style_description,
+              oi.front_mockup, oi.back_mockup,
               a.id AS artwork_id
        FROM order_items_apparel oi
        LEFT JOIN artworks a ON a.artwork_no = oi.artwork_no
@@ -471,15 +473,23 @@ async function convertToPO(orderId, actorId) {
     )
     items = orderItems.map((oi, i) => ({
       item_name:          oi.item,
+      category:           oi.category || null,
+      brand:              oi.brand || null,
       color:              oi.color || null,
       size:               oi.size || null,
       qty_ordered:        Number(oi.qty) || 1,
       unit_price:         Number(oi.unit_price) || 0,
       artwork_id:         oi.artwork_id || null,
+      artwork_no:         oi.artwork_no || null,
       artwork_size_front: oi.artwork_size || null,
       artwork_size_back:  oi.artwork_size || null,
       front_image:        oi.front_image || null,
       back_image:         oi.back_image || null,
+      catalog_sku:        oi.catalog_sku || null,
+      product_image:      oi.product_image || null,
+      style_description:  oi.style_description || null,
+      front_mockup:       oi.front_mockup || null,
+      back_mockup:        oi.back_mockup || null,
       sort_order:         oi.sort_order ?? i,
     }))
   }

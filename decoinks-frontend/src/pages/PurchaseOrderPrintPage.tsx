@@ -26,6 +26,23 @@ interface POItem {
   artwork_size?: string | null
   front_image?: string | null
   back_image?: string | null
+  front_mockup?: string | null
+  back_mockup?: string | null
+  product_image?: string | null
+  artwork_no?: string | null
+  artwork_file_url?: string | null
+  artwork_thumbnail_url?: string | null
+}
+
+interface CoveredOrder {
+  id: string; order_number: string; status: string; order_type: string
+  no_artworks: number; qty: number; gangsheet_sizes: string | null
+}
+
+interface POFragment {
+  id: string; fragment_no: string; covers_order_number?: string | null
+  width_inches: number | null; length_inches: number | null
+  artworks_count: number; qty: number
 }
 
 interface PurchaseOrder {
@@ -61,6 +78,17 @@ interface PurchaseOrder {
   grand_total: number
   items: POItem[]
   order_total_artworks?: number
+  po_type?: string | null
+  payment_status?: string | null
+  communication_method?: string | null
+  customer_name?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  contact_wechat?: string | null
+  orders?: CoveredOrder[]
+  fragments?: POFragment[]
+  artworks?: Artwork[]
 }
 
 interface Artwork {
@@ -104,6 +132,40 @@ function parseGsLength(name: string | null): string {
   if (!name) return '—'
   const m = name.match(/[×xX]\s*([\d."]+)/)
   return m ? m[1].replace(/['"]/g, '"') : '—'
+}
+
+// Apparel size breakdown: "S-3, M-8, L-10" → { S:3, M:8, L:10 }
+const SIZE_COLS = ['S', 'M', 'L', 'XL', '2XL', '3XL']
+function parseSizes(sizeStr: string | null | undefined, totalQty: number): Record<string, number> {
+  const r: Record<string, number> = {}
+  SIZE_COLS.forEach(s => { r[s] = 0 })
+  if (!sizeStr) return r
+  if (sizeStr.includes('-')) {
+    sizeStr.split(/[,;]/).forEach(part => {
+      const m = part.trim().match(/^(S|M|L|XL|2XL|3XL|4XL|5XL)-(\d+)$/i)
+      if (m && SIZE_COLS.includes(m[1].toUpperCase())) r[m[1].toUpperCase()] = parseInt(m[2])
+    })
+  } else {
+    const sz = sizeStr.trim().toUpperCase()
+    if (SIZE_COLS.includes(sz)) r[sz] = totalQty
+  }
+  return r
+}
+
+function colorHex(c: string | null | undefined): string {
+  if (!c) return '#d1d5db'
+  const l = c.toLowerCase()
+  if (l.includes('white'))  return '#ffffff'
+  if (l.includes('black'))  return '#111827'
+  if (l.includes('red'))    return '#ef4444'
+  if (l.includes('blue'))   return '#3b82f6'
+  if (l.includes('green'))  return '#22c55e'
+  if (l.includes('yellow')) return '#eab308'
+  if (l.includes('grey') || l.includes('gray')) return '#9ca3af'
+  if (l.includes('navy'))   return '#1a2b5c'
+  if (l.includes('pink'))   return '#ec4899'
+  if (l.includes('orange')) return '#f97316'
+  return '#d1d5db'
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -378,6 +440,25 @@ const CSS = `
     font-size: 10px; color: #374151; line-height: 1.5;
   }
   .prod-notes-dot { color: #ea580c; font-size: 10px; margin-top: 1px; flex-shrink: 0; }
+
+  /* ── Apparel PO template ── */
+  .info-cards.cards-4 { grid-template-columns: 1fr 1fr 1.4fr 1fr; }
+  .info-card.theme-purple { border-color: #ddd6fe; }
+  .info-card.theme-purple .card-head { background: #f5f3ff; }
+  .info-card.theme-purple .card-title { color: #6d28d9; }
+  .neck-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px; }
+  .neck-sub { font-size: 8px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #6b7280; margin-bottom: 5px; }
+  .neck-label-box { width: 72px; height: 62px; background: #111827; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .neck-brand { color: #fff; font-size: 12px; font-weight: 800; letter-spacing: 0.3px; }
+  .neck-tag { color: rgba(255,255,255,0.7); font-size: 5.5px; font-weight: 700; letter-spacing: 1.4px; }
+  .neck-size { margin-top: 5px; font-size: 9px; font-weight: 700; color: #0f1f3d; text-align: center; }
+  .neck-list { list-style: none; display: grid; gap: 3px; }
+  .neck-list li { display: flex; gap: 5px; font-size: 9.5px; color: #374151; line-height: 1.45; }
+  .neck-list li::before { content: '•'; color: #6d28d9; font-weight: 700; flex-shrink: 0; }
+  .apparel-tbl thead th { vertical-align: middle; }
+  .clr-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 4px; border: 1px solid rgba(0,0,0,0.15); }
+  .po-footer-band { background: #0f1f3d; min-height: 34px; margin: 0 14px 14px; border-radius: 4px; display: flex; align-items: center; justify-content: space-around; }
+  .pfb-line { width: 110px; height: 2px; background: rgba(255,255,255,0.35); border-radius: 2px; }
 `
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -387,16 +468,20 @@ export function PurchaseOrderPrintPage() {
   const navigate    = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
 
+  // staleTime 0 + always refetch: PO edits must show immediately when the
+  // preview is reopened.
   const { data: po, isLoading } = useQuery<PurchaseOrder>({
     queryKey: ['purchase-order-print', id],
     queryFn:  () => api.get(`/purchase-orders/${id}`).then(r => r.data.po ?? r.data.data ?? r.data),
     enabled: !!id && authReady,
+    staleTime: 0, refetchOnMount: 'always',
   })
 
   const { data: artworkData } = useQuery<{ artworks: Artwork[] }>({
     queryKey: ['order-artworks-for-po', po?.order_id],
     queryFn:  () => api.get(`/orders/${po!.order_id}/artworks`).then(r => r.data),
-    enabled:  !!po?.order_id && authReady,
+    enabled:  !!po?.order_id && authReady && !(po?.artworks?.length),
+    staleTime: 0, refetchOnMount: 'always',
   })
 
   if (authFailed) return (
@@ -417,7 +502,17 @@ export function PurchaseOrderPrintPage() {
   )
 
   const items    = po.items ?? []
-  const artworks = artworkData?.artworks ?? []
+  const artworks = (po.artworks?.length ? po.artworks : artworkData?.artworks) ?? []
+  const coveredOrders = po.orders ?? []
+  const fragments = po.fragments ?? []
+
+  // Template branch: apparel POs render the shirt-production layout,
+  // gangsheet POs the gangsheet layout.
+  const isApparelPO = po.po_type === 'apparel' || (!po.po_type && items.some(it => it.color || it.size))
+  const hasFrontMockup = items.some(it => it.front_mockup)
+  const hasBackMockup  = items.some(it => it.back_mockup)
+  const apparelCols = 12 + (hasFrontMockup ? 1 : 0) + (hasBackMockup ? 1 : 0)
+  const itemFrontArt = (it: POItem) => it.front_image || it.artwork_thumbnail_url || it.artwork_file_url || null
 
   // Totals
   const totalArtworks = artworks.length
@@ -425,6 +520,14 @@ export function PurchaseOrderPrintPage() {
     || po.order_total_artworks
     || 0
   const totalQty      = items.reduce((s, it) => s + (it.qty_ordered ?? 0), 0)
+
+  // Gangsheet totals prefer the live covered-order aggregates
+  const gsTotalArtworks = coveredOrders.length
+    ? coveredOrders.reduce((s, o) => s + (o.no_artworks || 0), 0) || totalArtworks
+    : totalArtworks
+  const gsTotalQty = coveredOrders.length
+    ? coveredOrders.reduce((s, o) => s + (o.qty || 0), 0) || totalQty
+    : totalQty
 
   // Artwork range string e.g. "AW1001 – AW1076"
   const artRange = artworks.length > 0
@@ -435,16 +538,24 @@ export function PurchaseOrderPrintPage() {
   const totalWidth  = items[0] ? parseGsWidth(items[0].item_name) : '—'
   const gsOrderNo   = po.order_id ? (po.order_number || `ORD-${po.po_number}`) : po.po_number
 
-  // Notes as bullet list
+  // Notes as bullet list — per-type defaults matching the approved templates
   const noteLines: string[] = po.notes
     ? po.notes.split('\n').map(l => l.trim()).filter(Boolean)
-    : [
-        'All gangsheets are print-ready.',
-        'Please verify quantities before production.',
-        'Refer to Gangsheet Numbers listed above.',
-        'Artwork revisions are not permitted after approval.',
-        'Ensure all measurements and artwork placements are accurate.',
-      ]
+    : isApparelPO
+      ? [
+          'Poly bag individually',
+          'Sort by color and size',
+          'Apply neck label',
+          'Verify artwork placement',
+          'Seal and label cartons',
+        ]
+      : [
+          'All gangsheets are print-ready.',
+          'Please verify quantities before production.',
+          'Refer to Gangsheet Numbers listed above.',
+          'Artwork revisions are not permitted after approval.',
+          'Ensure all measurements and artwork placements are accurate.',
+        ]
 
   // Artworks to display (first 10 in 2 columns)
   const DISPLAY_COUNT = 10
@@ -547,23 +658,97 @@ export function PurchaseOrderPrintPage() {
                   <td className="pm-colon">:</td>
                   <td className="pm-value">{fmtDate(po.expected_date)}</td>
                 </tr>
-                <tr>
-                  <td className="pm-label">Currency</td>
-                  <td className="pm-colon">:</td>
-                  <td className="pm-value">{po.currency || 'USD'}</td>
-                </tr>
-                <tr>
-                  <td className="pm-label">Grand Total</td>
-                  <td className="pm-colon">:</td>
-                  <td className="pm-value" style={{ color: '#15803d' }}>{po.currency || 'USD'} {Number(po.grand_total ?? 0).toFixed(2)}</td>
-                </tr>
               </tbody>
             </table>
           </div>
 
         </div>
 
-        {/* ══ 3 INFO CARDS ══ */}
+        {/* ══ INFO CARDS ══ */}
+        {isApparelPO ? (
+        <div className="info-cards cards-4">
+
+          {/* Card 1 — Fulfillment Supplier */}
+          <div className="info-card theme-green">
+            <div className="card-head">
+              <div className="card-icon">🤝</div>
+              <div className="card-title">Fulfillment Supplier</div>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#0f1f3d', marginBottom: 6 }}>{po.supplier_name || po.supplier_company || '—'}</div>
+            {(po.contact_name || po.buyer_name) && (
+              <div className="card-field"><span className="card-field-label">Contact</span><span className="card-field-sep">:</span><span className="card-field-value">{po.contact_name || po.buyer_name}</span></div>
+            )}
+            {(po.contact_email || po.supplier_email) && (
+              <div className="card-field"><span className="card-field-label">Email</span><span className="card-field-sep">:</span><span className="card-field-value">{po.contact_email || po.supplier_email}</span></div>
+            )}
+            {po.contact_wechat && (
+              <div className="card-field"><span className="card-field-label">WeChat</span><span className="card-field-sep">:</span><span className="card-field-value">{po.contact_wechat}</span></div>
+            )}
+            {(po.contact_phone || po.supplier_phone) && (
+              <div className="card-field"><span className="card-field-label">Phone</span><span className="card-field-sep">:</span><span className="card-field-value">{po.contact_phone || po.supplier_phone}</span></div>
+            )}
+          </div>
+
+          {/* Card 2 — Shipping Information */}
+          <div className="info-card theme-blue">
+            <div className="card-head">
+              <div className="card-icon">🚚</div>
+              <div className="card-title">Shipping Information</div>
+            </div>
+            {po.customer_name && (
+              <div className="card-field"><span className="card-field-label">Name</span><span className="card-field-sep">:</span><span className="card-field-value">{po.customer_name}</span></div>
+            )}
+            {po.shipping_address && (
+              <div className="card-field"><span className="card-field-label">Address</span><span className="card-field-sep">:</span><span className="card-field-value" style={{ whiteSpace: 'pre-line' }}>{po.shipping_address}</span></div>
+            )}
+            <div className="card-field"><span className="card-field-label">Shipping Method</span><span className="card-field-sep">:</span><span className="card-field-value">{po.shipping_method || 'Standard Shipping (5–7 Business Days)'}</span></div>
+          </div>
+
+          {/* Card 3 — Neck Label Artwork & Application (standard brand label) */}
+          <div className="info-card theme-purple">
+            <div className="card-head">
+              <div className="card-icon">🏷️</div>
+              <div className="card-title">Neck Label Artwork &amp; Application</div>
+            </div>
+            <div className="neck-grid">
+              <div>
+                <div className="neck-sub">Neck Label Artwork</div>
+                <div className="neck-label-box">
+                  <div className="neck-brand">decoinks</div>
+                  <div className="neck-tag">PRINTSHOP OS</div>
+                </div>
+                <div className="neck-size">Size: Neck Label 2" × 2"</div>
+              </div>
+              <div>
+                <div className="neck-sub">Application Instructions</div>
+                <ul className="neck-list">
+                  <li>Apply inside neck area.</li>
+                  <li>Center horizontally.</li>
+                  <li>Position 1 inch below collar seam.</li>
+                  <li>Use approved neck label artwork only.</li>
+                  <li>Verify orientation before pressing.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4 — Notes & Packing */}
+          <div className="info-card theme-orange">
+            <div className="card-head">
+              <div className="card-icon">📋</div>
+              <div className="card-title">Notes &amp; Packing</div>
+            </div>
+            <div className="card-notes">
+              <ul>
+                {noteLines.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+        </div>
+        ) : (
         <div className="info-cards">
 
           {/* Card 1 — Supplier Information */}
@@ -682,7 +867,9 @@ export function PurchaseOrderPrintPage() {
           </div>
 
         </div>
+        )}
 
+        {!isApparelPO && <>
         {/* ══ SECTION 1: GANGSHEET ORDER ══ */}
         <div className="sec-hdr">
           <div className="sec-num">1</div>
@@ -700,7 +887,16 @@ export function PurchaseOrderPrintPage() {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {coveredOrders.length > 0 ? coveredOrders.map((ord, idx) => (
+              <tr key={ord.id}>
+                <td className="td-sno left">{idx + 1}</td>
+                <td className="left"><span className="order-no-link">{ord.order_number}</span></td>
+                <td>{parseGsWidth(ord.gangsheet_sizes)}</td>
+                <td>{parseGsLength(ord.gangsheet_sizes)}</td>
+                <td style={{ fontWeight: 700 }}>{ord.no_artworks || '—'}</td>
+                <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{ord.qty || '—'}</td>
+              </tr>
+            )) : items.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: '18px', textAlign: 'center', color: '#9ca3af' }}>No items</td>
               </tr>
@@ -722,8 +918,8 @@ export function PurchaseOrderPrintPage() {
               <td className="left" colSpan={2} style={{ fontWeight: 800, color: '#0f1f3d' }}>TOTAL</td>
               <td>—</td>
               <td>—</td>
-              <td style={{ fontWeight: 800 }}>{totalArtworks}</td>
-              <td style={{ fontWeight: 800 }}>{totalQty}</td>
+              <td style={{ fontWeight: 800 }}>{gsTotalArtworks}</td>
+              <td style={{ fontWeight: 800 }}>{gsTotalQty}</td>
             </tr>
           </tfoot>
         </table>
@@ -745,7 +941,16 @@ export function PurchaseOrderPrintPage() {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {fragments.length > 0 ? fragments.map((f, idx) => (
+              <tr key={f.id}>
+                <td className="td-sno left">{idx + 1}</td>
+                <td className="left" style={{ fontWeight: 600 }}>{f.fragment_no}</td>
+                <td>{f.width_inches && f.length_inches ? `${f.width_inches}" × ${f.length_inches}"` : '—'}</td>
+                <td style={{ fontWeight: 700 }}>{f.artworks_count}</td>
+                <td style={{ color: '#374151' }}>{f.covers_order_number || artRange}</td>
+                <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{f.qty}</td>
+              </tr>
+            )) : items.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: '18px', textAlign: 'center', color: '#9ca3af' }}>No items</td>
               </tr>
@@ -769,67 +974,82 @@ export function PurchaseOrderPrintPage() {
             <tr>
               <td className="left" colSpan={2} style={{ fontWeight: 800, color: '#0f1f3d' }}>TOTAL</td>
               <td>—</td>
-              <td style={{ fontWeight: 800 }}>{totalArtworks}</td>
+              <td style={{ fontWeight: 800 }}>{fragments.length ? fragments.reduce((s, f) => s + (f.artworks_count || 0), 0) : gsTotalArtworks}</td>
               <td>—</td>
-              <td style={{ fontWeight: 800 }}>{totalQty}</td>
+              <td style={{ fontWeight: 800 }}>{fragments.length ? fragments.reduce((s, f) => s + (f.qty || 0), 0) : gsTotalQty}</td>
             </tr>
           </tfoot>
         </table>
 
-        {/* ══ SECTION 3: LINE ITEMS WITH ARTWORK ══ */}
-        {items.some(it => it.front_image || it.back_image) && (
-          <>
-            <div className="sec-hdr" style={{ marginTop: 2 }}>
-              <div className="sec-num">3</div>
-              <div className="sec-title">Line Items — Artwork Preview</div>
-            </div>
-            <table className="po-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 36 }}>S.No</th>
-                  <th style={{ width: 68 }}>Category</th>
-                  <th className="left">Item / Description</th>
-                  <th style={{ width: 60 }}>Color</th><th style={{ width: 54 }}>Size</th><th style={{ width: 74 }}>SKU</th>
-                  <th style={{ width: 68 }}>Front Art</th>
-                  <th style={{ width: 68 }}>Back Art</th>
-                  <th style={{ width: 60 }}>Qty</th>
-                  <th style={{ width: 76 }}>Unit Price</th>
-                  <th style={{ width: 80 }}>Line Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => (
+        </>}
+
+        {/* ══ APPAREL ITEMS TABLE (matches the approved template) ══ */}
+        {isApparelPO && (
+          <table className="po-table apparel-tbl">
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{ width: 32 }}>#</th>
+                <th rowSpan={2} className="left" style={{ minWidth: 130 }}>Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(T-Shirts)</span></th>
+                <th rowSpan={2} style={{ width: 76 }}>Color</th>
+                <th rowSpan={2} style={{ width: 56 }}>Qty<br />(T-Shirts)</th>
+                <th colSpan={6} style={{ borderBottom: '1px solid rgba(255,255,255,0.25)' }}>Size Breakdown (T-Shirts)</th>
+                <th rowSpan={2} style={{ width: 72 }}>Front Artwork<br />(Thumbnail)</th>
+                <th rowSpan={2} style={{ width: 72 }}>Back Artwork<br />(Thumbnail)</th>
+                {hasFrontMockup && <th rowSpan={2} style={{ width: 72 }}>Front Mockup</th>}
+                {hasBackMockup && <th rowSpan={2} style={{ width: 72 }}>Back Mockup</th>}
+              </tr>
+              <tr>
+                {SIZE_COLS.map(s => <th key={s} style={{ width: 32 }}>{s}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr><td colSpan={apparelCols} style={{ padding: '18px', textAlign: 'center', color: '#9ca3af' }}>No items</td></tr>
+              ) : items.map((it, idx) => {
+                const sizes = parseSizes(it.size, Number(it.qty_ordered) || 0)
+                return (
                   <tr key={it.id}>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
-                    <td>{it.category || '—'}</td>
                     <td className="left">
-                      <div style={{ fontWeight: 600, fontSize: 11 }}>{it.item_name}</div>
-                      <div style={{ fontSize: 9, color: '#64748b' }}>{it.brand || ''}</div>
+                      <div style={{ fontWeight: 600, fontSize: 11, color: '#0f1f3d' }}>{it.item_name}</div>
+                      <div style={{ fontSize: 9, color: '#64748b' }}>{[it.brand, it.catalog_sku].filter(Boolean).join(' · ')}</div>
                     </td>
-                    <td>{it.color || '—'}</td><td>{it.size || '—'}</td><td>{it.catalog_sku || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}><span className="clr-dot" style={{ background: colorHex(it.color) }} />{it.color || '—'}</td>
+                    <td style={{ textAlign: 'center', fontWeight: 700 }}>{it.qty_ordered}</td>
+                    {SIZE_COLS.map(s => (
+                      <td key={s} style={{ textAlign: 'center', fontWeight: sizes[s] ? 600 : 400, color: sizes[s] ? '#111827' : '#d1d5db' }}>{sizes[s]}</td>
+                    ))}
                     <td style={{ textAlign: 'center' }}>
-                      {it.front_image
-                        ? <img src={it.front_image} alt="front" className="art-thumb" />
+                      {itemFrontArt(it)
+                        ? <img src={itemFrontArt(it)!} alt="front artwork" className="art-thumb" />
                         : <div className="art-empty-thumb">—</div>}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       {it.back_image
-                        ? <img src={it.back_image} alt="back" className="art-thumb" />
+                        ? <img src={it.back_image} alt="back artwork" className="art-thumb" />
                         : <div className="art-empty-thumb" style={{ color: '#d1d5db' }}>—</div>}
                     </td>
-                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{it.qty_ordered}</td>
-                    <td style={{ textAlign: 'right' }}>{Number(it.unit_price).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{Number(it.line_total).toFixed(2)}</td>
+                    {hasFrontMockup && (
+                      <td style={{ textAlign: 'center' }}>
+                        {it.front_mockup ? <img src={it.front_mockup} alt="front mockup" className="art-thumb" /> : <div className="art-empty-thumb">—</div>}
+                      </td>
+                    )}
+                    {hasBackMockup && (
+                      <td style={{ textAlign: 'center' }}>
+                        {it.back_mockup ? <img src={it.back_mockup} alt="back mockup" className="art-thumb" /> : <div className="art-empty-thumb">—</div>}
+                      </td>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
+                )
+              })}
+            </tbody>
+          </table>
         )}
 
-        {/* ══ SECTION 4: ARTWORKS ══ */}
+        {/* ══ ARTWORKS GRID (gangsheet only) ══ */}
+        {!isApparelPO && <>
         <div className="sec-hdr" style={{ marginTop: 2 }}>
-          <div className="sec-num">{items.some(it => it.front_image || it.back_image) ? 4 : 3}</div>
+          <div className="sec-num">3</div>
           <div className="sec-title">Artworks ({totalArtworks} Artworks)</div>
         </div>
 
@@ -899,33 +1119,64 @@ export function PurchaseOrderPrintPage() {
             )}
           </div>
         )}
+        </>}
 
         {/* ══ STATS BAR ══ */}
+        {isApparelPO ? (
+        <div className="stats-bar">
+          <div className="stat-cell">
+            <div className="stat-icon-box">👕</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Items</div>
+              <div className="stat-value">{items.length}</div>
+            </div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-icon-box">🖼</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Artworks</div>
+              <div className="stat-value">{new Set(items.map(it => itemFrontArt(it) || it.artwork_no).filter(Boolean)).size || totalArtworks}</div>
+            </div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-icon-box">📦</div>
+            <div className="stat-text">
+              <div className="stat-label">Total Quantity</div>
+              <div className="stat-value">{totalQty} PCS</div>
+            </div>
+          </div>
+        </div>
+        ) : (
         <div className="stats-bar">
           <div className="stat-cell">
             <div className="stat-icon-box">📐</div>
             <div className="stat-text">
               <div className="stat-label">Total Artworks</div>
-              <div className="stat-value">{totalArtworks}</div>
+              <div className="stat-value">{fragments.length ? fragments.reduce((s, f) => s + (f.artworks_count || 0), 0) || gsTotalArtworks : gsTotalArtworks}</div>
             </div>
           </div>
           <div className="stat-cell">
             <div className="stat-icon-box">🖼</div>
             <div className="stat-text">
               <div className="stat-label">Total Gangsheets</div>
-              <div className="stat-value">{items.length}</div>
+              <div className="stat-value">{fragments.length || items.length}</div>
             </div>
           </div>
           <div className="stat-cell">
             <div className="stat-icon-box">📦</div>
             <div className="stat-text">
               <div className="stat-label">Total Qty (Artworks)</div>
-              <div className="stat-value">{totalQty}</div>
+              <div className="stat-value">{gsTotalQty}</div>
             </div>
           </div>
         </div>
+        )}
 
-        {/* ══ PRODUCTION NOTES ══ */}
+        {/* ══ FOOTER BAND (apparel) ══ */}
+        {isApparelPO && <div className="po-footer-band"><span className="pfb-line" /><span className="pfb-line" /></div>}
+
+        {/* ══ PRODUCTION NOTES (gangsheet) ══ */}
+        {!isApparelPO && (
         <div className="prod-notes">
           <div className="prod-notes-hdr">
             <div className="prod-notes-icon">📋</div>
@@ -940,6 +1191,7 @@ export function PurchaseOrderPrintPage() {
             ))}
           </div>
         </div>
+        )}
 
       </div>
     </>

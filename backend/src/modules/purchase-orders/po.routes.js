@@ -41,6 +41,8 @@ const itemSchema = z.object({
   catalog_sku:        z.string().optional().nullable(),
   product_image:      z.string().optional().nullable(),
   style_description:  z.string().optional().nullable(),
+  front_mockup:       z.string().optional().nullable(),
+  back_mockup:        z.string().optional().nullable(),
 })
 
 const fragmentSchema = z.object({
