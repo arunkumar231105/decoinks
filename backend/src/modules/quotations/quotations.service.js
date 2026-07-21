@@ -11,16 +11,27 @@ function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushS
   return { subtotal, discount_amt, tax_amt: 0, total }
 }
 
-async function list({ page = 1, limit = 10, status = '', supplier_id = '' }) {
+async function list({ page = 1, limit = 10, status = '', supplier_id = '', search = '' }) {
   const offset = (page - 1) * limit
   const conditions = []
   const params = []
 
   if (status)      { params.push(status);      conditions.push(`q.status = $${params.length}`) }
   if (supplier_id) { params.push(supplier_id); conditions.push(`q.supplier_id = $${params.length}`) }
+  if (search) {
+    params.push(`%${search}%`)
+    conditions.push(`(
+      q.quote_number ILIKE $${params.length}
+      OR COALESCE(q.customer_name, '') ILIKE $${params.length}
+      OR COALESCE(q.company_name, '') ILIKE $${params.length}
+      OR COALESCE(q.billing_email, '') ILIKE $${params.length}
+      OR COALESCE(q.contact_number, '') ILIKE $${params.length}
+      OR COALESCE(c.name, '') ILIKE $${params.length}
+    )`)
+  }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
-  const countRes = await query(`SELECT COUNT(*) FROM quotations q ${where}`, params)
+  const countRes = await query(`SELECT COUNT(*) FROM quotations q LEFT JOIN suppliers c ON c.id = q.supplier_id ${where}`, params)
   const total = parseInt(countRes.rows[0].count, 10)
 
   params.push(limit, offset)

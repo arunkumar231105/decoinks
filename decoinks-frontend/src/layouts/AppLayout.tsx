@@ -259,7 +259,7 @@ export function AppLayout() {
 
           <div className="topbar-actions">
             <GlobalSearch />
-            {title !== 'Leads' && (
+            {!['Leads', 'Quotations', 'Invoices', 'Sales Orders', 'Purchase Orders'].includes(title) && (
               <button
                 className="lb-action-btn"
                 onClick={() => setImportOpen(true)}

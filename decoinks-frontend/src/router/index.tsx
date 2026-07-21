@@ -125,7 +125,7 @@ export const router = createBrowserRouter([
               {
                 path: '/quotes',
                 element: <QuotesListPage />,
-                handle: { title: 'Quotes', subtitle: 'Manage and send quotations to customers.' },
+                handle: { title: 'Quotations', subtitle: 'Manage and track quotations for leads and customers.' },
               },
               {
                 path: '/quotes/new',
@@ -160,7 +160,7 @@ export const router = createBrowserRouter([
               {
                 path: '/orders',
                 element: <WorkflowListPage kind="orders" />,
-                handle: { title: 'Orders', subtitle: 'Manage production jobs from intake to delivery.' },
+                handle: { title: 'Sales Orders', subtitle: 'Manage and track sales orders from confirmation to delivery.' },
               },
               {
                 path: '/orders/new',
