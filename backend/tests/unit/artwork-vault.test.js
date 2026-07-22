@@ -12,3 +12,14 @@ describe('Artwork Vault Nextcloud classification', () => {
     expect(vault.inferType(path)).toBe(expected)
   })
 })
+
+describe('Artwork Vault order classification', () => {
+  test.each([
+    ['Orders/ORD-001/Gangsheets/22x108.png', 'gangsheet'],
+    ['Leads/Customer/DTF Transfers/logo.png', 'dtf'],
+    ['Customers/Techno Tees/Custom Shirts/front.png', 'apparel'],
+    ['Customers/Techno Tees/References/logo.png', null],
+  ])('%s has order type %s', (path, expected) => {
+    expect(vault.inferOrderType(path)).toBe(expected)
+  })
+})

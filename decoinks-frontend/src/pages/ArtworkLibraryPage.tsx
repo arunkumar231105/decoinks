@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Clock3, Download, ExternalLink, FileImage, FolderOpen, Grid3X3, Image as ImageIcon,
-  Images, Mail, MessageCircle, MoreHorizontal, PackageCheck, Palette, RefreshCw, Search, ShieldCheck,
-  SlidersHorizontal, Upload, X,
+  Images, Layers3, ListChecks, Mail, MessageCircle, MoreHorizontal, PackageCheck, Palette,
+  RefreshCw, Search, Send, ShieldCheck, SlidersHorizontal, Upload, WandSparkles, X,
 } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
@@ -14,6 +14,7 @@ type AssetType = 'reference' | 'artwork' | 'version' | 'mockup' | 'gangsheet'
 
 interface VaultAsset {
   id: string
+  asset_number: number
   file_name: string
   path: string
   parent_path: string
@@ -33,6 +34,8 @@ interface VaultAsset {
   sender_name?: string | null
   sales_agent_name?: string | null
   designer_name?: string | null
+  role_location?: string | null
+  lead_id?: string | null
   order_type?: 'apparel' | 'gangsheet' | 'dtf' | null
   contact_email?: string | null
   contact_whatsapp?: string | null
@@ -139,20 +142,35 @@ function DetailRow({ label, value }: { label: string; value?: ReactNode }) {
   return <div className="av-detail-row"><span>{label}</span><strong>{value || '—'}</strong></div>
 }
 
+function assetCode(asset: Pick<VaultAsset, 'asset_number' | 'id'>) {
+  return asset.asset_number ? `ART-${String(asset.asset_number).padStart(6, '0')}` : `ART-${asset.id.slice(0, 6).toUpperCase()}`
+}
+
+function orderTypeLabel(value?: string | null) {
+  return value === 'apparel' ? 'Custom Shirts' : value === 'dtf' ? 'DTF Transfers' : value === 'gangsheet' ? 'Gangsheet' : undefined
+}
+
 function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => void; onSelect: (id: string) => void }) {
   const queryClient = useQueryClient()
-  const [showAllFiles, setShowAllFiles] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
   const { data, isLoading } = useQuery<VaultAsset>({
     queryKey: ['artwork-vault-detail', id],
     queryFn: () => api.get(`/artworks/vault/assets/${id}`).then(r => r.data.data),
   })
-  const coverMutation = useMutation({
-    mutationFn: (assetId: string) => api.patch(`/artworks/vault/assets/${assetId}/cover`),
+  const actionMutation = useMutation({
+    mutationFn: (changes: { status?: string; qa_approved?: boolean; production_ready?: boolean }) => api.patch('/artworks/vault/assets/bulk', { ids: [id], ...changes }),
     onSuccess: () => {
-      toast.success('Folder cover updated')
+      toast.success('Artwork updated')
       queryClient.invalidateQueries({ queryKey: ['artwork-vault-detail', id] })
       queryClient.invalidateQueries({ queryKey: ['artwork-vault-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['artwork-vault-stats'] })
     },
+    onError: () => toast.error('Artwork update failed'),
+  })
+  const qaTaskMutation = useMutation({
+    mutationFn: () => api.post('/artworks/task', { name: `QA · ${data?.file_name || 'Artwork'}`, lead_id: data?.lead_id || null, notes: `QA review requested for ${assetCode(data!)} (${data?.path || ''})` }),
+    onSuccess: () => toast.success('QA task created'),
+    onError: () => toast.error('QA task could not be created'),
   })
 
   useEffect(() => {
@@ -163,63 +181,73 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
 
   if (isLoading || !data) return <aside className="av-drawer"><div className="av-drawer-loading">Loading asset…</div></aside>
   const files = data.folder_files ?? []
+  const emailHref = data.contact_email ? `mailto:${data.contact_email}?subject=${encodeURIComponent(`Artwork approval · ${assetCode(data)}`)}` : undefined
+  const whatsappHref = data.contact_whatsapp ? `https://wa.me/${data.contact_whatsapp.replace(/\D/g, '')}` : undefined
+  const facebookHref = data.contact_facebook ? `https://m.me/${encodeURIComponent(data.contact_facebook)}` : undefined
+  const iconLinkClass = (enabled: boolean) => cn('av-social-action', !enabled && 'is-disabled')
   return (
+    <><button className="av-drawer-backdrop" aria-label="Close artwork details" onClick={onClose} />
     <aside className="av-drawer" aria-label="Artwork details">
       <header className="av-drawer-head">
-        <div><span>Artwork Details</span><strong>{data.file_name}</strong></div>
+        <div><strong>Artwork Details</strong></div>
         <button aria-label="Close details" onClick={onClose}><X size={20} /></button>
       </header>
       <div className="av-drawer-scroll">
-        <div className="av-hero-preview"><AssetPreview asset={data} /></div>
-        <div className="av-detail-title">
-          <div><strong>{data.file_name}</strong><span>{data.entity_name || 'Unlinked asset'}</span></div>
-          <span className={cn('av-type-pill', `av-type-${data.asset_type}`)}>{typeLabels[data.asset_type]}</span>
+        <div className="av-drawer-summary">
+          <AssetPreview asset={data} />
+          <div>
+            <div className="av-summary-code"><strong>{assetCode(data)}</strong><span className={cn('av-type-pill', `av-type-${data.asset_type}`)}>{typeLabels[data.asset_type]}</span></div>
+            <b>{data.role_location || '—'}</b>
+            <span>{data.entity_name || 'Unlinked asset'}</span>
+            <small>{data.file_name}</small>
+          </div>
         </div>
-        <div className="av-detail-badges">
-          <span className="av-status-pill">{data.status || 'In Design'}</span>
-          {data.qa_approved && <span className="av-ready-pill"><ShieldCheck size={13} /> QA Approved</span>}
-          {data.production_ready && <span className="av-ready-pill"><CheckCircle2 size={13} /> Ready</span>}
+        <div className="av-summary-state">
+          <span>Status</span><b className="av-status-pill">{data.status || 'In Design'}</b>
+          <span>Current Version</span><b>V{data.version_no || 1}</b>
+          <button onClick={() => setShowVersions(!showVersions)}>View All Versions</button>
         </div>
-        <div className="av-drawer-actions">
-          <button onClick={() => downloadAsset(data.download_url || '', data.file_name).catch(() => toast.error('Download failed'))}><Download size={17} /> Download</button>
-          <button onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))}><ExternalLink size={17} /> Open</button>
-          <a className={!data.contact_email ? 'is-disabled' : ''} href={data.contact_email ? `mailto:${data.contact_email}` : undefined} title={data.contact_email ? `Email ${data.contact_email}` : 'No email available'} aria-disabled={!data.contact_email}><Mail size={17} /></a>
-          <a className={!data.contact_whatsapp ? 'is-disabled' : ''} href={data.contact_whatsapp ? `https://wa.me/${data.contact_whatsapp.replace(/\D/g, '')}` : undefined} target="_blank" rel="noreferrer" title={data.contact_whatsapp ? 'Open WhatsApp' : 'No WhatsApp number available'} aria-disabled={!data.contact_whatsapp}><MessageCircle size={17} /></a>
-          <button aria-label="More actions"><MoreHorizontal size={18} /></button>
+        {showVersions && <div className="av-version-list">{files.map(file => <button key={file.id} className={file.id === id ? 'is-active' : ''} onClick={() => onSelect(file.id)}><span>{file.file_name}</span><b>V{file.id === id ? data.version_no || 1 : '—'}</b></button>)}</div>}
+
+        <div className="av-social-actions">
+          <button className="av-social-action" onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))} title="Open in OS"><ExternalLink size={18} /><span>Open in OS</span></button>
+          <a className={iconLinkClass(Boolean(facebookHref))} href={facebookHref} target="_blank" rel="noreferrer" aria-disabled={!facebookHref} title={facebookHref ? 'Send to Facebook' : 'Facebook ID unavailable'}><MessageCircle size={18} /><span>Send to FB</span></a>
+          <a className={iconLinkClass(Boolean(emailHref))} href={emailHref} aria-disabled={!emailHref} title={emailHref ? 'Send by email' : 'Email unavailable'}><Mail size={18} /><span>Send Email</span></a>
+          <a className={iconLinkClass(Boolean(whatsappHref))} href={whatsappHref} target="_blank" rel="noreferrer" aria-disabled={!whatsappHref} title={whatsappHref ? 'Send by WhatsApp' : 'WhatsApp unavailable'}><MessageCircle size={18} /><span>WhatsApp</span></a>
+          <button className="av-social-action" onClick={() => downloadAsset(data.download_url || '', data.file_name).catch(() => toast.error('Download failed'))} title="Download"><Download size={18} /><span>Download</span></button>
         </div>
 
+        <section className="av-quick-section">
+          <h3>Quick Actions</h3>
+          <button onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))}><ExternalLink /> Open in Design Studio</button>
+          <a className={!facebookHref ? 'is-disabled' : ''} href={facebookHref} target="_blank" rel="noreferrer"><MessageCircle /> Send to Facebook Messenger</a>
+          <a className={!emailHref ? 'is-disabled' : ''} href={emailHref}><Mail /> Send by Email</a>
+          <button onClick={() => qaTaskMutation.mutate()} disabled={qaTaskMutation.isPending}><ListChecks /> Create QA Task</button>
+          <button onClick={() => actionMutation.mutate({ status: 'Pending Approval' })}><Send /> Request Internal Approval</button>
+          <button onClick={() => actionMutation.mutate({ status: 'Approved', qa_approved: true })}><ShieldCheck /> Mark Internally Approved</button>
+          <a className={!emailHref && !whatsappHref ? 'is-disabled' : ''} href={emailHref || whatsappHref} target={emailHref ? undefined : '_blank'} rel="noreferrer"><Mail /> Send for Customer Approval</a>
+          <button disabled title="Mockup generator is not configured"><WandSparkles /> Generate Mockup</button>
+          <button onClick={() => actionMutation.mutate({ production_ready: true })}><PackageCheck /> Generate Production Artwork</button>
+          <button disabled title="Select a production order to add this artwork"><Grid3X3 /> Add to Gangsheet</button>
+          <button onClick={() => actionMutation.mutate({ status: 'Archived' })}><Archive /> Move to Archive</button>
+        </section>
         <section className="av-detail-section">
           <h3>Information</h3>
           <DetailRow label="Type" value={typeLabels[data.asset_type]} />
-          <DetailRow label="Order Type" value={data.order_type ? data.order_type.toUpperCase() : undefined} />
-          <DetailRow label="Status" value={data.status} />
-          <DetailRow label="Current Version" value={`V${data.version_no || 1}`} />
-          <DetailRow label="Lead ID" value={data.lead_number} />
-          <DetailRow label="Customer" value={data.entity_name} />
-          <DetailRow label="Customer ID" value={data.customer_number} />
-          <DetailRow label="Sales Agent" value={data.sales_agent_name} />
-          <DetailRow label="Designer" value={data.designer_name} />
-          <DetailRow label="Created" value={formatDate(data.source_modified_at || data.created_at)} />
+          <DetailRow label="Order Type" value={orderTypeLabel(data.order_type)} />
+          <DetailRow label="Role / Location" value={data.role_location} />
+          <DetailRow label="Parent Reference" />
+          <DetailRow label="Created Date" value={formatDate(data.source_modified_at || data.created_at)} />
+          <DetailRow label="Added By" value={data.sender_name || data.sales_agent_name} />
+          <DetailRow label="Assigned Designer" value={data.designer_name} />
+          <DetailRow label="Dimensions" />
+          <DetailRow label="DPI" />
           <DetailRow label="File Size" value={fileSize(data.file_size_bytes)} />
-          <DetailRow label="Folder" value={data.parent_path || 'Root'} />
-        </section>
-
-        <section className="av-detail-section">
-          <div className="av-section-heading"><h3>Folder Files</h3><span>{files.length}</span></div>
-          <div className="av-folder-gallery">
-            {files.slice(0, showAllFiles ? files.length : 36).map(file => (
-              <button key={file.id} className={cn('av-folder-file', file.id === data.id && 'is-active')} onClick={() => file.id !== data.id && onSelect(file.id)}>
-                <AssetPreview asset={{ ...data, ...file }} />
-                <span>{file.file_name}</span>
-                {file.is_cover && <small>Cover</small>}
-                {!file.is_cover && <em onClick={event => { event.stopPropagation(); coverMutation.mutate(file.id) }}>Set cover</em>}
-              </button>
-            ))}
-          </div>
-          {files.length > 36 && <button className="av-show-files" onClick={() => setShowAllFiles(!showAllFiles)}>{showAllFiles ? 'Show fewer files' : `Show all ${files.length} files`}</button>}
+          <DetailRow label="Color Mode" />
+          <DetailRow label="Print Method" value={orderTypeLabel(data.order_type)} />
         </section>
       </div>
-    </aside>
+    </aside></>
   )
 }
 
@@ -244,7 +272,7 @@ export function ArtworkLibraryPage() {
   const [entitySearch, setEntitySearch] = useState('')
   const [agentSearch, setAgentSearch] = useState('')
   const [designerSearch, setDesignerSearch] = useState('')
-  const [period, setPeriod] = useState('All Time')
+  const [period, setPeriod] = useState('Custom')
   const [connected, setConnected] = useState<boolean | null>(null)
 
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 300); return () => window.clearTimeout(timer) }, [search])
@@ -300,7 +328,7 @@ export function ArtworkLibraryPage() {
   const bulkMutation = useMutation({
     mutationFn: (changes: { status: string }) => api.patch('/artworks/vault/assets/bulk', { ids: Array.from(selected), ...changes }),
     onSuccess: result => {
-      toast.success(`${result.data.data?.updated || selected.size} artwork folder${selected.size === 1 ? '' : 's'} updated`)
+      toast.success(`${result.data.data?.updated || selected.size} artwork${selected.size === 1 ? '' : 's'} updated`)
       setSelected(new Set())
       queryClient.invalidateQueries({ queryKey: ['artwork-vault-assets'] })
       queryClient.invalidateQueries({ queryKey: ['artwork-vault-stats'] })
@@ -335,14 +363,14 @@ export function ArtworkLibraryPage() {
     const today = new Date()
     const iso = (date: Date) => date.toISOString().slice(0, 10)
     setPeriod(next)
-    if (next === 'All Time') { setFrom(''); setTo('') }
+    if (next === 'Custom') { setFrom(''); setTo('') }
     else if (next === 'Daily') { setFrom(iso(today)); setTo(iso(today)) }
     else if (next === 'Weekly') { const start = new Date(today); start.setDate(today.getDate() - 6); setFrom(iso(start)); setTo(iso(today)) }
     else { const start = new Date(today.getFullYear(), today.getMonth(), 1); setFrom(iso(start)); setTo(iso(today)) }
     setPage(1)
   }
 
-  const resetFilters = () => { setSearch(''); setDebouncedSearch(''); setType(''); setOrderType(''); setStatus(''); setFrom(''); setTo(''); setQa(''); setReady(''); setEntitySearch(''); setAgentSearch(''); setDesignerSearch(''); setPeriod('All Time'); setPage(1) }
+  const resetFilters = () => { setSearch(''); setDebouncedSearch(''); setType(''); setOrderType(''); setStatus(''); setFrom(''); setTo(''); setQa(''); setReady(''); setEntitySearch(''); setAgentSearch(''); setDesignerSearch(''); setPeriod('Custom'); setPage(1) }
   const toggle = (id: string) => setSelected(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next })
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(row => row.id)))
   const rangeStart = total ? (page - 1) * limit + 1 : 0
@@ -374,7 +402,7 @@ export function ArtworkLibraryPage() {
       </div>
 
       <div className="av-periodbar">
-        {['Daily', 'Weekly', 'Monthly', 'All Time'].map(option => <button key={option} className={period === option ? 'is-active' : ''} onClick={() => applyPeriod(option)}>{option}</button>)}
+        {['Daily', 'Weekly', 'Monthly', 'Custom'].map(option => <button key={option} className={period === option ? 'is-active' : ''} onClick={() => applyPeriod(option)}>{option}</button>)}
         <span>Live data from Nextcloud and production records</span>
       </div>
 
@@ -382,13 +410,25 @@ export function ArtworkLibraryPage() {
 
       <div className="av-filter-card">
         <select value={orderType} onChange={event => { setOrderType(event.target.value); setPage(1) }} aria-label="Order type"><option value="">All Order Types</option><option value="apparel">Custom Apparel</option><option value="dtf">DTF Transfers</option><option value="gangsheet">Gangsheet</option></select>
-        <select value={type} onChange={event => { setType(event.target.value as '' | AssetType); setPage(1) }} aria-label="Asset type"><option value="">All Types</option>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} aria-label="Status"><option value="">All Statuses</option><option>In Design</option><option>Pending Approval</option><option>Changes Requested</option><option>Approved</option><option>Archived</option></select>
+        <label><span>Sales Agent</span><input value={agentSearch} onChange={event => { setAgentSearch(event.target.value); setPage(1) }} placeholder="All agents" /></label>
+        <label><span>Designer</span><input value={designerSearch} onChange={event => { setDesignerSearch(event.target.value); setPage(1) }} placeholder="All designers" /></label>
+        <label><span>Lead / Customer</span><input value={entitySearch} onChange={event => { setEntitySearch(event.target.value); setPage(1) }} placeholder="All leads & customers" /></label>
         <label><span>Date from</span><input type="date" value={from} onChange={event => { setFrom(event.target.value); setPage(1) }} /></label>
         <label><span>Date to</span><input type="date" value={to} onChange={event => { setTo(event.target.value); setPage(1) }} /></label>
         <button className={cn('av-btn', showMore && 'is-active')} onClick={() => setShowMore(!showMore)}><SlidersHorizontal size={17} /> More Filters</button>
         <button className="av-btn" onClick={resetFilters}><RefreshCw size={16} /> Clear Filters</button>
-        {showMore && <div className="av-advanced-filters"><label><span>Lead / Customer</span><input value={entitySearch} onChange={event => { setEntitySearch(event.target.value); setPage(1) }} placeholder="Search name or lead ID" /></label><label><span>Sales Agent</span><input value={agentSearch} onChange={event => { setAgentSearch(event.target.value); setPage(1) }} placeholder="Search agent" /></label><label><span>Designer</span><input value={designerSearch} onChange={event => { setDesignerSearch(event.target.value); setPage(1) }} placeholder="Search designer" /></label><label><span>QA Approved</span><select value={qa} onChange={event => { setQa(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label><label><span>Production Ready</span><select value={ready} onChange={event => { setReady(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label></div>}
+        {showMore && <div className="av-advanced-filters"><label><span>Type</span><select value={type} onChange={event => { setType(event.target.value as '' | AssetType); setPage(1) }}><option value="">All Types</option>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>QA Approved</span><select value={qa} onChange={event => { setQa(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label><label><span>Production Ready</span><select value={ready} onChange={event => { setReady(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label></div>}
+      </div>
+
+      <div className="av-actionbar">
+        <label><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search artworks…" /></label>
+        <button onClick={resetFilters}><RefreshCw size={16} /> Clear Filters</button>
+        <button disabled title="Design Studio integration is not configured"><ExternalLink size={16} /> Open in Design Studio</button>
+        <button disabled title="AI analysis integration is not configured"><WandSparkles size={16} /> AI Analyze</button>
+        <button disabled={!selected.size || bulkMutation.isPending} onClick={chooseBulkStatus}><ListChecks size={16} /> Bulk Update</button>
+        <button disabled={!selected.size || bulkMutation.isPending} onClick={() => bulkMutation.mutate({ status: 'Archived' })}><Archive size={16} /> Move to Archive</button>
+        <button onClick={() => toast.success('All requested columns are visible')}><Layers3 size={16} /> Columns</button>
       </div>
 
       <div className="av-tabs">{tabs.map(tab => <button key={tab.label} className={type === tab.value ? 'is-active' : ''} onClick={() => { setType(tab.value); setPage(1) }}>{tab.label}{tab.value && <span>{tab.value === 'artwork' ? stats.artworks : tab.value === 'mockup' ? stats.mockups : tab.value === 'gangsheet' ? stats.gangsheets : ''}</span>}</button>)}</div>
@@ -411,8 +451,8 @@ export function ArtworkLibraryPage() {
                   <td onClick={event => event.stopPropagation()}><input type="checkbox" checked={selected.has(asset.id)} onChange={() => toggle(asset.id)} /></td>
                   <td>{formatDate(asset.source_modified_at || asset.created_at)}</td>
                   <td><div className="av-entity"><span>{(asset.entity_name || 'U')[0].toUpperCase()}</span><strong>{asset.entity_name || 'Unlinked'}</strong></div></td>
-                  <td><strong className="av-link">{asset.customer_number || asset.id.slice(0, 8).toUpperCase()}</strong></td>
-                  <td><div className="av-table-thumb"><AssetPreview asset={asset} />{Number(asset.folder_file_count) > 1 && <small>+{Number(asset.folder_file_count) - 1}</small>}</div></td>
+                  <td><strong className="av-link">{assetCode(asset)}</strong></td>
+                  <td><div className="av-table-thumb"><AssetPreview asset={asset} /></div></td>
                   <td><span className="av-link">{asset.lead_number || '—'}</span></td>
                   <td>{asset.order_type ? asset.order_type.toUpperCase() : '—'}</td>
                   <td><span className={cn('av-type-pill', `av-type-${asset.asset_type}`)}>{typeLabels[asset.asset_type]}</span></td>
@@ -421,14 +461,14 @@ export function ArtworkLibraryPage() {
                   <td>V{asset.version_no || 1}</td>
                   <td><span className={asset.qa_approved ? 'av-yes' : 'av-no'}>{asset.qa_approved ? 'Yes' : 'No'}</span></td>
                   <td><span className={asset.production_ready ? 'av-yes' : 'av-no'}>{asset.production_ready ? 'Yes' : 'No'}</span></td>
-                  <td><button className="av-icon-btn" aria-label={`Actions for ${asset.file_name}`}><MoreHorizontal size={18} /></button></td>
+                  <td onClick={event => event.stopPropagation()}><div className="av-row-actions"><button onClick={() => downloadAsset(asset.download_url || '', asset.file_name, true).catch(() => toast.error('Preview failed'))} title="Open"><ExternalLink size={15} /></button><button onClick={() => downloadAsset(asset.download_url || '', asset.file_name).catch(() => toast.error('Download failed'))} title="Download"><Download size={15} /></button><button onClick={() => setActiveId(asset.id)} title="More actions"><MoreHorizontal size={16} /></button></div></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <footer className="av-pagination">
-          <span>Showing <strong>{rangeStart}</strong> to <strong>{rangeEnd}</strong> of <strong>{total}</strong> asset folders</span>
+          <span>Showing <strong>{rangeStart}</strong> to <strong>{rangeEnd}</strong> of <strong>{total}</strong> artworks</span>
           <div><label>Rows per page <select value={limit} onChange={event => { setLimit(Number(event.target.value)); setPage(1) }}><option>10</option><option>20</option><option>50</option><option>100</option></select></label><button disabled={page <= 1} onClick={() => setPage(1)}><ChevronsLeft size={17} /></button><button disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={17} /></button><strong>{page}</strong><span>of {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight size={17} /></button><button disabled={page >= totalPages} onClick={() => setPage(totalPages)}><ChevronsRight size={17} /></button></div>
         </footer>
       </div>

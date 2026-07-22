@@ -62,8 +62,8 @@ function csvCell(value) {
 async function vaultExport(req, res, next) {
   try {
     const result = await vault.list({ ...req.query, page: 1, limit: 10000, export: true })
-    const headers = ['Date Created','Lead / Customer','Asset ID','Lead ID','Order Type','Type','File Name','Sender','Sales Agent','Designer','Status','Latest Version','QA Approved','Production Ready']
-    const lines = [headers, ...result.rows.map(a => [a.source_modified_at || a.created_at,a.entity_name,a.customer_number || a.id,a.lead_number,a.order_type,a.asset_type,a.file_name,a.sender_name,a.sales_agent_name,a.designer_name,a.status,`V${a.version_no}`,a.qa_approved ? 'Yes' : 'No',a.production_ready ? 'Yes' : 'No'])]
+    const headers = ['Date Created','Lead / Customer','Artwork ID','Lead ID','Order Type','Type','File Name','Sender','Sales Agent','Designer','Status','Latest Version','QA Approved','Production Ready']
+    const lines = [headers, ...result.rows.map(a => [a.source_modified_at || a.created_at,a.entity_name,`ART-${String(a.asset_number).padStart(6,'0')}`,a.lead_number,a.order_type,a.asset_type,a.file_name,a.sender_name,a.sales_agent_name,a.designer_name,a.status,`V${a.version_no}`,a.qa_approved ? 'Yes' : 'No',a.production_ready ? 'Yes' : 'No'])]
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="artwork-vault-${new Date().toISOString().slice(0,10)}.csv"`)
     return res.send('\ufeff' + lines.map(row => row.map(csvCell).join(',')).join('\n'))

@@ -15,6 +15,14 @@ function inferType(path) {
   return 'artwork'
 }
 
+function inferOrderType(path) {
+  const text = String(path).toLowerCase()
+  if (/gang[ _-]?sheets?/.test(text)) return 'gangsheet'
+  if (/(^|[/ _-])(dtf|transfers?)([/ _-]|$)/.test(text)) return 'dtf'
+  if (/apparel|custom[ _-]?(shirts?|hoodies?)|t[ _-]?shirts?/.test(text)) return 'apparel'
+  return null
+}
+
 function inferVersion(name) {
   const match = String(name).match(/(?:^|[^a-z0-9])v(?:ersion)?[ _-]?(\d+)(?:[^0-9]|$)/i)
   return match ? Math.max(1, Number(match[1])) : 1
@@ -40,6 +48,7 @@ async function sync({ force = false } = {}) {
         etag: file.etag || null,
         file_id: file.fileid || null,
         asset_type: inferType(file.path),
+        order_type: inferOrderType(file.path),
         version_no: inferVersion(file.name),
         modified_at: file.modified || null,
       }))
@@ -47,15 +56,15 @@ async function sync({ force = false } = {}) {
         const chunk = indexed.slice(start, start + 500)
         await client.query(`INSERT INTO artwork_vault_assets
           (source,source_key,path,parent_path,file_name,mime_type,file_size_bytes,etag,nextcloud_file_id,
-           asset_type,version_no,is_cover,source_modified_at,last_seen_at,updated_at)
+           asset_type,order_type,version_no,is_cover,source_modified_at,last_seen_at,updated_at)
           SELECT 'nextcloud',x.path,x.path,x.parent_path,x.file_name,x.mime_type,x.file_size_bytes,x.etag,x.file_id,
-                 x.asset_type,x.version_no,FALSE,x.modified_at,NOW(),NOW()
+                 x.asset_type,x.order_type,x.version_no,FALSE,x.modified_at,NOW(),NOW()
           FROM jsonb_to_recordset($1::jsonb) AS x(path text,parent_path text,file_name text,mime_type text,
-            file_size_bytes bigint,etag text,file_id text,asset_type text,version_no int,modified_at timestamptz)
+            file_size_bytes bigint,etag text,file_id text,asset_type text,order_type text,version_no int,modified_at timestamptz)
           ON CONFLICT (source,source_key) DO UPDATE SET
             path=EXCLUDED.path,parent_path=EXCLUDED.parent_path,file_name=EXCLUDED.file_name,
             mime_type=EXCLUDED.mime_type,file_size_bytes=EXCLUDED.file_size_bytes,etag=EXCLUDED.etag,
-            nextcloud_file_id=EXCLUDED.nextcloud_file_id,asset_type=EXCLUDED.asset_type,
+            nextcloud_file_id=EXCLUDED.nextcloud_file_id,asset_type=EXCLUDED.asset_type,order_type=EXCLUDED.order_type,
             version_no=EXCLUDED.version_no,source_modified_at=EXCLUDED.source_modified_at,last_seen_at=NOW(),
             updated_at=CASE WHEN artwork_vault_assets.etag IS DISTINCT FROM EXCLUDED.etag THEN NOW() ELSE artwork_vault_assets.updated_at END`,
           [JSON.stringify(chunk)])
@@ -77,6 +86,8 @@ async function sync({ force = false } = {}) {
         FROM leads l WHERE a.lead_id IS NULL AND (a.path ILIKE '%'||l.lead_number||'%' OR (length(l.customer_name)>3 AND replace(a.path,'_',' ') ILIKE '%'||l.customer_name||'%'))`)
       await client.query(`UPDATE artwork_vault_assets a SET customer_id=c.id
         FROM customers c WHERE a.customer_id IS NULL AND (a.path ILIKE '%'||c.customer_number||'%' OR (length(c.name)>3 AND replace(a.path,'_',' ') ILIKE '%'||c.name||'%'))`)
+      await client.query(`UPDATE artwork_vault_assets a SET lead_id=c.lead_id
+        FROM customers c WHERE a.customer_id=c.id AND c.lead_id IS NOT NULL AND a.lead_id IS DISTINCT FROM c.lead_id`)
       await client.query(`UPDATE artwork_vault_assets a SET order_id=o.id
         FROM orders o WHERE a.order_id IS NULL AND a.path ILIKE '%'||o.order_number||'%'`)
       await client.query(`UPDATE artwork_vault_assets a SET sales_agent_id=o.assigned_to
@@ -107,9 +118,12 @@ async function ensureIndexed() {
 function buildWhere(filters, params) {
   const clauses = []
   const add = (value, sql) => { params.push(value); clauses.push(sql(params.length)) }
-  if (filters.search) add(`%${filters.search}%`, n => `(a.file_name ILIKE $${n} OR a.path ILIKE $${n} OR COALESCE(l.lead_number,'') ILIKE $${n} OR COALESCE(c.name,'') ILIKE $${n})`)
+  if (filters.search) add(`%${filters.search}%`, n => `(a.file_name ILIKE $${n} OR a.path ILIKE $${n}
+    OR ('ART-' || LPAD(a.asset_number::text,6,'0')) ILIKE $${n}
+    OR COALESCE(l.lead_number,'') ILIKE $${n} OR COALESCE(c.name,'') ILIKE $${n}
+    OR a.asset_type ILIKE $${n} OR a.status ILIKE $${n} OR COALESCE(a.order_type,'') ILIKE $${n})`)
   if (filters.type) add(filters.type, n => `a.asset_type=$${n}`)
-  if (filters.order_type) add(filters.order_type, n => `o.order_type::text=$${n}`)
+  if (filters.order_type) add(filters.order_type, n => `COALESCE(a.order_type,o.order_type::text)=$${n}`)
   if (filters.status) add(filters.status, n => `a.status=$${n}`)
   if (filters.agent) add(filters.agent, n => `a.sales_agent_id=$${n}`)
   if (filters.designer) add(filters.designer, n => `a.designer_id=$${n}`)
@@ -133,25 +147,22 @@ async function list(filters = {}) {
   const limit = filters.export ? 10000 : Math.min(100, Math.max(10, Number(filters.limit) || 20))
   const params = []
   const where = buildWhere(filters, params)
-  const totalResult = await query(`SELECT COUNT(DISTINCT a.parent_path)::int total FROM artwork_vault_assets a
+  const totalResult = await query(`SELECT COUNT(*)::int total FROM artwork_vault_assets a
     LEFT JOIN leads l ON l.id=a.lead_id LEFT JOIN customers c ON c.id=a.customer_id
     LEFT JOIN orders o ON o.id=a.order_id LEFT JOIN users sa ON sa.id=a.sales_agent_id LEFT JOIN users d ON d.id=a.designer_id
     ${where}`, params)
   params.push(limit, (page - 1) * limit)
-  const { rows } = await query(`WITH filtered AS (
-      SELECT a.*,l.lead_number,COALESCE(c.name,l.customer_name) AS entity_name,c.customer_number,o.order_type,
-        sa.name AS sales_agent_name,d.name AS designer_name,
-        COUNT(*) OVER (PARTITION BY a.parent_path)::int AS folder_file_count,
-        ROW_NUMBER() OVER (PARTITION BY a.parent_path ORDER BY a.is_cover DESC,
-          CASE WHEN a.file_name ~* '(^|[ _.-])(cover|thumbnail|thumb|main|primary)([ _.-]|$)' THEN 0 ELSE 1 END,
-          COALESCE(a.source_modified_at,a.created_at),a.file_name) AS folder_rank
+  const { rows } = await query(`SELECT a.*,l.lead_number,COALESCE(c.name,l.customer_name) AS entity_name,c.customer_number,
+        COALESCE(a.order_type,o.order_type::text) AS order_type,sa.name AS sales_agent_name,d.name AS designer_name,
+        CASE WHEN a.file_name ~* '(^|[ _.-])front([ _.-]|$)' THEN 'Front'
+             WHEN a.file_name ~* '(^|[ _.-])back([ _.-]|$)' THEN 'Back'
+             WHEN a.asset_type='reference' THEN 'Reference' ELSE NULL END AS role_location
       FROM artwork_vault_assets a
       LEFT JOIN leads l ON l.id=a.lead_id LEFT JOIN customers c ON c.id=a.customer_id
       LEFT JOIN orders o ON o.id=a.order_id
       LEFT JOIN users sa ON sa.id=a.sales_agent_id LEFT JOIN users d ON d.id=a.designer_id
       ${where}
-    ) SELECT * FROM filtered WHERE folder_rank=1
-    ORDER BY COALESCE(source_modified_at,created_at) DESC,file_name
+    ORDER BY COALESCE(a.source_modified_at,a.created_at) DESC,a.file_name
     LIMIT $${params.length - 1} OFFSET $${params.length}`, params)
   const hydrated = rows.map(row => row.source === 'nextcloud' ? {
     ...row,
@@ -183,7 +194,10 @@ async function stats(filters = {}) {
 
 async function detail(id) {
   const { rows } = await query(`SELECT a.*,l.lead_number,COALESCE(c.name,l.customer_name) entity_name,c.customer_number,
-    sa.name sales_agent_name,d.name designer_name,o.order_type,
+    sa.name sales_agent_name,d.name designer_name,COALESCE(a.order_type,o.order_type::text) order_type,
+    CASE WHEN a.file_name ~* '(^|[ _.-])front([ _.-]|$)' THEN 'Front'
+         WHEN a.file_name ~* '(^|[ _.-])back([ _.-]|$)' THEN 'Back'
+         WHEN a.asset_type='reference' THEN 'Reference' ELSE NULL END role_location,
     COALESCE(c.email,l.email) contact_email,COALESCE(c.whatsapp,l.whatsapp) contact_whatsapp,
     COALESCE(c.facebook_id,l.facebook_id) contact_facebook
     FROM artwork_vault_assets a LEFT JOIN leads l ON l.id=a.lead_id LEFT JOIN customers c ON c.id=a.customer_id
@@ -230,4 +244,4 @@ async function bulkUpdate(ids, changes = {}) {
   return { updated: rows.length }
 }
 
-module.exports = { inferType, sync, list, stats, detail, setCover, bulkUpdate }
+module.exports = { inferType, inferOrderType, sync, list, stats, detail, setCover, bulkUpdate }
