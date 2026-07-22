@@ -282,9 +282,9 @@ export function PurchaseOrderDetailPage() {
             </button>
           )}
           <button className="lb-action-btn"
-            onClick={() => navigate(`/purchase-orders/${id}/print`)}
+            onClick={() => window.open(`/purchase-orders/${id}/print`, '_blank', 'noopener,noreferrer')}
             style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            🖨️ Print / PDF
+            🖨️ Preview / PDF
           </button>
           <button className="lb-action-btn"
             onClick={() => { setPortalSupplierId(po.supplier_id ?? ''); setPortalModalOpen(true) }}>
@@ -823,7 +823,6 @@ function SummaryRow({ label, value, dimmed }: { label: string; value: string; di
     </div>
   )
 }
-
 
 
 

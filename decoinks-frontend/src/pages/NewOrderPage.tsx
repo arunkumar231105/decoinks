@@ -405,8 +405,15 @@ export function NewOrderPage() {
       const c = response.data.data as Customer
       const shipping = c.addresses?.find(a => a.address_type === 'shipping' && a.is_default)
         ?? c.addresses?.find(a => a.address_type === 'shipping')
-      const address = shipping ?? c
-      const zip = 'zipcode' in address ? address.zipcode : c.zip
+      const address = shipping ?? {
+        line1: c.address_line1,
+        line2: c.address_line2,
+        city: c.city,
+        state: c.state,
+        zipcode: c.zip,
+        country: c.country,
+      }
+      const zip = address.zipcode
       setCustomerText(c.name)
       setContactName(c.name)
       setContactEmail(c.email ?? '')

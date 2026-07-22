@@ -24,7 +24,7 @@ const date = (value: any) => {
   const raw = String(value)
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-const titleCase = (value: any) => String(value || '—').replaceAll('_', ' ').replace(/\b\w/g, s => s.toUpperCase())
+const titleCase = (value: any) => String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, (s: string) => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')
 const countStatus = (rows: AnyRow[], ...statuses: string[]) => rows.filter(r => statuses.some(status => String(r.status || '').trim().toLowerCase() === status.trim().toLowerCase())).length
 
@@ -362,7 +362,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
       <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
-      <div className="ew-drawer-actions"><button onClick={() => navigate(printPathFor(active))} title="Print or preview"><Printer size={16}/><span>Print</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
+      <div className="ew-drawer-actions"><button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
       </aside>

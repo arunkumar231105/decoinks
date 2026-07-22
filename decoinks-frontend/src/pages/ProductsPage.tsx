@@ -25,7 +25,7 @@ interface Product {
 interface StyleColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null; active: boolean; discontinued: boolean }
 interface StyleSize { style_size_id: string; size_code: string; size_name: string; size_group: string; active: boolean; discontinued: boolean }
 interface StyleImage { style_image_id: string; image_url: string; alt_text: string | null; is_primary: boolean }
-interface StyleDetail extends Product {
+interface StyleDetail extends Omit<Product, 'colors'> {
   garment_category: string; garment_type: string; gender: string | null; fit_type: string | null
   sleeve_type: string | null; neck_type: string | null; fabric_composition: string | null
   fabric_weight_gsm: number | null; fabric_weight_oz: number | null; fabric_type: string | null

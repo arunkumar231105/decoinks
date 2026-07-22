@@ -473,7 +473,7 @@ export function PurchaseOrderPrintPage() {
 
   // staleTime 0 + always refetch: PO edits must show immediately when the
   // preview is reopened.
-  const { data: po, isLoading } = useQuery<PurchaseOrder>({
+  const { data: po, isLoading, isError, refetch } = useQuery<PurchaseOrder>({
     queryKey: ['purchase-order-print', id],
     queryFn:  () => api.get(`/purchase-orders/${id}`).then(r => r.data.po ?? r.data.data ?? r.data),
     enabled: !!id && authReady,
@@ -496,6 +496,12 @@ export function PurchaseOrderPrintPage() {
   if (!authReady || isLoading) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'Inter, sans-serif', fontSize: 15, color: '#6b7280' }}>
       Loading purchase order…
+    </div>
+  )
+  if (isError) return (
+    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100vh', fontFamily:'Inter,sans-serif', gap:12 }}>
+      <span style={{ fontSize:15, color:'#ef4444' }}>Purchase order preview could not be loaded.</span>
+      <button onClick={() => void refetch()} style={{ minHeight:40, padding:'0 18px', border:'1px solid #cbd5e1', borderRadius:8, background:'#fff', color:'#1a2b5c', fontWeight:700, cursor:'pointer' }}>Try again</button>
     </div>
   )
   if (!po) return (
@@ -538,7 +544,6 @@ export function PurchaseOrderPrintPage() {
     : '—'
 
   // For the Gangsheet Order summary row (section 1) – aggregate all items
-  const totalWidth  = items[0] ? parseGsWidth(items[0].item_name) : '—'
   const gsOrderNo   = po.order_id ? (po.order_number || `ORD-${po.po_number}`) : po.po_number
 
   // Notes as bullet list — per-type defaults matching the approved templates
