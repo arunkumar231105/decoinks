@@ -10,7 +10,7 @@ import toast from '../utils/toast'
 import { api } from '../services/api'
 import { cn } from '../utils/cn'
 
-type AssetType = 'reference' | 'artwork' | 'version' | 'mockup' | 'gangsheet'
+type AssetType = 'reference' | 'artwork' | 'mockup' | 'gangsheet' | 'sent'
 
 interface VaultAsset {
   id: string
@@ -21,6 +21,9 @@ interface VaultAsset {
   mime_type?: string | null
   file_size_bytes: number
   asset_type: AssetType
+  artwork_code?: string | null
+  lifecycle_code?: 'SRC' | 'WRK' | 'MOCK' | 'OUT' | 'FNL' | null
+  naming_convention_valid?: boolean
   status: string
   version_no: number
   is_cover: boolean
@@ -43,7 +46,8 @@ interface VaultAsset {
   folder_file_count?: number
   thumbnail_url?: string | null
   download_url?: string | null
-  folder_files?: Array<Pick<VaultAsset, 'id' | 'file_name' | 'asset_type' | 'is_cover' | 'thumbnail_url'>>
+  folder_files?: Array<Pick<VaultAsset, 'id' | 'file_name' | 'asset_type' | 'is_cover' | 'thumbnail_url' | 'lifecycle_code' | 'version_no'>>
+  family_files?: VaultAsset[]
 }
 
 interface VaultStats {
@@ -67,14 +71,16 @@ const tabs: Array<{ label: string; value: '' | AssetType }> = [
   { label: 'All Assets', value: '' },
   { label: 'Reference Files', value: 'reference' },
   { label: 'Artwork Assets', value: 'artwork' },
-  { label: 'Versions', value: 'version' },
   { label: 'Mockups', value: 'mockup' },
-  { label: 'Gangsheets', value: 'gangsheet' },
+  { label: 'Final / Gangsheets', value: 'gangsheet' },
+  { label: 'Sent Files', value: 'sent' },
 ]
 
 const typeLabels: Record<AssetType, string> = {
-  reference: 'Reference', artwork: 'Artwork', version: 'Version', mockup: 'Mockup', gangsheet: 'Gangsheet',
+  reference: 'Source', artwork: 'Working', mockup: 'Mockup', gangsheet: 'Final', sent: 'Sent',
 }
+
+const lifecycleLabels = { SRC: 'Source', WRK: 'Working', MOCK: 'Mockup', OUT: 'Sent', FNL: 'Final' } as const
 
 function apiAssetUrl(url?: string | null) {
   if (!url) return ''
@@ -142,7 +148,8 @@ function DetailRow({ label, value }: { label: string; value?: ReactNode }) {
   return <div className="av-detail-row"><span>{label}</span><strong>{value || '—'}</strong></div>
 }
 
-function assetCode(asset: Pick<VaultAsset, 'asset_number' | 'id'>) {
+function assetCode(asset: Pick<VaultAsset, 'asset_number' | 'id' | 'artwork_code' | 'lifecycle_code'>) {
+  if (asset.artwork_code) return `${asset.artwork_code}${asset.lifecycle_code ? `-${asset.lifecycle_code}` : ''}`
   return asset.asset_number ? `ART-${String(asset.asset_number).padStart(6, '0')}` : `ART-${asset.id.slice(0, 6).toUpperCase()}`
 }
 
@@ -180,7 +187,7 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
   }, [onClose])
 
   if (isLoading || !data) return <aside className="av-drawer"><div className="av-drawer-loading">Loading asset…</div></aside>
-  const files = data.folder_files ?? []
+  const files = data.family_files?.length ? data.family_files : data.folder_files ?? []
   const emailHref = data.contact_email ? `mailto:${data.contact_email}?subject=${encodeURIComponent(`Artwork approval · ${assetCode(data)}`)}` : undefined
   const whatsappHref = data.contact_whatsapp ? `https://wa.me/${data.contact_whatsapp.replace(/\D/g, '')}` : undefined
   const facebookHref = data.contact_facebook ? `https://m.me/${encodeURIComponent(data.contact_facebook)}` : undefined
@@ -203,11 +210,11 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
           </div>
         </div>
         <div className="av-summary-state">
-          <span>Status</span><b className="av-status-pill">{data.status || 'In Design'}</b>
-          <span>Current Version</span><b>V{data.version_no || 1}</b>
-          <button onClick={() => setShowVersions(!showVersions)}>View All Versions</button>
+          <span>Lifecycle Stage</span><b className={cn('av-type-pill', `av-type-${data.asset_type}`)}>{data.lifecycle_code ? `${data.lifecycle_code} · ${lifecycleLabels[data.lifecycle_code]}` : typeLabels[data.asset_type]}</b>
+          <span>Revision</span><b>V{data.version_no || 1}</b>
+          <button onClick={() => setShowVersions(!showVersions)}>View Artwork Chain</button>
         </div>
-        {showVersions && <div className="av-version-list">{files.map(file => <button key={file.id} className={file.id === id ? 'is-active' : ''} onClick={() => onSelect(file.id)}><span>{file.file_name}</span><b>V{file.id === id ? data.version_no || 1 : '—'}</b></button>)}</div>}
+        {showVersions && <div className="av-version-list">{files.map(file => <button key={file.id} className={file.id === id ? 'is-active' : ''} onClick={() => onSelect(file.id)}><span>{file.lifecycle_code ? `${file.lifecycle_code} · ` : ''}{file.file_name}</span><b>V{file.version_no || 1}</b></button>)}</div>}
 
         <div className="av-social-actions">
           <button className="av-social-action" onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))} title="Open in OS"><ExternalLink size={18} /><span>Open in OS</span></button>
@@ -234,6 +241,10 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
         <section className="av-detail-section">
           <h3>Information</h3>
           <DetailRow label="Type" value={typeLabels[data.asset_type]} />
+          <DetailRow label="Artwork Family" value={data.artwork_code} />
+          <DetailRow label="Lifecycle" value={data.lifecycle_code ? `${data.lifecycle_code} · ${lifecycleLabels[data.lifecycle_code]}` : undefined} />
+          <DetailRow label="Revision" value={`V${data.version_no || 1}`} />
+          <DetailRow label="Naming Standard" value={data.naming_convention_valid ? 'Valid' : 'Legacy filename'} />
           <DetailRow label="Order Type" value={orderTypeLabel(data.order_type)} />
           <DetailRow label="Role / Location" value={data.role_location} />
           <DetailRow label="Parent Reference" />
@@ -410,7 +421,7 @@ export function ArtworkLibraryPage() {
 
       <div className="av-filter-card">
         <select value={orderType} onChange={event => { setOrderType(event.target.value); setPage(1) }} aria-label="Order type"><option value="">All Order Types</option><option value="apparel">Custom Apparel</option><option value="dtf">DTF Transfers</option><option value="gangsheet">Gangsheet</option></select>
-        <select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} aria-label="Status"><option value="">All Statuses</option><option>In Design</option><option>Pending Approval</option><option>Changes Requested</option><option>Approved</option><option>Archived</option></select>
+        <select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} aria-label="Status"><option value="">All Statuses</option><option>Source Received</option><option>In Design</option><option>Mockup Ready</option><option>Sent to Customer</option><option>Production Ready</option><option>Pending Approval</option><option>Changes Requested</option><option>Approved</option><option>Archived</option></select>
         <label><span>Sales Agent</span><input value={agentSearch} onChange={event => { setAgentSearch(event.target.value); setPage(1) }} placeholder="All agents" /></label>
         <label><span>Designer</span><input value={designerSearch} onChange={event => { setDesignerSearch(event.target.value); setPage(1) }} placeholder="All designers" /></label>
         <label><span>Lead / Customer</span><input value={entitySearch} onChange={event => { setEntitySearch(event.target.value); setPage(1) }} placeholder="All leads & customers" /></label>
@@ -440,7 +451,7 @@ export function ArtworkLibraryPage() {
           <table className="av-table">
             <thead><tr>
               <th><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select page" /></th>
-              <th>Date Created</th><th>Lead / Customer</th><th>Asset ID</th><th>Thumbnail</th><th>Lead ID</th><th>Order Type</th><th>Type</th><th>Sender</th><th>Sales Agent</th><th>Designer</th><th>Status</th><th>Latest Version</th><th>QA Approved</th><th>Production Ready</th><th>Actions</th>
+              <th>Date Created</th><th>Lead / Customer</th><th>Artwork ID</th><th>Thumbnail</th><th>Lead ID</th><th>Order Type</th><th>Type</th><th>Sender</th><th>Sales Agent</th><th>Designer</th><th>Status</th><th>Revision</th><th>QA Approved</th><th>Production Ready</th><th>Actions</th>
             </tr></thead>
             <tbody>
               {isLoading && Array.from({ length: 8 }).map((_, index) => <tr key={index} className="av-skeleton-row"><td colSpan={16}><span /></td></tr>)}
@@ -455,7 +466,7 @@ export function ArtworkLibraryPage() {
                   <td><div className="av-table-thumb"><AssetPreview asset={asset} /></div></td>
                   <td><span className="av-link">{asset.lead_number || '—'}</span></td>
                   <td>{asset.order_type ? asset.order_type.toUpperCase() : '—'}</td>
-                  <td><span className={cn('av-type-pill', `av-type-${asset.asset_type}`)}>{typeLabels[asset.asset_type]}</span></td>
+                  <td><span className={cn('av-type-pill', `av-type-${asset.asset_type}`)}>{asset.lifecycle_code ? `${asset.lifecycle_code} · ${lifecycleLabels[asset.lifecycle_code]}` : typeLabels[asset.asset_type]}</span></td>
                   <td>{asset.sender_name || '—'}</td><td>{asset.sales_agent_name || '—'}</td><td>{asset.designer_name || '—'}</td>
                   <td><span className="av-status-pill">{asset.status || 'In Design'}</span></td>
                   <td>V{asset.version_no || 1}</td>

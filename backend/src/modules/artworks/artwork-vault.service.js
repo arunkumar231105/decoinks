@@ -5,14 +5,31 @@ const { getConfig } = require('../../config/nextcloud')
 let syncPromise = null
 let lastSyncAt = 0
 
-function inferType(path) {
-  const parts = String(path).toLowerCase().split('/').filter(Boolean)
-  const text = parts.join(' ')
-  if (/\bgang[ -]?sheets?\b/.test(text)) return 'gangsheet'
-  if (/\bmock[ -]?ups?\b/.test(text)) return 'mockup'
-  if (parts.some(part => /^versions?$/.test(part))) return 'version'
-  if (/\breferences?\b|\brefs?\b/.test(text)) return 'reference'
-  return 'artwork'
+function inferLifecycle(path, fileName = '') {
+  const fullPath = String(path || '')
+  if (/(^|\/)(documents?|invoices?|quotes?)(\/|$)/i.test(fullPath)) return null
+  const name = String(fileName || fullPath.split('/').pop() || '')
+  const named = name.match(/AW-[A-Z0-9]+-[0-9]{4}-(SRC|WRK|MOCK|OUT|FNL)(?:[^A-Z]|$)/i)
+  if (named) return named[1].toUpperCase()
+  if (/(^|\/)(references?|refs?)(\/|$)/i.test(fullPath)) return 'SRC'
+  if (/(^|\/)(artworks?|working|versions?)(\/|$)/i.test(fullPath)) return 'WRK'
+  if (/(^|\/)(mockups?)(\/|$)/i.test(fullPath)) return 'MOCK'
+  if (/(^|\/)(sent|outgoing)(\/|$)/i.test(fullPath)) return 'OUT'
+  if (/(^|\/)(gangsheets?|finals?|production)(\/|$)/i.test(fullPath)) return 'FNL'
+  return 'WRK'
+}
+
+function inferArtworkCode(fileName) {
+  const match = String(fileName || '').match(/(AW-[A-Z0-9]+-[0-9]{4})-(?:SRC|WRK|MOCK|OUT|FNL)(?:[^A-Z]|$)/i)
+  return match ? match[1].toUpperCase() : null
+}
+
+function inferType(path, fileName = '') {
+  return ({ SRC: 'reference', WRK: 'artwork', MOCK: 'mockup', OUT: 'sent', FNL: 'gangsheet' })[inferLifecycle(path, fileName)] || null
+}
+
+function inferStatus(lifecycle) {
+  return ({ SRC: 'Source Received', WRK: 'In Design', MOCK: 'Mockup Ready', OUT: 'Sent to Customer', FNL: 'Production Ready' })[lifecycle] || 'In Design'
 }
 
 function inferOrderType(path) {
@@ -39,7 +56,9 @@ async function sync({ force = false } = {}) {
     const client = await getClient()
     try {
       await client.query('BEGIN')
-      const indexed = files.filter(file => file.path && file.name).map(file => ({
+      const indexed = files.filter(file => file.path && file.name).map(file => {
+        const lifecycle_code = inferLifecycle(file.path, file.name)
+        return lifecycle_code ? ({
         path: file.path,
         parent_path: file.path.split('/').slice(0, -1).join('/'),
         file_name: file.name,
@@ -47,24 +66,40 @@ async function sync({ force = false } = {}) {
         file_size_bytes: file.size || 0,
         etag: file.etag || null,
         file_id: file.fileid || null,
-        asset_type: inferType(file.path),
+        asset_type: inferType(file.path, file.name),
+        artwork_code: inferArtworkCode(file.name),
+        lifecycle_code,
+        naming_convention_valid: Boolean(inferArtworkCode(file.name)),
+        status: inferStatus(lifecycle_code),
+        production_ready: lifecycle_code === 'FNL',
         order_type: inferOrderType(file.path),
         version_no: inferVersion(file.name),
         modified_at: file.modified || null,
-      }))
+      }) : null
+      }).filter(Boolean)
       for (let start = 0; start < indexed.length; start += 500) {
         const chunk = indexed.slice(start, start + 500)
         await client.query(`INSERT INTO artwork_vault_assets
           (source,source_key,path,parent_path,file_name,mime_type,file_size_bytes,etag,nextcloud_file_id,
-           asset_type,order_type,version_no,is_cover,source_modified_at,last_seen_at,updated_at)
+           asset_type,artwork_code,lifecycle_code,naming_convention_valid,status,production_ready,
+           order_type,version_no,is_cover,source_modified_at,last_seen_at,updated_at)
           SELECT 'nextcloud',x.path,x.path,x.parent_path,x.file_name,x.mime_type,x.file_size_bytes,x.etag,x.file_id,
-                 x.asset_type,x.order_type,x.version_no,FALSE,x.modified_at,NOW(),NOW()
+                 x.asset_type,x.artwork_code,x.lifecycle_code,x.naming_convention_valid,x.status,x.production_ready,
+                 x.order_type,x.version_no,FALSE,x.modified_at,NOW(),NOW()
           FROM jsonb_to_recordset($1::jsonb) AS x(path text,parent_path text,file_name text,mime_type text,
-            file_size_bytes bigint,etag text,file_id text,asset_type text,order_type text,version_no int,modified_at timestamptz)
+            file_size_bytes bigint,etag text,file_id text,asset_type text,artwork_code text,lifecycle_code text,
+            naming_convention_valid boolean,status text,production_ready boolean,order_type text,version_no int,modified_at timestamptz)
           ON CONFLICT (source,source_key) DO UPDATE SET
             path=EXCLUDED.path,parent_path=EXCLUDED.parent_path,file_name=EXCLUDED.file_name,
             mime_type=EXCLUDED.mime_type,file_size_bytes=EXCLUDED.file_size_bytes,etag=EXCLUDED.etag,
-            nextcloud_file_id=EXCLUDED.nextcloud_file_id,asset_type=EXCLUDED.asset_type,order_type=EXCLUDED.order_type,
+            nextcloud_file_id=EXCLUDED.nextcloud_file_id,asset_type=EXCLUDED.asset_type,
+            artwork_code=EXCLUDED.artwork_code,lifecycle_code=EXCLUDED.lifecycle_code,
+            naming_convention_valid=EXCLUDED.naming_convention_valid,
+            status=CASE WHEN artwork_vault_assets.lifecycle_code IS DISTINCT FROM EXCLUDED.lifecycle_code
+                          AND artwork_vault_assets.status<>'Archived' THEN EXCLUDED.status ELSE artwork_vault_assets.status END,
+            production_ready=CASE WHEN artwork_vault_assets.lifecycle_code IS DISTINCT FROM EXCLUDED.lifecycle_code
+                                  THEN EXCLUDED.production_ready ELSE artwork_vault_assets.production_ready END,
+            order_type=EXCLUDED.order_type,
             version_no=EXCLUDED.version_no,source_modified_at=EXCLUDED.source_modified_at,last_seen_at=NOW(),
             updated_at=CASE WHEN artwork_vault_assets.etag IS DISTINCT FROM EXCLUDED.etag THEN NOW() ELSE artwork_vault_assets.updated_at END`,
           [JSON.stringify(chunk)])
@@ -119,6 +154,7 @@ function buildWhere(filters, params) {
   const clauses = []
   const add = (value, sql) => { params.push(value); clauses.push(sql(params.length)) }
   if (filters.search) add(`%${filters.search}%`, n => `(a.file_name ILIKE $${n} OR a.path ILIKE $${n}
+    OR COALESCE(a.artwork_code,'') ILIKE $${n} OR COALESCE(a.lifecycle_code,'') ILIKE $${n}
     OR ('ART-' || LPAD(a.asset_number::text,6,'0')) ILIKE $${n}
     OR COALESCE(l.display_number,'') ILIKE $${n} OR COALESCE(l.lead_number,'') ILIKE $${n} OR COALESCE(c.name,'') ILIKE $${n}
     OR a.asset_type ILIKE $${n} OR a.status ILIKE $${n} OR COALESCE(a.order_type,'') ILIKE $${n})`)
@@ -178,13 +214,13 @@ async function stats(filters = {}) {
   const where = buildWhere(filters, params)
   const { rows } = await query(`SELECT
     COUNT(*)::int AS total_assets,
-    COUNT(*) FILTER (WHERE a.asset_type IN ('artwork','version'))::int AS artworks,
+    COUNT(*) FILTER (WHERE a.asset_type='artwork')::int AS artworks,
     COUNT(*) FILTER (WHERE a.asset_type='mockup')::int AS mockups,
     COUNT(*) FILTER (WHERE a.asset_type='gangsheet')::int AS gangsheets,
-    COUNT(*) FILTER (WHERE a.asset_type IN ('artwork','version') AND a.production_ready)::int AS ready_artwork,
+    COUNT(*) FILTER (WHERE a.asset_type='artwork' AND a.production_ready)::int AS ready_artwork,
     COUNT(*) FILTER (WHERE a.asset_type='gangsheet' AND a.production_ready)::int AS ready_gangsheet,
     COUNT(*) FILTER (WHERE a.status='Archived')::int AS archived,
-    COUNT(*) FILTER (WHERE a.asset_type IN ('artwork','version') AND NOT a.production_ready AND a.status<>'Archived')::int AS artwork_pending,
+    COUNT(*) FILTER (WHERE a.asset_type='artwork' AND NOT a.production_ready AND a.status<>'Archived')::int AS artwork_pending,
     COUNT(*) FILTER (WHERE a.asset_type='gangsheet' AND NOT a.production_ready AND a.status<>'Archived')::int AS gangsheet_pending
     FROM artwork_vault_assets a LEFT JOIN leads l ON l.id=a.lead_id LEFT JOIN customers c ON c.id=a.customer_id
     LEFT JOIN orders o ON o.id=a.order_id LEFT JOIN users sa ON sa.id=a.sales_agent_id LEFT JOIN users d ON d.id=a.designer_id
@@ -203,14 +239,18 @@ async function detail(id) {
     FROM artwork_vault_assets a LEFT JOIN leads l ON l.id=a.lead_id LEFT JOIN customers c ON c.id=a.customer_id
     LEFT JOIN orders o ON o.id=a.order_id LEFT JOIN users sa ON sa.id=a.sales_agent_id LEFT JOIN users d ON d.id=a.designer_id WHERE a.id=$1`, [id])
   if (!rows[0]) throw Object.assign(new Error('Vault asset not found'), { statusCode: 404 })
-  const siblings = await query(`SELECT id,file_name,asset_type,is_cover,path,source
+  const siblings = await query(`SELECT id,file_name,asset_type,lifecycle_code,artwork_code,version_no,is_cover,path,source
     FROM artwork_vault_assets WHERE parent_path=$1 ORDER BY is_cover DESC,source_modified_at,file_name`, [rows[0].parent_path])
+  const family = rows[0].artwork_code ? await query(`SELECT id,file_name,asset_type,lifecycle_code,artwork_code,version_no,is_cover,path,source,source_modified_at,status
+    FROM artwork_vault_assets WHERE artwork_code=$1
+    ORDER BY CASE lifecycle_code WHEN 'SRC' THEN 1 WHEN 'WRK' THEN 2 WHEN 'MOCK' THEN 3 WHEN 'OUT' THEN 4 WHEN 'FNL' THEN 5 ELSE 6 END,
+             version_no,source_modified_at,file_name`, [rows[0].artwork_code]) : { rows: [] }
   const hydrate = (row, width = 700, height = 500) => row.source === 'nextcloud' ? {
     ...row,
     thumbnail_url: `/api/nextcloud/preview?path=${encodeURIComponent(row.path)}&w=${width}&h=${height}`,
     download_url: `/api/nextcloud/download?path=${encodeURIComponent(row.path)}`,
   } : { ...row, thumbnail_url: row.path, download_url: row.path }
-  return { ...hydrate(rows[0]), folder_files: siblings.rows.map(row => hydrate(row, 180, 140)) }
+  return { ...hydrate(rows[0]), folder_files: siblings.rows.map(row => hydrate(row, 180, 140)), family_files: family.rows.map(row => hydrate(row, 180, 140)) }
 }
 
 async function setCover(id) {
@@ -244,4 +284,4 @@ async function bulkUpdate(ids, changes = {}) {
   return { updated: rows.length }
 }
 
-module.exports = { inferType, inferOrderType, sync, list, stats, detail, setCover, bulkUpdate }
+module.exports = { inferLifecycle, inferArtworkCode, inferType, inferStatus, inferOrderType, inferVersion, sync, list, stats, detail, setCover, bulkUpdate }
