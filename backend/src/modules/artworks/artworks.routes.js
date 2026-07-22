@@ -42,6 +42,13 @@ const taskSchema = z.object({
 
 router.get('/',             controller.list)
 router.get('/board',        controller.getBoard)
+router.get('/vault/assets', controller.vaultList)
+router.get('/vault/stats',  controller.vaultStats)
+router.get('/vault/export', controller.vaultExport)
+router.post('/vault/sync',  controller.vaultSync)
+router.patch('/vault/assets/bulk', controller.vaultBulkUpdate)
+router.get('/vault/assets/:id', controller.vaultDetail)
+router.patch('/vault/assets/:id/cover', controller.vaultSetCover)
 router.get('/:id',          controller.getOne)
 router.post('/',            uploadArtwork, validate(createSchema), controller.create)
 router.post('/task',        validate(taskSchema), controller.createTask)

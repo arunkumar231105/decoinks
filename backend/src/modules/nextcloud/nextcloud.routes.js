@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const { verifyToken, requireRole } = require('../../middleware/auth')
 const controller = require('./nextcloud.controller')
+const { uploadArtwork } = require('../../middleware/upload')
 
 const router = Router()
 
@@ -17,5 +18,6 @@ router.get('/files',    controller.listFolder)          // list one folder
 router.get('/scan',     controller.scan)                // walk watched folders
 router.get('/download', controller.download)            // proxy file bytes
 router.get('/preview',  controller.preview)             // proxy thumbnail
+router.post('/upload',  uploadArtwork, controller.upload) // import into watched root
 
 module.exports = router

@@ -113,16 +113,27 @@ async function scanWatched(maxDepth = 4) {
   const cfg = getConfig()
   const roots = cfg.watchFolders.length ? cfg.watchFolders : ['']
   const files = []
-  const walk = async (path, depth) => {
-    let entries
-    try { entries = await listFolder(path) }
-    catch (err) { logger.warn({ err: err.message, path }, 'Nextcloud scan: folder skipped'); return }
-    for (const e of entries) {
-      if (e.is_dir) { if (depth < maxDepth) await walk(e.path, depth + 1) }
-      else files.push(e)
+  let directories = roots
+  // Process one depth at a time with bounded concurrency. This avoids the old
+  // serial walk (too slow for real vaults) without flooding Nextcloud.
+  for (let depth = 0; depth <= maxDepth && directories.length; depth++) {
+    const next = []
+    let cursor = 0
+    const worker = async () => {
+      while (cursor < directories.length) {
+        const path = directories[cursor++]
+        let entries
+        try { entries = await listFolder(path) }
+        catch (err) { logger.warn({ err: err.message, path }, 'Nextcloud scan: folder skipped'); continue }
+        for (const entry of entries) {
+          if (entry.is_dir) next.push(entry.path)
+          else files.push(entry)
+        }
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(8, directories.length) }, worker))
+    directories = next
   }
-  for (const root of roots) await walk(root, 0)
   return files
 }
 
@@ -130,6 +141,29 @@ async function scanWatched(maxDepth = 4) {
 async function downloadFile(relPath) {
   const cfg = getConfig()
   return ncRequest(cfg, 'GET', davUrl(cfg, relPath), { raw: true })
+}
+
+// Uploads a file into the first watched root so it is immediately visible to
+// the same sync/index pipeline. PUT is atomic from the vault's perspective.
+async function uploadFile(file, folder = 'Unsorted') {
+  const cfg = getConfig()
+  const root = cfg.watchFolders[0] || ''
+  const safeFolder = String(folder || 'Unsorted').replace(/(^\/+|\/+?$|\.\.)/g, '')
+  const safeName = String(file.originalname || 'upload').replace(/[\\/\0]/g, '_')
+  const relPath = [root, safeFolder, safeName].filter(Boolean).join('/')
+  // Ensure the destination collection exists; 405 means it already exists.
+  const collection = [root, safeFolder].filter(Boolean).join('/')
+  if (collection) {
+    const mk = await ncRequest(cfg, 'MKCOL', davUrl(cfg, collection), { raw: true })
+    if (![201, 405].includes(mk.status)) throw new NextcloudError(`Could not create upload folder (${mk.status})`, 502)
+  }
+  const result = await ncRequest(cfg, 'PUT', davUrl(cfg, relPath), {
+    headers: { 'Content-Type': file.mimetype || 'application/octet-stream', 'Content-Length': String(file.buffer.length) },
+    body: file.buffer,
+    raw: true,
+  })
+  if (![200, 201, 204].includes(result.status)) throw new NextcloudError(`Upload failed with status ${result.status}`, 502)
+  return { path: relPath, name: safeName }
 }
 
 // Nextcloud preview (thumbnail) endpoint — proxied so the browser never needs
@@ -143,4 +177,4 @@ async function getPreview(relPath, { width = 300, height = 300 } = {}) {
   return downloadFile(relPath) // preview unavailable → serve the original
 }
 
-module.exports = { testConnection, listFolder, scanWatched, downloadFile, getPreview }
+module.exports = { testConnection, listFolder, scanWatched, downloadFile, uploadFile, getPreview }

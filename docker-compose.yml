@@ -62,6 +62,10 @@ services:
       target: prod
     container_name: decoinks_backend
     restart: unless-stopped
+    # Integration credentials stay in the ignored backend/.env file. Explicit
+    # production values below still take precedence for core services.
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
       COOKIE_SECURE: "false"
@@ -72,7 +76,7 @@ services:
       # Leave empty to keep SSO disabled until Authentik is configured.
       SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:-}
       UPLOAD_DIR: uploads
-      MAX_FILE_SIZE_MB: "10"
+      MAX_FILE_SIZE_MB: "100"
       MINIO_HOST: minio
       MINIO_PORT: "9000"
       MINIO_ACCESS_KEY: decoinks
