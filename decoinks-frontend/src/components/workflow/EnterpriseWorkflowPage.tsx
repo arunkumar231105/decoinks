@@ -347,8 +347,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       </section>
     </main>
 
-    {active && <aside className="ew-drawer">
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><Badge>{titleCase(active.status)}</Badge></div><button className="ew-icon-btn" onClick={() => { setActive(null); setDetail(null) }}><X size={18}/></button></header>
+    {active && <>
+      <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
+      <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><Badge>{titleCase(active.status)}</Badge></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
       <div className="ew-drawer-actions"><button onClick={() => navigate(pathFor(active))} title="Open full record"><FileText size={15}/><span>Open</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [active])} title="Export this record"><Download size={15}/><span>Export</span></button></div>
       <DrawerSection title="Overview" row={detail || active} fields={[
         ['Record No.', config.numberKey], ['Date', config.dateKey], ['Status', 'status'], ['Customer', 'customer_name'], ['Vendor', 'display_vendor_name'], ['Product Type', 'order_type'], ['Total Amount', 'total'], ['Due Date', 'due_date'], ['Payment Status', 'payment_status'], ['Sales Agent', 'agent_name'],
@@ -357,7 +359,8 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         ['Quote', 'quote_number'], ['Order', 'order_number'], ['Tracking ID', 'tracking_number'], ['Shipping', 'shipping_method'], ['Notes', 'notes'], ['Last Updated', 'updated_at'],
       ]}/>
       <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full Details</button>
-    </aside>}
+      </aside>
+    </>}
     {kind === 'quotations' && quoteImport && (
       <BulkUploadModal onClose={() => setQuoteImport(false)} />
     )}
