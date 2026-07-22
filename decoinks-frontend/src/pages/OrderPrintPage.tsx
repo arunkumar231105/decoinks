@@ -478,11 +478,6 @@ export function OrderPrintPage() {
                   <td className="mv">{fmtDate(order.order_date)}</td>
                 </tr>
                 <tr>
-                  <td className="ml">Need By Date</td>
-                  <td className="ms">:</td>
-                  <td className="mv">{fmtDate(order.due_date)}</td>
-                </tr>
-                <tr>
                   <td className="ml">Customer Ref #</td>
                   <td className="ms">:</td>
                   <td className="mv">{order.contact_name || order.supplier_name || '—'}</td>
