@@ -309,14 +309,73 @@ async function getById(id) {
     [id]
   )
 
-  // Attached artworks — thumbnail/link joined from artworks
+  // Explicit Artwork Vault attachments.
   const artworks = await query(
-    `SELECT a.id, a.artwork_no, a.name, a.file_url, a.thumbnail_url, a.file_type
+    `SELECT a.id::text, a.artwork_no, a.name, a.file_url, a.thumbnail_url, a.file_type,
+            a.width_inches, a.height_inches, 1::int AS qty, NULL::text AS artwork_size,
+            a.order_id::text AS source_order_id
      FROM po_artworks pa
      JOIN artworks a ON a.id = pa.artwork_id
      WHERE pa.po_id = $1
      ORDER BY pa.sort_order, pa.created_at`,
     [id]
+  )
+
+  // Gangsheet artwork rows are stored with their source order item. Derive
+  // them through po_orders so selecting an Order brings every image, size and
+  // quantity into the PO without duplicating binary files or losing edits.
+  const inlineArtworks = await query(
+    `SELECT
+       ('order-' || o.id::text || '-' || g.id::text || '-' || art.ordinality::text) AS id,
+       COALESCE(NULLIF(art.value->>'artwork_no', ''), 'AW-GS-' || LPAD(art.ordinality::text, 3, '0')) AS artwork_no,
+       COALESCE(NULLIF(art.value->>'name', ''), NULLIF(art.value->>'artwork_no', ''), 'Gangsheet Artwork') AS name,
+       NULLIF(art.value->>'image', '') AS file_url,
+       NULLIF(art.value->>'image', '') AS thumbnail_url,
+       NULL::text AS file_type,
+       NULL::numeric AS width_inches,
+       NULL::numeric AS height_inches,
+       GREATEST(COALESCE(NULLIF(art.value->>'qty', '')::int, 1), 1) AS qty,
+       NULLIF(art.value->>'size', '') AS artwork_size,
+       o.id::text AS source_order_id
+     FROM po_orders poo
+     JOIN orders o ON o.id = poo.order_id
+     JOIN order_items_gangsheet g ON g.order_id = o.id
+     CROSS JOIN LATERAL jsonb_array_elements(
+       CASE WHEN jsonb_typeof(g.artworks) = 'array' THEN g.artworks ELSE '[]'::jsonb END
+     ) WITH ORDINALITY AS art(value, ordinality)
+     WHERE poo.po_id = $1
+     ORDER BY poo.sort_order, g.sort_order, art.ordinality`,
+    [id]
+  )
+
+  const legacyInlineArtworks = await query(
+    `SELECT
+       ('order-' || o.id::text || '-' || g.id::text || '-legacy') AS id,
+       'AW-GS-' || LPAD((g.sort_order + 1)::text, 3, '0') AS artwork_no,
+       'Gangsheet Artwork' AS name,
+       g.front_image AS file_url,
+       g.front_image AS thumbnail_url,
+       NULL::text AS file_type,
+       NULL::numeric AS width_inches,
+       NULL::numeric AS height_inches,
+       1::int AS qty,
+       g.size AS artwork_size,
+       o.id::text AS source_order_id
+     FROM po_orders poo
+     JOIN orders o ON o.id = poo.order_id
+     JOIN order_items_gangsheet g ON g.order_id = o.id
+     WHERE poo.po_id = $1
+       AND g.front_image IS NOT NULL
+       AND jsonb_array_length(CASE WHEN jsonb_typeof(g.artworks) = 'array' THEN g.artworks ELSE '[]'::jsonb END) = 0
+     ORDER BY poo.sort_order, g.sort_order`,
+    [id]
+  )
+
+  const allArtworks = [...inlineArtworks.rows, ...legacyInlineArtworks.rows, ...artworks.rows].filter((art, index, rows) =>
+    rows.findIndex(candidate =>
+      (candidate.artwork_no && candidate.artwork_no === art.artwork_no) ||
+      (candidate.file_url && candidate.file_url === art.file_url)
+    ) === index
   )
 
   const order_total_artworks = orders.rows.reduce((sum, r) => sum + (r.no_artworks || 0), 0)
@@ -337,7 +396,7 @@ async function getById(id) {
     items: items.rows,
     orders: orders.rows,
     fragments: fragments.rows,
-    artworks: artworks.rows,
+    artworks: allArtworks,
     qa_notes: qaNotes,
     order_total_artworks,
   }

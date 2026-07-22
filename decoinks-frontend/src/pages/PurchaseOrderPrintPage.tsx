@@ -97,9 +97,12 @@ interface Artwork {
   name: string
   file_url: string | null
   file_type: string | null
+  thumbnail_url?: string | null
   width_inches?: number | null
   height_inches?: number | null
   qty?: number | null
+  artwork_size?: string | null
+  source_order_id?: string | null
   location: string | null
 }
 
@@ -350,45 +353,45 @@ const CSS = `
   .td-sno { font-weight: 700; color: #6b7280; width: 36px; }
 
   /* ══════════════════════════════════════════
-     ARTWORKS 2-COLUMN GRID
+     RESPONSIVE GANGSHEET ARTWORK SHEET
   ══════════════════════════════════════════ */
   .artworks-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
-    border: none; gap: 0;
+    display: grid; gap: 8px; padding: 9px;
+    border: 1px solid #dbe3ef; border-top: 0; background: #f8fafc;
   }
-  .art-col-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-  .art-col-table thead th {
-    background: #1a3260; color: #c7d7f5;
-    padding: 7px 8px; font-size: 9.5px; font-weight: 700;
-    text-align: center; border: 1px solid rgba(255,255,255,0.08);
-    white-space: nowrap;
+  .artworks-grid.art-count-large { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .artworks-grid.art-count-medium { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .artworks-grid.art-count-dense { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .art-card {
+    min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px;
+    align-items: center; padding: 8px; background: #fff;
+    border: 1px solid #dbe3ef; border-radius: 6px; break-inside: avoid;
   }
-  .art-col-table tbody tr { border-bottom: 1px solid #f1f5f9; }
-  .art-col-table tbody tr:nth-child(even) { background: #f8fafc; }
-  .art-col-table tbody td {
-    padding: 6px 8px; text-align: center;
-    border-right: 1px solid #f1f5f9;
-    vertical-align: middle; font-size: 10.5px;
+  .art-card-thumb {
+    width: 82px; height: 82px; object-fit: contain; border-radius: 5px;
+    border: 1px solid #e2e8f0; background: #fff;
   }
-  .art-col-table tbody td:first-child { color: #6b7280; font-weight: 700; width: 30px; }
-  .art-col-right thead th { border-left: 3px solid #0f1f3d; }
-
+  .art-count-medium .art-card-thumb { width: 66px; height: 66px; }
+  .art-count-dense .art-card { grid-template-columns: 1fr; gap: 5px; padding: 6px; text-align: center; }
+  .art-count-dense .art-card-thumb { width: 54px; height: 54px; margin: 0 auto; }
+  .art-card-empty {
+    display: flex; align-items: center; justify-content: center;
+    color: #cbd5e1; font-size: 20px; border-style: dashed;
+  }
+  .art-card-no { font-size: 10.5px; font-weight: 800; color: #0f1f3d; line-height: 1.25; word-break: break-word; }
+  .art-card-meta { margin-top: 4px; display: grid; gap: 2px; font-size: 8.5px; color: #64748b; }
+  .art-card-meta strong { color: #334155; font-weight: 700; }
+  .art-count-dense .art-card-no { font-size: 9px; }
+  .art-count-dense .art-card-meta { font-size: 7.5px; }
   .art-thumb {
     width: 52px; height: 52px; object-fit: contain;
     border: 1px solid #e2e8f0; border-radius: 4px;
     background: #fff; display: block; margin: 0 auto;
   }
   .art-empty-thumb {
-    width: 52px; height: 52px;
-    display: flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
     color: #d1d5db; font-size: 20px; margin: 0 auto;
     border: 1px dashed #e2e8f0; border-radius: 4px; background: #fafafa;
-  }
-  .more-artworks {
-    text-align: center; padding: 10px;
-    font-size: 11px; font-weight: 600; color: #6b7280;
-    background: #f8fafc; border-top: 1px solid #e5e7eb;
-    grid-column: 1 / -1;
   }
 
   /* ══════════════════════════════════════════
@@ -557,23 +560,17 @@ export function PurchaseOrderPrintPage() {
           'Ensure all measurements and artwork placements are accurate.',
         ]
 
-  // Artworks to display (first 10 in 2 columns)
-  const DISPLAY_COUNT = 10
-  const leftArtworks  = artworks.slice(0, Math.ceil(Math.min(artworks.length, DISPLAY_COUNT) / 2))
-  const rightArtworks = artworks.slice(leftArtworks.length, DISPLAY_COUNT)
-  const remainingArt  = artworks.length > DISPLAY_COUNT ? artworks.length - DISPLAY_COUNT : 0
-
-  const renderArtThumb = (art: Artwork) => {
-    if (art.file_url && art.file_type !== 'pdf') {
-      return <img src={art.file_url} alt={art.artwork_no} className="art-thumb" />
-    }
-    return <div className="art-empty-thumb">🖼</div>
-  }
+  const artworkDensity = artworks.length <= 4
+    ? 'art-count-large'
+    : artworks.length <= 7
+      ? 'art-count-medium'
+      : 'art-count-dense'
 
   const itemArtworkSize = items.find(it => it.artwork_size)?.artwork_size ?? null
 
   const artSize = (art: Artwork) => {
     if (art.width_inches && art.height_inches) return `${art.width_inches}" × ${art.height_inches}"`
+    if (art.artwork_size) return art.artwork_size
     if (itemArtworkSize) return itemArtworkSize
     return '—'
   }
@@ -1058,65 +1055,25 @@ export function PurchaseOrderPrintPage() {
             No artworks linked — attach an order with artworks to this PO to see them here.
           </div>
         ) : (
-          <div className="artworks-grid">
-            {/* Left column */}
-            <table className="art-col-table art-col-left">
-              <thead>
-                <tr>
-                  <th>S.No</th>
-                  <th>Artwork No</th>
-                  <th>Thumbnail</th>
-                  <th>Artwork Size (inch)</th>
-                  <th>Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leftArtworks.map((art, i) => (
-                  <tr key={art.id}>
-                    <td>{i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
-                    <td>{renderArtThumb(art)}</td>
-                    <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
-                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{art.qty ?? 1}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Right column */}
-            <table className="art-col-table art-col-right">
-              <thead>
-                <tr>
-                  <th>S.No</th>
-                  <th>Artwork No</th>
-                  <th>Thumbnail</th>
-                  <th>Artwork Size (inch)</th>
-                  <th>Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rightArtworks.map((art, i) => (
-                  <tr key={art.id}>
-                    <td>{leftArtworks.length + i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{art.artwork_no}</td>
-                    <td>{renderArtThumb(art)}</td>
-                    <td style={{ fontSize: 10, color: '#374151' }}>{artSize(art)}</td>
-                    <td style={{ fontWeight: 700, color: '#0f1f3d' }}>{art.qty ?? 1}</td>
-                  </tr>
-                ))}
-                {rightArtworks.length < leftArtworks.length && (
-                  Array.from({ length: leftArtworks.length - rightArtworks.length }).map((_, i) => (
-                    <tr key={`empty-${i}`}>
-                      <td colSpan={5} style={{ background: '#fafafa' }}></td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-
-            {remainingArt > 0 && (
-              <div className="more-artworks">... and {remainingArt} more artworks</div>
-            )}
+          <div className={`artworks-grid ${artworkDensity}`}>
+            {artworks.map((art, index) => {
+              const image = art.thumbnail_url || art.file_url
+              const canPreview = image && art.file_type !== 'pdf'
+              return (
+                <div className="art-card" key={art.id}>
+                  {canPreview
+                    ? <img src={image!} alt={art.artwork_no} className="art-card-thumb" />
+                    : <div className="art-card-thumb art-card-empty">🖼</div>}
+                  <div>
+                    <div className="art-card-no">{index + 1}. {art.artwork_no}</div>
+                    <div className="art-card-meta">
+                      <span>Size <strong>{artSize(art)}</strong></span>
+                      <span>Qty <strong>{art.qty ?? 1}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
         </>}

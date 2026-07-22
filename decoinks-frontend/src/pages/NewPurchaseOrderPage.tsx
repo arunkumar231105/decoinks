@@ -80,6 +80,9 @@ interface AttachedArtwork {
   file_url: string | null
   thumbnail_url: string | null
   file_type: string | null
+  artwork_size?: string | null
+  qty?: number
+  source_order_id?: string | null
 }
 
 interface SupplierContact {
@@ -216,7 +219,12 @@ function reducer(state: POFormState, action: Action): POFormState {
       if (state.po_type === 'apparel' && state.orders.length >= 1) return state
       return { ...state, orders: [...state.orders, action.order] }
     case 'REMOVE_ORDER':
-      return { ...state, orders: state.orders.filter(o => o.order_id !== action.order_id) }
+      return {
+        ...state,
+        orders: state.orders.filter(o => o.order_id !== action.order_id),
+        fragments: state.fragments.filter(f => f.order_id !== action.order_id),
+        artworks: state.artworks.filter(a => a.source_order_id !== action.order_id),
+      }
     case 'ADD_FRAGMENT':
       return { ...state, fragments: [...state.fragments, newFragment()] }
     case 'UPDATE_FRAGMENT':
@@ -346,6 +354,9 @@ export function NewPurchaseOrderPage() {
         artworks: (existingPO.artworks ?? []).map((a: any): AttachedArtwork => ({
           id: a.id, artwork_no: a.artwork_no, name: a.name,
           file_url: a.file_url, thumbnail_url: a.thumbnail_url, file_type: a.file_type,
+          artwork_size: a.artwork_size || (a.width_inches && a.height_inches ? `${a.width_inches} x ${a.height_inches} in` : null),
+          qty: Math.max(1, Number(a.qty) || 1),
+          source_order_id: a.source_order_id || null,
         })),
         items: (existingPO.items ?? []).map((it: any, idx: number): POLineItem => ({
           id: uid(),
@@ -426,6 +437,10 @@ export function NewPurchaseOrderPage() {
         product_image: it.product_image || null, style_description: it.style_description || '',
         discount_pct: 0, tax_pct: 0, remarks: '', required_by_date: '',
       }))
+    } else {
+      const gangsheetDetails = gangsheetDetailsFromOrder(sourceOrder)
+      payload.fragments = gangsheetDetails.fragments
+      payload.artworks = gangsheetDetails.artworks
     }
     dispatch({ type: 'INIT', payload })
   }, [sourceOrder])
@@ -447,6 +462,61 @@ export function NewPurchaseOrderPage() {
       due_date: o.due_date,
       agent_name: o.agent_name || o.assigned_to_name || o.created_by_name || '',
     }
+  }
+
+  function gangsheetDetailsFromOrder(o: any) {
+    const gsItems: any[] = (o.items ?? []).filter((it: any) => it.no_artworks != null || it.price_per_sheet != null)
+    const fragments: Fragment[] = gsItems.map((it: any, index: number) => {
+      const size = parseSheetSize(it.size)
+      return {
+        id: `order-${o.id}-${it.id ?? index}`,
+        fragment_no: `${o.order_number}-${String(index + 1).padStart(2, '0')}`,
+        order_id: o.id,
+        width: size.width || '22',
+        length: size.length,
+        artworks_count: Number(it.no_artworks) || (Array.isArray(it.artworks) ? it.artworks.length : 0),
+        qty: Number(it.qty) || 1,
+        file_url: '',
+      }
+    })
+
+    const inlineArtworks: AttachedArtwork[] = gsItems.flatMap((it: any, itemIndex: number) => {
+      const rows = Array.isArray(it.artworks) ? it.artworks : []
+      const normalizedRows = rows.length
+        ? rows
+        : it.front_image
+          ? [{ artwork_no: `AW-GS-${String(itemIndex + 1).padStart(3, '0')}`, image: it.front_image, size: it.size, qty: 1 }]
+          : []
+      return normalizedRows.map((art: any, artIndex: number) => ({
+        id: `order-${o.id}-${itemIndex}-${artIndex}`,
+        artwork_no: art.artwork_no || `AW-GS-${String(artIndex + 1).padStart(3, '0')}`,
+        name: art.name || art.artwork_no || `Gangsheet artwork ${artIndex + 1}`,
+        file_url: art.image || null,
+        thumbnail_url: art.image || null,
+        file_type: null,
+        artwork_size: art.size || null,
+        qty: Math.max(1, Number(art.qty) || 1),
+        source_order_id: o.id,
+      }))
+    })
+    const storedArtworks: AttachedArtwork[] = (o.artworks ?? []).map((art: any) => ({
+      id: art.id,
+      artwork_no: art.artwork_no,
+      name: art.name || art.artwork_no,
+      file_url: art.file_url || null,
+      thumbnail_url: art.thumbnail_url || null,
+      file_type: art.file_type || null,
+      artwork_size: art.width_inches && art.height_inches ? `${art.width_inches} x ${art.height_inches} in` : null,
+      qty: Math.max(1, Number(art.qty) || 1),
+      source_order_id: o.id,
+    }))
+    const artworks = [...inlineArtworks, ...storedArtworks].filter((art, index, all) =>
+      all.findIndex(candidate =>
+        (candidate.artwork_no && candidate.artwork_no === art.artwork_no) ||
+        (candidate.file_url && candidate.file_url === art.file_url)
+      ) === index
+    )
+    return { fragments, artworks }
   }
 
   // ── Contact selection ───────────────────────────────────────────────────────
@@ -532,12 +602,17 @@ export function NewPurchaseOrderPage() {
       order_ids: state.po_type === 'apparel'
         ? state.orders.slice(0, 1).map(o => o.order_id)
         : state.orders.map(o => o.order_id),
-      artwork_ids: state.artworks.map(a => a.id),
+      // Inline artworks originating from an Order use stable display IDs.
+      // The PO backend derives them live through po_orders; only real Artwork
+      // Vault UUIDs belong in the po_artworks join table.
+      artwork_ids: state.artworks
+        .map(a => a.id)
+        .filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)),
       fragments: state.po_type === 'gangsheet'
         ? state.fragments.map((f, i) => ({
             fragment_no: f.fragment_no || null,
             order_id: f.order_id || null,
-            width_inches: f.width ? parseFloat(f.width) : null,
+            width_inches: 22,
             length_inches: f.length ? parseFloat(f.length) : null,
             artworks_count: Number(f.artworks_count) || 0,
             qty: Number(f.qty) || 0,
@@ -887,180 +962,64 @@ export function NewPurchaseOrderPage() {
 
       {/* ═══ GANGSHEET MODE ═══ */}
       {state.po_type === 'gangsheet' && (
-        <>
-          {/* Section 1: Gangsheet Orders */}
-          <div className="np-card">
-            <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="np-section-num">1</span>
-                <h3>Gangsheet Orders</h3>
-              </div>
-              <button className="lb-action-btn" onClick={() => setOrderPickerOpen(true)}>
-                <Plus size={13} /> Add Order
-              </button>
+        <div className="np-card">
+          <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="np-section-num">1</span>
+              <h3>DTF Gangsheet</h3>
             </div>
-            <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
-              <table className="np-table" style={{ minWidth: 900 }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 36 }}>#</th>
-                    <th style={{ minWidth: 130 }}>Order No</th>
-                    <th style={{ width: 100 }}>No. of Artworks</th>
-                    <th style={{ width: 70 }}>Qty</th>
-                    <th style={{ width: 110 }}>Gangsheet Width (inch)</th>
-                    <th style={{ width: 110 }}>Gangsheet Length (inch)</th>
-                    <th style={{ width: 90 }}>Status</th>
-                    <th style={{ width: 100 }}>Date</th>
-                    <th style={{ width: 100 }}>Due</th>
-                    <th style={{ minWidth: 110 }}>Agent</th>
-                    <th style={{ width: 40 }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.orders.length === 0 && (
-                    <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
-                      No orders yet — click "Add Order"
-                    </td></tr>
-                  )}
-                  {state.orders.map((o, i) => (
-                    <tr key={o.order_id}>
-                      <td className="np-td-num">{i + 1}</td>
-                      <td>
-                        <Link to={`/orders/${o.order_id}`} style={{ color: '#0d9488', fontWeight: 600, fontSize: 12.5 }}>
-                          {o.order_number}
-                        </Link>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>{o.no_artworks}</td>
-                      <td style={{ textAlign: 'center' }}>{o.qty}</td>
-                      <td style={{ textAlign: 'center' }}>{o.width ? `${o.width}"` : '—'}</td>
-                      <td style={{ textAlign: 'center' }}>{o.length ? `${o.length}"` : '—'}</td>
-                      <td>
-                        <span className={cn('np-badge', STATUS_BADGE[o.status] ?? 'np-badge-yellow')}>{o.status}</span>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{fmtDate(o.order_date)}</td>
-                      <td style={{ fontSize: 12 }}>{fmtDate(o.due_date)}</td>
-                      <td style={{ fontSize: 12 }}>{o.agent_name || '—'}</td>
-                      <td>
-                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ORDER', order_id: o.order_id })}>
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot><tr className="live-summary-row">
-                  <td colSpan={2}><span className="live-summary-title">Orders Summary</span></td>
-                  <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{orderTotals.artworks}</strong></div></td>
-                  <td><div className="live-summary-stat"><span>Total Qty</span><strong>{orderTotals.qty}</strong></div></td>
-                  <td colSpan={7}></td>
-                </tr></tfoot>
-              </table>
-            </div>
+            <button className="lb-action-btn" onClick={() => setOrderPickerOpen(true)}>
+              <Plus size={13} /> Select Order
+            </button>
           </div>
-
-          {/* Section 2: Master Gangsheets (Fragments) */}
-          <div className="np-card">
-            <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="np-section-num">2</span>
-                <h3>Master Gangsheets (Fragments)</h3>
-              </div>
-              <button className="lb-action-btn" onClick={() => dispatch({ type: 'ADD_FRAGMENT' })}>
-                <Plus size={13} /> Add Fragment
-              </button>
-            </div>
-            <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
-              <table className="np-table" style={{ minWidth: 860 }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 36 }}>#</th>
-                    <th style={{ minWidth: 150 }}>Gangsheet No</th>
-                    <th style={{ minWidth: 140 }}>Order No Covers</th>
-                    <th style={{ width: 90 }}>Width (in)</th>
-                    <th style={{ width: 90 }}>Length (in)</th>
-                    <th style={{ width: 100 }}>Artworks (No)</th>
-                    <th style={{ width: 80 }}>Qty</th>
-                    <th style={{ minWidth: 140 }}>Link</th>
-                    <th style={{ width: 40 }} />
+          <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="np-table" style={{ minWidth: 780 }}>
+              <thead><tr>
+                <th style={{ width: 40 }}>#</th>
+                <th style={{ minWidth: 150 }}>Order No</th>
+                <th style={{ width: 110 }}>Width (in)</th>
+                <th style={{ width: 120 }}>Height (in)</th>
+                <th style={{ width: 110 }}>Artworks</th>
+                <th style={{ width: 100 }}>Sheets</th>
+                <th style={{ width: 110 }}>Status</th>
+                <th style={{ width: 50 }}>Action</th>
+              </tr></thead>
+              <tbody>
+                {state.fragments.length === 0 && (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 26, color: '#9ca3af', fontSize: 13 }}>
+                    Select a Gangsheet Order to load its complete specifications and artworks.
+                  </td></tr>
+                )}
+                {state.fragments.map((fragment, index) => {
+                  const order = state.orders.find(row => row.order_id === fragment.order_id)
+                  return <tr key={fragment.id}>
+                    <td className="np-td-num">{index + 1}</td>
+                    <td>
+                      {order ? <Link to={`/orders/${order.order_id}`} style={{ color: '#0d9488', fontWeight: 700 }}>{order.order_number}</Link> : '—'}
+                    </td>
+                    <td><div className="np-table-input" style={{ textAlign: 'center', background: '#f8fafc', fontWeight: 700 }}>22 in</div></td>
+                    <td><input type="number" min={0} step={0.1} className="np-table-input np-num-input" value={fragment.length}
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { length: event.target.value } })} /></td>
+                    <td><input type="number" min={0} className="np-table-input np-num-input" value={fragment.artworks_count}
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { artworks_count: Number(event.target.value) || 0 } })} /></td>
+                    <td><input type="number" min={1} className="np-table-input np-num-input" value={fragment.qty}
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { qty: Number(event.target.value) || 1 } })} /></td>
+                    <td><span className={cn('np-badge', STATUS_BADGE[order?.status || 'Draft'] ?? 'np-badge-yellow')}>{order?.status || 'Draft'}</span></td>
+                    <td><button className="np-del-btn" aria-label="Remove selected order"
+                      onClick={() => order && dispatch({ type: 'REMOVE_ORDER', order_id: order.order_id })}><Trash2 size={14} /></button></td>
                   </tr>
-                </thead>
-                <tbody>
-                  {state.fragments.length === 0 && (
-                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
-                      No fragments yet — click "Add Fragment"
-                    </td></tr>
-                  )}
-                  {state.fragments.map((f, i) => (
-                    <tr key={f.id}>
-                      <td className="np-td-num">{i + 1}</td>
-                      <td>
-                        <input className="np-table-input" placeholder="GANGSHEET-860A"
-                          value={f.fragment_no}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { fragment_no: e.target.value } })} />
-                      </td>
-                      <td>
-                        <select className="np-table-input" value={f.order_id}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { order_id: e.target.value } })}>
-                          <option value="">— order —</option>
-                          {state.orders.map(o => <option key={o.order_id} value={o.order_id}>{o.order_number}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0} step={0.1}
-                          value={f.width}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { width: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0} step={0.1}
-                          value={f.length}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { length: e.target.value } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0}
-                          value={f.artworks_count}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { artworks_count: +e.target.value || 0 } })} />
-                      </td>
-                      <td>
-                        <input type="number" className="np-table-input np-num-input" min={0}
-                          value={f.qty}
-                          onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { qty: +e.target.value || 0 } })} />
-                      </td>
-                      <td>
-                        {f.file_url ? (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <a href={f.file_url} target="_blank" rel="noreferrer"
-                              style={{ color: '#0d9488', fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              View Gangsheet <ExternalLink size={11} />
-                            </a>
-                            <button className="np-del-btn" title="Remove link"
-                              onClick={() => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { file_url: '' } })}>
-                              <X size={11} />
-                            </button>
-                          </span>
-                        ) : (
-                          <input className="np-table-input" placeholder="Paste file URL..."
-                            value={f.file_url}
-                            onChange={e => dispatch({ type: 'UPDATE_FRAGMENT', id: f.id, patch: { file_url: e.target.value } })} />
-                        )}
-                      </td>
-                      <td>
-                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_FRAGMENT', id: f.id })}>
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot><tr className="live-summary-row">
-                  <td colSpan={5}><span className="live-summary-title">Fragments Summary</span></td>
-                  <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{fragTotals.artworks}</strong></div></td>
-                  <td><div className="live-summary-stat"><span>Total Qty</span><strong>{fragTotals.qty}</strong></div></td>
-                  <td colSpan={2}></td>
-                </tr></tfoot>
-              </table>
-            </div>
+                })}
+              </tbody>
+              <tfoot><tr className="live-summary-row">
+                <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
+                <td colSpan={2}></td>
+                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{fragTotals.artworks}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{fragTotals.qty}</strong></div></td>
+                <td colSpan={2}></td>
+              </tr></tfoot>
+            </table>
           </div>
-        </>
+        </div>
       )}
 
       {/* ═══ APPAREL MODE ═══ */}
@@ -1158,19 +1117,61 @@ export function NewPurchaseOrderPage() {
         </div>
       )}
 
-      {/* ── ARTWORK ATTACHMENTS (both modes) ── */}
+      {/* ── ARTWORKS ── */}
       <div className="np-card">
         <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="np-section-num">{state.po_type === 'gangsheet' ? 3 : 2}</span>
-            <h3>{state.po_type === 'gangsheet' ? 'Artwork Attachments' : 'Attach All Artworks / Files'}</h3>
+            <span className="np-section-num">2</span>
+            <h3>{state.po_type === 'gangsheet' ? 'Artworks in Gangsheet' : 'Attach All Artworks / Files'}</h3>
           </div>
           <button className="lb-action-btn" onClick={() => setArtworkPickerOpen(true)}>
             <Plus size={13} /> Add Artwork
           </button>
         </div>
 
-        {state.artworks.length > 0 && (
+        {state.po_type === 'gangsheet' && (
+          <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="np-table" style={{ minWidth: 700 }}>
+              <thead><tr>
+                <th style={{ width: 55 }}>S.No</th>
+                <th style={{ minWidth: 150 }}>Artwork No.</th>
+                <th style={{ width: 150 }}>Artwork</th>
+                <th style={{ minWidth: 150 }}>Artwork Size</th>
+                <th style={{ width: 100 }}>Qty</th>
+                <th style={{ width: 70 }}>Action</th>
+              </tr></thead>
+              <tbody>
+                {state.artworks.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: '#9ca3af' }}>
+                  Artworks from the selected Order will appear here automatically.
+                </td></tr>}
+                {state.artworks.map((artwork, index) => (
+                  <tr key={artwork.id}>
+                    <td className="np-td-num">{index + 1}</td>
+                    <td style={{ fontWeight: 700 }}>{artwork.artwork_no}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {(artwork.thumbnail_url || artwork.file_url)
+                        ? <img src={artwork.thumbnail_url || artwork.file_url!} alt={artwork.artwork_no}
+                            style={{ width: 58, height: 58, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff' }} />
+                        : <span style={{ color: '#94a3b8' }}>No preview</span>}
+                    </td>
+                    <td>{artwork.artwork_size || '—'}</td>
+                    <td style={{ fontWeight: 700 }}>{artwork.qty || 1}</td>
+                    <td><button className="np-del-btn" aria-label="Remove artwork"
+                      onClick={() => dispatch({ type: 'REMOVE_ARTWORK', id: artwork.id })}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="live-summary-row">
+                <td colSpan={3}><span className="live-summary-title">Artwork Summary</span></td>
+                <td><div className="live-summary-stat"><span>Designs</span><strong>{state.artworks.length}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.artworks.reduce((sum, artwork) => sum + (artwork.qty || 1), 0)}</strong></div></td>
+                <td></td>
+              </tr></tfoot>
+            </table>
+          </div>
+        )}
+
+        {state.po_type === 'apparel' && state.artworks.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0 18px' }}>
             {state.artworks.map(a => (
               <div key={a.id} style={{
@@ -1259,7 +1260,24 @@ export function NewPurchaseOrderPage() {
             try {
               const res = await api.get(`/orders/${orderId}`)
               const order = res.data.data ?? res.data
-              dispatch({ type: 'ADD_ORDER', order: orderToCovered(order) })
+              const details = gangsheetDetailsFromOrder(order)
+              dispatch({
+                type: 'INIT',
+                payload: {
+                  orders: state.orders.some(existing => existing.order_id === order.id)
+                    ? state.orders
+                    : [...state.orders, orderToCovered(order)],
+                  fragments: [
+                    ...state.fragments.filter(fragment => fragment.order_id !== order.id),
+                    ...details.fragments,
+                  ],
+                  artworks: [
+                    ...state.artworks.filter(artwork => artwork.source_order_id !== order.id),
+                    ...details.artworks,
+                  ],
+                },
+              })
+              toast.success(`${order.order_number} details and artworks loaded`)
             } catch { toast.error('Failed to load order') }
           }}
         />
