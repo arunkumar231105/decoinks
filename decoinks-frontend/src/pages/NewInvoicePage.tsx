@@ -769,6 +769,7 @@ export function NewInvoicePage() {
     items:            buildItemsPayload(),
     payment_terms:    paymentTerms || null,
     payment_method:   paymentMethod || null,
+    mark_paid:        isPaid,
     currency:         currency.split(' - ')[0] || 'USD',
     rush_services:    rushServices,
     rush_charges:     rushCharges,

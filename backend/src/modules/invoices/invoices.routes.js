@@ -57,6 +57,7 @@ const createSchema = z.object({
   items:            z.array(itemSchema).optional(),
   payment_terms:    z.string().optional().nullable(),
   payment_method:   z.string().optional().nullable(),
+  mark_paid:        z.boolean().optional(),
   currency:         z.string().optional().nullable(),
   rush_services:    z.number().nonnegative().optional(),
   rush_charges:     z.number().nonnegative().optional(),

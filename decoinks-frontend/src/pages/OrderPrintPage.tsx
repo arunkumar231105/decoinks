@@ -373,9 +373,15 @@ export function OrderPrintPage() {
 
   // PAYMENT SUMMARY — prefer the linked invoice's real ledger figures; fall
   // back to the order's own payment_status (Paid = fully paid, else unpaid).
-  const isPaid = order.payment_status === 'Paid'
-  const amountPaid = invoice ? Number(invoice.amount_paid || 0) : isPaid ? Number(order.total) : 0
-  const balanceDue = invoice ? Number(invoice.balance_due || 0) : Number(order.total) - amountPaid
+  const isPaid = order.payment_status === 'Paid' || invoice?.status === 'Paid'
+  const amountPaid = isPaid
+    ? Number(order.total)
+    : invoice
+      ? Number(invoice.amount_paid || 0)
+      : 0
+  const balanceDue = isPaid
+    ? 0
+    : Math.max(0, invoice ? Number(invoice.balance_due || 0) : Number(order.total) - amountPaid)
   const lastPayment = invoice?.payments?.length ? invoice.payments[invoice.payments.length - 1] : null
 
   // ORDER STATUS checks
@@ -520,7 +526,7 @@ export function OrderPrintPage() {
                       <tr><td className="ol">Bulk Discount</td><td className="ov neg">{'-' + fmt(order.discount_amt)}</td></tr>
                     )}
                     <tr><td className="ol">Tax</td><td className="ov">{fmt(order.tax_amt)}</td></tr>
-                    <tr className="tr-total"><td>TOTAL DUE</td><td className="ov" style={{ fontWeight: 800 }}>{fmt(order.total)}</td></tr>
+                    <tr className="tr-total"><td>TOTAL DUE</td><td className="ov" style={{ fontWeight: 800 }}>{fmt(balanceDue)}</td></tr>
                   </tbody>
                 </table>
               </div>

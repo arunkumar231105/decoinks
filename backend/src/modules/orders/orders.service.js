@@ -20,6 +20,47 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
   return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
 
+async function syncPaidLinkedInvoice(client, invoiceId, paymentMethod, actorId) {
+  if (!invoiceId) return
+
+  const { rows } = await client.query(
+    `SELECT id, invoice_number, total, status
+     FROM invoices
+     WHERE id = $1
+     FOR UPDATE`,
+    [invoiceId]
+  )
+  const invoice = rows[0]
+  if (!invoice || invoice.status === 'Void') return
+
+  const { rows: paymentRows } = await client.query(
+    `SELECT COALESCE(SUM(amount), 0) AS paid
+     FROM payments
+     WHERE invoice_id = $1`,
+    [invoiceId]
+  )
+  const total = +Number(invoice.total).toFixed(2)
+  const alreadyPaid = +Number(paymentRows[0].paid).toFixed(2)
+  const outstanding = +Math.max(0, total - alreadyPaid).toFixed(2)
+  const finalPaid = +(alreadyPaid + outstanding).toFixed(2)
+
+  if (outstanding > 0) {
+    await client.query(
+      `INSERT INTO payments (invoice_id, amount, payment_method, notes, recorded_by)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [invoiceId, outstanding, paymentMethod || 'other', 'Full payment recorded from linked paid sales order', actorId || null]
+    )
+  }
+
+  await client.query(
+    `UPDATE invoices
+     SET amount_paid = $2, balance_due = 0, status = 'Paid',
+         paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
+     WHERE id = $1`,
+    [invoiceId, finalPaid]
+  )
+}
+
 async function insertItems(client, orderId, orderType, items) {
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
@@ -222,6 +263,9 @@ async function create(data) {
     const order = rows[0]
     if (invoice_id && items.length === 0) await insertInvoiceItems(client, order.id, invoice_id, order_type)
     else await insertItems(client, order.id, order_type, items)
+    if (payment_status === 'Paid') {
+      await syncPaidLinkedInvoice(client, invoice_id, payment_method, created_by)
+    }
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
        VALUES ($1, 'order', $2, 'created', $3)`,
@@ -330,6 +374,9 @@ async function update(id, data, actorId) {
       const tableMap = { apparel: 'order_items_apparel', gangsheet: 'order_items_gangsheet', dtf: 'order_items_dtf' }
       await client.query(`DELETE FROM ${tableMap[order_type]} WHERE order_id = $1`, [id])
       await insertItems(client, id, order_type, items)
+    }
+    if ((data.payment_status ?? existing.payment_status) === 'Paid') {
+      await syncPaidLinkedInvoice(client, existing.invoice_id, data.payment_method ?? existing.payment_method, actorId)
     }
     await client.query('COMMIT')
     return getById(id)

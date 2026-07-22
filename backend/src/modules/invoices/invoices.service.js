@@ -264,8 +264,36 @@ async function create(fields_in) {
     })
   }
 
+  // "Paid" selected on the create form must be represented by a real ledger
+  // payment, not only by a visual status. This keeps amount_paid, balance_due,
+  // invoice status and every preview/PDF in agreement.
+  let createdInvoice = rows[0]
+  if (fields.mark_paid) {
+    if (total > 0) {
+      createdInvoice = await recordPayment(
+        rows[0].id,
+        {
+          amount: total,
+          payment_method: fields.payment_method || 'other',
+          notes: 'Full payment recorded when invoice was created',
+        },
+        created_by
+      )
+    } else {
+      const paidResult = await query(
+        `UPDATE invoices
+         SET status = 'Paid', amount_paid = 0, balance_due = 0,
+             paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [rows[0].id]
+      )
+      createdInvoice = paidResult.rows[0]
+    }
+  }
+
   await cacheDel('dashboard:stats')
-  return rows[0]
+  return createdInvoice
 }
 
 async function update(id, fields) {

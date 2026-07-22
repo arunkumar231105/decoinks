@@ -17,7 +17,7 @@ interface Invoice {
   id: string; invoice_number: string; status: string
   issue_date: string | null; due_date: string | null
   subtotal: number; discount_amt: number; tax_amt: number
-  total: number
+  total: number; amount_paid?: number | null; balance_due?: number | null
   shipping_charges?: number | null
   rush_services?: number | null
   rush_charges?: number | null
@@ -400,6 +400,12 @@ export function InvoicePrintPage() {
   const itemsOnly = items.length
     ? calculatedItemsTotal
     : Math.max(0, Number(invoice.subtotal) - shippingAmt - rushServicesAmt - rushChargesAmt)
+  const invoiceIsPaid = invoice.status === 'Paid'
+  const invoiceBalanceDue = invoiceIsPaid
+    ? 0
+    : Math.max(0, invoice.balance_due == null
+      ? Number(invoice.total) - Number(invoice.amount_paid || 0)
+      : Number(invoice.balance_due))
   const currency = invoice.currency || 'USD'
   const money = (value: number | string | null | undefined) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(value ?? 0))
@@ -559,7 +565,7 @@ export function InvoicePrintPage() {
                   <tfoot>
                     <tr className="tr-total">
                       <td>TOTAL DUE</td>
-                      <td style={{ textAlign: 'right' }}>{money(invoice.total)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(invoiceBalanceDue)}</td>
                     </tr>
                   </tfoot>
                 </table>
