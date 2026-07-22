@@ -98,7 +98,11 @@ async function listFolder(relPath = '') {
   if (res.status !== 207 && res.status !== 200) {
     throw new NextcloudError(`Listing failed with status ${res.status}`, 502)
   }
-  const davRootPath = new URL(cfg.davRoot).pathname
+  // Decode the root path: hrefs come back decoded (e.g. "@" not "%40"), so the
+  // prefix we strip must be decoded too, otherwise usernames with special
+  // characters break relative-path resolution.
+  let davRootPath = new URL(cfg.davRoot).pathname
+  try { davRootPath = decodeURIComponent(davRootPath) } catch { /* keep as-is */ }
   const target = relPath.replace(/^\/+|\/+$/g, '')
   return parsePropfind(res.text, davRootPath)
     .filter(e => e.path !== target) // drop the folder itself
