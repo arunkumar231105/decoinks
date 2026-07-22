@@ -120,7 +120,7 @@ function buildWhere(filters, params) {
   const add = (value, sql) => { params.push(value); clauses.push(sql(params.length)) }
   if (filters.search) add(`%${filters.search}%`, n => `(a.file_name ILIKE $${n} OR a.path ILIKE $${n}
     OR ('ART-' || LPAD(a.asset_number::text,6,'0')) ILIKE $${n}
-    OR COALESCE(l.lead_number,'') ILIKE $${n} OR COALESCE(c.name,'') ILIKE $${n}
+    OR COALESCE(l.display_number,'') ILIKE $${n} OR COALESCE(l.lead_number,'') ILIKE $${n} OR COALESCE(c.name,'') ILIKE $${n}
     OR a.asset_type ILIKE $${n} OR a.status ILIKE $${n} OR COALESCE(a.order_type,'') ILIKE $${n})`)
   if (filters.type) add(filters.type, n => `a.asset_type=$${n}`)
   if (filters.order_type) add(filters.order_type, n => `COALESCE(a.order_type,o.order_type::text)=$${n}`)
@@ -152,7 +152,7 @@ async function list(filters = {}) {
     LEFT JOIN orders o ON o.id=a.order_id LEFT JOIN users sa ON sa.id=a.sales_agent_id LEFT JOIN users d ON d.id=a.designer_id
     ${where}`, params)
   params.push(limit, (page - 1) * limit)
-  const { rows } = await query(`SELECT a.*,l.lead_number,COALESCE(c.name,l.customer_name) AS entity_name,c.customer_number,
+  const { rows } = await query(`SELECT a.*,COALESCE(l.display_number,l.lead_number) AS lead_number,COALESCE(c.name,l.customer_name) AS entity_name,c.customer_number,
         COALESCE(a.order_type,o.order_type::text) AS order_type,sa.name AS sales_agent_name,d.name AS designer_name,
         CASE WHEN a.file_name ~* '(^|[ _.-])front([ _.-]|$)' THEN 'Front'
              WHEN a.file_name ~* '(^|[ _.-])back([ _.-]|$)' THEN 'Back'
@@ -193,7 +193,7 @@ async function stats(filters = {}) {
 }
 
 async function detail(id) {
-  const { rows } = await query(`SELECT a.*,l.lead_number,COALESCE(c.name,l.customer_name) entity_name,c.customer_number,
+  const { rows } = await query(`SELECT a.*,COALESCE(l.display_number,l.lead_number) AS lead_number,COALESCE(c.name,l.customer_name) entity_name,c.customer_number,
     sa.name sales_agent_name,d.name designer_name,COALESCE(a.order_type,o.order_type::text) order_type,
     CASE WHEN a.file_name ~* '(^|[ _.-])front([ _.-]|$)' THEN 'Front'
          WHEN a.file_name ~* '(^|[ _.-])back([ _.-]|$)' THEN 'Back'
