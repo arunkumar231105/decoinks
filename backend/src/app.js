@@ -25,6 +25,7 @@ const settingsRoutes       = require('./modules/settings/settings.routes')
 const customerRoutes       = require('./modules/customers/customers.routes')
 const searchRoutes         = require('./modules/search/search.routes')
 const importRoutes         = require('./modules/import/import.routes')
+const nextcloudRoutes      = require('./modules/nextcloud/nextcloud.routes')
 
 const app = express()
 
@@ -65,6 +66,7 @@ app.use('/api/settings',     settingsRoutes)
 app.use('/api/customers',    customerRoutes)
 app.use('/api/search',       searchRoutes)
 app.use('/api/import',       importRoutes)
+app.use('/api/nextcloud',    nextcloudRoutes)
 
 app.use(errorHandler)
 
