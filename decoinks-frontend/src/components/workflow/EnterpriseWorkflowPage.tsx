@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   BadgeCheck, Box, CalendarDays, ChevronDown, ChevronFirst, ChevronLast,
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
-  PackageCheck, Plus, Printer, Search, Send, ShoppingBag, Star,
+  PackageCheck, Plus, Printer, Search, Send, ShoppingBag,
   Truck, Upload, Users, X,
 } from 'lucide-react'
 import toast from '../../utils/toast'
@@ -38,6 +38,8 @@ const statusTone = (value: any) => {
 }
 
 const Badge = ({ children }: { children: React.ReactNode }) => <span className={`ew-badge ew-badge-${statusTone(children)}`}>{children || '—'}</span>
+const initials = (value: any) => String(value || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase()
+const PersonCell = ({ name, sub }: { name: any; sub?: any }) => <div className="ew-person"><span>{initials(name)}</span><div><strong>{name || '—'}</strong><small>{sub || '—'}</small></div></div>
 
 const common = {
   empty: (r: AnyRow, ...keys: string[]) => pick(r, ...keys) ?? '—',
@@ -68,7 +70,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'created_at', label: 'Quote Date', render: r => date(r.created_at) },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'response', label: 'Customer Response', render: r => <Badge>{common.empty(r, 'customer_response')}</Badge> },
-      { key: 'customer', label: 'Customer Name', render: r => <div><strong>{common.empty(r, 'customer_name')}</strong><small>{common.empty(r, 'billing_email', 'email')}</small></div> },
+      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
       { key: 'source', label: 'Source', render: r => common.empty(r, 'source') },
       { key: 'sent_via', label: 'Sent Via', render: r => common.empty(r, 'sent_via') },
       { key: 'item', label: 'Item', render: r => common.empty(r, 'order_type', 'item_name', 'description') },
@@ -93,7 +95,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'invoice_number', label: 'Invoice #', render: r => <strong className="ew-link">{r.invoice_number}</strong> },
       { key: 'quote_number', label: 'Quotation ID', render: r => common.empty(r, 'quote_number') },
-      { key: 'customer', label: 'Customer', render: r => <div><strong>{common.empty(r, 'customer_display_name', 'customer_name')}</strong><small>{common.empty(r, 'company')}</small></div> },
+      { key: 'customer', label: 'Customer', render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
       { key: 'invoice_date', label: 'Invoice Date', render: r => date(pick(r, 'invoice_date', 'issue_date')) },
       { key: 'due_date', label: 'Due Date', render: r => date(r.due_date) },
       { key: 'total', label: 'Amount', numeric: true, render: r => <strong>{money(r.total)}</strong> },
@@ -123,7 +125,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
-      { key: 'customer', label: 'Customer Name', render: r => common.empty(r, 'customer_name', 'contact_name', 'supplier_name') },
+      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
       { key: 'order_type', label: 'Product Type', render: r => titleCase(r.order_type) },
       { key: 'qty', label: 'Qty', numeric: true, render: r => common.empty(r, 'total_qty', 'quantity') },
       { key: 'total', label: 'Order Value', numeric: true, render: r => <strong>{money(r.total)}</strong> },
@@ -152,7 +154,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'source_po_number', 'po_number')}</strong> },
       { key: 'order_date', label: 'PO Date', render: r => date(r.order_date) },
-      { key: 'vendor', label: 'Vendor', render: r => <div><strong>{common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')}</strong><small>{common.empty(r, 'vendor_country', 'country')}</small></div> },
+      { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => common.empty(r, 'print_type', 'order_type') },
       { key: 'status', label: 'Status', render: common.status },
@@ -192,7 +194,6 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<AnyRow | null>(null)
   const [detail, setDetail] = useState<AnyRow | null>(null)
   const [loading, setLoading] = useState(true)
@@ -215,7 +216,6 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   useEffect(() => {
     setPage(1); setActive(null); setDetail(null); setSelected(new Set())
     setVisibleColumns(new Set(config.columns.map(c => c.key)))
-    try { setFavorites(new Set(JSON.parse(localStorage.getItem(`ew-favorites-${kind}`) || '[]'))) } catch { setFavorites(new Set()) }
   }, [kind])
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -284,10 +284,6 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const pathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}` : `${config.api}/${row.id}`
   const printPathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}/print` : `${config.api}/${row.id}/print`
   const toggle = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const toggleFavorite = (id: string) => setFavorites(current => {
-    const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id)
-    localStorage.setItem(`ew-favorites-${kind}`, JSON.stringify([...next])); return next
-  })
   const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
   const visiblePages = useMemo(() => Array.from({ length: Math.min(5, pages) }, (_, i) => Math.min(Math.max(1, page - 2) + i, pages)).filter((v, i, a) => a.indexOf(v) === i), [page, pages])
 
@@ -347,13 +343,13 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
       <section className="ew-table-card">
         <div className="ew-table-scroll"><table className="ew-table"><thead><tr>
-          <th><input type="checkbox" checked={allChecked} onChange={() => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))}/></th><th aria-label="Favourite"></th>
+          <th><input type="checkbox" checked={allChecked} onChange={() => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))}/></th>
           {shownColumns.map(c => <th key={c.key} className={c.numeric ? 'numeric' : ''}>{c.label}</th>)}<th>Actions</th>
         </tr></thead><tbody>
-          {loading && Array.from({ length: 6 }).map((_, i) => <tr key={i} className="ew-skeleton"><td colSpan={shownColumns.length + 3}><span/></td></tr>)}
-          {!loading && rows.length === 0 && <tr><td className="ew-empty" colSpan={shownColumns.length + 3}><strong>No matching records</strong><span>Try changing the period or clearing your filters.</span><button onClick={clearFilters}>Clear filters</button></td></tr>}
+          {loading && Array.from({ length: 6 }).map((_, i) => <tr key={i} className="ew-skeleton"><td colSpan={shownColumns.length + 2}><span/></td></tr>)}
+          {!loading && rows.length === 0 && <tr><td className="ew-empty" colSpan={shownColumns.length + 2}><strong>No matching records</strong><span>Try changing the period or clearing your filters.</span><button onClick={clearFilters}>Clear filters</button></td></tr>}
           {!loading && rows.map(row => <tr key={row.id} className={active?.id === row.id ? 'active' : ''} onClick={() => openDetail(row)}>
-            <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)}/></td><td onClick={e => e.stopPropagation()}><button className={`ew-star ${favorites.has(row.id) ? 'active' : ''}`} onClick={() => toggleFavorite(row.id)} aria-label={favorites.has(row.id) ? 'Remove from favourites' : 'Add to favourites'} title={favorites.has(row.id) ? 'Remove from favourites' : 'Add to favourites'}><Star size={14}/></button></td>
+            <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)}/></td>
             {shownColumns.map(c => <td key={c.key} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
             <td onClick={e => e.stopPropagation()}><button className="ew-icon-btn" onClick={() => navigate(pathFor(row))} aria-label="Open full record" title="Open full record"><FileText size={16}/></button></td>
           </tr>)}
