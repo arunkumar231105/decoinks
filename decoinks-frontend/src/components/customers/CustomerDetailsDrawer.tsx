@@ -13,6 +13,7 @@ export interface CustomerDetails {
   payment_terms?: string; credit_limit?: number; available_credit?: number; agent_name?: string
   internal_notes?: string; source?: string
   total_orders?: number; total_spent?: number; avg_order_value?: number
+  lifetime_value?: number
   last_order_date?: string; last_order_number?: string
   outstanding_balance?: number; overdue_balance?: number; open_invoices?: number
   last_payment?: { amount: number; paid_at: string; payment_method?: string } | null
@@ -77,6 +78,7 @@ export function CustomerDetailsDrawer({ customerId, onClose }: { customerId: str
           <dt>Total Orders</dt><dd>{customer.total_orders ?? 0}</dd>
           <dt>Total Spent</dt><dd>{money(customer.total_spent ?? 0)}</dd>
           <dt>Avg. Order Value</dt><dd>{customer.avg_order_value == null ? '—' : money(customer.avg_order_value)}</dd>
+          <dt>Customer Lifetime Value</dt><dd>{customer.lifetime_value == null ? '—' : money(customer.lifetime_value)}</dd>
           <dt>Last Order</dt><dd>{customer.last_order_date ? <>{fmtDate(customer.last_order_date)}<small className="leads-cell-sub">{customer.last_order_number || ''}</small></> : '—'}</dd>
           <dt>Assigned Agent</dt><dd>{customer.agent_name || '—'}</dd>
         </dl></section>

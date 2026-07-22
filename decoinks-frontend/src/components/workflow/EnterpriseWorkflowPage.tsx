@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   BadgeCheck, Box, CalendarDays, ChevronDown, ChevronFirst, ChevronLast,
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
-  PackageCheck, Plus, Search, Send, ShoppingBag, Star,
+  PackageCheck, Plus, Printer, Search, Send, ShoppingBag, Star,
   Truck, Upload, Users, X,
 } from 'lucide-react'
 import toast from '../../utils/toast'
@@ -265,9 +265,24 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const openDetail = async (row: AnyRow) => {
     setActive(row); setDetail(row)
-    try { const { data } = await api.get(`${config.api}/${row.id}`); setDetail(data.data || row) } catch { /* list data remains useful */ }
+    try {
+      const { data } = await api.get(`${config.api}/${row.id}`)
+      const record = data.data || row
+      const extras: AnyRow = {}
+      if (record.customer_id) {
+        try { extras.linked_customer = (await api.get(`/customers/${record.customer_id}`)).data.data } catch { /* historical records may not have a customer profile */ }
+      }
+      if (kind === 'quotations') {
+        try { extras.attachments = (await api.get(`/quotations/${row.id}/artworks`)).data.artworks || [] } catch { extras.attachments = [] }
+      }
+      if (kind === 'purchase-orders') {
+        try { extras.attachments = (await api.get(`/purchase-orders/${row.id}/attachments`)).data.data || [] } catch { extras.attachments = [] }
+      }
+      setDetail({ ...record, ...extras })
+    } catch { /* list data remains useful */ }
   }
   const pathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}` : `${config.api}/${row.id}`
+  const printPathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}/print` : `${config.api}/${row.id}/print`
   const toggle = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleFavorite = (id: string) => setFavorites(current => {
     const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id)
@@ -350,15 +365,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     {active && <>
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><Badge>{titleCase(active.status)}</Badge></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
-      <div className="ew-drawer-actions"><button onClick={() => navigate(pathFor(active))} title="Open full record"><FileText size={15}/><span>Open</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [active])} title="Export this record"><Download size={15}/><span>Export</span></button></div>
-      <DrawerSection title="Overview" row={detail || active} fields={[
-        ['Record No.', config.numberKey], ['Date', config.dateKey], ['Status', 'status'], ['Customer', 'customer_name'], ['Vendor', 'display_vendor_name'], ['Product Type', 'order_type'], ['Total Amount', 'total'], ['Due Date', 'due_date'], ['Payment Status', 'payment_status'], ['Sales Agent', 'agent_name'],
-      ]}/>
-      <DrawerSection title="Additional Information" row={detail || active} fields={[
-        ['Quote', 'quote_number'], ['Order', 'order_number'], ['Tracking ID', 'tracking_number'], ['Shipping', 'shipping_method'], ['Notes', 'notes'], ['Last Updated', 'updated_at'],
-      ]}/>
-      <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full Details</button>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
+      <div className="ew-drawer-actions"><button onClick={() => navigate(printPathFor(active))} title="Print or preview"><Printer size={16}/><span>Print</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
+      <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
+      {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
       </aside>
     </>}
     {kind === 'quotations' && quoteImport && (
@@ -370,8 +380,106 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   </div>
 }
 
-function DrawerSection({ title, row, fields }: { title: string; row: AnyRow; fields: [string, string][] }) {
-  const visible = fields.map(([label, key]) => [label, row?.[key]] as const).filter(([, value]) => value !== null && value !== undefined && value !== '')
-  if (!visible.length) return null
-  return <section className="ew-drawer-section"><h4>{title}</h4>{visible.map(([label, value]) => <div key={label}><span>{label}</span><strong>{/date|_at/i.test(label) ? date(value) : /amount|total/i.test(label) ? money(value) : titleCase(value)}</strong></div>)}</section>
+type DrawerField = { label: string; value: React.ReactNode }
+const shown = (value: any) => value === null || value === undefined || value === '' ? '—' : value
+const first = (row: AnyRow, ...keys: string[]) => shown(pick(row, ...keys))
+const sum = (rows: AnyRow[] | undefined, key: string) => (rows || []).reduce((total, item) => total + Number(item?.[key] || 0), 0)
+const location = (row: AnyRow) => [pick(row, 'shipping_city', 'city'), pick(row, 'shipping_state', 'state'), pick(row, 'country')].filter(Boolean).join(', ') || '—'
+
+function DrawerSection({ title, fields, children, tone = '' }: { title: string; fields?: DrawerField[]; children?: React.ReactNode; tone?: string }) {
+  return <section className={`ew-drawer-section ${tone}`}><h4>{title}</h4>{fields?.map(field => <div className="ew-detail-row" key={field.label}><span>{field.label}</span><strong>{shown(field.value)}</strong></div>)}{children}</section>
+}
+
+function ItemsSection({ items = [] }: { items?: AnyRow[] }) {
+  return <DrawerSection title={`Items / Products (${items.length})`}><div className="ew-detail-items-head"><span>Item</span><span>Qty</span><span>Amount</span></div>{items.length ? <div className="ew-detail-items">{items.map((item, index) => <div key={item.id || index}><span><b>{first(item, 'description', 'category', 'product_type')}</b><small>{[item.artwork_count ? `${item.artwork_count} artworks` : '', item.sizes || item.colors || ''].filter(Boolean).join(' · ') || '—'}</small></span><strong>{first(item, 'qty', 'quantity')}</strong><strong>{money(pick(item, 'amount') ?? Number(item.unit_price || 0) * Number(item.qty || 0))}</strong></div>)}</div> : <p className="ew-detail-empty">No items recorded.</p>}</DrawerSection>
+}
+
+function DocumentsSection({ title = 'Attachments', documents = [], generated, placeholders = [], navigate }: { title?: string; documents?: AnyRow[]; generated?: { label: string; path: string }; placeholders?: string[]; navigate: (path: string) => void }) {
+  const docs = documents || []
+  return <DrawerSection title={`${title}${docs.length ? ` (${docs.length})` : ''}`}><div className="ew-documents">{generated && <button onClick={() => navigate(generated.path)}><FileText size={16}/><span>{generated.label}</span><Download size={15}/></button>}{docs.map((doc, index) => <a key={doc.id || index} href={doc.file_url || '#'} target="_blank" rel="noreferrer"><FileText size={16}/><span>{first(doc, 'filename', 'name', 'artwork_no')}</span><Download size={15}/></a>)}{placeholders.map(label => <button className="empty" disabled key={label}><FileText size={16}/><span>{label}</span><span>—</span></button>)}{!generated && !docs.length && !placeholders.length && <p className="ew-detail-empty">No attachments.</p>}</div></DrawerSection>
+}
+
+function NotesSection({ row, label = 'Notes' }: { row: AnyRow; label?: string }) {
+  return <DrawerSection title={label}><p className="ew-detail-notes">{first(row, 'customer_notes', 'notes', 'internal_notes', 'special_instructions')}</p></DrawerSection>
+}
+
+function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkflowKind; row: AnyRow; navigate: (path: string) => void }) {
+  const customer = row.linked_customer || {}
+  const items = row.items || []
+  const number = row[CONFIG[kind].numberKey]
+  if (kind === 'quotations') return <>
+    <DrawerSection title="Overview" fields={[
+      { label: 'Quote Date', value: date(row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Customer Response', value: first(row, 'customer_response') }, { label: 'Source', value: first(row, 'customer_source', 'source') }, { label: 'Sent Via', value: first(row, 'sent_via') },
+      { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Shipping', value: Number(row.estimated_shipping || row.shipping_amount || 0) ? money(row.estimated_shipping || row.shipping_amount) : 'Not included' },
+      { label: 'Sales Agent', value: first(row, 'sales_agent_name', 'created_by_name', 'agent_name') },
+    ]}/>
+    <DrawerSection title="Customer / Lead" fields={[
+      { label: 'Customer Name', value: first(row, 'customer_name', 'company_name', 'supplier_name') }, { label: 'Email', value: first(row, 'billing_email', 'email') },
+      { label: 'Phone', value: first(row, 'contact_number', 'phone', 'whatsapp') }, { label: 'Location', value: location(row) }, { label: 'Language', value: first(row, 'language') },
+    ]}/>
+    <ItemsSection items={items}/>
+    <DrawerSection title="Total Amount" fields={[{ label: 'Total', value: `${money(row.total)} ${row.currency || 'USD'}` }]}/>
+    <NotesSection row={row}/>
+    <DocumentsSection documents={row.attachments} navigate={navigate}/>
+  </>
+
+  if (kind === 'invoices') return <>
+    <DrawerSection title="Main Information" fields={[
+      { label: 'Invoice Date', value: date(pick(row, 'issue_date', 'invoice_date')) }, { label: 'Due Date', value: date(row.due_date) }, { label: 'Quotation ID', value: first(row, 'quote_number') },
+      { label: 'Customer', value: first(row, 'customer_display_name', 'customer_name') }, { label: 'Contact', value: first(row, 'contact_person') === '—' ? first(customer, 'contact_person') : first(row, 'contact_person') },
+      { label: 'Phone', value: first(row, 'contact_number', 'phone') === '—' ? first(customer, 'primary_phone', 'phone') : first(row, 'contact_number', 'phone') }, { label: 'Company', value: first(row, 'company_name') === '—' ? first(customer, 'company_name', 'company') : first(row, 'company_name') },
+      { label: 'Source', value: first(row, 'customer_source', 'source') === '—' ? first(customer, 'source') : first(row, 'customer_source', 'source') }, { label: 'Sales Agent', value: first(row, 'sales_agent_display_name', 'sales_agent_name', 'agent_name') },
+    ]}/>
+    <DrawerSection title="Financial Summary" fields={[
+      { label: 'Subtotal', value: money(row.subtotal) }, { label: 'Shipping', value: money(pick(row, 'shipping_charges', 'original_shipping_charges') || 0) },
+      { label: `Tax (${Number(row.tax_pct || 0)}%)`, value: money(row.tax_amt) }, { label: 'Total Amount', value: money(row.total) },
+      { label: 'Amount Paid', value: money(row.amount_paid) }, { label: 'Balance Due', value: money(row.balance_due) },
+    ]}/>
+    <ItemsSection items={items}/>
+    <DrawerSection title="Payment History"><div className="ew-payment-history">{row.payments?.length ? row.payments.map((payment: AnyRow, index: number) => <div key={payment.id || index}><Badge>{titleCase(payment.status || 'Received')}</Badge><span>{date(payment.paid_at)}</span><strong>{money(payment.amount)}</strong></div>) : <p className="ew-detail-empty">No payments recorded.</p>}</div></DrawerSection>
+    <NotesSection row={row}/>
+    <DocumentsSection documents={[]} generated={{ label: `Invoice_${number}.pdf`, path: `/invoices/${row.id}/print` }} navigate={navigate}/>
+    <DrawerSection title="Related"><div className="ew-related-actions">{row.quote_id ? <button onClick={() => navigate(`/quotes/${row.quote_id}`)}>View Quotation</button> : <button disabled>View Quotation</button>}<button onClick={() => navigate(`/invoices/${row.id}`)}>View History</button></div></DrawerSection>
+  </>
+
+  if (kind === 'orders') return <>
+    <DrawerSection title="Customer Information" fields={[
+      { label: 'Customer No', value: first(customer, 'customer_number') }, { label: 'Company Name', value: first(customer, 'company_name', 'company') },
+      { label: 'Contact Person', value: first(row, 'contact_name') === '—' ? first(customer, 'contact_person') : first(row, 'contact_name') }, { label: 'Email ID', value: first(row, 'contact_email') === '—' ? first(customer, 'email') : first(row, 'contact_email') },
+      { label: 'Phone No', value: first(row, 'contact_phone') === '—' ? first(customer, 'primary_phone', 'phone') : first(row, 'contact_phone') }, { label: 'Source', value: first(customer, 'source') },
+      { label: 'Agent', value: first(row, 'agent_name') }, { label: 'Address', value: first(row, 'shipping_address') === '—' ? [customer.address_line1, customer.city, customer.state, customer.zip, customer.country].filter(Boolean).join(', ') || '—' : first(row, 'shipping_address') },
+    ]}/>
+    <DrawerSection title="Order Information" fields={[
+      { label: 'Order Date', value: date(row.order_date) }, { label: 'Order Value', value: money(row.total) }, { label: 'Payment Date', value: date(row.payment_date) },
+      { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Payment Method', value: first(row, 'payment_method') }, { label: 'PO Issuance Date', value: date(row.purchase_orders?.[0]?.created_at || row.po_issued_at) },
+    ]}/>
+    <DrawerSection title="Order Details" fields={[
+      { label: 'Product Type', value: titleCase(first(row, 'order_type')) }, { label: 'Item / Qty', value: `${items.length || '—'} items / ${sum(items, 'qty') || '—'} pcs` },
+      { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> }, { label: 'Tracking ID', value: first(row, 'tracking_number') },
+    ]}/>
+  </>
+
+  const coveredOrders = row.orders || []
+  const totalQty = coveredOrders.reduce((total: number, order: AnyRow) => total + Number(order.qty || 0), 0) || sum(items, 'qty')
+  const instructions = String(pick(row, 'terms_conditions', 'notes') || '').split(/\n|•/).map((text: string) => text.trim().replace(/^[-*]\s*/, '')).filter(Boolean)
+  return <>
+    <DrawerSection title="PO Details" fields={[
+      { label: 'PO #', value: first(row, 'source_po_number', 'po_number') }, { label: 'PO Issued Date', value: date(row.order_date || row.created_at) },
+      { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
+      { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+    ]}/>
+    <DrawerSection title="Order Details" fields={[
+      { label: 'Order Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'No. of Artworks', value: row.order_total_artworks ?? row.total_artworks ?? row.artworks?.length ?? '—' },
+      { label: 'Total Qty', value: totalQty || '—' }, { label: 'No. of Gangsheets', value: row.total_gangsheets ?? row.fragments?.length ?? '—' },
+      { label: 'Total Gangsheet Length', value: first(row, 'gangsheet_lengths') },
+    ]}/>
+    <DrawerSection title="PO Instructions" tone="ew-instructions">{instructions.length ? <ul>{instructions.map((instruction: string, index: number) => <li key={index}>{instruction}</li>)}</ul> : <p className="ew-detail-empty">No instructions recorded.</p>}</DrawerSection>
+    <DrawerSection title="Shipping Information" fields={[
+      { label: 'Shipping By', value: first(row, 'shipping_by', 'shipping_method') }, { label: 'Service Type', value: first(row, 'service_type', 'carrier') },
+      { label: 'Tracking ID', value: first(row, 'tracking_id', 'tracking_number') }, { label: 'Tracking Status', value: first(row, 'tracking_status', 'status') },
+      { label: 'Estimated Delivery', value: date(row.expected_date) },
+    ]}/>
+    <DocumentsSection title="Documents" documents={row.attachments} generated={{ label: 'Purchase Order (PDF)', path: `/purchase-orders/${row.id}/print` }} placeholders={row.attachments?.some((doc: AnyRow) => /shipping|label/i.test(doc.filename || doc.name || '')) ? [] : ['Shipping Label (PDF)']} navigate={navigate}/>
+  </>
 }
