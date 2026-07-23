@@ -66,6 +66,8 @@ const gangsheetItemSchema = z.object({
 const dtfItemSchema = z.object({
   artwork_name:  z.string().min(1),
   size:          z.string().optional().nullable(),
+  width_inches:  z.number().positive().optional().nullable(),
+  height_inches: z.number().positive().optional().nullable(),
   qty:           z.number().int().positive(),
   unit_price:    z.number().nonnegative(),
   artwork_image: z.string().optional().nullable(),

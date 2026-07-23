@@ -30,6 +30,13 @@ interface Order {
 const fmt = (value: unknown) => Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const date = (value?: string|null) => value ? new Date(value).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
 const orderTypeName = (type: string) => type === 'dtf' ? 'DTF Transfers' : type === 'gangsheet' ? 'DTF Gangsheet' : 'Custom Printed Apparel'
+const dtfDimensions = (item: any) => {
+  const legacy = String(item.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
+  return {
+    width: item.width_inches ?? legacy?.[1] ?? null,
+    height: item.height_inches ?? legacy?.[2] ?? null,
+  }
+}
 
 const FLOW = [
   ['Sales Order', 'Confirmed'], ['Artwork', 'Approved'], ['Purchase Order', 'Created'],
@@ -126,7 +133,7 @@ export function OrderDetailPage() {
           <section className="so-card so-items-card">
             <div className="so-section-head"><h3>{order.order_type === 'dtf' ? <><Wrench size={15}/> DTF Transfer Items</> : <><Package size={15}/> Order Items</>}</h3><span>Artwork is view-only on Sales Orders</span></div>
             <div className="so-table-wrap"><table className="so-table">
-              <thead><tr><th>#</th>{order.order_type === 'apparel' ? <><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th>Artwork Location</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Prod. Status</th></> : order.order_type === 'dtf' ? <><th>Artwork Name / No.</th><th>Front Art</th><th>Back Art</th><th>Size</th><th>Qty</th><th>Unit Price</th><th>Amount</th><th>Prod. Status</th></> : <><th>Gangsheet Size</th><th>Artworks</th><th>Qty</th><th>Preview</th><th>Amount</th><th>Prod. Status</th></>}</tr></thead>
+              <thead><tr><th>#</th>{order.order_type === 'apparel' ? <><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th>Artwork Location</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Prod. Status</th></> : order.order_type === 'dtf' ? <><th>Artwork No.</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Rate (USD)</th><th>Amount (USD)</th></> : <><th>Gangsheet Size</th><th>Artworks</th><th>Qty</th><th>Preview</th><th>Amount</th><th>Prod. Status</th></>}</tr></thead>
               <tbody>{items.map((item, index) => <tr key={item.id || index}>
                 <td>{index + 1}</td>
                 {order.order_type === 'apparel' && <>
@@ -136,10 +143,12 @@ export function OrderDetailPage() {
                   <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
                 </>}
                 {order.order_type === 'dtf' && <>
-                  <td><strong>{item.artwork_name}</strong><small className="so-block">{item.artwork_no || '—'}</small></td>
-                  <td>{item.front_image || item.artwork_image ? <a href={item.front_image || item.artwork_image} target="_blank" rel="noreferrer"><img className="so-art" src={item.front_image || item.artwork_image} alt="front"/></a> : '—'}</td>
-                  <td>{item.back_image ? <a href={item.back_image} target="_blank" rel="noreferrer"><img className="so-art" src={item.back_image} alt="back"/></a> : '—'}</td>
-                  <td>{item.size || '—'}</td><td>{item.qty}</td><td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
+                  <td><strong>{item.artwork_no || (!dtfDimensions(item).width && item.artwork_name !== 'DTF Transfer' ? item.artwork_name : null) || `AW-TF-${String(index + 1).padStart(3, '0')}`}</strong></td>
+                  <td>{dtfDimensions(item).width ?? '—'}</td>
+                  <td>{dtfDimensions(item).height ?? '—'}</td>
+                  <td>{item.qty}</td>
+                  <td>{item.front_image || item.artwork_image ? <a href={item.front_image || item.artwork_image} target="_blank" rel="noreferrer"><img className="so-art" src={item.front_image || item.artwork_image} alt={item.artwork_no || 'Artwork'}/></a> : '—'}</td>
+                  <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td>
                 </>}
                 {order.order_type === 'gangsheet' && <><td>{item.size}</td><td>{item.no_artworks}</td><td>{item.qty}</td><td>{item.front_image ? <img className="so-art" src={item.front_image} alt="gangsheet"/> : '—'}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td></>}
               </tr>)}</tbody>

@@ -34,7 +34,10 @@ interface ApparelItem {
 }
 interface GangsheetArtwork { id: string; artworkNo: string; size: string; qty: number; sizeAuto?: boolean; image?: string | null }
 interface GangsheetItem { id: string; width: number; height: string; qty: number; pricePerSheet: number }
-interface DtfItem { id: string; artworkName: string; size: string; qty: number; unitPrice: number; artworkImage?: string | null; frontImage?: string | null; backImage?: string | null }
+interface DtfItem {
+  id: string; artworkNo: string; width: string; height: string; qty: number; unitPrice: number
+  artworkImage?: string | null; frontImage?: string | null
+}
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Helpers
@@ -50,6 +53,10 @@ const gangsheetSheetQty = (height: string | number) => {
   const inches = Math.max(0, Number(height) || 0)
   return inches > 0 ? Math.floor(inches / GANGSHEET_BREAK_HEIGHT) + 1 : 1
 }
+const parseDimensions = (value?: string | null) => {
+  const match = String(value ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
+  return { width: match?.[1] ?? '', height: match?.[2] ?? '' }
+}
 const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
@@ -63,7 +70,7 @@ const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }
 const initApparel  = (): ApparelItem[]   => []
 const initGangsheet= (): GangsheetItem[] => [{ id: uid(), width: 22, height: '', qty: 1, pricePerSheet: 0 }]
 const initGangsheetArtworks = (): GangsheetArtwork[] => [{ id: uid(), artworkNo: 'AW-GS-001', size: '', qty: 1, image: null }]
-const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkName: '', size: '', qty: 1, unitPrice: 0 }]
+const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkNo: '', width: '', height: '', qty: 1, unitPrice: 0 }]
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // ArtworkThumb
@@ -203,7 +210,7 @@ export function NewOrderPage() {
     file: File,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     updater: (id: string, patch: any) => void,
-    autoSizeField?: 'artworkSize' | 'size'
+    autoSizeField?: 'artworkSize' | 'size' | 'dimensions'
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     try {
@@ -211,9 +218,11 @@ export function NewOrderPage() {
       form.append('file', file)
       const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       const autoSize = res.data?.dimensions?.artwork_size
+      const dimensions = autoSizeField === 'dimensions' ? parseDimensions(autoSize) : null
       updater(rowId, {
         [field]: res.data.url,
-        ...(autoSizeField && autoSize ? { [autoSizeField]: autoSize } : {}),
+        ...(autoSizeField && autoSize && autoSizeField !== 'dimensions' ? { [autoSizeField]: autoSize } : {}),
+        ...(dimensions ? dimensions : {}),
       })
       if (autoSizeField && autoSize) {
         const dpiNote = res.data.dimensions.dpi_source === 'embedded'
@@ -272,7 +281,22 @@ export function NewOrderPage() {
       const savedArtworks = items.flatMap((r: any) => Array.isArray(r.artworks) ? r.artworks : [])
       setGangsheetArtworks(savedArtworks.length ? savedArtworks.map((art: any, index: number) => ({ id: uid(), artworkNo: art.artwork_no || `AW-GS-${String(index + 1).padStart(3, '0')}`, size: art.size ?? '', qty: Math.max(1, Number(art.qty) || 1), image: art.image ?? null })) : items.filter((r: any) => r.front_image).map((r: any, index: number) => ({ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: 1, image: r.front_image })))
     } else {
-      setDtf(items.map((r: any) => ({ id: uid(), artworkName: r.artwork_name ?? '', size: r.size ?? '', qty: Number(r.qty), unitPrice: Number(r.unit_price), artworkImage: r.artwork_image ?? null, frontImage: r.front_image ?? r.artwork_image ?? null, backImage: r.back_image ?? null })))
+      setDtf(items.map((r: any, index: number) => {
+        const dimensions = parseDimensions(r.size || r.artwork_name)
+        const legacyArtworkNo = !parseDimensions(r.artwork_name).width && r.artwork_name !== 'DTF Transfer'
+          ? r.artwork_name
+          : ''
+        return {
+          id: uid(),
+          artworkNo: r.artwork_no || legacyArtworkNo || `AW-TF-${String(index + 1).padStart(3, '0')}`,
+          width: r.width_inches != null ? String(r.width_inches) : dimensions.width,
+          height: r.height_inches != null ? String(r.height_inches) : dimensions.height,
+          qty: Number(r.qty),
+          unitPrice: Number(r.unit_price),
+          artworkImage: r.artwork_image ?? null,
+          frontImage: r.front_image ?? r.artwork_image ?? null,
+        }
+      }))
     }
   }, [existingOrder])
 
@@ -311,7 +335,7 @@ export function NewOrderPage() {
     const type: OrderType = (fromOrderType ?? sourceQuote.order_type ?? 'apparel') as OrderType
     setOrderType(type)
     const qItems = sourceQuote.items as Array<{
-      description: string; qty: number; unit_price: number
+      description: string; qty: number; unit_price: number; artwork_no?: string | null
       sizes?: string | null; colors?: string | null; artwork_count?: number | null
     }>
     if (type === 'apparel') {
@@ -348,16 +372,18 @@ export function NewOrderPage() {
         return image ? [{ id: uid(), artworkNo: `AW-GS-${String(index + 1).padStart(3, '0')}`, size: '', qty: Math.max(1, Number(it.qty) || 1), image }] : []
       }))
     } else {
-      setDtf(qItems.map(it => ({
+      setDtf(qItems.map((it, index) => {
+        const dimensions = parseDimensions(it.sizes || it.description)
+        return {
         id:            uid(),
-        artworkName:   it.description ?? '',
-        size:          it.sizes ?? '',
+        artworkNo:     it.artwork_no ?? `AW-TF-${String(index + 1).padStart(3, '0')}`,
+        width:         dimensions.width,
+        height:        dimensions.height,
         qty:           Number(it.qty),
         unitPrice:     Number(it.unit_price),
         artworkImage:  (it as any).front_image ?? (it as any).artwork_image ?? null,
         frontImage:    (it as any).front_image ?? (it as any).artwork_image ?? null,
-        backImage:     (it as any).back_image  ?? null,
-      })))
+      }}))
     }
   }, [sourceQuote])
 
@@ -470,7 +496,7 @@ export function NewOrderPage() {
 
   const updateDtf      = (id: string, p: Partial<DtfItem>)       => setDtf(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeDtf      = (id: string) => setDtf(prev => prev.filter(r => r.id !== id))
-  const addDtf         = () => setDtf(prev => [...prev, { id: uid(), artworkName: '', size: '12 x 16 in', qty: 1, unitPrice: 0 }])
+  const addDtf         = () => setDtf(prev => [...prev, { id: uid(), artworkNo: `AW-TF-${String(prev.length + 1).padStart(3, '0')}`, width: '', height: '', qty: 1, unitPrice: 0 }])
 
   // â"€â"€ Save â"€â"€
   const createOrder = useMutation({
@@ -518,7 +544,18 @@ export function NewOrderPage() {
             front_image: index === 0 ? gangsheetArtworks[0]?.image || null : null,
             artworks: index === 0 ? gangsheetArtworks.map(art => ({ artwork_no: art.artworkNo, size: art.size, image: art.image || null, qty: Math.max(1, Number(art.qty) || 1) })) : [],
           }))
-        : dtf.map(r => ({ artwork_name: r.artworkName, size: r.size, qty: r.qty, unit_price: r.unitPrice, artwork_image: r.frontImage || r.artworkImage || null, front_image: r.frontImage || r.artworkImage || null, back_image: r.backImage || null }))
+        : dtf.map(r => ({
+            artwork_name: 'DTF Transfer',
+            artwork_no: r.artworkNo || null,
+            width_inches: Number(r.width) || null,
+            height_inches: Number(r.height) || null,
+            size: r.width && r.height ? `${r.width} x ${r.height} in` : null,
+            qty: r.qty,
+            unit_price: r.unitPrice,
+            artwork_image: r.frontImage || r.artworkImage || null,
+            front_image: r.frontImage || r.artworkImage || null,
+            back_image: null,
+          }))
 
     return {
       customer_id:        customerId,
@@ -556,7 +593,9 @@ export function NewOrderPage() {
     }
     if (orderType === 'dtf') {
       for (let i = 0; i < dtf.length; i++) {
-        if (!dtf[i].artworkName.trim()) return `Row ${i + 1}: Artwork Name is required`
+        if (!dtf[i].artworkNo.trim()) return `Row ${i + 1}: Artwork No. is required`
+        if (!(Number(dtf[i].width) > 0)) return `Row ${i + 1}: Width is required`
+        if (!(Number(dtf[i].height) > 0)) return `Row ${i + 1}: Height is required`
       }
     }
     if (orderType === 'gangsheet') {
@@ -899,12 +938,12 @@ export function NewOrderPage() {
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
-                        <th>Item</th>
                         <th>Artwork No.</th>
-                        <th>Artwork Image</th>
-                        <th>Size</th>
+                        <th>Width (in)</th>
+                        <th>Height (in)</th>
                         <th>Qty</th>
-                        <th>Unit Price (USD)</th>
+                        <th>Artwork</th>
+                        <th>Rate (USD)</th>
                         <th>Amount (USD)</th>
                         <th></th>
                       </tr>
@@ -913,23 +952,19 @@ export function NewOrderPage() {
                       {dtf.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
-                          <td><strong>DTF Transfer</strong></td>
                           <td>
-                            <input type="text" className="no-table-input no-table-input-wide" placeholder="AW-TF-001" value={row.artworkName} onChange={e => updateDtf(row.id, { artworkName: e.target.value })} />
+                            <input type="text" className="no-table-input no-table-input-wide" placeholder="AW-TF-001" value={row.artworkNo} onChange={e => updateDtf(row.id, { artworkNo: e.target.value })} />
                           </td>
-                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf, 'size')} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null, size: '' })} /></td>
                           <td>
-                            <input
-                              className="no-table-input"
-                              placeholder="e.g. 10x12 in"
-                              value={row.size}
-                              onChange={e => updateDtf(row.id, { size: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
+                            <input type="number" className="no-table-input" min={0.01} step={0.01} placeholder="Width" value={row.width} onChange={e => updateDtf(row.id, { width: e.target.value })} />
+                          </td>
+                          <td>
+                            <input type="number" className="no-table-input" min={0.01} step={0.01} placeholder="Height" value={row.height} onChange={e => updateDtf(row.id, { height: e.target.value })} />
                           </td>
                           <td>
                             <input type="number" className="no-table-input" min={1} value={row.qty} onFocus={e => e.target.select()} onChange={e => updateDtf(row.id, { qty: Math.max(1, +e.target.value) })} />
                           </td>
+                          <td><ImageUploadCell imageUrl={row.frontImage ?? row.artworkImage} label="Artwork" uploading={uploadingImg[`${row.id}-frontImage`]} onUpload={f => uploadItemImage(row.id, 'frontImage', f, updateDtf, 'dimensions')} onRemove={() => updateDtf(row.id, { frontImage: null, artworkImage: null })} /></td>
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
@@ -947,8 +982,8 @@ export function NewOrderPage() {
                     </tbody>
                     <tfoot><tr className="live-summary-row">
                       <td colSpan={2}><span className="live-summary-title">DTF Summary</span></td>
-                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{dtf.length}</strong></div></td>
                       <td></td>
+                      <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{dtf.length}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{dtfQty}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>

@@ -88,10 +88,13 @@ async function insertItems(client, orderId, orderType, items) {
     } else if (orderType === 'dtf') {
       const amount = +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
       await client.query(
-        `INSERT INTO order_items_dtf (order_id, artwork_name, size, qty, unit_price, amount, artwork_image, front_image, back_image, sort_order, artwork_no)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [orderId, item.artwork_name, item.size || null, item.qty, item.unit_price, amount,
-         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i, item.artwork_no || null]
+        `INSERT INTO order_items_dtf
+          (order_id, artwork_name, artwork_no, size, width_inches, height_inches, qty, unit_price, amount,
+           artwork_image, front_image, back_image, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [orderId, item.artwork_name || 'DTF Transfer', item.artwork_no || null, item.size || null,
+         item.width_inches || null, item.height_inches || null, item.qty, item.unit_price, amount,
+         item.artwork_image || item.front_image || null, item.front_image || null, item.back_image || null, i]
       )
     }
   }
@@ -111,8 +114,11 @@ async function insertInvoiceItems(client, orderId, invoiceId, orderType) {
   } else if (orderType === 'dtf') {
     await client.query(
       `INSERT INTO order_items_dtf
-         (order_id,artwork_name,artwork_no,size,qty,unit_price,amount,artwork_image,front_image,back_image,sort_order)
-       SELECT $1,COALESCE(description,'DTF Transfer'),artwork_no,sizes,qty,unit_price,amount,
+         (order_id,artwork_name,artwork_no,size,width_inches,height_inches,qty,unit_price,amount,artwork_image,front_image,back_image,sort_order)
+       SELECT $1,'DTF Transfer',artwork_no,sizes,
+              NULLIF(substring(COALESCE(NULLIF(sizes,''),description) FROM '([0-9]+(\.[0-9]+)?)\s*(?:"|in)?\s*[x×]'), '')::NUMERIC,
+              NULLIF(substring(COALESCE(NULLIF(sizes,''),description) FROM '[x×]\s*([0-9]+(\.[0-9]+)?)'), '')::NUMERIC,
+              qty,unit_price,amount,
               COALESCE(artwork_image,front_image),front_image,back_image,sort_order
        FROM invoice_items WHERE invoice_id=$2 ORDER BY sort_order,created_at`, [orderId, invoiceId]
     )

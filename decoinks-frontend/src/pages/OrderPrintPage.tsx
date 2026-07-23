@@ -66,6 +66,7 @@ interface OrderInvoice {
 interface DtfItem {
   id: string; artwork_name: string; size: string | null
   artwork_no?: string | null
+  width_inches?: number | string | null; height_inches?: number | string | null
   qty: number; unit_price: number; amount: number
   artwork_image: string | null; front_image?: string | null; back_image?: string | null
 }
@@ -302,8 +303,7 @@ const CSS = `
 `
 
 // ── DTF group types ───────────────────────────────────────────────────────────
-interface DtfRow  { item: DtfItem; artNo: string; sizeStr: string }
-interface DtfGroup { desc: string; rate: number; rowSpan: number; rows: DtfRow[] }
+interface DtfRow { item: DtfItem; artNo: string; width: string; height: string }
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function OrderPrintPage() {
@@ -401,21 +401,16 @@ export function OrderPrintPage() {
   const payMethodDisplay = order.payment_method
     ?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) ?? '—'
 
-  // ── Build DTF groups ───────────────────────────────────────────────────────
-  const dtfGroups: DtfGroup[] = []
-  dtfItems.forEach((item, idx) => {
-    const artNo  = item.artwork_no || `DTF-${String(idx + 1).padStart(3, '0')}`
-    const sizeStr = item.size || '—'
-    const row: DtfRow = { item, artNo, sizeStr }
-    const last = dtfGroups[dtfGroups.length - 1]
-    if (last && Math.abs(last.rate - Number(item.unit_price)) < 0.01) {
-      last.rows.push(row)
-      last.rowSpan++
-    } else {
-      dtfGroups.push({ desc: 'DTF Transfers', rate: Number(item.unit_price), rowSpan: 1, rows: [row] })
+  // ── Build DTF rows using the same field model as the quotation ──────────────
+  const dtfFlat: DtfRow[] = dtfItems.map((item, idx) => {
+    const legacy = String(item.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
+    return {
+      item,
+      artNo: item.artwork_no || (!legacy && item.artwork_name !== 'DTF Transfer' ? item.artwork_name : '') || `AW-TF-${String(idx + 1).padStart(3, '0')}`,
+      width: String(item.width_inches ?? legacy?.[1] ?? '—'),
+      height: String(item.height_inches ?? legacy?.[2] ?? '—'),
     }
   })
-  const dtfFlat = dtfGroups.flatMap(g => g.rows.map((row, ri) => ({ ...row, group: g, rowIdx: ri })))
 
   return (
     <>
@@ -657,18 +652,16 @@ export function OrderPrintPage() {
           )}
 
           {isDtf && (
-            /* DTF — sequential S.No, Item Description + Rate rowSpan */
+            /* DTF — same fields and sequence as the quotation */
             <table className="so-tbl">
               <thead>
                 <tr>
                   <th style={{ width: 40 }}>S.No</th>
-                  <th style={{ minWidth: 110 }}>
-                    Item Description<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
-                  </th>
-                  <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 88 }}>Artwork Thumbnail</th>
-                  <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
+                  <th style={{ width: 110 }}>Artwork No</th>
+                  <th style={{ width: 80 }}>Width<br />(IN)</th>
+                  <th style={{ width: 80 }}>Height<br />(IN)</th>
                   <th style={{ width: 80 }}>Qty<br />(Transfers)</th>
+                  <th style={{ width: 88 }}>Artwork</th>
                   <th style={{ width: 76 }}>Rate<br />(USD)</th>
                   <th style={{ width: 82 }}>Amount<br />(USD)</th>
                 </tr>
@@ -679,24 +672,16 @@ export function OrderPrintPage() {
                 ) : dtfFlat.map((r, sno) => (
                   <tr key={r.item.id}>
                     <td style={{ fontWeight: 600, color: '#374151' }}>{sno + 1}</td>
-                    {r.rowIdx === 0 && (
-                      <td rowSpan={r.group.rowSpan} className="td-span td-desc">
-                        {r.group.desc}
-                      </td>
-                    )}
                     <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
+                    <td style={{ fontWeight: 500 }}>{r.width}</td>
+                    <td style={{ fontWeight: 500 }}>{r.height}</td>
+                    <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
                     <td>
                       {(r.item.front_image ?? r.item.artwork_image)
                         ? <img src={r.item.front_image ?? r.item.artwork_image!} alt={r.artNo} className="art-img" />
                         : <div className="art-empty">🖼</div>}
                     </td>
-                    <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
-                    <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
-                    {r.rowIdx === 0 && (
-                      <td rowSpan={r.group.rowSpan} className="td-span" style={{ fontWeight: 700 }}>
-                        {fmt(r.group.rate)}
-                      </td>
-                    )}
+                    <td style={{ fontWeight: 700 }}>{fmt(r.item.unit_price)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
                   </tr>
                 ))}
@@ -755,7 +740,7 @@ export function OrderPrintPage() {
                     <div className="stat-icon">👕</div>
                     <div>
                       <div className="stat-lbl">Total Items</div>
-                      <div className="stat-val">{isDtf ? dtfGroups.length : allItems.length}</div>
+                      <div className="stat-val">{isDtf ? dtfItems.length : allItems.length}</div>
                     </div>
                   </div>
                 </td>
