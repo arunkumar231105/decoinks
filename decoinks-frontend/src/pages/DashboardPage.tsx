@@ -1,334 +1,365 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Skeleton } from '@mui/material'
 import {
-  ArrowRight,
-  ArrowDownRight,
-  ArrowUpRight,
-  Clock3,
-  ClipboardList,
-  Images,
-  ReceiptText,
-  ShoppingCart,
-  Users,
-  DollarSign,
-  FileCheck2,
-  PackageCheck,
+  ArrowDownRight, ArrowUpRight, BadgeCheck, CircleDollarSign, ClipboardList,
+  Factory, FileText, PackageCheck, RefreshCw, ShoppingCart, Truck, UserPlus, Users,
 } from 'lucide-react'
 import {
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
+  CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { Link } from 'react-router-dom'
 import { api } from '../services/api'
 
-// Keys must match the lead_stage enum the backend returns.
-const LEAD_STAGES = [
-  { key: 'initiated', label: 'Initiated', color: '#0D9488' },
-  { key: 'quotation', label: 'Quotation', color: '#14B8A6' },
-  { key: 'artwork',   label: 'Artwork',   color: '#2563EB' },
-  { key: 'gangsheet', label: 'Gangsheet', color: '#F59E0B' },
-  { key: 'payment',   label: 'Payment',   color: '#8B5CF6' },
-  { key: 'confirmed', label: 'Confirmed', color: '#22C55E' },
-]
-
-// Keys must match the order_status enum.
-const ORDER_STATUS_COLORS: Record<string, string> = {
-  'Draft':          '#94A3B8',
-  'Confirmed':      '#0D9488',
-  'In Production':  '#2563EB',
-  'QC':             '#8B5CF6',
-  'Ready to Ship':  '#F59E0B',
-  'Shipped':        '#14B8A6',
-  'Delivered':      '#22C55E',
-  'Cancelled':      '#EF4444',
+// ── Types (mirror /dashboard/overview) ──────────────────────────────────────
+type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number }
+type Split = { new: number; existing: number; new_value?: number; existing_value?: number }
+type Overview = {
+  period: { from: string; to: string; prev_from: string; prev_to: string; days: number }
+  pipeline: Record<'leads' | 'qualified' | 'quotes' | 'payments' | 'sales_orders' | 'po' | 'production' | 'shipped' | 'delivered', Metric>
+  customers: { total: number; new: number; existing: number; new_prev: number } &
+    Record<'payments' | 'sales_orders' | 'po' | 'production' | 'shipped' | 'delivered', Split>
+  sales_by_type: Array<{ key: string; label: string; value: number; count: number }>
+  sales_by_customer: Array<{ key: string; label: string; value: number; count: number }>
+  trend: { current: Array<{ date: string; revenue: number; orders: number }>; previous: Array<{ date: string; revenue: number; orders: number }> }
+  recent: {
+    payments: Array<{ paid_at: string; amount: number; method: string; customer: string; invoice_number: string; invoice_id: string; order_number: string | null }>
+    pos: Array<{ id: string; po_number: string; po_date: string; status: string; source_order: string | null; vendor: string | null }>
+    shipments: Array<{ id: string; ship_date: string; tracking_number: string | null; carrier: string | null; status: string; customer: string }>
+    payments_total: { count: number; value: number }
+    pos_total: number
+    shipments_total: number
+  }
 }
 
-export function DashboardPage() {
-  const { data: stats } = useQuery({
-    queryKey: ['dashboard', 'stats'],
-    queryFn: () => api.get('/dashboard/stats').then(r => r.data.data),
-  })
+// ── Helpers ─────────────────────────────────────────────────────────────────
+const money = (v?: number | string | null) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtDay = (v: string) => new Date(v + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const fmtRange = (a: string, b: string) => `${fmtDay(a)} – ${fmtDay(b)}`
+const pctOf = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : '0%')
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-  const { data: pipeline = [] } = useQuery({
-    queryKey: ['dashboard', 'lead-pipeline'],
-    queryFn: () => api.get('/dashboard/lead-pipeline').then(r => r.data.data),
-  })
+type Tab = 'daily' | 'weekly' | 'monthly' | 'custom'
+function tabRange(tab: Tab): { from: string; to: string } {
+  const today = new Date()
+  if (tab === 'daily') return { from: iso(today), to: iso(today) }
+  if (tab === 'weekly') { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: iso(f), to: iso(today) } }
+  return { from: iso(new Date(today.getFullYear(), today.getMonth(), 1)), to: iso(today) }
+}
 
-  const { data: ordersByStatus = [] } = useQuery({
-    queryKey: ['dashboard', 'orders-by-status'],
-    queryFn: () => api.get('/dashboard/orders-by-status').then(r => r.data.data),
-  })
+const STATUS_TONES: Record<string, string> = {
+  Delivered: 'ok', Shipped: 'ok', Paid: 'ok', Received: 'ok', Closed: 'ok', Approved: 'ok',
+  'In Production': 'info', 'In Transit': 'info', Sent: 'info', Confirmed: 'info', 'Label Created': 'info', 'Picked Up': 'info',
+  Draft: 'muted', Pending: 'warn', 'Pending Approval': 'warn', Partial: 'warn', 'Partially Received': 'warn',
+  Cancelled: 'bad', Exception: 'bad', Overdue: 'bad', Void: 'bad',
+}
+const StatusPill = ({ value }: { value: string }) => (
+  <span className={`dsb-pill ${STATUS_TONES[value] || 'muted'}`}>{value}</span>
+)
 
-  const { data: topSuppliers = [] } = useQuery({
-    queryKey: ['dashboard', 'top-suppliers'],
-    queryFn: () => api.get('/dashboard/top-suppliers').then(r => r.data.data),
-  })
+// Change chip vs previous period — shows a real % only when the previous
+// period has data; never invents growth.
+function DeltaChip({ cur, prev, label }: { cur: number; prev: number; label: string }) {
+  if (prev <= 0) return <em className="dsb-delta muted">vs {label}: 0</em>
+  const pct = Math.round(((cur - prev) / prev) * 1000) / 10
+  const up = pct >= 0
+  return (
+    <em className={`dsb-delta ${up ? 'up' : 'down'}`}>
+      {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />} {Math.abs(pct)}% <span>vs {label}</span>
+    </em>
+  )
+}
 
-  const { data: recentActivity = [] } = useQuery({
-    queryKey: ['dashboard', 'recent-activity'],
-    queryFn: () => api.get('/dashboard/recent-activity').then(r => r.data.data),
-  })
+// One KPI card: headline, delta, two-row breakdown, optional pending footer.
+function StatCard({ icon: Icon, tone = 'blue', title, count, unit, value, prev, prevLabel, rows, pending }: {
+  icon: any; tone?: string; title: string; count: number; unit?: string; value?: number
+  prev: number; prevLabel: string
+  rows: Array<{ label: string; count: number; value?: number }>
+  pending?: number
+}) {
+  const total = rows.reduce((s, r) => s + r.count, 0)
+  const valueTotal = rows.reduce((s, r) => s + (r.value || 0), 0)
+  const hasValues = rows.some(r => r.value !== undefined)
+  return (
+    <article className="dsb-card">
+      <header><span className={`dsb-ic ${tone}`}><Icon size={16} /></span><small>{title}</small></header>
+      <strong>{count.toLocaleString()}{unit && <i>{unit}</i>}</strong>
+      <DeltaChip cur={count} prev={prev} label={prevLabel} />
+      {value !== undefined && <b className="dsb-value">{money(value)}</b>}
+      <ul>
+        {rows.map(r => (
+          <li key={r.label}>
+            <span>{r.label}</span>
+            <b>{hasValues ? money(r.value || 0) : r.count.toLocaleString()}</b>
+            <small>({hasValues ? pctOf(r.value || 0, valueTotal) : pctOf(r.count, total)})</small>
+          </li>
+        ))}
+      </ul>
+      {pending !== undefined && (
+        <footer className="dsb-pending"><span>Total Pending</span><b>{pending} Orders</b></footer>
+      )}
+    </article>
+  )
+}
 
-  const pipelineTotal = pipeline.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0)
+const DONUT_TYPE = ['#7c3aed', '#2563eb']
+const DONUT_CUST = ['#16a34a', '#f59e0b']
 
-  const donutData: { name: string; value: number; color: string }[] = ordersByStatus.map((o: any) => ({
-    name: o.status,
-    value: o.count,
-    color: ORDER_STATUS_COLORS[o.status] ?? '#94A3B8',
+function DonutPanel({ title, data, colors }: { title: string; data: Array<{ label: string; value: number; count: number }>; colors: string[] }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
+  const chartData = data.filter(d => d.value > 0)
+  return (
+    <section className="dsb-panel">
+      <h3>{title} <small>(Sales Orders Value)</small></h3>
+      {total <= 0 ? <p className="dsb-empty">No sales in this period.</p> : (
+        <div className="dsb-donut">
+          <div className="dsb-donut-chart">
+            <ResponsiveContainer width="100%" height={150}>
+              <PieChart>
+                <Pie data={chartData} dataKey="value" nameKey="label" innerRadius={44} outerRadius={66} paddingAngle={2} strokeWidth={0}>
+                  {chartData.map(d => <Cell key={d.label} fill={colors[data.findIndex(x => x.label === d.label) % colors.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: any) => money(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="dsb-legend">
+            {data.map((d, i) => (
+              <li key={d.label}>
+                <i style={{ background: colors[i % colors.length] }} />
+                <div><span>{d.label}</span><b>{money(d.value)} ({pctOf(d.value, total)})</b></div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <footer className="dsb-panel-foot"><span>Total Sales Value</span><b>{money(total)}</b></footer>
+    </section>
+  )
+}
+
+const FUNNEL_COLORS = ['#1d4ed8', '#2563eb', '#0891b2', '#0d9488', '#f59e0b', '#dc2626']
+
+function FunnelPanel({ stages }: { stages: Array<{ label: string; count: number }> }) {
+  const max = Math.max(1, ...stages.map(s => s.count))
+  return (
+    <section className="dsb-panel">
+      <h3>Order Status Funnel <small>(By Orders)</small></h3>
+      <div className="dsb-funnel">
+        {stages.map((s, i) => (
+          <div key={s.label} className="dsb-funnel-row">
+            <i style={{ width: `${Math.max(8, (s.count / max) * 100)}%`, background: FUNNEL_COLORS[i] }} />
+            <span>{s.label}</span>
+            <b>{s.count} <small>({pctOf(s.count, max)})</small></b>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function TrendPanel({ trend }: { trend: Overview['trend'] }) {
+  const [mode, setMode] = useState<'revenue' | 'orders'>('revenue')
+  const data = trend.current.map((d, i) => ({
+    label: fmtDay(d.date),
+    current: mode === 'revenue' ? Number(d.revenue) : d.orders,
+    previous: trend.previous[i] ? (mode === 'revenue' ? Number(trend.previous[i].revenue) : trend.previous[i].orders) : null,
   }))
-  const orderTotal = donutData.reduce((sum, row) => sum + Number(row.value || 0), 0)
-  const visibleActivity = recentActivity.slice(0, 8)
+  return (
+    <section className="dsb-panel">
+      <h3>Revenue Trend
+        <span className="dsb-toggle">
+          <button className={mode === 'revenue' ? 'on' : ''} onClick={() => setMode('revenue')}>By Revenue</button>
+          <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>By Orders</button>
+        </span>
+      </h3>
+      <ResponsiveContainer width="100%" height={168}>
+        <LineChart data={data} margin={{ top: 6, right: 8, left: -14, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} minTickGap={22} />
+          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+            tickFormatter={(v: any) => mode === 'revenue' ? `$${Number(v) >= 1000 ? `${Math.round(Number(v) / 100) / 10}K` : v}` : v} />
+          <Tooltip formatter={(v: any) => (mode === 'revenue' ? money(v) : v)} />
+          <Line type="monotone" dataKey="current" name="This Period" stroke="#2563eb" strokeWidth={2.2} dot={false} />
+          <Line type="monotone" dataKey="previous" name="Last Period" stroke="#b6c2d4" strokeWidth={1.8} strokeDasharray="5 4" dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+      <footer className="dsb-trend-legend">
+        <span><i style={{ background: '#2563eb' }} /> This Period</span>
+        <span><i className="dash" /> Last Period</span>
+      </footer>
+    </section>
+  )
+}
 
-  const statCards = stats ? [
-    {
-      label: 'Total Leads',
-      value: Number(stats.total_leads ?? 0).toLocaleString(),
-      note: `${stats.leads_today ?? 0} added today`,
-      trend: `${stats.leads_today_change_pct >= 0 ? '+' : ''}${stats.leads_today_change_pct ?? 0}%`,
-      direction: (stats.leads_today_change_pct ?? 0) >= 0 ? 'up' : 'down',
-      icon: ClipboardList,
-      color: '#0D9488',
-      bg: '#CCFBF1',
-    },
-    {
-      label: 'Customers',
-      value: Number(stats.total_customers ?? 0).toLocaleString(),
-      note: 'active customer records',
-      trend: '',
-      direction: 'up',
-      icon: Users,
-      color: '#2563EB',
-      bg: '#DBEAFE',
-    },
-    {
-      label: 'Quotations',
-      value: Number(stats.total_quotes ?? 0).toLocaleString(),
-      note: `${stats.approved_quotes ?? 0} approved`,
-      trend: '',
-      direction: 'up',
-      icon: FileCheck2,
-      color: '#F59E0B',
-      bg: '#FEF3C7',
-    },
-    {
-      label: 'Orders',
-      value: Number(stats.total_orders ?? 0).toLocaleString(),
-      note: `${stats.delivered_orders ?? 0} delivered`,
-      trend: '', direction: 'up', icon: ShoppingCart,
-      color: '#7C3AED', bg: '#EDE9FE',
-    },
-    {
-      label: 'Invoices',
-      value: Number(stats.total_invoices ?? 0).toLocaleString(),
-      note: `${stats.paid_invoices ?? 0} paid`,
-      trend: '', direction: 'up', icon: ReceiptText,
-      color: '#0891B2', bg: '#CFFAFE',
-    },
-    {
-      label: 'Purchase Orders',
-      value: Number(stats.total_purchase_orders ?? 0).toLocaleString(),
-      note: 'vendor fulfillment records',
-      trend: '', direction: 'up', icon: PackageCheck,
-      color: '#EA580C', bg: '#FFEDD5',
-    },
-    {
-      label: 'Paid Revenue',
-      value: `$${Number(stats.lifetime_revenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      note: `$${Number(stats.outstanding_revenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} outstanding`,
-      trend: '', direction: 'up', icon: DollarSign,
-      color: '#7C3AED',
-      bg: '#EDE9FE',
-    },
-    {
-      label: 'Production Volume',
-      value: Number(stats.total_artworks ?? 0).toLocaleString(),
-      note: `${stats.total_gangsheets ?? 0} gangsheets`,
-      trend: '', direction: 'up', icon: Images,
-      color: '#0D9488', bg: '#CCFBF1',
-    },
-  ] : []
+// ── Page ────────────────────────────────────────────────────────────────────
+export function DashboardPage() {
+  const qc = useQueryClient()
+  const [tab, setTab] = useState<Tab>('monthly')
+  const [custom, setCustom] = useState(tabRange('monthly'))
+  const range = useMemo(() => (tab === 'custom' ? custom : tabRange(tab)), [tab, custom])
+
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<Overview>({
+    queryKey: ['dashboard', 'overview', range],
+    queryFn: () => api.get('/dashboard/overview', { params: { date_from: range.from, date_to: range.to } }).then(r => r.data.data),
+    placeholderData: p => p,
+  })
+
+  const prevLabel = data ? fmtRange(data.period.prev_from, data.period.prev_to) : ''
+  const P = data?.pipeline
+  const C = data?.customers
+
+  const typeRows = (m?: Metric) => [
+    { label: 'DTF Transfers', count: m?.dtf || 0 },
+    { label: 'Custom Shirts', count: m?.shirt || 0 },
+  ]
+  const custRows = (s?: Split, withValue = false) => [
+    { label: 'New Customers', count: s?.new || 0, ...(withValue ? { value: s?.new_value || 0 } : {}) },
+    { label: 'Existing Customers', count: s?.existing || 0, ...(withValue ? { value: s?.existing_value || 0 } : {}) },
+  ]
 
   return (
-    <div className="dashboard-page">
-      <section className="metric-row">
-        {statCards.map((stat) => {
-          const Icon = stat.icon
-          const TrendIcon = stat.direction === 'up' ? ArrowUpRight : ArrowDownRight
+    <div className="dsb-page">
 
-          return (
-            <article className="metric-card" key={stat.label} style={{ borderTopColor: stat.color }}>
-              <div className="metric-card-top">
-                <span className="metric-icon" style={{ backgroundColor: stat.bg, color: stat.color }}>
-                  <Icon size={21} />
-                </span>
-                {stat.trend && (
-                  <span className={`trend-pill trend-${stat.direction}`}>
-                    <TrendIcon size={15} />
-                    {stat.trend}
-                  </span>
-                )}
-              </div>
-              <p>{stat.label}</p>
-              <strong>{stat.value}</strong>
-              <small>{stat.note}</small>
-            </article>
-          )
-        })}
+      {/* ── Period controls ── */}
+      <div className="dsb-controls">
+        <div className="dsb-tabs">
+          {(['daily', 'weekly', 'monthly', 'custom'] as Tab[]).map(t => (
+            <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+        {tab === 'custom' && (
+          <div className="dsb-dates">
+            <input aria-label="From date" type="date" value={custom.from} onChange={e => setCustom(c => ({ ...c, from: e.target.value }))} />
+            <span>–</span>
+            <input aria-label="To date" type="date" value={custom.to} onChange={e => setCustom(c => ({ ...c, to: e.target.value }))} />
+          </div>
+        )}
+        {data && <span className="dsb-period">{fmtRange(data.period.from, data.period.to)}</span>}
+        <button className="dsb-refresh" onClick={() => { qc.invalidateQueries({ queryKey: ['dashboard'] }); refetch() }} disabled={isFetching}>
+          <RefreshCw size={14} className={isFetching ? 'spin' : ''} /> Refresh
+        </button>
+      </div>
 
-        {!stats && [1, 2, 3, 4].map((i) => (
-          <article className="metric-card" key={i} style={{ opacity: 0.4 }}>
-            <div className="metric-card-top">
-              <span className="metric-icon" style={{ backgroundColor: '#F3F4F6', color: '#9CA3AF' }}>
-                <ClipboardList size={21} />
-              </span>
-            </div>
-            <p>Loading…</p>
-            <strong>—</strong>
-            <small>&nbsp;</small>
-          </article>
-        ))}
+      {isError && (
+        <div className="dsb-error"><strong>Unable to load dashboard.</strong><button onClick={() => refetch()}>Retry</button></div>
+      )}
+
+      {/* ── Row 1: pipeline KPIs ── */}
+      <section className="dsb-grid cols-9">
+        {isLoading || !P ? Array.from({ length: 9 }).map((_, i) => <article key={i} className="dsb-card"><Skeleton height={120} /></article>) : <>
+          <StatCard icon={Users} title="New Leads" count={P.leads.count} prev={P.leads.prev} prevLabel={prevLabel} rows={typeRows(P.leads)} />
+          <StatCard icon={BadgeCheck} tone="green" title="Qualified Leads" count={P.qualified.count} prev={P.qualified.prev} prevLabel={prevLabel} rows={typeRows(P.qualified)} />
+          <StatCard icon={FileText} tone="violet" title="Quotations Sent" count={P.quotes.count} prev={P.quotes.prev} prevLabel={prevLabel} rows={typeRows(P.quotes)} />
+          <StatCard icon={CircleDollarSign} tone="green" title="Payment Received" count={P.payments.count} unit="Orders" value={P.payments.value} prev={P.payments.prev} prevLabel={prevLabel} rows={typeRows(P.payments)} />
+          <StatCard icon={ShoppingCart} tone="orange" title="Sales Orders Issued" count={P.sales_orders.count} unit="Orders" value={P.sales_orders.value} prev={P.sales_orders.prev} prevLabel={prevLabel} rows={typeRows(P.sales_orders)} pending={P.sales_orders.pending} />
+          <StatCard icon={ClipboardList} tone="red" title="PO Issued" count={P.po.count} unit="Orders" prev={P.po.prev} prevLabel={prevLabel} rows={typeRows(P.po)} pending={P.po.pending} />
+          <StatCard icon={Factory} tone="violet" title="In Production" count={P.production.count} unit="Orders" prev={P.production.prev} prevLabel={prevLabel} rows={typeRows(P.production)} pending={P.production.pending} />
+          <StatCard icon={Truck} title="Shipped" count={P.shipped.count} unit="Orders" prev={P.shipped.prev} prevLabel={prevLabel} rows={typeRows(P.shipped)} pending={P.shipped.pending} />
+          <StatCard icon={PackageCheck} tone="green" title="Delivered" count={P.delivered.count} unit="Orders" prev={P.delivered.prev} prevLabel={prevLabel} rows={typeRows(P.delivered)} pending={P.delivered.pending} />
+        </>}
       </section>
 
-      <section className="dashboard-two-column">
-        <article className="panel chart-panel">
-          <div className="panel-header">
-            <div>
-              <h2>Lead Board Summary</h2>
-              <p>Pipeline volume by current stage</p>
-            </div>
-          </div>
-          {pipeline.length > 0 ? (
-            <div className="pipeline-list">
-              {LEAD_STAGES.map((stage) => {
-                const row = pipeline.find((p: any) => p.stage === stage.key)
-                const count = Number(row?.count || 0)
-                const percentage = pipelineTotal ? (count / pipelineTotal) * 100 : 0
-                return (
-                  <div className="pipeline-row" key={stage.key}>
-                    <div className="pipeline-row-head">
-                      <span><i style={{ backgroundColor: stage.color }} />{stage.label}</span>
-                      <strong>{count.toLocaleString()} <small>{percentage.toFixed(percentage > 0 && percentage < 1 ? 1 : 0)}%</small></strong>
-                    </div>
-                    <div className="pipeline-track"><span style={{ width: `${Math.max(percentage, count ? 2 : 0)}%`, backgroundColor: stage.color }} /></div>
-                  </div>
-                )
-              })}
-              <div className="pipeline-total"><span>Total pipeline</span><strong>{pipelineTotal.toLocaleString()} leads</strong></div>
-            </div>
-          ) : (
-            <p style={{ color: '#9CA3AF', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No lead data yet</p>
-          )}
-        </article>
+      {/* ── Row 2: customer split ── */}
+      <section className="dsb-grid cols-7">
+        {isLoading || !C || !P ? Array.from({ length: 7 }).map((_, i) => <article key={i} className="dsb-card"><Skeleton height={110} /></article>) : <>
+          <StatCard icon={UserPlus} title="Customers" count={C.total} prev={C.total - C.new + C.new_prev} prevLabel={prevLabel}
+            rows={[{ label: 'New Customers', count: C.new }, { label: 'Existing Customers', count: C.existing }]} />
+          <StatCard icon={CircleDollarSign} tone="green" title="Payment Received" count={P.payments.count} unit="Orders" value={P.payments.value} prev={P.payments.prev} prevLabel={prevLabel} rows={custRows(C.payments, true)} />
+          <StatCard icon={ShoppingCart} tone="orange" title="Sales Orders Issued" count={P.sales_orders.count} unit="Orders" value={P.sales_orders.value} prev={P.sales_orders.prev} prevLabel={prevLabel} rows={custRows(C.sales_orders)} />
+          <StatCard icon={ClipboardList} tone="red" title="PO Issued" count={P.po.count} unit="Orders" prev={P.po.prev} prevLabel={prevLabel} rows={custRows(C.po)} pending={P.po.pending} />
+          <StatCard icon={Factory} tone="violet" title="In Production" count={P.production.count} unit="Orders" prev={P.production.prev} prevLabel={prevLabel} rows={custRows(C.production)} pending={P.production.pending} />
+          <StatCard icon={Truck} title="Shipped" count={P.shipped.count} unit="Orders" prev={P.shipped.prev} prevLabel={prevLabel} rows={custRows(C.shipped)} pending={P.shipped.pending} />
+          <StatCard icon={PackageCheck} tone="green" title="Delivered" count={P.delivered.count} unit="Orders" prev={P.delivered.prev} prevLabel={prevLabel} rows={custRows(C.delivered)} pending={P.delivered.pending} />
+        </>}
+      </section>
 
-        <article className="panel chart-panel">
-          <div className="panel-header">
-            <div>
-              <h2>Order Production Status</h2>
-              <p>All-time order status mix</p>
-            </div>
-          </div>
-          {donutData.length > 0 ? (
-            <div className="donut-layout">
-              <div className="donut-chart-wrap">
-                <ResponsiveContainer width="100%" height={230}>
-                  <PieChart>
-                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={66} outerRadius={92} paddingAngle={3} stroke="none">
-                      {donutData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="donut-center"><strong>{orderTotal}</strong><span>Total orders</span></div>
-              </div>
-              <div className="donut-legend">
-                {donutData.map((s) => (
-                  <div key={s.name}>
-                    <span>
-                      <i style={{ backgroundColor: s.color }} />
-                      {s.name}
-                    </span>
-                    <strong>{s.value}</strong>
-                  </div>
+      {/* ── Row 3: charts ── */}
+      <section className="dsb-charts">
+        {isLoading || !data || !P ? Array.from({ length: 4 }).map((_, i) => <section key={i} className="dsb-panel"><Skeleton height={200} /></section>) : <>
+          <DonutPanel title="Sales by Product Type" data={data.sales_by_type} colors={DONUT_TYPE} />
+          <DonutPanel title="Sales by Customers" data={data.sales_by_customer} colors={DONUT_CUST} />
+          <FunnelPanel stages={[
+            { label: 'Payment Received', count: P.payments.count },
+            { label: 'Sales Orders Issued', count: P.sales_orders.count },
+            { label: 'PO Issued', count: P.po.count },
+            { label: 'In Production', count: P.production.count },
+            { label: 'Shipped', count: P.shipped.count },
+            { label: 'Delivered', count: P.delivered.count },
+          ]} />
+          <TrendPanel trend={data.trend} />
+        </>}
+      </section>
+
+      {/* ── Row 4: recent tables ── */}
+      <section className="dsb-tables">
+        {isLoading || !data ? Array.from({ length: 3 }).map((_, i) => <section key={i} className="dsb-panel"><Skeleton height={220} /></section>) : <>
+          <section className="dsb-panel">
+            <h3>Recent Payments <Link to="/invoices" className="dsb-viewall">View All</Link></h3>
+            <table className="dsb-table">
+              <thead><tr><th>Date</th><th>Customer</th><th>Amount</th><th>Method</th><th>Invoice</th></tr></thead>
+              <tbody>
+                {data.recent.payments.length === 0 && <tr><td colSpan={5} className="dsb-empty">No payments recorded yet.</td></tr>}
+                {data.recent.payments.map((r, i) => (
+                  <tr key={`${r.invoice_id}-${i}`}>
+                    <td>{fmtDay(String(r.paid_at).slice(0, 10))}</td>
+                    <td className="dsb-strong">{r.customer}</td>
+                    <td className="dsb-strong">{money(r.amount)}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{(r.method || '—').replace(/_/g, ' ')}</td>
+                    <td><Link className="dsb-link" to={`/invoices/${r.invoice_id}`}>{r.invoice_number}</Link></td>
+                  </tr>
                 ))}
-              </div>
-            </div>
-          ) : (
-            <p style={{ color: '#9CA3AF', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No orders yet</p>
-          )}
-        </article>
+              </tbody>
+            </table>
+            <footer className="dsb-panel-foot"><span>Total Payments (Period)</span><b>{data.recent.payments_total.count} Orders · {money(data.recent.payments_total.value)}</b></footer>
+          </section>
+
+          <section className="dsb-panel">
+            <h3>Recent PO Issued <Link to="/purchase-orders" className="dsb-viewall">View All</Link></h3>
+            <table className="dsb-table">
+              <thead><tr><th>Date</th><th>PO #</th><th>Source Order</th><th>Vendor</th><th>Status</th></tr></thead>
+              <tbody>
+                {data.recent.pos.length === 0 && <tr><td colSpan={5} className="dsb-empty">No purchase orders yet.</td></tr>}
+                {data.recent.pos.map(r => (
+                  <tr key={r.id}>
+                    <td>{fmtDay(String(r.po_date).slice(0, 10))}</td>
+                    <td><Link className="dsb-link" to={`/purchase-orders/${r.id}`}>{r.po_number}</Link></td>
+                    <td>{r.source_order || '—'}</td>
+                    <td>{r.vendor || '—'}</td>
+                    <td><StatusPill value={r.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <footer className="dsb-panel-foot"><span>Total PO Issued (Period)</span><b>{data.recent.pos_total} Orders</b></footer>
+          </section>
+
+          <section className="dsb-panel">
+            <h3>Recent Shipments <Link to="/shipments" className="dsb-viewall">View All</Link></h3>
+            <table className="dsb-table">
+              <thead><tr><th>Ship Date</th><th>Tracking ID</th><th>Customer</th><th>Carrier</th><th>Status</th></tr></thead>
+              <tbody>
+                {data.recent.shipments.length === 0 && <tr><td colSpan={5} className="dsb-empty">No shipments yet.</td></tr>}
+                {data.recent.shipments.map(r => (
+                  <tr key={r.id}>
+                    <td>{fmtDay(String(r.ship_date).slice(0, 10))}</td>
+                    <td className="dsb-mono">{r.tracking_number || '—'}</td>
+                    <td className="dsb-strong">{r.customer}</td>
+                    <td>{r.carrier || '—'}</td>
+                    <td><StatusPill value={r.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <footer className="dsb-panel-foot"><span>Total Shipments (Period)</span><b>{data.recent.shipments_total} Shipments</b></footer>
+          </section>
+        </>}
       </section>
 
-      <section className="dashboard-two-column dashboard-bottom-grid">
-        <article className="panel activity-panel">
-          <div className="panel-header">
-            <div>
-              <h2>Recent Activity</h2>
-              <p>Latest updates across leads, invoices, and orders</p>
-            </div>
-            <Link className="panel-link" to="/quotes">View records <ArrowRight size={14} /></Link>
-          </div>
-          <div className="activity-feed">
-            {recentActivity.length === 0 && (
-              <p style={{ color: '#9CA3AF', fontSize: 13, padding: '8px 0' }}>No recent activity</p>
-            )}
-            {visibleActivity.map((item: any) => (
-              <div className="activity-item" key={item.id}>
-                <span className="activity-dot" />
-                <div className="activity-copy">
-                  <p><span className="activity-type">{item.entity_type}</span>{item.action}</p>
-                  <small><Clock3 size={12} />{new Date(item.created_at).toLocaleString()} {item.user_name ? `· ${item.user_name}` : ''}</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel quick-stats-panel">
-          <div className="panel-header">
-            <div>
-              <h2>Quick Stats</h2>
-              <p>Order status and top customer accounts</p>
-            </div>
-          </div>
-          <div className="quick-stats-grid">
-            <div className="quick-stat-section">
-              <h3>Orders by Status</h3>
-              <table>
-                <tbody>
-                  {ordersByStatus.length === 0 && (
-                    <tr><td colSpan={2} style={{ color: '#9CA3AF', fontSize: 13 }}>No orders this week</td></tr>
-                  )}
-                  {ordersByStatus.map((row: any) => (
-                    <tr key={row.status}>
-                      <td>{row.status}</td>
-                      <td>{row.count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="quick-stat-section">
-              <h3>Top Customers by Revenue</h3>
-              <div className="customer-ranking">
-                {topSuppliers.length === 0 && <p className="empty-copy">No data yet</p>}
-                {topSuppliers.map((row: any, index: number) => {
-                  const max = Number(topSuppliers[0]?.revenue || 1)
-                  return (
-                    <div className="customer-rank" key={row.supplier}>
-                      <span className="rank-number">{index + 1}</span>
-                      <div><p><strong>{row.supplier}</strong><b>${Number(row.revenue).toLocaleString()}</b></p><div className="rank-track"><span style={{ width: `${Number(row.revenue) / max * 100}%` }} /></div></div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </article>
-      </section>
+      <p className="dsb-note">All dates and times are shown in your local time zone.</p>
     </div>
   )
 }

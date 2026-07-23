@@ -16,5 +16,11 @@ async function getTopSuppliers(req, res, next) {
 async function getRecentActivity(req, res, next) {
   try { return success(res, await service.getRecentActivity()) } catch (err) { next(err) }
 }
+async function getOverview(req, res, next) {
+  try {
+    const { date_from, date_to } = req.query
+    return success(res, await service.getOverview({ date_from, date_to }))
+  } catch (err) { next(err) }
+}
 
-module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopSuppliers, getRecentActivity }
+module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopSuppliers, getRecentActivity, getOverview }

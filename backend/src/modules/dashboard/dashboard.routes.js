@@ -5,6 +5,7 @@ const controller = require('./dashboard.controller')
 const router = Router()
 router.use(verifyToken)
 
+router.get('/overview', controller.getOverview)
 router.get('/stats', controller.getStats)
 router.get('/lead-pipeline', controller.getLeadPipeline)
 router.get('/orders-by-status', controller.getOrdersByStatus)
