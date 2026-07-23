@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
+import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
@@ -176,7 +177,9 @@ const CSS = `
     .no-print { display: none !important; }
     .page { padding: 14px; }
     @page { margin: 7mm; size: A4 landscape; }
+    a.art-link, a.art-link:visited { text-decoration: none; color: inherit; border: none; display: block; }
   }
+  a.art-link { cursor: zoom-in; }
 
   /* ── Header ── */
   .hdr {
@@ -437,7 +440,7 @@ export function InvoicePrintPage() {
   )
 
   return (
-    <>
+    <ArtworkLightboxProvider>
       <style>{CSS}</style>
       <button className="back-btn no-print" onClick={() => navigate(-1)}>
         ← Back
@@ -668,14 +671,10 @@ export function InvoicePrintPage() {
                       <td style={{ fontWeight: 600 }}>{item.artwork_count || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{item.qty}</td>
                       <td>
-                        {frontUrl
-                          ? <img src={frontUrl} alt="front" className="art-thumb" />
-                          : <div className="art-empty">🖼</div>}
+                        <ArtworkThumb src={frontUrl} alt="front" label={`${item.description || `Gangsheet ${idx + 1}`} — Front`} className="art-thumb" fallback={<div className="art-empty">🖼</div>} />
                       </td>
                       <td>
-                        {backUrl
-                          ? <img src={backUrl} alt="back" className="art-thumb" />
-                          : <div className="art-empty">—</div>}
+                        <ArtworkThumb src={backUrl} alt="back" label={`${item.description || `Gangsheet ${idx + 1}`} — Back`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
                       <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
@@ -717,9 +716,7 @@ export function InvoicePrintPage() {
                     )}
                     <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
                     <td>
-                      {frontUrl
-                        ? <img src={frontUrl} alt="front" className="art-thumb" />
-                        : <div className="art-empty">🖼</div>}
+                      <ArtworkThumb src={frontUrl} alt="front" label={r.artNo} className="art-thumb" fallback={<div className="art-empty">🖼</div>} />
                     </td>
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600, color: '#111827' }}>{r.item.qty}</td>
@@ -786,14 +783,10 @@ export function InvoicePrintPage() {
                       </td>
                       <td style={{ fontSize: 10, lineHeight: 1.6, textAlign: 'left' }}>{item.sizes || '—'}</td>
                       <td>
-                        {frontUrl
-                          ? <img src={frontUrl} alt="front" className="art-thumb" />
-                          : <div className="art-empty">—</div>}
+                        <ArtworkThumb src={frontUrl} alt="front" label={`${art?.artwork_no || item.description} — Front`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
                       <td>
-                        {backUrl
-                          ? <img src={backUrl} alt="back" className="art-thumb" />
-                          : <div className="art-empty">—</div>}
+                        <ArtworkThumb src={backUrl} alt="back" label={`${artBack?.artwork_no || item.description} — Back`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
                       <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
@@ -928,6 +921,7 @@ export function InvoicePrintPage() {
         </div>
 
       </div>
-    </>
+      <ArtworkLightboxOverlay />
+    </ArtworkLightboxProvider>
   )
 }

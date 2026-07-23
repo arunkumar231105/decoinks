@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Artwork – Decoinks</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      display: flex; align-items: center; justify-content: center;
+      padding: 64px 40px 78px; background: #080b12;
+      font-family: Inter, Arial, sans-serif;
+    }
+    #artwork {
+      display: block; max-width: 100%; max-height: 100%;
+      width: auto; height: auto; object-fit: contain;
+    }
+    #close {
+      position: fixed; top: 18px; right: 20px; z-index: 2;
+      width: 48px; height: 48px; border: 1px solid rgba(255,255,255,.3);
+      border-radius: 50%; background: rgba(255,255,255,.18); color: #fff;
+      font-size: 34px; line-height: 1; cursor: pointer;
+    }
+    #close:hover { background: rgba(255,255,255,.28); }
+    #caption {
+      position: fixed; bottom: 22px; left: 64px; right: 64px;
+      color: #fff; font-size: 14px; font-weight: 500; text-align: center;
+    }
+    #error { display: none; color: #fff; font-size: 18px; text-align: center; }
+  </style>
+</head>
+<body>
+  <button id="close" type="button" aria-label="Close artwork and return to document" title="Close and return to document">×</button>
+  <img id="artwork" alt="Artwork">
+  <div id="error">Artwork link is unavailable.</div>
+  <div id="caption"></div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var src = params.get('src');
+      var label = params.get('label') || 'Artwork';
+      var image = document.getElementById('artwork');
+      var error = document.getElementById('error');
+
+      try {
+        var url = new URL(src);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Invalid URL');
+        image.src = url.href;
+        image.alt = label;
+      } catch (_) {
+        image.style.display = 'none';
+        error.style.display = 'block';
+      }
+
+      document.title = label + ' – Decoinks';
+      document.getElementById('caption').textContent = label;
+      document.getElementById('close').addEventListener('click', function () {
+        window.close();
+        window.setTimeout(function () {
+          if (window.history.length > 1) window.history.back();
+        }, 150);
+      });
+    }());
+  </script>
+</body>
+</html>
