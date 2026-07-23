@@ -137,14 +137,15 @@ const createSchema = z.object({
   items: z.array(z.object({}).passthrough()).optional().default([]),
 }).superRefine(validateItems)
 
-// On update, all header fields are optional; items optional but if present must be non-empty.
-// order_type cannot change — not included so it can't be overwritten.
+// The client includes order_type so item rows can be validated correctly.
+// The service still treats it as immutable and always uses the stored type.
 const updateSchema = z.object({
+  order_type: z.enum(['apparel', 'gangsheet', 'dtf']).optional(),
   ...Object.fromEntries(
     Object.entries(headerFields).map(([k, v]) => [k, v.optional()])
   ),
   items: z.array(z.object({}).passthrough()).min(1).optional(),
-}).strict()
+}).strict().superRefine(validateItems)
 
 const statusSchema = z.object({
   status: z.enum(['Draft', 'Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled']),

@@ -528,7 +528,12 @@ export function NewOrderPage() {
     },
     onError: (err: any) => {
       const data = err?.response?.data
-      toast.error(data?.message ?? 'Failed to update order')
+      if (data?.details?.length) {
+        const first = data.details[0]
+        toast.error(`${first.field ? first.field + ': ' : ''}${first.message}`)
+      } else {
+        toast.error(data?.message ?? 'Failed to update order')
+      }
     },
   })
 
