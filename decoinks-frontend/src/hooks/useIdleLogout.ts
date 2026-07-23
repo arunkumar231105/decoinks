@@ -4,7 +4,8 @@ import { useAuthStore } from '../store/authStore'
 import toast from '../utils/toast'
 
 // Auto-logout after this much inactivity.
-const IDLE_MS = 5 * 60 * 1000 // 5 minutes
+const IDLE_MINUTES = 20
+const IDLE_MS = IDLE_MINUTES * 60 * 1000
 
 /**
  * Logs the user out after IDLE_MS of no interaction (mouse, keyboard, scroll,
@@ -21,7 +22,7 @@ export function useIdleLogout(enabled: boolean) {
 
     const expire = async () => {
       await logout()
-      toast.error('Logged out after 5 minutes of inactivity. Please log in again.')
+      toast.error(`Logged out after ${IDLE_MINUTES} minutes of inactivity. Please log in again.`)
       navigate('/login', { replace: true })
     }
 

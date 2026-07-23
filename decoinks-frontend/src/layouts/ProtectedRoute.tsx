@@ -9,7 +9,7 @@ export function ProtectedRoute() {
   const location = useLocation()
   const navigate  = useNavigate()
 
-  // Auto-logout after 5 minutes of inactivity (only while logged in)
+  // Auto-logout after the configured inactivity period (only while logged in)
   useIdleLogout(isAuthenticated)
 
   // Silent refresh on mount - calls POST /auth/refresh with the httpOnly cookie
