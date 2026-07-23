@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
+import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -184,7 +185,9 @@ const CSS = `
     .no-print { display: none !important; }
     .page { max-width: 100%; box-shadow: none; }
     @page { margin: 8mm; size: A4 portrait; }
+    a.art-link, a.art-link:visited { text-decoration: none; color: inherit; border: none; display: block; }
   }
+  a.art-link { cursor: zoom-in; }
 
   /* ── Print button ── */
   .print-btn {
@@ -581,7 +584,7 @@ export function PurchaseOrderPrintPage() {
   }
 
   return (
-    <>
+    <ArtworkLightboxProvider>
       <style>{CSS}</style>
 
       <button className="back-btn no-print" onClick={() => navigate(-1)}>
@@ -1022,23 +1025,19 @@ export function PurchaseOrderPrintPage() {
                       <td key={s} style={{ textAlign: 'center', fontWeight: sizes[s] ? 600 : 400, color: sizes[s] ? '#111827' : '#d1d5db' }}>{sizes[s]}</td>
                     ))}
                     <td style={{ textAlign: 'center' }}>
-                      {itemFrontArt(it)
-                        ? <img src={itemFrontArt(it)!} alt="front artwork" className="art-thumb" />
-                        : <div className="art-empty-thumb">—</div>}
+                      <ArtworkThumb src={itemFrontArt(it)} alt="front artwork" label={`${it.artwork_no || it.item_name} — Front`} className="art-thumb" fallback={<div className="art-empty-thumb">—</div>} />
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {it.back_image
-                        ? <img src={it.back_image} alt="back artwork" className="art-thumb" />
-                        : <div className="art-empty-thumb" style={{ color: '#d1d5db' }}>—</div>}
+                      <ArtworkThumb src={it.back_image} alt="back artwork" label={`${it.artwork_no || it.item_name} — Back`} className="art-thumb" fallback={<div className="art-empty-thumb" style={{ color: '#d1d5db' }}>—</div>} />
                     </td>
                     {hasFrontMockup && (
                       <td style={{ textAlign: 'center' }}>
-                        {it.front_mockup ? <img src={it.front_mockup} alt="front mockup" className="art-thumb" /> : <div className="art-empty-thumb">—</div>}
+                        <ArtworkThumb src={it.front_mockup} alt="front mockup" label={`${it.artwork_no || it.item_name} — Front Mockup`} className="art-thumb" fallback={<div className="art-empty-thumb">—</div>} />
                       </td>
                     )}
                     {hasBackMockup && (
                       <td style={{ textAlign: 'center' }}>
-                        {it.back_mockup ? <img src={it.back_mockup} alt="back mockup" className="art-thumb" /> : <div className="art-empty-thumb">—</div>}
+                        <ArtworkThumb src={it.back_mockup} alt="back mockup" label={`${it.artwork_no || it.item_name} — Back Mockup`} className="art-thumb" fallback={<div className="art-empty-thumb">—</div>} />
                       </td>
                     )}
                   </tr>
@@ -1066,9 +1065,13 @@ export function PurchaseOrderPrintPage() {
               const canPreview = image && art.file_type !== 'pdf'
               return (
                 <div className="art-card" key={art.id}>
-                  {canPreview
-                    ? <img src={image!} alt={art.artwork_no} className="art-card-thumb" />
-                    : <div className="art-card-thumb art-card-empty">🖼</div>}
+                  <ArtworkThumb
+                    src={canPreview ? image : null}
+                    alt={art.artwork_no}
+                    label={`${art.artwork_no} — ${art.name}`}
+                    className="art-card-thumb"
+                    fallback={<div className="art-card-thumb art-card-empty">🖼</div>}
+                  />
                   <div>
                     <div className="art-card-no">{index + 1}. {art.artwork_no}</div>
                     <div className="art-card-meta">
@@ -1156,6 +1159,7 @@ export function PurchaseOrderPrintPage() {
         )}
 
       </div>
-    </>
+      <ArtworkLightboxOverlay />
+    </ArtworkLightboxProvider>
   )
 }

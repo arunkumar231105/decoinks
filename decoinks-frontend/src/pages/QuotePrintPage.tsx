@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
+import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
@@ -67,7 +68,9 @@ const CSS = `
     .no-print { display: none !important; }
     .page { padding: 18px; max-width: 100%; }
     @page { margin: 8mm; size: A4; }
+    a.art-link, a.art-link:visited { text-decoration: none; color: inherit; border: none; display: block; }
   }
+  a.art-link { cursor: zoom-in; }
 
   /* ── Print button ── */
   .print-btn {
@@ -367,7 +370,7 @@ export function QuotePrintPage() {
   ].filter(Boolean)
 
   return (
-    <>
+    <ArtworkLightboxProvider>
       <style>{CSS}</style>
 
       <button className="no-print back-btn" onClick={() => navigate(-1)}>
@@ -553,7 +556,7 @@ export function QuotePrintPage() {
                   <div key={aw.id} className="aw-card">
                     <div className="aw-img-wrap" style={{ height: imgHeight }}>
                       {aw.file_url && aw.file_type !== 'pdf'
-                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
+                        ? <ArtworkThumb src={aw.file_url} alt={aw.name} label={`${aw.artwork_no} — ${aw.name}`} className="aw-img" style={{ height: imgHeight }} />
                         : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
                       }
                     </div>
@@ -641,7 +644,8 @@ export function QuotePrintPage() {
 
         </div>
       </div>
-    </>
+      <ArtworkLightboxOverlay />
+    </ArtworkLightboxProvider>
   )
 }
 
@@ -715,14 +719,10 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
               </td>
               <td style={{ fontSize: 11, lineHeight: 1.6 }}>{item.sizes || '—'}</td>
               <td>
-                {frontUrl
-                  ? <img src={frontUrl} alt="front artwork" className="art-img" />
-                  : <div className="art-empty">—</div>}
+                <ArtworkThumb src={frontUrl} alt="front artwork" label={`${item.artwork_no || item.description} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} />
               </td>
               <td>
-                {backUrl
-                  ? <img src={backUrl} alt="back artwork" className="art-img" />
-                  : <div className="art-empty">—</div>}
+                <ArtworkThumb src={backUrl} alt="back artwork" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
               </td>
               <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
               <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
@@ -779,9 +779,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
             </td>}
             <td><span className="aw-no">{row.artNo}</span></td>
             <td>
-              {row.image
-                ? <img src={row.image} alt={row.artNo} className="art-img" />
-                : <div className="art-empty">—</div>}
+              <ArtworkThumb src={row.image} alt={row.artNo} label={row.artNo} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>
             <td style={{ fontWeight: 600, fontSize: 11 }}>{row.size}</td>
             <td style={{ fontWeight: 600 }}>{row.item.qty} pcs</td>
@@ -819,14 +817,10 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
             <td>{item.artwork_count || 1}</td>
             <td style={{ fontWeight: 600 }}>{item.qty}</td>
             <td>
-              {item.front_image
-                ? <img src={item.front_image} alt="front" className="art-img" />
-                : <div className="art-empty">—</div>}
+              <ArtworkThumb src={item.front_image} alt="front" label={`${item.artwork_no || item.description} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>
             <td>
-              {item.back_image
-                ? <img src={item.back_image} alt="back" className="art-img" />
-                : <div className="art-empty">—</div>}
+              <ArtworkThumb src={item.back_image} alt="back" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>
             <td>$ {item.unit_price.toFixed(2)}</td>
             <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>

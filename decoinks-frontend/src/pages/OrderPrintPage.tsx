@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
+import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Order {
@@ -165,7 +166,9 @@ const CSS = `
     .no-print { display: none !important; }
     .page { padding: 12px; }
     @page { margin: 6mm; size: A4 landscape; }
+    a.art-link, a.art-link:visited { text-decoration: none; color: inherit; border: none; display: block; }
   }
+  a.art-link { cursor: zoom-in; }
 
   /* ── Header ── */
   .hdr {
@@ -413,7 +416,7 @@ export function OrderPrintPage() {
   })
 
   return (
-    <>
+    <ArtworkLightboxProvider>
       <style>{CSS}</style>
       <button className="back-btn no-print" onClick={() => navigate(-1)}>
         ← Back
@@ -638,10 +641,10 @@ export function OrderPrintPage() {
                       {SIZE_COLS.map(s => (
                         <td key={s} className={sizes[s] ? 'sz-num' : 'sz-zero'}>{sizes[s]}</td>
                       ))}
-                      <td>{item.front_image ? <img src={item.front_image} alt="front artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
-                      <td>{item.back_image ? <img src={item.back_image} alt="back artwork" className="art-img" /> : <div className="art-empty">—</div>}</td>
-                      {hasFrontMockup && <td>{item.front_mockup ? <img src={item.front_mockup} alt="front mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>}
-                      {hasBackMockup && <td>{item.back_mockup ? <img src={item.back_mockup} alt="back mockup" className="art-img" /> : <div className="art-empty">—</div>}</td>}
+                      <td><ArtworkThumb src={item.front_image} alt="front artwork" label={`${item.artwork_no || item.item} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>
+                      <td><ArtworkThumb src={item.back_image} alt="back artwork" label={`${item.artwork_no || item.item} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>
+                      {hasFrontMockup && <td><ArtworkThumb src={item.front_mockup} alt="front mockup" label={`${item.artwork_no || item.item} — Front Mockup`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>}
+                      {hasBackMockup && <td><ArtworkThumb src={item.back_mockup} alt="back mockup" label={`${item.artwork_no || item.item} — Back Mockup`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>}
                       <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     </tr>
@@ -677,9 +680,7 @@ export function OrderPrintPage() {
                     <td style={{ fontWeight: 500 }}>{r.height}</td>
                     <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
                     <td>
-                      {(r.item.front_image ?? r.item.artwork_image)
-                        ? <img src={r.item.front_image ?? r.item.artwork_image!} alt={r.artNo} className="art-img" />
-                        : <div className="art-empty">🖼</div>}
+                      <ArtworkThumb src={r.item.front_image ?? r.item.artwork_image} alt={r.artNo} label={r.artNo} className="art-img" fallback={<div className="art-empty">🖼</div>} />
                     </td>
                     <td style={{ fontWeight: 700 }}>{fmt(r.item.unit_price)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
@@ -716,14 +717,10 @@ export function OrderPrintPage() {
                     <td>{fmt(item.price_per_sheet)}</td>
                     <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     <td>
-                      {item.front_image
-                        ? <img src={item.front_image} alt="front" className="art-img" />
-                        : <div className="art-empty">—</div>}
+                      <ArtworkThumb src={item.front_image} alt="front" label={`Gangsheet ${idx + 1} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} />
                     </td>
                     <td>
-                      {item.back_image
-                        ? <img src={item.back_image} alt="back" className="art-img" />
-                        : <div className="art-empty" style={{ color: '#d1d5db' }}>—</div>}
+                      <ArtworkThumb src={item.back_image} alt="back" label={`Gangsheet ${idx + 1} — Back`} className="art-img" fallback={<div className="art-empty" style={{ color: '#d1d5db' }}>—</div>} />
                     </td>
                   </tr>
                 ))}
@@ -797,7 +794,7 @@ export function OrderPrintPage() {
                   <div key={aw.id} className="aw-card">
                     <div className="aw-img-wrap" style={{ height: imgHeight }}>
                       {aw.file_url && aw.file_type !== 'pdf'
-                        ? <img src={aw.file_url} alt={aw.name} className="aw-img" style={{ height: imgHeight }} />
+                        ? <ArtworkThumb src={aw.file_url} alt={aw.name} label={`${aw.artwork_no} — ${aw.name}`} className="aw-img" style={{ height: imgHeight }} />
                         : <div className="aw-no-img" style={{ height: imgHeight }}>No Image</div>
                       }
                     </div>
@@ -879,6 +876,7 @@ export function OrderPrintPage() {
         </div>
 
       </div>
-    </>
+      <ArtworkLightboxOverlay />
+    </ArtworkLightboxProvider>
   )
 }
