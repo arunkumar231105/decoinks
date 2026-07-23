@@ -228,10 +228,14 @@ async function getOverview({ date_from, date_to } = {}) {
         SELECT pay.invoice_id AS inv_id, pay.amount,
           ${CUR('pay.paid_at')} AS cur, ${PREV('pay.paid_at')} AS prev,
           COALESCE(i.order_type,'') IN ('dtf','gangsheet') AS dtfish,
-          COALESCE(${CUR('c.created_at')}, FALSE) AS newcust
+          COALESCE(${CUR('fo.first_order')}, FALSE) AS newcust
         FROM payments pay
         JOIN invoices i ON i.id = pay.invoice_id AND i.status::text <> 'Void'
-        LEFT JOIN customers c ON c.id = i.customer_id
+        LEFT JOIN LATERAL (
+          SELECT MIN(o2.order_date) AS first_order FROM orders o2
+          WHERE o2.customer_id = i.customer_id AND o2.deleted_at IS NULL
+            AND o2.status::text NOT IN ('Draft','Cancelled')
+        ) fo ON i.customer_id IS NOT NULL
       ) x`, params),
 
     // Orders: issued counts/values, reached-stage funnel, pendings, splits
@@ -267,6 +271,7 @@ async function getOverview({ date_from, date_to } = {}) {
         COUNT(*) FILTER (WHERE cur AND st_del AND newcust)::int AS de_ncust,
         COUNT(*) FILTER (WHERE cur AND st_del AND NOT newcust)::int AS de_ecust,
         COUNT(*) FILTER (WHERE cur AND status = 'Draft')::int AS so_pending,
+        COUNT(*) FILTER (WHERE cur AND issued AND has_po)::int AS po_orders_cnt,
         COUNT(*) FILTER (WHERE cur AND issued AND NOT has_po)::int AS po_pending,
         COUNT(*) FILTER (WHERE cur AND status = 'Confirmed')::int AS pr_pending,
         COUNT(*) FILTER (WHERE cur AND status IN ('In Production','Ready to Ship'))::int AS sh_pending,
@@ -278,13 +283,20 @@ async function getOverview({ date_from, date_to } = {}) {
           o.status::text IN ('In Production','Ready to Ship','Shipped','Delivered') AS st_prod,
           o.status::text IN ('Shipped','Delivered') AS st_ship,
           (o.status::text = 'Delivered') AS st_del,
-          COALESCE(${CUR('c.created_at')}, FALSE) AS newcust,
+          -- "New customer" = this customer's FIRST eligible order falls inside
+          -- the period (not the customer record's creation date, which is
+          -- meaningless for imported customer books).
+          COALESCE(${CUR('fo.first_order')}, FALSE) AS newcust,
           ${CUR('o.order_date')} AS cur, ${PREV('o.order_date')} AS prev,
           EXISTS (SELECT 1 FROM po_orders poo
                   JOIN purchase_orders po2 ON po2.id = poo.po_id AND po2.deleted_at IS NULL
                   WHERE poo.order_id = o.id) AS has_po
         FROM orders o
-        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN LATERAL (
+          SELECT MIN(o2.order_date) AS first_order FROM orders o2
+          WHERE o2.customer_id = o.customer_id AND o2.deleted_at IS NULL
+            AND o2.status::text NOT IN ('Draft','Cancelled')
+        ) fo ON o.customer_id IS NOT NULL
         WHERE o.deleted_at IS NULL AND o.status::text <> 'Cancelled'
       ) x`, params),
 
@@ -371,7 +383,7 @@ async function getOverview({ date_from, date_to } = {}) {
       quotes:      { count: n(Q.cnt),  prev: n(Q.prev),  dtf: n(Q.dtf),  shirt: n(Q.shirt) },
       payments:    { count: n(P2.cnt), prev: n(P2.prev), dtf: n(P2.dtf), shirt: n(P2.shirt), value: n(P2.val), value_prev: n(P2.val_prev) },
       sales_orders:{ count: n(O.so_cnt), prev: n(O.so_prev), dtf: n(O.so_dtf), shirt: n(O.so_shirt), value: n(O.so_val), value_prev: n(O.so_val_prev), pending: n(O.so_pending) },
-      po:          { count: n(PO.cnt), prev: n(PO.prev), dtf: n(PO.dtf), shirt: n(PO.shirt), pending: n(O.po_pending) },
+      po:          { count: n(PO.cnt), prev: n(PO.prev), dtf: n(PO.dtf), shirt: n(PO.shirt), pending: n(O.po_pending), orders_covered: n(O.po_orders_cnt) },
       production:  { count: n(O.pr_cnt), prev: n(O.pr_prev), dtf: n(O.pr_dtf), shirt: n(O.pr_shirt), pending: n(O.pr_pending) },
       shipped:     { count: n(O.sh_cnt), prev: n(O.sh_prev), dtf: n(O.sh_dtf), shirt: n(O.sh_shirt), pending: n(O.sh_pending) },
       delivered:   { count: n(O.de_cnt), prev: n(O.de_prev), dtf: n(O.de_dtf), shirt: n(O.de_shirt), pending: n(O.de_pending) },

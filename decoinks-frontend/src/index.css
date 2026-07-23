@@ -16445,11 +16445,14 @@ body .no-bottom-bar { display: none; }
 .dsb-panel-foot{margin-top:auto;padding-top:9px;border-top:1px solid #eef2f7;display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:#64748b}
 .dsb-panel-foot b{font-size:12.5px;color:#0f172a}
 .dsb-empty{padding:22px 8px;text-align:center;color:#94a3b8;font-size:11.5px}
+/* Funnel: fixed 3-column grid — bar draws inside its own track so long bars
+   can never overflow onto neighbouring panels. */
 .dsb-funnel{display:grid;gap:7px;align-content:start}
-.dsb-funnel-row{position:relative;display:flex;align-items:center;gap:8px;min-height:24px}
-.dsb-funnel-row i{display:block;height:22px;border-radius:4px;flex:0 0 auto;min-width:8%;opacity:.92}
-.dsb-funnel-row span{font-size:10px;color:#475569;font-weight:650;white-space:nowrap}
-.dsb-funnel-row b{margin-left:auto;font-size:11px;color:#0f172a;white-space:nowrap}
+.dsb-funnel-row{display:grid;grid-template-columns:minmax(0,46%) minmax(0,1fr) auto;align-items:center;gap:8px;min-height:24px}
+.dsb-funnel-track{display:block;min-width:0;height:22px;border-radius:4px;background:#f1f5f9;overflow:hidden}
+.dsb-funnel-track i{display:block;height:100%;border-radius:4px;opacity:.92}
+.dsb-funnel-label{font-size:10px;color:#475569;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsb-funnel-row b{font-size:11px;color:#0f172a;white-space:nowrap;text-align:right}
 .dsb-funnel-row b small{color:#94a3b8;font-weight:600}
 .dsb-toggle{display:inline-flex;padding:2px;border:1px solid var(--crm-line);border-radius:7px;background:#f8fafc}
 .dsb-toggle button{min-height:22px;padding:0 9px;border:0;border-radius:5px;background:none;color:#64748b;font-size:10px;font-weight:700;cursor:pointer}

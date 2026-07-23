@@ -13,7 +13,7 @@ import {
 import { api } from '../services/api'
 
 // ── Types (mirror /dashboard/overview) ──────────────────────────────────────
-type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number }
+type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number; orders_covered?: number }
 type Split = { new: number; existing: number; new_value?: number; existing_value?: number }
 type Overview = {
   period: { from: string; to: string; prev_from: string; prev_to: string; days: number }
@@ -149,8 +149,10 @@ function FunnelPanel({ stages }: { stages: Array<{ label: string; count: number 
       <div className="dsb-funnel">
         {stages.map((s, i) => (
           <div key={s.label} className="dsb-funnel-row">
-            <i style={{ width: `${Math.max(8, (s.count / max) * 100)}%`, background: FUNNEL_COLORS[i] }} />
-            <span>{s.label}</span>
+            <span className="dsb-funnel-track">
+              <i style={{ width: `${Math.max(4, (s.count / max) * 100)}%`, background: FUNNEL_COLORS[i] }} />
+            </span>
+            <span className="dsb-funnel-label">{s.label}</span>
             <b>{s.count} <small>({pctOf(s.count, max)})</small></b>
           </div>
         ))}
@@ -175,10 +177,10 @@ function TrendPanel({ trend }: { trend: Overview['trend'] }) {
         </span>
       </h3>
       <ResponsiveContainer width="100%" height={168}>
-        <LineChart data={data} margin={{ top: 6, right: 8, left: -14, bottom: 0 }}>
+        <LineChart data={data} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} minTickGap={22} />
-          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+          <YAxis width={46} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
             tickFormatter={(v: any) => mode === 'revenue' ? `$${Number(v) >= 1000 ? `${Math.round(Number(v) / 100) / 10}K` : v}` : v} />
           <Tooltip formatter={(v: any) => (mode === 'revenue' ? money(v) : v)} />
           <Line type="monotone" dataKey="current" name="This Period" stroke="#2563eb" strokeWidth={2.2} dot={false} />
@@ -285,7 +287,9 @@ export function DashboardPage() {
           <FunnelPanel stages={[
             { label: 'Payment Received', count: P.payments.count },
             { label: 'Sales Orders Issued', count: P.sales_orders.count },
-            { label: 'PO Issued', count: P.po.count },
+            // Orders covered by a PO — comparable with the other order-based
+            // stages (raw PO count can exceed orders: one order → many POs).
+            { label: 'PO Issued', count: P.po.orders_covered ?? P.po.count },
             { label: 'In Production', count: P.production.count },
             { label: 'Shipped', count: P.shipped.count },
             { label: 'Delivered', count: P.delivered.count },
