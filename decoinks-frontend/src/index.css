@@ -14252,16 +14252,15 @@ select.al-input {
 .av-periodbar button:first-child { border-radius: 8px 0 0 8px; }.av-periodbar button:nth-child(4) { border-right: 1px solid #dbe3ef; border-radius: 0 8px 8px 0; }
 .av-periodbar button.is-active { color: #1d4ed8; background: #eff6ff; box-shadow: inset 0 -2px #2563eb; }
 .av-periodbar span { margin-left: 12px; color: #94a3b8; font-size: 12px; }
-.av-metrics { display: grid; grid-template-columns: repeat(7,minmax(145px,1fr)); gap: 10px; }
-.av-metric { min-height: 92px; display: flex; align-items: flex-start; gap: 11px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; box-shadow: 0 5px 18px rgba(15,23,42,.035); }
-.av-metric:nth-child(n+8) { min-height: 72px; grid-column: span 2; align-items: center; }
+.av-metrics { display: grid; grid-template-columns: repeat(5,minmax(145px,1fr)); gap: 10px; }
+.av-metric { min-height: 86px; display: flex; align-items: center; gap: 11px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; box-shadow: 0 3px 12px rgba(15,23,42,.025); }
 .av-metric-icon { width: 40px; height: 40px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; }
 .av-tone-blue { color:#2563eb;background:#eaf2ff }.av-tone-violet{color:#7c3aed;background:#f2eafe}.av-tone-orange{color:#ea580c;background:#fff2e3}.av-tone-green{color:#059669;background:#e6f8ef}.av-tone-slate{color:#475569;background:#eef2f7}
 .av-metric span:last-child { display:flex; flex-direction:column; gap:4px; min-width:0 }.av-metric small{font-size:12px;font-weight:750;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.av-metric strong{font-size:24px;line-height:1;color:#0f172a}
-.av-filter-card { display: grid; grid-template-columns: 1fr 1fr 1fr 1.1fr 1.1fr auto auto; align-items: end; gap: 10px; padding: 13px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
+.av-filter-card { display: grid; grid-template-columns: minmax(180px,1fr) minmax(180px,1fr) minmax(240px,1.35fr) auto auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
 .av-filter-card select, .av-filter-card input { width:100%; height:44px; padding:0 12px; border:1px solid #dbe3ef; border-radius:8px; background:#fff; color:#172554; font-size:14px; outline:0 }
 .av-filter-card label { display:flex; flex-direction:column; gap:5px }.av-filter-card label span{font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
-.av-advanced-filters{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:10px;padding-top:10px;border-top:1px solid #e2e8f0}
+.av-advanced-filters{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;padding-top:10px;border-top:1px solid #e2e8f0}
 .av-tabs { display:flex; align-items:center; gap:3px; overflow-x:auto; border-bottom:1px solid #e2e8f0; }
 .av-tabs button { min-height:42px; display:inline-flex;align-items:center;gap:7px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:#64748b;font-size:13px;font-weight:750;white-space:nowrap;cursor:pointer }
 .av-tabs button.is-active { color:#1d4ed8;border-bottom-color:#2563eb }.av-tabs button span{padding:2px 6px;border-radius:999px;background:#eef2ff;font-size:10px}

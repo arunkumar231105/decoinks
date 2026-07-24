@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Clock3, Download, ExternalLink, FileImage, FolderOpen, Grid3X3, Image as ImageIcon,
-  Images, Layers3, ListChecks, Mail, MessageCircle, MoreHorizontal, PackageCheck, Palette,
+  Download, ExternalLink, FileImage, FolderOpen, Grid3X3, Image as ImageIcon,
+  Images, ListChecks, Mail, MessageCircle, MoreHorizontal, PackageCheck, Palette,
   RefreshCw, Search, Send, ShieldCheck, SlidersHorizontal, Upload, WandSparkles, X,
 } from 'lucide-react'
 import toast from '../utils/toast'
@@ -388,16 +388,18 @@ export function ArtworkLibraryPage() {
   const rangeStart = total ? (page - 1) * limit + 1 : 0
   const rangeEnd = Math.min(total, page * limit)
 
-  const metrics = [
-    { label: 'Total Assets', value: stats.total_assets, icon: <FolderOpen size={20} />, tone: 'blue' },
-    { label: 'Artworks', value: stats.artworks, icon: <Palette size={20} />, tone: 'violet' },
-    { label: 'Total Mockups', value: stats.mockups, icon: <ImageIcon size={20} />, tone: 'blue' },
-    { label: 'Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
+  const metrics = scope === 'post_production' ? [
+    { label: 'Final Assets', value: stats.total_assets, icon: <FolderOpen size={20} />, tone: 'blue' },
+    { label: 'Final Artworks', value: stats.artworks, icon: <Palette size={20} />, tone: 'violet' },
+    { label: 'Final Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
     { label: 'Ready Artwork', value: stats.ready_artwork, icon: <ShieldCheck size={20} />, tone: 'green' },
     { label: 'Ready Gangsheet', value: stats.ready_gangsheet, icon: <PackageCheck size={20} />, tone: 'green' },
-    { label: 'Archived', value: stats.archived, icon: <Archive size={20} />, tone: 'slate' },
-    { label: 'Artwork Pending', value: stats.artwork_pending, icon: <Clock3 size={20} />, tone: 'orange' },
-    { label: 'Gangsheet Pending', value: stats.gangsheet_pending, icon: <Clock3 size={20} />, tone: 'orange' },
+  ] : [
+    { label: 'Total Assets', value: stats.total_assets, icon: <FolderOpen size={20} />, tone: 'blue' },
+    { label: 'Artworks', value: stats.artworks, icon: <Palette size={20} />, tone: 'violet' },
+    { label: 'Mockups', value: stats.mockups, icon: <ImageIcon size={20} />, tone: 'blue' },
+    { label: 'Final / Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
+    { label: 'Production Ready', value: stats.ready_artwork + stats.ready_gangsheet, icon: <ShieldCheck size={20} />, tone: 'green' },
   ]
 
   return (
@@ -429,24 +431,18 @@ export function ArtworkLibraryPage() {
       <div className="av-filter-card">
         <select value={orderType} onChange={event => { setOrderType(event.target.value); setPage(1) }} aria-label="Order type"><option value="">All Order Types</option><option value="apparel">Custom Apparel</option><option value="dtf">DTF Transfers</option><option value="gangsheet">Gangsheet</option></select>
         <select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} aria-label="Status"><option value="">All Statuses</option><option>Source Received</option><option>In Design</option><option>Mockup Ready</option><option>Sent to Customer</option><option>Production Ready</option><option>Pending Approval</option><option>Changes Requested</option><option>Approved</option><option>Archived</option></select>
-        <label><span>Sales Agent</span><input value={agentSearch} onChange={event => { setAgentSearch(event.target.value); setPage(1) }} placeholder="All agents" /></label>
-        <label><span>Designer</span><input value={designerSearch} onChange={event => { setDesignerSearch(event.target.value); setPage(1) }} placeholder="All designers" /></label>
         <label><span>Lead / Customer</span><input value={entitySearch} onChange={event => { setEntitySearch(event.target.value); setPage(1) }} placeholder="All leads & customers" /></label>
-        <label><span>Date from</span><input type="date" value={from} onChange={event => { setFrom(event.target.value); setPage(1) }} /></label>
-        <label><span>Date to</span><input type="date" value={to} onChange={event => { setTo(event.target.value); setPage(1) }} /></label>
         <button className={cn('av-btn', showMore && 'is-active')} onClick={() => setShowMore(!showMore)}><SlidersHorizontal size={17} /> More Filters</button>
         <button className="av-btn" onClick={resetFilters}><RefreshCw size={16} /> Clear Filters</button>
-        {showMore && <div className="av-advanced-filters"><label><span>Type</span><select value={type} onChange={event => { setType(event.target.value as '' | AssetType); setPage(1) }}><option value="">All Types</option>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>QA Approved</span><select value={qa} onChange={event => { setQa(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label><label><span>Production Ready</span><select value={ready} onChange={event => { setReady(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label></div>}
-      </div>
-
-      <div className="av-actionbar">
-        <label><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search artworks…" /></label>
-        <button onClick={resetFilters}><RefreshCw size={16} /> Clear Filters</button>
-        <button disabled title="Design Studio integration is not configured"><ExternalLink size={16} /> Open in Design Studio</button>
-        <button disabled title="AI analysis integration is not configured"><WandSparkles size={16} /> AI Analyze</button>
-        <button disabled={!selected.size || bulkMutation.isPending} onClick={chooseBulkStatus}><ListChecks size={16} /> Bulk Update</button>
-        <button disabled={!selected.size || bulkMutation.isPending} onClick={() => bulkMutation.mutate({ status: 'Archived' })}><Archive size={16} /> Move to Archive</button>
-        <button onClick={() => toast.success('All requested columns are visible')}><Layers3 size={16} /> Columns</button>
+        {showMore && <div className="av-advanced-filters">
+          <label><span>Sales Agent</span><input value={agentSearch} onChange={event => { setAgentSearch(event.target.value); setPage(1) }} placeholder="All agents" /></label>
+          <label><span>Designer</span><input value={designerSearch} onChange={event => { setDesignerSearch(event.target.value); setPage(1) }} placeholder="All designers" /></label>
+          <label><span>Date from</span><input type="date" value={from} onChange={event => { setFrom(event.target.value); setPage(1) }} /></label>
+          <label><span>Date to</span><input type="date" value={to} onChange={event => { setTo(event.target.value); setPage(1) }} /></label>
+          <label><span>Type</span><select value={type} onChange={event => { setType(event.target.value as '' | AssetType); setPage(1) }}><option value="">All Types</option>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label><span>QA Approved</span><select value={qa} onChange={event => { setQa(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+          <label><span>Production Ready</span><select value={ready} onChange={event => { setReady(event.target.value); setPage(1) }}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+        </div>}
       </div>
 
       <div className="av-tabs">{tabs.map(tab => <button key={tab.label} className={type === tab.value ? 'is-active' : ''} onClick={() => { setType(tab.value); setPage(1) }}>{tab.label}{tab.value && <span>{tab.value === 'artwork' ? stats.artworks : tab.value === 'mockup' ? stats.mockups : tab.value === 'gangsheet' ? stats.gangsheets : ''}</span>}</button>)}</div>
