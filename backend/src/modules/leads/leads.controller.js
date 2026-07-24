@@ -17,7 +17,7 @@ async function list(req, res, next) {
 }
 
 async function stats(req, res, next) {
-  try { return success(res, await service.getStats()) } catch (err) { next(err) }
+  try { return success(res, await service.getStats(req.query)) } catch (err) { next(err) }
 }
 
 async function filters(req, res, next) {

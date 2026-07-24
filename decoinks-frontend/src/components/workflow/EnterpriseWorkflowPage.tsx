@@ -232,10 +232,11 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (customer !== 'All' && customerOf(row) !== customer) return false
     if (product !== 'All' && productOf(row) !== product) return false
     if (source !== 'All' && sourceOf(row) !== source) return false
-    const rawDate = pick(row, config.dateKey, 'created_at', 'issue_date', 'order_date')
+    const rawDate = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
     const rowDate = rawDate ? String(rawDate).slice(0, 10) : ''
-    if (periodRangeMemo[0] && rowDate && rowDate < periodRangeMemo[0]) return false
-    if (periodRangeMemo[1] && rowDate && rowDate > periodRangeMemo[1]) return false
+    if ((periodRangeMemo[0] || periodRangeMemo[1]) && !rowDate) return false
+    if (periodRangeMemo[0] && rowDate < periodRangeMemo[0]) return false
+    if (periodRangeMemo[1] && rowDate > periodRangeMemo[1]) return false
     return true
   }), [allRows, search, status, customer, product, source, periodRangeMemo, config.dateKey])
 

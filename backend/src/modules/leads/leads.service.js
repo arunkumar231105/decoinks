@@ -124,7 +124,8 @@ async function list({
   return { rows, total }
 }
 
-async function getStats() {
+async function getStats(filters = {}) {
+  const { where, params } = buildListWhere(filters)
   const [totals, trend] = await Promise.all([
     query(`SELECT
        COUNT(*)::INT AS total_inquiries,
@@ -143,7 +144,7 @@ async function getStats() {
        COALESCE(SUM(l.estimated_value) FILTER (WHERE l.stage <> 'confirmed'), 0)::NUMERIC AS revenue_pipeline,
        COUNT(*) FILTER (WHERE l.created_at >= date_trunc('month', CURRENT_DATE))::INT AS leads_this_month,
        COUNT(*) FILTER (WHERE l.created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month' AND l.created_at < date_trunc('month', CURRENT_DATE))::INT AS leads_last_month
-     FROM leads l WHERE l.deleted_at IS NULL`),
+     FROM leads l ${where}`, params),
     query(`WITH weeks AS (
        SELECT generate_series(date_trunc('week', CURRENT_DATE) - INTERVAL '7 weeks', date_trunc('week', CURRENT_DATE), INTERVAL '1 week') AS week
      ) SELECT TO_CHAR(w.week, 'YYYY-MM-DD') AS week, COUNT(l.id)::INT AS value

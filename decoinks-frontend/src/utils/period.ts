@@ -26,7 +26,8 @@ export function periodRange(period: PeriodKey, from = '', to = ''): [string, str
   if (period === 'custom') return [from, to]
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  if (period === 'week') start.setDate(now.getDate() - 6)
+  // Calendar week starts on Monday (Sunday belongs to the week ending today).
+  if (period === 'week') start.setDate(now.getDate() - ((now.getDay() + 6) % 7))
   else if (period === 'month') start.setDate(1)
   else if (period === 'quarter') { start.setMonth(Math.floor(now.getMonth() / 3) * 3); start.setDate(1) }
   else if (period === 'year') { start.setMonth(0); start.setDate(1) }

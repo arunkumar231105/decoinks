@@ -159,19 +159,31 @@ async function list(options = {}) {
   return { rows, total }
 }
 
-async function getStats() {
+async function getStats(filters = {}) {
+  const { where, params } = buildFilters({
+    ...filters,
+    has_balance: undefined, has_overdue: undefined,
+    min_orders: '', max_orders: '', min_spent: '', max_spent: '',
+  })
+  // KPI cards describe the same customer cohort as the table. Aggregate-only
+  // filters (order/spend thresholds) are intentionally handled by the list;
+  // the quick period presets and ordinary customer filters are applied here.
+  const customerPredicate = where.replace(/^WHERE\s+/i, '')
+  const newCustomersSql = filters.date_from || filters.date_to
+    ? 'COUNT(*)::INT'
+    : "COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE))::INT"
   const [customers, orders, balance] = await Promise.all([
     query(`SELECT
         COUNT(*)::INT AS total_customers,
-        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE))::INT AS new_customers,
+        ${newCustomersSql} AS new_customers,
         COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
                            AND created_at < date_trunc('month', CURRENT_DATE))::INT AS new_customers_prev,
         COUNT(*) FILTER (WHERE status = 'active')::INT AS active_customers
-      FROM customers WHERE deleted_at IS NULL`),
+      FROM customers c WHERE ${customerPredicate}`, params),
     query(`WITH per_customer AS (
         SELECT ord.customer_id, COUNT(*) AS order_count, SUM(ord.total) AS spent
         FROM orders ord
-        JOIN customers c ON c.id = ord.customer_id AND c.deleted_at IS NULL
+        JOIN customers c ON c.id = ord.customer_id AND ${customerPredicate}
         WHERE ${ELIGIBLE_ORDERS}
         GROUP BY ord.customer_id
       )
@@ -179,11 +191,11 @@ async function getStats() {
         COUNT(*) FILTER (WHERE order_count > 1)::INT AS repeat_customers,
         COALESCE(ROUND(SUM(spent) / NULLIF(SUM(order_count), 0), 2), 0) AS avg_order_value,
         COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value
-      FROM per_customer`),
+      FROM per_customer`, params),
     query(`SELECT COALESCE(SUM(inv.balance_due), 0)::NUMERIC(14,2) AS outstanding_balance
       FROM invoices inv
-      JOIN customers c ON c.id = inv.customer_id AND c.deleted_at IS NULL
-      WHERE ${OPEN_INVOICES}`),
+      JOIN customers c ON c.id = inv.customer_id AND ${customerPredicate}
+      WHERE ${OPEN_INVOICES}`, params),
   ])
   return { ...customers.rows[0], ...orders.rows[0], ...balance.rows[0] }
 }
