@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Download, ExternalLink, FileImage, FolderOpen, Grid3X3, Image as ImageIcon,
+  Clock3, Download, ExternalLink, FileImage, FolderOpen, Grid3X3, Image as ImageIcon,
   Images, ListChecks, Mail, MessageCircle, MoreHorizontal, PackageCheck, Palette,
   RefreshCw, Search, Send, ShieldCheck, SlidersHorizontal, Upload, WandSparkles, X,
 } from 'lucide-react'
@@ -388,18 +388,16 @@ export function ArtworkLibraryPage() {
   const rangeStart = total ? (page - 1) * limit + 1 : 0
   const rangeEnd = Math.min(total, page * limit)
 
-  const metrics = scope === 'post_production' ? [
-    { label: 'Final Assets', value: stats.total_assets, icon: <FolderOpen size={20} />, tone: 'blue' },
-    { label: 'Final Artworks', value: stats.artworks, icon: <Palette size={20} />, tone: 'violet' },
-    { label: 'Final Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
-    { label: 'Ready Artwork', value: stats.ready_artwork, icon: <ShieldCheck size={20} />, tone: 'green' },
-    { label: 'Ready Gangsheet', value: stats.ready_gangsheet, icon: <PackageCheck size={20} />, tone: 'green' },
-  ] : [
+  const metrics = [
     { label: 'Total Assets', value: stats.total_assets, icon: <FolderOpen size={20} />, tone: 'blue' },
     { label: 'Artworks', value: stats.artworks, icon: <Palette size={20} />, tone: 'violet' },
-    { label: 'Mockups', value: stats.mockups, icon: <ImageIcon size={20} />, tone: 'blue' },
-    { label: 'Final / Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
-    { label: 'Production Ready', value: stats.ready_artwork + stats.ready_gangsheet, icon: <ShieldCheck size={20} />, tone: 'green' },
+    { label: 'Total Mockups', value: stats.mockups, icon: <ImageIcon size={20} />, tone: 'blue' },
+    { label: 'Gangsheets', value: stats.gangsheets, icon: <Grid3X3 size={20} />, tone: 'orange' },
+    { label: 'Ready Artwork', value: stats.ready_artwork, icon: <ShieldCheck size={20} />, tone: 'green' },
+    { label: 'Ready Gangsheet', value: stats.ready_gangsheet, icon: <PackageCheck size={20} />, tone: 'green' },
+    { label: 'Archived', value: stats.archived, icon: <Archive size={20} />, tone: 'slate' },
+    { label: 'Artwork Pending', value: stats.artwork_pending, icon: <Clock3 size={20} />, tone: 'orange' },
+    { label: 'Gangsheet Pending', value: stats.gangsheet_pending, icon: <Clock3 size={20} />, tone: 'orange' },
   ]
 
   return (
