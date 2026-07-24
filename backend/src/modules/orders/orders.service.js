@@ -167,11 +167,29 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name
+    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
+            COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
+            latest_shipment.status AS tracking_status,
+            COALESCE(o.tracking_number, latest_shipment.tracking_number) AS display_tracking_number
      FROM orders o
      LEFT JOIN suppliers c ON c.id = o.supplier_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u ON u.id = o.assigned_to
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(qty), 0) AS total_qty
+       FROM (
+         SELECT qty FROM order_items_apparel WHERE order_id = o.id
+         UNION ALL SELECT qty FROM order_items_dtf WHERE order_id = o.id
+         UNION ALL SELECT qty FROM order_items_gangsheet WHERE order_id = o.id
+       ) order_quantities
+     ) item_totals ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT status, tracking_number
+       FROM shipments
+       WHERE order_id = o.id
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) latest_shipment ON TRUE
      ${where}
      ORDER BY o.order_date DESC, o.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,

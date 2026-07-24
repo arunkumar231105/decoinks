@@ -16346,6 +16346,7 @@ body .no-bottom-bar { display: none; }
 .ew-star{width:28px;height:28px;border:0;border-radius:6px;background:transparent;color:#94a3b8;display:grid;place-items:center;cursor:pointer}.ew-star:hover{color:#d97706;background:#fff7e8}.ew-star.active{color:#d97706}.ew-star.active svg{fill:#fbbf24}
 @media(max-width:1100px){.ew-kpis{grid-template-columns:repeat(4,1fr)}.ew-filters{grid-template-columns:repeat(3,minmax(145px,1fr))}}
 @media(max-width:760px){.ew-kpis{grid-template-columns:repeat(2,1fr)}.ew-filters{grid-template-columns:1fr 1fr}.ew-actions{flex-wrap:wrap}.ew-actions .ew-search{flex-basis:100%}}
+.ew-kpi strong{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(15px,1.05vw,19px)}
 
 /* Workflow record drawers share the Leads/Customers overlay interaction. */
 .ew-drawer{position:fixed;right:0;top:0;bottom:0;z-index:81;width:min(440px,94vw);max-height:none;flex:none;border:0;border-left:1px solid #dce4ed;border-radius:0;overflow-y:auto;overscroll-behavior:contain;box-shadow:-18px 0 48px rgba(15,23,42,.16)}
