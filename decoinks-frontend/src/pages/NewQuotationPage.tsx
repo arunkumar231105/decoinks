@@ -257,6 +257,8 @@ function QuoteHeader({
   revisionNumber,
   quoteDate,
   setQuoteDate,
+  entryDate,
+  setEntryDate,
   validUntil,
   setValidUntil,
   agent,
@@ -270,6 +272,8 @@ function QuoteHeader({
   revisionNumber: number
   quoteDate: string
   setQuoteDate: (v: string) => void
+  entryDate: string
+  setEntryDate: (v: string) => void
   validUntil: string
   setValidUntil: (v: string) => void
   agent: string
@@ -290,6 +294,7 @@ function QuoteHeader({
       <div className="nq-info-field"><label>Lead #</label>{leadNumber ? <button type="button" className="nq-link-btn" onClick={() => navigate('/leads')}>{leadNumber}</button> : <span className="nq-muted">—</span>}</div>
       <div className="nq-info-field"><label>Customer</label><input className="nq-input nq-input-readonly" value={customerName || 'Not selected'} readOnly /></div>
       <div className="nq-info-field"><label>Quote Date</label><input className="nq-input" type="date" value={quoteDate} onChange={e => { setQuoteDate(e.target.value); setValidUntil(addDays(e.target.value, 7)) }} /></div>
+      <div className="nq-info-field"><label>Entry Date</label><input className="nq-input" type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} /></div>
       <div className="nq-info-field"><label>Valid Until</label><input className="nq-input" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /><span className="nq-validity-hint">7 days validity</span></div>
       <div className="nq-info-field"><label>Source</label><div className="nq-source-select"><MessageCircle size={14} className="nq-source-icon" /><input className="nq-input nq-input-readonly" placeholder="Source" value={source} readOnly /></div></div>
       <div className="nq-info-field">
@@ -941,6 +946,7 @@ export function NewQuotationPage() {
   // ── Base form state ──
   const [status, setStatus] = useState<QuoteStatus>('Draft')
   const [quoteDate, setQuoteDate] = useState(today())
+  const [entryDate, setEntryDate] = useState(today())
   const [validUntil, setValidUntil] = useState(() => addDays(today(), 7))
   const [agent, setAgent] = useState(user?.name ?? '')
   const [supplierText, setSupplierText] = useState('')
@@ -1090,6 +1096,7 @@ export function NewQuotationPage() {
     const q = quotationData as Record<string, any>
     const savedQuoteDate = q.created_at ? String(q.created_at).slice(0, 10) : today()
     setQuoteDate(savedQuoteDate)
+    setEntryDate(q.entry_date ? String(q.entry_date).slice(0, 10) : savedQuoteDate)
     setValidUntil(q.valid_until ? String(q.valid_until).slice(0, 10) : addDays(savedQuoteDate, 7))
     setLeadId(q.lead_id ?? null)
     if (q.customer_id) { setCustomerId(q.customer_id as string); setCustomerText(q.customer_name ?? '') }
@@ -1429,6 +1436,7 @@ export function NewQuotationPage() {
       customer_requirement_summary: customerReqSummary || undefined,
       quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
       valid_until:                  validUntil || undefined,
+      entry_date:                   entryDate || undefined,
     })
   }
 
@@ -1449,7 +1457,7 @@ export function NewQuotationPage() {
         status={status}
         quoteNumber={(quotationData as Record<string, any>)?.quote_number ?? ''}
         revisionNumber={Number((quotationData as Record<string, any>)?.revision_number ?? 1)}
-        quoteDate={quoteDate} setQuoteDate={setQuoteDate} validUntil={validUntil} setValidUntil={setValidUntil}
+        quoteDate={quoteDate} setQuoteDate={setQuoteDate} entryDate={entryDate} setEntryDate={setEntryDate} validUntil={validUntil} setValidUntil={setValidUntil}
         agent={agent} setAgent={setAgent} leadNumber={leadNumber} customerName={customerName} source={customerSource} />
 
       <div className="nq-body">

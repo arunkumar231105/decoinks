@@ -64,7 +64,7 @@ async function getById(id) {
 }
 
 async function create({
-  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items = [], created_by,
+  lead_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items = [], created_by,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
@@ -79,7 +79,7 @@ async function create({
     await client.query('BEGIN')
     const { rows } = await client.query(
       `INSERT INTO quotations (
-         quote_number, lead_id, supplier_id, order_type, valid_until,
+         quote_number, lead_id, supplier_id, order_type, entry_date, valid_until,
          subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, notes, created_by,
          company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
          customer_category, customer_source,
@@ -87,10 +87,10 @@ async function create({
          due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
          estimated_shipping, rush_services, payment_terms, payment_method, customer_notes
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
        RETURNING *`,
       [
-        quote_number, lead_id || null, supplier_id || null, order_type || null, valid_until || null,
+        quote_number, lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
         subtotal, discount_pct, discount_amt, 0, 0, total, notes || null, created_by,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
@@ -126,7 +126,7 @@ async function create({
 }
 
 async function update(id, {
-  lead_id, supplier_id, order_type, valid_until, discount_pct = 0, notes, items,
+  lead_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
@@ -140,26 +140,26 @@ async function update(id, {
     await client.query('BEGIN')
     const { rows: updated } = await client.query(
       `UPDATE quotations
-       SET lead_id=$1, supplier_id=$2, order_type=$3, valid_until=$4, subtotal=$5, discount_pct=$6,
-           discount_amt=$7, tax_pct=$8, tax_amt=$9, total=$10, notes=$11,
-           company_name=$12, customer_name=$13, billing_email=$14, contact_number=$15,
-           whatsapp=$16, wechat=$17, customer_category=$18, customer_source=$19,
-           shipping_country=$20, shipping_state=$21, shipping_city=$22, zip_code=$23,
-           shipping_address=$24, billing_address=$25, due_date=$26, sales_agent_id=$27,
-           internal_notes=$28, customer_requirement_summary=$29, quote_estimate=$30,
-           estimated_shipping=COALESCE($31, estimated_shipping),
-           rush_services=COALESCE($32, rush_services),
-           payment_terms=COALESCE($33, payment_terms),
-           payment_method=COALESCE($34, payment_method),
-           customer_notes=COALESCE($35, customer_notes),
+       SET lead_id=$1, supplier_id=$2, order_type=$3, entry_date=COALESCE($4, entry_date), valid_until=$5, subtotal=$6, discount_pct=$7,
+           discount_amt=$8, tax_pct=$9, tax_amt=$10, total=$11, notes=$12,
+           company_name=$13, customer_name=$14, billing_email=$15, contact_number=$16,
+           whatsapp=$17, wechat=$18, customer_category=$19, customer_source=$20,
+           shipping_country=$21, shipping_state=$22, shipping_city=$23, zip_code=$24,
+           shipping_address=$25, billing_address=$26, due_date=$27, sales_agent_id=$28,
+           internal_notes=$29, customer_requirement_summary=$30, quote_estimate=$31,
+           estimated_shipping=COALESCE($32, estimated_shipping),
+           rush_services=COALESCE($33, rush_services),
+           payment_terms=COALESCE($34, payment_terms),
+           payment_method=COALESCE($35, payment_method),
+           customer_notes=COALESCE($36, customer_notes),
            -- editing an already-saved quote bumps the revision so it is
            -- visibly marked as revised (1 = original)
            revision_number=COALESCE(revision_number, 1) + 1,
            updated_at=NOW()
-       WHERE id=$36
+       WHERE id=$37
        RETURNING id`,
       [
-        lead_id || null, supplier_id || null, order_type || null, valid_until || null,
+        lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
         subtotal, discount_pct, discount_amt, 0, 0, total, notes || null,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,

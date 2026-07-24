@@ -57,11 +57,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
     kpis: [
       { label: 'Total Quotes', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
       { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'green' },
       { label: 'Approved', icon: BadgeCheck, value: r => countStatus(r, 'approved'), tone: 'green' },
-      { label: 'Rejected', icon: X, value: r => countStatus(r, 'rejected'), tone: 'red' },
-      { label: 'Expired', icon: Clock3, value: r => countStatus(r, 'expired'), tone: 'amber' },
       { label: 'Total Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
       { label: 'Average Quote', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.total || 0), 0) / r.length : 0), tone: 'purple' },
     ],
@@ -69,8 +66,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'quote_number', label: 'Quotation No.', render: r => <strong className="ew-link">{r.quote_number}</strong> },
       { key: 'revision_number', label: 'Revision', numeric: true },
       { key: 'created_at', label: 'Quote Date', render: r => date(r.created_at) },
+      { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'response', label: 'Customer Response', render: r => <Badge>{common.empty(r, 'customer_response')}</Badge> },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
       { key: 'source', label: 'Source', render: r => common.empty(r, 'source') },
       { key: 'sent_via', label: 'Sent Via', render: r => common.empty(r, 'sent_via') },
@@ -393,8 +390,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   const number = row[CONFIG[kind].numberKey]
   if (kind === 'quotations') return <>
     <DrawerSection title="Overview" fields={[
-      { label: 'Quote Date', value: date(row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
-      { label: 'Customer Response', value: first(row, 'customer_response') }, { label: 'Source', value: first(row, 'customer_source', 'source') }, { label: 'Sent Via', value: first(row, 'sent_via') },
+      { label: 'Quote Date', value: date(row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Source', value: first(row, 'customer_source', 'source') }, { label: 'Sent Via', value: first(row, 'sent_via') },
       { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Shipping', value: Number(row.estimated_shipping || row.shipping_amount || 0) ? money(row.estimated_shipping || row.shipping_amount) : 'Not included' },
       { label: 'Sales Agent', value: first(row, 'sales_agent_name', 'created_by_name', 'agent_name') },
     ]}/>
