@@ -173,6 +173,32 @@ function buildWhere(filters, params) {
   if (filters.qa === 'no') clauses.push('a.qa_approved=FALSE')
   if (filters.ready === 'yes') clauses.push('a.production_ready=TRUE')
   if (filters.ready === 'no') clauses.push('a.production_ready=FALSE')
+  if (filters.scope === 'post_production') clauses.push(`a.lifecycle_code='FNL'
+    AND a.production_ready=TRUE
+    AND a.status<>'Archived'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM artwork_vault_assets newer
+      WHERE newer.lifecycle_code='FNL'
+        AND newer.production_ready=TRUE
+        AND newer.status<>'Archived'
+        AND (
+          (a.artwork_code IS NOT NULL AND newer.artwork_code=a.artwork_code)
+          OR (a.artwork_code IS NULL AND newer.artwork_code IS NULL AND newer.parent_path=a.parent_path)
+        )
+        AND (
+          COALESCE(newer.version_no,1) > COALESCE(a.version_no,1)
+          OR (
+            COALESCE(newer.version_no,1) = COALESCE(a.version_no,1)
+            AND COALESCE(newer.source_modified_at,newer.created_at) > COALESCE(a.source_modified_at,a.created_at)
+          )
+          OR (
+            COALESCE(newer.version_no,1) = COALESCE(a.version_no,1)
+            AND COALESCE(newer.source_modified_at,newer.created_at) = COALESCE(a.source_modified_at,a.created_at)
+            AND newer.id::text > a.id::text
+          )
+        )
+    )`)
   return clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
 }
 

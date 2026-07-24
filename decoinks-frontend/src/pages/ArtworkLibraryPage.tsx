@@ -284,20 +284,21 @@ export function ArtworkLibraryPage() {
   const [agentSearch, setAgentSearch] = useState('')
   const [designerSearch, setDesignerSearch] = useState('')
   const [period, setPeriod] = useState('Custom')
+  const [scope, setScope] = useState<'all' | 'post_production'>('all')
   const [connected, setConnected] = useState<boolean | null>(null)
 
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 300); return () => window.clearTimeout(timer) }, [search])
   useEffect(() => { api.get('/nextcloud/status').then(r => setConnected(Boolean(r.data.data?.ok))).catch(() => setConnected(false)) }, [])
 
-  const params = useMemo(() => ({ page, limit, search: debouncedSearch || undefined, type: type || undefined, order_type: orderType || undefined, status: status || undefined, from: from || undefined, to: to || undefined, qa: qa || undefined, ready: ready || undefined, entity_search: entitySearch || undefined, agent_search: agentSearch || undefined, designer_search: designerSearch || undefined }), [page, limit, debouncedSearch, type, orderType, status, from, to, qa, ready, entitySearch, agentSearch, designerSearch])
+  const params = useMemo(() => ({ page, limit, scope, search: debouncedSearch || undefined, type: type || undefined, order_type: orderType || undefined, status: status || undefined, from: from || undefined, to: to || undefined, qa: qa || undefined, ready: ready || undefined, entity_search: entitySearch || undefined, agent_search: agentSearch || undefined, designer_search: designerSearch || undefined }), [page, limit, scope, debouncedSearch, type, orderType, status, from, to, qa, ready, entitySearch, agentSearch, designerSearch])
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['artwork-vault-assets', params],
     queryFn: () => api.get('/artworks/vault/assets', { params }).then(r => r.data.data),
     refetchInterval: 30000,
   })
   const { data: stats = EMPTY_STATS } = useQuery<VaultStats>({
-    queryKey: ['artwork-vault-stats', { from, to }],
-    queryFn: () => api.get('/artworks/vault/stats', { params: { from: from || undefined, to: to || undefined } }).then(r => r.data.data),
+    queryKey: ['artwork-vault-stats', { from, to, scope }],
+    queryFn: () => api.get('/artworks/vault/stats', { params: { from: from || undefined, to: to || undefined, scope } }).then(r => r.data.data),
     refetchInterval: 30000,
   })
   const rows: VaultAsset[] = data?.rows ?? []
@@ -410,6 +411,12 @@ export function ArtworkLibraryPage() {
         <button className="av-btn" onClick={exportCsv}><Download size={17} /> Export</button>
         <button className="av-btn" onClick={() => importRef.current?.click()} disabled={uploadMutation.isPending}><Upload size={17} /> Import Files</button>
         <button className="av-btn av-btn-primary" onClick={() => newArtworkRef.current?.click()} disabled={uploadMutation.isPending}><ImageIcon size={17} /> New Artwork</button>
+      </div>
+
+      <div className="av-scope-tabs" role="tablist" aria-label="Artwork workflow view">
+        <button role="tab" aria-selected={scope === 'all'} className={scope === 'all' ? 'is-active' : ''} onClick={() => { setScope('all'); setPage(1); setSelected(new Set()) }}>All</button>
+        <button role="tab" aria-selected={scope === 'post_production'} className={scope === 'post_production' ? 'is-active' : ''} onClick={() => { setScope('post_production'); setPage(1); setSelected(new Set()) }}>Post Production</button>
+        <span>{scope === 'post_production' ? 'Latest production-ready final version of each artwork' : 'Complete artwork lifecycle and revision history'}</span>
       </div>
 
       <div className="av-periodbar">
