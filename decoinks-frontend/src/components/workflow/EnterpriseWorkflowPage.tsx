@@ -72,8 +72,10 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'source', label: 'Source', render: r => common.empty(r, 'source') },
       { key: 'sent_via', label: 'Sent Via', render: r => common.empty(r, 'sent_via') },
       { key: 'item', label: 'Item', render: r => common.empty(r, 'order_type', 'item_name', 'description') },
-      { key: 'qty', label: 'Qty', numeric: true, render: r => common.empty(r, 'total_qty', 'qty') },
-      { key: 'total', label: 'Amount', numeric: true, render: r => <strong>{money(r.total)}</strong> },
+      { key: 'qty', label: 'Qty', numeric: true, render: r => Number(r.total_qty || 0).toLocaleString() },
+      { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.estimated_shipping) },
+      { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
     ],
   },
   invoices: {
@@ -388,6 +390,9 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   const customer = row.linked_customer || {}
   const items = row.items || []
   const number = row[CONFIG[kind].numberKey]
+  const quotationQty = sum(items, 'qty')
+  const quotationItemsTotal = items.reduce((total: number, item: AnyRow) =>
+    total + Number(item.amount ?? (Number(item.unit_price || 0) * Number(item.qty || 0))), 0)
   if (kind === 'quotations') return <>
     <DrawerSection title="Overview" fields={[
       { label: 'Quote Date', value: date(row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
@@ -400,7 +405,12 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Phone', value: first(row, 'contact_number', 'phone', 'whatsapp') }, { label: 'Location', value: location(row) }, { label: 'Language', value: first(row, 'language') },
     ]}/>
     <ItemsSection items={items}/>
-    <DrawerSection title="Total Amount" fields={[{ label: 'Total', value: `${money(row.total)} ${row.currency || 'USD'}` }]}/>
+    <DrawerSection title="Total Amount" fields={[
+      { label: 'Total Qty', value: quotationQty.toLocaleString() },
+      { label: 'Item Charges', value: money(quotationItemsTotal) },
+      { label: 'Shipping Charges', value: money(row.estimated_shipping || 0) },
+      { label: 'Total', value: `${money(row.total)} ${row.currency || 'USD'}` },
+    ]}/>
     <NotesSection row={row}/>
     <DocumentsSection documents={row.attachments} navigate={navigate}/>
   </>

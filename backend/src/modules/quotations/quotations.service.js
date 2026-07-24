@@ -36,10 +36,18 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT q.*, c.name AS supplier_name, u.name AS created_by_name
+    `SELECT q.*, c.name AS supplier_name, u.name AS created_by_name,
+            COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
+            COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total
      FROM quotations q
      LEFT JOIN suppliers c ON c.id = q.supplier_id
      LEFT JOIN users u ON u.id = q.created_by
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(qi.qty), 0) AS total_qty,
+              COALESCE(SUM(qi.amount), 0) AS items_total
+       FROM quotation_items qi
+       WHERE qi.quotation_id = q.id
+     ) item_totals ON TRUE
      ${where}
      ORDER BY q.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
