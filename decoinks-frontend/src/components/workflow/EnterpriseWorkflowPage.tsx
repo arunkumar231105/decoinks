@@ -84,11 +84,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void'],
     kpis: [
       { label: 'Total Invoices', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Draft', icon: FileText, value: r => countStatus(r, 'draft'), tone: 'slate' },
       { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'blue' },
       { label: 'Partially Paid', icon: Clock3, value: r => countStatus(r, 'partially paid'), tone: 'amber' },
       { label: 'Paid', icon: CircleDollarSign, value: r => countStatus(r, 'paid'), tone: 'green' },
-      { label: 'Overdue', icon: Clock3, value: r => countStatus(r, 'overdue'), tone: 'red' },
       { label: 'Total Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
       { label: 'Balance Due', icon: Clock3, value: r => money(r.reduce((a, x) => a + Number(x.balance_due || 0), 0)), tone: 'purple' },
     ],
@@ -98,13 +96,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'customer', label: 'Customer', render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
       { key: 'invoice_date', label: 'Invoice Date', render: r => date(pick(r, 'invoice_date', 'issue_date')) },
       { key: 'due_date', label: 'Due Date', render: r => date(r.due_date) },
-      { key: 'total', label: 'Amount', numeric: true, render: r => <strong>{money(r.total)}</strong> },
-      { key: 'status', label: 'Status', render: common.status },
-      { key: 'response', label: 'Customer Response', render: r => <Badge>{common.empty(r, 'customer_response')}</Badge> },
       { key: 'payment', label: 'Payment Status', render: r => <Badge>{common.empty(r, 'payment_status', 'status')}</Badge> },
+      { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.shipping_charges) },
+      { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
       { key: 'amount_paid', label: 'Paid', numeric: true, render: r => money(r.amount_paid) },
       { key: 'balance_due', label: 'Balance', numeric: true, render: r => money(r.balance_due) },
-      { key: 'updated_at', label: 'Last Activity', render: r => date(r.updated_at) },
     ],
   },
   orders: {
@@ -423,7 +420,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Source', value: first(row, 'customer_source', 'source') === '—' ? first(customer, 'source') : first(row, 'customer_source', 'source') }, { label: 'Sales Agent', value: first(row, 'sales_agent_display_name', 'sales_agent_name', 'agent_name') },
     ]}/>
     <DrawerSection title="Financial Summary" fields={[
-      { label: 'Subtotal', value: money(row.subtotal) }, { label: 'Shipping', value: money(pick(row, 'shipping_charges', 'original_shipping_charges') || 0) },
+      { label: 'Item Charges', value: money(items.reduce((total: number, item: AnyRow) => total + Number(item.amount ?? (Number(item.unit_price || 0) * Number(item.qty || 0))), 0)) },
+      { label: 'Shipping Charges', value: money(pick(row, 'shipping_charges', 'original_shipping_charges') || 0) },
       { label: `Tax (${Number(row.tax_pct || 0)}%)`, value: money(row.tax_amt) }, { label: 'Total Amount', value: money(row.total) },
       { label: 'Amount Paid', value: money(row.amount_paid) }, { label: 'Balance Due', value: money(row.balance_due) },
     ]}/>

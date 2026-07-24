@@ -48,13 +48,19 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
   const { rows } = await query(
     `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
             COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
-            o.order_number, q.quote_number
+            o.order_number, q.quote_number,
+            COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN quotations q ON q.id = i.quote_id
      LEFT JOIN users u      ON u.id = i.created_by
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(ii.amount), 0) AS items_total
+       FROM invoice_items ii
+       WHERE ii.invoice_id = i.id
+     ) item_totals ON TRUE
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
