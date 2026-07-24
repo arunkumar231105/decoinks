@@ -203,7 +203,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             s.name      AS supplier_name,
             cust.name   AS customer_name,
             o.order_number,
-            COALESCE(NULLIF(o.order_type, ''), NULLIF(po.print_type, '')) AS product_type,
+            COALESCE(NULLIF(o.order_type::text, ''), NULLIF(po.print_type, '')) AS product_type,
             latest_shipment.status AS tracking_status,
             COALESCE(po.tracking_number, latest_shipment.tracking_number) AS display_tracking_number,
             u.name      AS created_by_name
