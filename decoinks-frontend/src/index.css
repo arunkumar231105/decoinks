@@ -16300,6 +16300,7 @@ body .no-bottom-bar { display: none; }
 /* ── Customers workspace — reuses the Leads design system verbatim ──────── */
 /* 5-card KPI row in a single line; collapses on the same breakpoints. */
 .leads-compact-kpis.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.leads-compact-kpis.cols-6{grid-template-columns:repeat(6,minmax(0,1fr))}
 .leads-compact-kpis.cols-5 article{height:92px;padding:12px 12px;gap:10px}
 .leads-compact-kpis.cols-5 small{font-size:11.5px}
 .leads-compact-kpis.cols-5 strong{font-size:22px}

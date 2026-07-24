@@ -133,6 +133,7 @@ async function getStats(filters = {}) {
        COUNT(*) FILTER (WHERE l.auto_responded)::INT AS auto_responded,
        COUNT(*) FILTER (WHERE l.message_count > 0 OR l.last_contact_at IS NOT NULL)::INT AS engaged,
        COUNT(*) FILTER (WHERE l.qualified_at IS NOT NULL OR COALESCE(l.conversion_score, 0) >= 60)::INT AS qualified,
+       COUNT(*) FILTER (WHERE COALESCE(l.conversion_score, 0) >= 80)::INT AS hot_leads,
        COUNT(*) FILTER (WHERE EXISTS (
          SELECT 1 FROM quotations q WHERE q.lead_id = l.id AND (q.sent_at IS NOT NULL OR q.status <> 'Draft')
        ))::INT AS quotes_sent,
