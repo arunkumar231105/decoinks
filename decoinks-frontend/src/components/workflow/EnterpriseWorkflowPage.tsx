@@ -11,6 +11,7 @@ import { api } from '../../services/api'
 import { downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
+import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders'
 
@@ -168,12 +169,6 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
 }
 
 const PAGE_SIZE = 10
-type Period = 'today' | 'week' | 'month' | 'custom' | 'all'
-
-const toIsoDate = (value: Date) => {
-  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 10)
-}
 
 const customerOf = (r: AnyRow) => String(pick(r, 'customer_display_name', 'customer_name', 'contact_name', 'display_vendor_name', 'vendor_name', 'supplier_name') || '')
 const productOf = (r: AnyRow) => String(pick(r, 'order_type', 'print_type', 'product_type', 'item_name') || '')
@@ -190,7 +185,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [customer, setCustomer] = useState('All')
   const [product, setProduct] = useState('All')
   const [source, setSource] = useState('All')
-  const [period, setPeriod] = useState<Period>('month')
+  const [period, setPeriod] = useState<PeriodKey>('month')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -228,15 +223,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     return () => window.removeEventListener('keydown', shortcut)
   }, [])
 
-  const periodRange = useMemo(() => {
-    if (period === 'all') return ['', ''] as const
-    if (period === 'custom') return [dateFrom, dateTo] as const
-    const now = new Date()
-    const start = new Date(now)
-    if (period === 'week') start.setDate(now.getDate() - 6)
-    if (period === 'month') start.setDate(1)
-    return [toIsoDate(start), toIsoDate(now)] as const
-  }, [period, dateFrom, dateTo])
+  const periodRangeMemo = useMemo(() => periodRange(period, dateFrom, dateTo), [period, dateFrom, dateTo])
 
   const filteredRows = useMemo(() => allRows.filter(row => {
     const haystack = Object.values(row).filter(v => typeof v === 'string' || typeof v === 'number').join(' ').toLowerCase()
@@ -247,10 +234,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (source !== 'All' && sourceOf(row) !== source) return false
     const rawDate = pick(row, config.dateKey, 'created_at', 'issue_date', 'order_date')
     const rowDate = rawDate ? String(rawDate).slice(0, 10) : ''
-    if (periodRange[0] && rowDate && rowDate < periodRange[0]) return false
-    if (periodRange[1] && rowDate && rowDate > periodRange[1]) return false
+    if (periodRangeMemo[0] && rowDate && rowDate < periodRangeMemo[0]) return false
+    if (periodRangeMemo[1] && rowDate && rowDate > periodRangeMemo[1]) return false
     return true
-  }), [allRows, search, status, customer, product, source, periodRange, config.dateKey])
+  }), [allRows, search, status, customer, product, source, periodRangeMemo, config.dateKey])
 
   const total = filteredRows.length
   const pages = Math.max(1, Math.ceil(total / pageSize))
@@ -316,7 +303,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       </div>
 
       <div className="ew-period" role="group" aria-label="Date period">
-        {([['today', 'Today'], ['week', 'This Week'], ['month', 'This Month'], ['custom', 'Custom'], ['all', 'All Time']] as [Period, string][]).map(([value, label]) => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
+        {PERIOD_TABS.map(([value, label]) => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
       </div>
 
       <section className="ew-kpis">
@@ -330,7 +317,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Customer / Vendor</span><select value={customer} onChange={e => setCustomer(e.target.value)}><option>All</option>{customers.map(v => <option key={v}>{v}</option>)}</select></label>
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
-        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRange[0] ? `${date(periodRange[0])} – ${date(periodRange[1])}` : 'All dates'}</span></div>}
+        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
 
