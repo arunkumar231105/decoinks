@@ -172,6 +172,9 @@ export function NewOrderPage() {
   const [paymentTerms,   setPaymentTerms]   = useState(PAYMENT_TERMS[0])
   const [paymentMethod,  setPaymentMethod]  = useState<string>('zelle')
   const [paymentStatus,  setPaymentStatus]  = useState<PaymentStatus>('Unpaid')
+  const [amountPaid,       setAmountPaid]       = useState(0)
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentDate,      setPaymentDate]      = useState('')
 
   // Dates
   const [dueDate, setDueDate] = useState('')
@@ -254,6 +257,9 @@ export function NewOrderPage() {
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
     setPaymentMethod(existingOrder.payment_method ?? 'zelle')
     setPaymentStatus((existingOrder.payment_status ?? 'Unpaid') as PaymentStatus)
+    setAmountPaid(Number(existingOrder.amount_paid ?? 0))
+    setPaymentReference(existingOrder.payment_reference ?? '')
+    setPaymentDate(existingOrder.payment_date?.slice(0, 10) ?? '')
     setCurrency(existingOrder.currency ?? 'USD')
     setRushServices(Number(existingOrder.rush_services ?? 0))
     setShippingCharges(Number(existingOrder.shipping_charges ?? 0))
@@ -468,6 +474,7 @@ export function NewOrderPage() {
   const discountAmt = useMemo(() => +(subtotal * (discountPct / 100)).toFixed(2), [subtotal, discountPct])
   const taxAmt      = useMemo(() => +((subtotal - discountAmt) * (taxPct / 100)).toFixed(2), [subtotal, discountAmt, taxPct])
   const total       = useMemo(() => +(subtotal - discountAmt + taxAmt).toFixed(2), [subtotal, discountAmt, taxAmt])
+  const balanceDue  = useMemo(() => +Math.max(0, total - (Number(amountPaid) || 0)).toFixed(2), [total, amountPaid])
 
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
@@ -574,6 +581,9 @@ export function NewOrderPage() {
       payment_terms:    paymentTerms === 'Paid' ? 'Due on Receipt' : paymentTerms,
       payment_method:   paymentMethod,
       payment_status:   paymentStatus,
+      amount_paid:      Number(amountPaid) || 0,
+      payment_reference: paymentReference || null,
+      payment_date:     paymentDate || null,
       currency:         currency,
       rush_services:    rushServices,
       shipping_charges: shippingCharges,
@@ -1149,6 +1159,60 @@ export function NewOrderPage() {
                 <option value="GBP">GBP - British Pound</option>
                 <option value="AUD">AUD - Australian Dollar</option>
               </select>
+            </div>
+
+            <div className="no-payment-field">
+              <label className="no-payment-label">Amount Received</label>
+              <div className="no-pricing-input-group" style={{ width: '100%' }}>
+                <span className="no-pricing-sym">$</span>
+                <input
+                  type="number"
+                  className="no-pricing-input"
+                  style={{ width: '100%', textAlign: 'left' }}
+                  min={0}
+                  step={0.01}
+                  value={amountPaid}
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    const v = Math.max(0, +e.target.value)
+                    setAmountPaid(v)
+                    // Keep the payment status in step with the amount received.
+                    setPaymentStatus(v <= 0 ? 'Unpaid' : v >= total ? 'Paid' : 'Partial')
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <button type="button" onClick={() => { setAmountPaid(total); setPaymentStatus('Paid') }}
+                  style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>Mark fully paid</button>
+                {amountPaid > 0 && <button type="button" onClick={() => { setAmountPaid(0); setPaymentStatus('Unpaid') }}
+                  style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>Clear</button>}
+              </div>
+            </div>
+
+            <div className="no-payment-field">
+              <label className="no-payment-label">Payment Reference</label>
+              <input
+                type="text"
+                className="no-info-select"
+                placeholder="Txn / confirmation #"
+                value={paymentReference}
+                onChange={e => setPaymentReference(e.target.value)}
+              />
+            </div>
+
+            <div className="no-payment-field">
+              <label className="no-payment-label">Payment Date</label>
+              <input
+                type="date"
+                className="no-info-select"
+                value={paymentDate}
+                onChange={e => setPaymentDate(e.target.value)}
+              />
+            </div>
+
+            <div className="no-pricing-row" style={{ marginTop: 6 }}>
+              <span>Balance Due</span>
+              <strong style={{ color: balanceDue > 0 ? '#dc2626' : '#16a34a' }}>${fmt(balanceDue)}</strong>
             </div>
 
             <div className="no-payment-field">

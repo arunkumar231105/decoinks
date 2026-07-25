@@ -216,11 +216,6 @@ export function DashboardPage() {
     { label: 'DTF Transfers', count: m?.dtf || 0 },
     { label: 'Custom Shirts', count: m?.shirt || 0 },
   ]
-  const custRows = (s?: Split, withValue = false) => [
-    { label: 'New Customers', count: s?.new || 0, ...(withValue ? { value: s?.new_value || 0 } : {}) },
-    { label: 'Existing Customers', count: s?.existing || 0, ...(withValue ? { value: s?.existing_value || 0 } : {}) },
-  ]
-
   return (
     <div className="dsb-page">
 
@@ -250,32 +245,20 @@ export function DashboardPage() {
         <div className="dsb-error"><strong>Unable to load dashboard.</strong><button onClick={() => refetch()}>Retry</button></div>
       )}
 
-      {/* ── Row 1: pipeline KPIs ── */}
-      <section className="dsb-grid cols-9">
-        {isLoading || !P ? Array.from({ length: 9 }).map((_, i) => <article key={i} className="dsb-card"><Skeleton height={120} /></article>) : <>
+      {/* ── Unified pipeline KPIs (lead → delivered), one card per stage ── */}
+      <section className="dsb-grid cols-5">
+        {isLoading || !P || !C ? Array.from({ length: 10 }).map((_, i) => <article key={i} className="dsb-card"><Skeleton height={120} /></article>) : <>
           <StatCard icon={Users} title="New Leads" count={P.leads.count} prev={P.leads.prev} prevLabel={prevLabel} rows={typeRows(P.leads)} />
           <StatCard icon={BadgeCheck} tone="green" title="Qualified Leads" count={P.qualified.count} prev={P.qualified.prev} prevLabel={prevLabel} rows={typeRows(P.qualified)} />
           <StatCard icon={FileText} tone="violet" title="Quotations Sent" count={P.quotes.count} prev={P.quotes.prev} prevLabel={prevLabel} rows={typeRows(P.quotes)} />
+          <StatCard icon={UserPlus} tone="blue" title="Customers" count={C.total} prev={C.total - C.new + C.new_prev} prevLabel={prevLabel}
+            rows={[{ label: 'New Customers', count: C.new }, { label: 'Existing Customers', count: C.existing }]} />
           <StatCard icon={CircleDollarSign} tone="green" title="Payment Received" count={P.payments.count} unit="Orders" value={P.payments.value} prev={P.payments.prev} prevLabel={prevLabel} rows={typeRows(P.payments)} />
           <StatCard icon={ShoppingCart} tone="orange" title="Sales Orders Issued" count={P.sales_orders.count} unit="Orders" value={P.sales_orders.value} prev={P.sales_orders.prev} prevLabel={prevLabel} rows={typeRows(P.sales_orders)} pending={P.sales_orders.pending} />
           <StatCard icon={ClipboardList} tone="red" title="PO Issued" count={P.po.count} unit="Orders" prev={P.po.prev} prevLabel={prevLabel} rows={typeRows(P.po)} pending={P.po.pending} />
           <StatCard icon={Factory} tone="violet" title="In Production" count={P.production.count} unit="Orders" prev={P.production.prev} prevLabel={prevLabel} rows={typeRows(P.production)} pending={P.production.pending} />
           <StatCard icon={Truck} title="Shipped" count={P.shipped.count} unit="Orders" prev={P.shipped.prev} prevLabel={prevLabel} rows={typeRows(P.shipped)} pending={P.shipped.pending} />
           <StatCard icon={PackageCheck} tone="green" title="Delivered" count={P.delivered.count} unit="Orders" prev={P.delivered.prev} prevLabel={prevLabel} rows={typeRows(P.delivered)} pending={P.delivered.pending} />
-        </>}
-      </section>
-
-      {/* ── Row 2: customer split ── */}
-      <section className="dsb-grid cols-7">
-        {isLoading || !C || !P ? Array.from({ length: 7 }).map((_, i) => <article key={i} className="dsb-card"><Skeleton height={110} /></article>) : <>
-          <StatCard icon={UserPlus} title="Customers" count={C.total} prev={C.total - C.new + C.new_prev} prevLabel={prevLabel}
-            rows={[{ label: 'New Customers', count: C.new }, { label: 'Existing Customers', count: C.existing }]} />
-          <StatCard icon={CircleDollarSign} tone="green" title="Payment Received" count={P.payments.count} unit="Orders" value={P.payments.value} prev={P.payments.prev} prevLabel={prevLabel} rows={custRows(C.payments, true)} />
-          <StatCard icon={ShoppingCart} tone="orange" title="Sales Orders Issued" count={P.sales_orders.count} unit="Orders" value={P.sales_orders.value} prev={P.sales_orders.prev} prevLabel={prevLabel} rows={custRows(C.sales_orders)} />
-          <StatCard icon={ClipboardList} tone="red" title="PO Issued" count={P.po.count} unit="Orders" prev={P.po.prev} prevLabel={prevLabel} rows={custRows(C.po)} pending={P.po.pending} />
-          <StatCard icon={Factory} tone="violet" title="In Production" count={P.production.count} unit="Orders" prev={P.production.prev} prevLabel={prevLabel} rows={custRows(C.production)} pending={P.production.pending} />
-          <StatCard icon={Truck} title="Shipped" count={P.shipped.count} unit="Orders" prev={P.shipped.prev} prevLabel={prevLabel} rows={custRows(C.shipped)} pending={P.shipped.pending} />
-          <StatCard icon={PackageCheck} tone="green" title="Delivered" count={P.delivered.count} unit="Orders" prev={P.delivered.prev} prevLabel={prevLabel} rows={custRows(C.delivered)} pending={P.delivered.pending} />
         </>}
       </section>
 

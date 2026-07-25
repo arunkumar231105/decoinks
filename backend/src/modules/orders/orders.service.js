@@ -20,45 +20,68 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
   return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
 
-async function syncPaidLinkedInvoice(client, invoiceId, paymentMethod, actorId) {
+// Mirror an order's "payment received" onto its linked invoice's payment
+// ledger — the single source of truth the dashboard and invoice balance read.
+// `targetPaid` is the TOTAL amount received for the order. We only ever add the
+// positive delta as a new payment row (never remove historical payments), then
+// re-derive the invoice status from the resulting ledger total. The
+// sync_invoice_payment_totals DB trigger keeps amount_paid / balance_due synced.
+async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {}) {
   if (!invoiceId) return
+  const { paymentMethod, reference, paymentDate, actorId, note } = opts
 
   const { rows } = await client.query(
-    `SELECT id, invoice_number, total, status
-     FROM invoices
-     WHERE id = $1
-     FOR UPDATE`,
+    `SELECT id, total, status FROM invoices WHERE id = $1 FOR UPDATE`,
     [invoiceId]
   )
   const invoice = rows[0]
   if (!invoice || invoice.status === 'Void') return
 
-  const { rows: paymentRows } = await client.query(
-    `SELECT COALESCE(SUM(amount), 0) AS paid
-     FROM payments
-     WHERE invoice_id = $1`,
+  const total = +Number(invoice.total).toFixed(2)
+  const { rows: payRows } = await client.query(
+    `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = $1`,
     [invoiceId]
   )
-  const total = +Number(invoice.total).toFixed(2)
-  const alreadyPaid = +Number(paymentRows[0].paid).toFixed(2)
-  const outstanding = +Math.max(0, total - alreadyPaid).toFixed(2)
-  const finalPaid = +(alreadyPaid + outstanding).toFixed(2)
+  const alreadyPaid = +Number(payRows[0].paid).toFixed(2)
 
-  if (outstanding > 0) {
+  // Never let the order record more than the invoice total.
+  const want  = +Math.max(0, Math.min(Number(targetPaid) || 0, total)).toFixed(2)
+  const delta = +(want - alreadyPaid).toFixed(2)
+
+  if (delta > 0.009) {
     await client.query(
-      `INSERT INTO payments (invoice_id, amount, payment_method, notes, recorded_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [invoiceId, outstanding, paymentMethod || 'other', 'Full payment recorded from linked paid sales order', actorId || null]
+      `INSERT INTO payments (invoice_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        invoiceId, delta, paymentMethod || 'other', reference || null,
+        paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
+      ]
     )
   }
 
+  const finalPaid = +Math.max(alreadyPaid, want).toFixed(2)
+  const status = finalPaid >= total && total > 0 ? 'Paid'
+    : finalPaid > 0 ? 'Partially Paid'
+    : invoice.status
   await client.query(
     `UPDATE invoices
-     SET amount_paid = $2, balance_due = 0, status = 'Paid',
-         paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
+     SET amount_paid = $2,
+         balance_due = GREATEST(total - $2, 0),
+         status      = $3,
+         paid_at     = CASE WHEN $3 = 'Paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END,
+         updated_at  = NOW()
      WHERE id = $1`,
-    [invoiceId, finalPaid]
+    [invoiceId, finalPaid, status]
   )
+}
+
+// Given the order's total + received amount, derive the order-level status.
+function derivePaymentStatus(amountPaid, total, fallback) {
+  const paid = Number(amountPaid) || 0
+  const t = Number(total) || 0
+  if (paid <= 0) return fallback || 'Unpaid'
+  if (paid >= t && t > 0) return 'Paid'
+  return 'Partial'
 }
 
 async function insertItems(client, orderId, orderType, items) {
@@ -227,6 +250,7 @@ async function create(data) {
   const {
     customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
+    amount_paid, payment_reference, payment_date,
     rush_services = 0, shipping_charges = 0,
     discount_pct = 0, tax_pct = 0,
     notes, contact_name, contact_email, contact_phone,
@@ -259,6 +283,15 @@ async function create(data) {
     if (!resolvedSupplierId) resolvedSupplierId = inv.supplier_id
   }
 
+  // Resolve the amount received + effective payment status.
+  const paidProvided  = amount_paid !== undefined && amount_paid !== null
+  const effectivePaid = paidProvided
+    ? +Math.max(0, Math.min(Number(amount_paid), totals.total)).toFixed(2)
+    : (payment_status === 'Paid' ? totals.total : 0)
+  const effectiveStatus = paidProvided
+    ? derivePaymentStatus(effectivePaid, totals.total, payment_status)
+    : payment_status
+
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -266,17 +299,19 @@ async function create(data) {
       `INSERT INTO orders (
          order_number, quotation_id, invoice_id, customer_id, supplier_id, order_type, order_date, due_date,
          payment_terms, payment_method, payment_status, currency,
+         amount_paid, payment_reference, payment_date,
          rush_services, shipping_charges, subtotal, discount_pct, discount_amt,
          tax_pct, tax_amt, total, notes,
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
        RETURNING *`,
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         order_date || new Date().toISOString().split('T')[0], due_date || null,
-        payment_terms || 'Due on Receipt', payment_method || null, payment_status, currency,
+        payment_terms || 'Due on Receipt', payment_method || null, effectiveStatus, currency,
+        effectivePaid, payment_reference || null, payment_date || null,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
         contact_name || supplier_name_text || null, contact_email || null, contact_phone || null,
@@ -287,8 +322,10 @@ async function create(data) {
     const order = rows[0]
     if (invoice_id && items.length === 0) await insertInvoiceItems(client, order.id, invoice_id, order_type)
     else await insertItems(client, order.id, order_type, items)
-    if (payment_status === 'Paid') {
-      await syncPaidLinkedInvoice(client, invoice_id, payment_method, created_by)
+    if (invoice_id && (effectivePaid > 0 || effectiveStatus === 'Paid')) {
+      await reconcileInvoicePayment(client, invoice_id, effectivePaid, {
+        paymentMethod: payment_method, reference: payment_reference, paymentDate: payment_date, actorId: created_by,
+      })
     }
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
@@ -339,6 +376,14 @@ async function update(id, data, actorId) {
     ? calcTotals(items, order_type, rush, shipping, discPct, taxPct)
     : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: existing.tax_amt, total: existing.total }
 
+  // Resolve the amount received + effective payment status for this update.
+  const paidProvided = data.amount_paid !== undefined && data.amount_paid !== null
+  const markPaid = (data.payment_status ?? existing.payment_status) === 'Paid'
+  const targetPaid = paidProvided
+    ? +Math.max(0, Math.min(Number(data.amount_paid), Number(totals.total))).toFixed(2)
+    : (markPaid ? Number(totals.total) : Number(existing.amount_paid || 0))
+  const effectiveStatus = derivePaymentStatus(targetPaid, totals.total, data.payment_status ?? existing.payment_status)
+
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -349,7 +394,10 @@ async function update(id, data, actorId) {
          due_date         = COALESCE($3,  due_date),
          payment_terms    = COALESCE($4,  payment_terms),
          payment_method   = COALESCE($5,  payment_method),
-         payment_status   = COALESCE($6,  payment_status),
+         payment_status   = $6,
+         amount_paid      = $36,
+         payment_reference = COALESCE($37, payment_reference),
+         payment_date      = COALESCE($38, payment_date),
          rush_services    = $7,
          shipping_charges = $8,
          subtotal         = $9,
@@ -379,7 +427,7 @@ async function update(id, data, actorId) {
        RETURNING id`,
       [
         data.customer_id ?? null, data.order_date, data.due_date, data.payment_terms, data.payment_method,
-        data.payment_status ?? null,
+        effectiveStatus,
         rush, shipping,
         totals.subtotal, discPct, totals.discount_amt,
         taxPct, totals.tax_amt, totals.total,
@@ -390,6 +438,7 @@ async function update(id, data, actorId) {
         data.production_priority, data.production_method, data.production_facility,
         data.assigned_team, data.estimated_production_time, data.total_print_locations,
         id,
+        targetPaid, data.payment_reference ?? null, data.payment_date ?? null,
       ]
     )
     if (!updated[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
@@ -399,8 +448,13 @@ async function update(id, data, actorId) {
       await client.query(`DELETE FROM ${tableMap[order_type]} WHERE order_id = $1`, [id])
       await insertItems(client, id, order_type, items)
     }
-    if ((data.payment_status ?? existing.payment_status) === 'Paid') {
-      await syncPaidLinkedInvoice(client, existing.invoice_id, data.payment_method ?? existing.payment_method, actorId)
+    if (existing.invoice_id && (targetPaid > 0 || markPaid)) {
+      await reconcileInvoicePayment(client, existing.invoice_id, targetPaid, {
+        paymentMethod: data.payment_method ?? existing.payment_method,
+        reference: data.payment_reference ?? existing.payment_reference,
+        paymentDate: data.payment_date ?? existing.payment_date,
+        actorId,
+      })
     }
     await client.query('COMMIT')
     return getById(id)

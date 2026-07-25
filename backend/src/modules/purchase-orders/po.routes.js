@@ -75,6 +75,13 @@ const createSchema = z.object({
   shipping_address:   z.string().optional().nullable(),
   billing_address:    z.string().optional().nullable(),
   terms_conditions:   z.string().optional().nullable(),
+  // Shipment / fulfilment details captured on the PO form.
+  ship_source:        z.enum(['vendor', 'self']).optional().nullable(),
+  ship_date:          z.string().optional().nullable(),
+  estimated_delivery: z.string().optional().nullable(),
+  tracking_number:    z.string().max(100).optional().nullable(),
+  carrier:            z.string().max(50).optional().nullable(),
+  tracking_notes:     z.string().optional().nullable(),
   order_date:         z.string().optional().nullable(),
   expected_date:      z.string().optional().nullable(),
   notes:              z.string().optional().nullable(),

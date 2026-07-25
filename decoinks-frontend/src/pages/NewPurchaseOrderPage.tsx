@@ -109,6 +109,12 @@ interface POFormState {
   buyer_id: string
   notes: string
   terms_conditions: string
+  ship_source: '' | 'vendor' | 'self'
+  carrier: string
+  tracking_number: string
+  ship_date: string
+  estimated_delivery: string
+  tracking_notes: string
   items: POLineItem[]
   orders: CoveredOrder[]
   fragments: Fragment[]
@@ -186,6 +192,12 @@ const initialState: POFormState = {
   buyer_id: '',
   notes: '',
   terms_conditions: '',
+  ship_source: '',
+  carrier: '',
+  tracking_number: '',
+  ship_date: '',
+  estimated_delivery: '',
+  tracking_notes: '',
   items: [],
   orders: [],
   fragments: [],
@@ -331,6 +343,12 @@ export function NewPurchaseOrderPage() {
         buyer_id:             existingPO.buyer_id || '',
         notes:                existingPO.notes || '',
         terms_conditions:     existingPO.terms_conditions || '',
+        ship_source:          existingPO.ship_source || '',
+        carrier:              existingPO.carrier || '',
+        tracking_number:      existingPO.tracking_number || '',
+        ship_date:            existingPO.ship_date ? existingPO.ship_date.split('T')[0] : '',
+        estimated_delivery:   existingPO.estimated_delivery ? existingPO.estimated_delivery.split('T')[0] : '',
+        tracking_notes:       existingPO.tracking_notes || '',
         orders: (existingPO.orders ?? []).map((o: any): CoveredOrder => {
           const sz = parseSheetSize(o.gangsheet_sizes)
           return {
@@ -597,6 +615,13 @@ export function NewPurchaseOrderPage() {
       expected_date: state.expected_date || null,
       notes: state.notes || null,
       terms_conditions: state.terms_conditions || null,
+      // Shipment / fulfilment details.
+      ship_source: state.ship_source || null,
+      carrier: state.carrier || null,
+      tracking_number: state.tracking_number || null,
+      ship_date: state.ship_date || null,
+      estimated_delivery: state.estimated_delivery || null,
+      tracking_notes: state.tracking_notes || null,
       // Apparel PO may cover only one order — never send more, even if the
       // orders list carried over from a gangsheet-mode edit before the switch.
       order_ids: state.po_type === 'apparel'
@@ -1237,6 +1262,75 @@ export function NewPurchaseOrderPage() {
             onChange={e => set('terms_conditions', e.target.value)} />
         </div>
       )}
+
+      {/* ── SHIPMENT / FULFILLMENT ── */}
+      <div className="np-card">
+        <div className="np-card-header">
+          <span className="np-section-num">4</span>
+          <h3>Shipment &amp; Fulfillment</h3>
+        </div>
+
+        <div className="np-field" style={{ marginBottom: 14 }}>
+          <label className="np-label">Who ships this order?</label>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {([
+              { key: 'vendor', title: 'Factory / Vendor ships', sub: 'The fulfilment partner ships directly — log their tracking.' },
+              { key: 'self',   title: 'We ship (in-house)',      sub: 'Goods come to us and we ship them out.' },
+            ] as const).map(opt => {
+              const active = state.ship_source === opt.key
+              return (
+                <button key={opt.key} type="button"
+                  onClick={() => set('ship_source', active ? '' : opt.key)}
+                  style={{
+                    flex: '1 1 220px', textAlign: 'left', cursor: 'pointer',
+                    border: `1.5px solid ${active ? '#2563eb' : 'var(--crm-line, #e5e7eb)'}`,
+                    background: active ? '#eff6ff' : '#fff',
+                    borderRadius: 10, padding: '10px 12px',
+                  }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: active ? '#1d4ed8' : '#111827' }}>{opt.title}</div>
+                  <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>{opt.sub}</div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="np-vendor-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          <div className="np-field">
+            <label className="np-label">Carrier</label>
+            <input className="np-input" placeholder="UPS, FedEx, DHL…"
+              value={state.carrier} onChange={e => set('carrier', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Tracking Number</label>
+            <input className="np-input" placeholder="Tracking / AWB #"
+              value={state.tracking_number} onChange={e => set('tracking_number', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Ship Date</label>
+            <input type="date" className="np-input"
+              value={state.ship_date} onChange={e => set('ship_date', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Estimated Delivery</label>
+            <input type="date" className="np-input"
+              value={state.estimated_delivery} onChange={e => set('estimated_delivery', e.target.value)} />
+          </div>
+        </div>
+
+        <div className="np-field" style={{ marginTop: 12 }}>
+          <label className="np-label">Shipment Notes</label>
+          <textarea className="np-textarea" rows={2}
+            placeholder="Package count, handling notes, delivery instructions…"
+            value={state.tracking_notes} onChange={e => set('tracking_notes', e.target.value)} />
+        </div>
+
+        {state.tracking_number.trim() !== '' && (
+          <p style={{ fontSize: 11.5, color: '#059669', margin: '10px 2px 0', fontWeight: 600 }}>
+            ✓ Saving a tracking number creates a shipment and marks the covered order(s) as Shipped.
+          </p>
+        )}
+      </div>
 
       {/* ── FOOTER ACTIONS ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', margin: '16px 0 32px' }}>

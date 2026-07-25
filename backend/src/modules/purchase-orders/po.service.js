@@ -414,6 +414,77 @@ async function getById(id) {
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
+// True when the caller sent any shipment/fulfilment field on the PO payload.
+function hasShipmentInput(data) {
+  return ['ship_source', 'ship_date', 'estimated_delivery', 'tracking_number', 'carrier', 'tracking_notes']
+    .some((k) => data[k] !== undefined && data[k] !== null && data[k] !== '')
+}
+
+// Mirror the PO's shipment details into the `shipments` table (one shipment per
+// PO), linked to the PO and its primary covered order. When a tracking number
+// is present the covered orders are advanced to "Shipped" so the dashboard
+// Shipped card + Recent Shipments list reflect the fulfilment in real time.
+async function upsertPoShipment(client, po, ship, orderIds, actorId) {
+  const primaryOrderId = (orderIds && orderIds[0]) || po.order_id || null
+  const hasTracking = !!(ship.tracking_number && String(ship.tracking_number).trim())
+  const status = hasTracking ? 'In Transit' : (ship.ship_date ? 'Label Created' : 'Pending')
+
+  const { rows: existing } = await client.query(
+    `SELECT id FROM shipments WHERE po_id = $1 ORDER BY created_at LIMIT 1`, [po.id]
+  )
+
+  let shipmentId
+  if (existing[0]) {
+    shipmentId = existing[0].id
+    await client.query(
+      `UPDATE shipments SET
+         order_id           = COALESCE($2, order_id),
+         supplier_id        = COALESCE($3, supplier_id),
+         ship_source        = COALESCE($4, ship_source),
+         carrier            = COALESCE($5, carrier),
+         tracking_number    = COALESCE($6, tracking_number),
+         ship_date          = COALESCE($7, ship_date),
+         estimated_delivery = COALESCE($8, estimated_delivery),
+         notes              = COALESCE($9, notes),
+         status             = $10,
+         updated_at         = NOW()
+       WHERE id = $1`,
+      [shipmentId, primaryOrderId, po.supplier_id || null, ship.ship_source || null, ship.carrier || null,
+       ship.tracking_number || null, ship.ship_date || null, ship.estimated_delivery || null,
+       ship.tracking_notes || null, status]
+    )
+  } else {
+    const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
+    const { rows } = await client.query(
+      `INSERT INTO shipments
+         (shipment_number, order_id, supplier_id, po_id, ship_source, status,
+          carrier, tracking_number, ship_date, estimated_delivery, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING id`,
+      [shipment_number, primaryOrderId, po.supplier_id || null, po.id, ship.ship_source || null, status,
+       ship.carrier || null, ship.tracking_number || null, ship.ship_date || null,
+       ship.estimated_delivery || null, ship.tracking_notes || null, actorId || null]
+    )
+    shipmentId = rows[0].id
+  }
+
+  // Once real tracking exists, reflect fulfilment on the covered orders so the
+  // dashboard "Shipped" pipeline (which reads order status) stays dynamic.
+  if (hasTracking) {
+    const ids = (orderIds && orderIds.length ? orderIds : (primaryOrderId ? [primaryOrderId] : []))
+    if (ids.length) {
+      await client.query(
+        `UPDATE orders
+         SET status = 'Shipped', shipped_at = COALESCE(shipped_at, NOW()), updated_at = NOW()
+         WHERE id = ANY($1) AND deleted_at IS NULL AND status NOT IN ('Delivered', 'Cancelled')`,
+        [ids]
+      )
+    }
+  }
+
+  return shipmentId
+}
+
 async function create(data) {
   const {
     vendor_id, supplier_reference, payment_terms, currency = 'USD', exchange_rate = 1,
@@ -422,6 +493,7 @@ async function create(data) {
     freight_charges = 0, other_charges = 0, order_id,
     po_type = 'apparel', supplier_contact_id = null,
     communication_method = 'email', payment_status = 'Unpaid',
+    ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes,
     fragments = [], artwork_ids = [],
     items = [], created_by,
   } = data
@@ -442,9 +514,11 @@ async function create(data) {
           buyer_id, department, priority, shipping_method, shipping_address,
           billing_address, terms_conditions,
           total_discount, total_tax, freight_charges, other_charges, grand_total, order_id,
-          po_type, supplier_contact_id, communication_method, payment_status)
+          po_type, supplier_contact_id, communication_method, payment_status,
+          ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-               $21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+               $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
+               $31,$32,$33,$34,$35,$36)
        RETURNING *`,
       [
         po_number,
@@ -477,6 +551,12 @@ async function create(data) {
         supplier_contact_id,
         communication_method,
         payment_status,
+        ship_source || null,
+        ship_date || null,
+        estimated_delivery || null,
+        tracking_number || null,
+        carrier || null,
+        tracking_notes || null,
       ]
     )
     const po = rows[0]
@@ -484,6 +564,10 @@ async function create(data) {
     if (order_ids.length)   await replaceOrders(client, po.id, order_ids)
     if (fragments.length)   await replaceFragments(client, po.id, fragments)
     if (artwork_ids.length) await replaceArtworks(client, po.id, artwork_ids)
+
+    if (hasShipmentInput(data)) {
+      await upsertPoShipment(client, po, { ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes }, order_ids, created_by)
+    }
 
     await client.query(
       `INSERT INTO po_status_history (po_id, from_status, to_status, changed_by, comment)
@@ -551,6 +635,12 @@ async function update(id, data) {
          supplier_contact_id  = COALESCE($25, supplier_contact_id),
          communication_method = COALESCE($26, communication_method),
          payment_status       = COALESCE($27, payment_status),
+         ship_source          = COALESCE($29, ship_source),
+         ship_date            = COALESCE($30, ship_date),
+         estimated_delivery   = COALESCE($31, estimated_delivery),
+         tracking_number      = COALESCE($32, tracking_number),
+         carrier              = COALESCE($33, carrier),
+         tracking_notes       = COALESCE($34, tracking_notes),
          updated_at        = NOW()
        WHERE id = $28 AND deleted_at IS NULL
        RETURNING *`,
@@ -563,6 +653,8 @@ async function update(id, data) {
         total_discount, total_tax, freight, other, grand_total,
         data.po_type, data.supplier_contact_id, data.communication_method, data.payment_status,
         id,
+        data.ship_source ?? null, data.ship_date ?? null, data.estimated_delivery ?? null,
+        data.tracking_number ?? null, data.carrier ?? null, data.tracking_notes ?? null,
       ]
     )
     if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
@@ -576,6 +668,16 @@ async function update(id, data) {
     if (data.order_ids   !== undefined) await replaceOrders(client, id, data.order_ids)
     if (data.fragments   !== undefined) await replaceFragments(client, id, data.fragments)
     if (data.artwork_ids !== undefined) await replaceArtworks(client, id, data.artwork_ids)
+
+    if (hasShipmentInput(data)) {
+      const coveredIds = data.order_ids !== undefined
+        ? data.order_ids
+        : (existing.orders || []).map(o => o.id)
+      await upsertPoShipment(client, rows[0], {
+        ship_source: data.ship_source, ship_date: data.ship_date, estimated_delivery: data.estimated_delivery,
+        tracking_number: data.tracking_number, carrier: data.carrier, tracking_notes: data.tracking_notes,
+      }, coveredIds, null)
+    }
 
     await client.query('COMMIT')
     return getById(id)
