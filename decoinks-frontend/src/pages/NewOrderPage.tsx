@@ -1163,12 +1163,12 @@ export function NewOrderPage() {
 
             <div className="no-payment-field">
               <label className="no-payment-label">Amount Received</label>
-              <div className="no-pricing-input-group" style={{ width: '100%' }}>
-                <span className="no-pricing-sym">$</span>
+              <div style={{ position: 'relative', width: '100%' }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280', fontWeight: 600, pointerEvents: 'none' }}>$</span>
                 <input
                   type="number"
-                  className="no-pricing-input"
-                  style={{ width: '100%', textAlign: 'left' }}
+                  className="no-info-select"
+                  style={{ width: '100%', paddingLeft: 22 }}
                   min={0}
                   step={0.01}
                   value={amountPaid}
