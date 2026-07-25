@@ -95,7 +95,7 @@ async function create({
          due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
          estimated_shipping, rush_services, payment_terms, payment_method, customer_notes
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
+       VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
        RETURNING *`,
       [
         quote_number, lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
