@@ -1127,95 +1127,95 @@ export function NewOrderPage() {
           <div className="no-card no-payment-card">
             <h4 className="no-section-title">Payment Information</h4>
 
-            <div className="no-payment-field">
-              <label className="no-payment-label">Payment Terms</label>
-              <select className="no-info-select" value={paymentTerms} onChange={e => {
-                const val = e.target.value
-                setPaymentTerms(val)
-                if (val === 'Paid') setPaymentStatus('Paid')
-              }}>
-                {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="no-payment-field">
+                <label className="no-payment-label">Payment Terms</label>
+                <select className="no-info-select" value={paymentTerms} onChange={e => {
+                  const val = e.target.value
+                  setPaymentTerms(val)
+                  if (val === 'Paid') setPaymentStatus('Paid')
+                }}>
+                  {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
 
-            <div className="no-payment-field">
-              <label className="no-payment-label">Payment Method</label>
-              <select className="no-info-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as typeof paymentMethod)}>
-                <option value="cashapp">CashApp</option>
-                <option value="zelle">Zelle</option>
-                <option value="paypal">PayPal</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cash">Cash</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
+              <div className="no-payment-field">
+                <label className="no-payment-label">Payment Method</label>
+                <select className="no-info-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as typeof paymentMethod)}>
+                  <option value="cashapp">CashApp</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="paypal">PayPal</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cash">Cash</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
 
-            <div className="no-payment-field">
-              <label className="no-payment-label">Currency</label>
-              <select className="no-info-select" value={currency} onChange={e => setCurrency(e.target.value)}>
-                <option value="USD">USD - US Dollar</option>
-                <option value="EUR">EUR - Euro</option>
-                <option value="CAD">CAD - Canadian Dollar</option>
-                <option value="GBP">GBP - British Pound</option>
-                <option value="AUD">AUD - Australian Dollar</option>
-              </select>
-            </div>
+              <div className="no-payment-field">
+                <label className="no-payment-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Amount Received</span>
+                  <button type="button" onClick={() => { setAmountPaid(total); setPaymentStatus('Paid') }}
+                    style={{ fontSize: 10.5, color: '#2563eb', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, textTransform: 'none' }}>Full</button>
+                </label>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                  <input
+                    type="number"
+                    className="no-info-select"
+                    style={{ width: '100%', paddingLeft: 22 }}
+                    min={0}
+                    step={0.01}
+                    value={amountPaid}
+                    onFocus={e => e.target.select()}
+                    onChange={e => {
+                      const v = Math.max(0, +e.target.value)
+                      setAmountPaid(v)
+                      // Keep the payment status in step with the amount received.
+                      setPaymentStatus(v <= 0 ? 'Unpaid' : v >= total ? 'Paid' : 'Partial')
+                    }}
+                  />
+                </div>
+              </div>
 
-            <div className="no-payment-field">
-              <label className="no-payment-label">Amount Received</label>
-              <div style={{ position: 'relative', width: '100%' }}>
-                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+              <div className="no-payment-field">
+                <label className="no-payment-label">Currency</label>
+                <select className="no-info-select" value={currency} onChange={e => setCurrency(e.target.value)}>
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="CAD">CAD - Canadian Dollar</option>
+                  <option value="GBP">GBP - British Pound</option>
+                  <option value="AUD">AUD - Australian Dollar</option>
+                </select>
+              </div>
+
+              <div className="no-payment-field">
+                <label className="no-payment-label">Payment Reference</label>
                 <input
-                  type="number"
+                  type="text"
                   className="no-info-select"
-                  style={{ width: '100%', paddingLeft: 22 }}
-                  min={0}
-                  step={0.01}
-                  value={amountPaid}
-                  onFocus={e => e.target.select()}
-                  onChange={e => {
-                    const v = Math.max(0, +e.target.value)
-                    setAmountPaid(v)
-                    // Keep the payment status in step with the amount received.
-                    setPaymentStatus(v <= 0 ? 'Unpaid' : v >= total ? 'Paid' : 'Partial')
-                  }}
+                  placeholder="Txn / confirmation #"
+                  value={paymentReference}
+                  onChange={e => setPaymentReference(e.target.value)}
                 />
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <button type="button" onClick={() => { setAmountPaid(total); setPaymentStatus('Paid') }}
-                  style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>Mark fully paid</button>
-                {amountPaid > 0 && <button type="button" onClick={() => { setAmountPaid(0); setPaymentStatus('Unpaid') }}
-                  style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>Clear</button>}
+
+              <div className="no-payment-field">
+                <label className="no-payment-label">Payment Date</label>
+                <input
+                  type="date"
+                  className="no-info-select"
+                  value={paymentDate}
+                  onChange={e => setPaymentDate(e.target.value)}
+                />
               </div>
             </div>
 
-            <div className="no-payment-field">
-              <label className="no-payment-label">Payment Reference</label>
-              <input
-                type="text"
-                className="no-info-select"
-                placeholder="Txn / confirmation #"
-                value={paymentReference}
-                onChange={e => setPaymentReference(e.target.value)}
-              />
-            </div>
-
-            <div className="no-payment-field">
-              <label className="no-payment-label">Payment Date</label>
-              <input
-                type="date"
-                className="no-info-select"
-                value={paymentDate}
-                onChange={e => setPaymentDate(e.target.value)}
-              />
-            </div>
-
-            <div className="no-pricing-row" style={{ marginTop: 6 }}>
+            <div className="no-pricing-row" style={{ marginTop: 10 }}>
               <span>Balance Due</span>
               <strong style={{ color: balanceDue > 0 ? '#dc2626' : '#16a34a' }}>${fmt(balanceDue)}</strong>
             </div>
 
-            <div className="no-payment-field">
+            <div className="no-payment-field" style={{ marginTop: 8 }}>
               <label className="no-payment-label">Payment Status</label>
               <select
                 className="no-info-select no-payment-status-select"
