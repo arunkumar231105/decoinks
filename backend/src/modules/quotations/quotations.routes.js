@@ -128,6 +128,7 @@ router.post('/bulk-upload',           uploadCsv, controller.bulkUpload)
 router.post('/:id/convert-to-invoice',             controller.convertToInvoice)
 router.put('/:id',                    validate(updateSchema),  controller.update)
 router.patch('/:id/status',           validate(statusSchema),  controller.updateStatus)
+router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id',                 controller.remove)
 
 // ── Artwork attachments on a quote ────────────────────────────────────────────

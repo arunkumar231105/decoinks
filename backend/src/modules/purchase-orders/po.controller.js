@@ -44,6 +44,18 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0; const errors = []
+    for (const id of ids) {
+      try { await service.remove(id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} purchase order(s) deleted`)
+  } catch (err) { next(err) }
+}
+
 async function listAttachments(req, res, next) {
   try {
     const attachments = await service.listAttachments(req.params.id)
@@ -82,4 +94,4 @@ async function sendToPortal(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, summary, getOne, create, update, updateStatus, remove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }
+module.exports = { list, summary, getOne, create, update, updateStatus, remove, bulkRemove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }

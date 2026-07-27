@@ -453,11 +453,45 @@ async function update(id, fields, actorId) {
 }
 
 async function remove(id) {
-  const { rows } = await query(
-    `UPDATE customers SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
-    [id]
-  )
-  if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+  // Permanent delete. Every nullable FK that references this customer is detached
+  // first (so linked quotes/orders/invoices/payments are kept, just unlinked),
+  // then the row is removed. CASCADE child tables (addresses, channels, health)
+  // are removed automatically by the final DELETE.
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: cust } = await client.query(
+      `SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL`, [id]
+    )
+    if (!cust[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+
+    const { rows: refs } = await client.query(`
+      SELECT tc.table_name, kcu.column_name
+      FROM information_schema.referential_constraints rc
+      JOIN information_schema.table_constraints tc
+        ON tc.constraint_name = rc.constraint_name AND tc.constraint_schema = rc.constraint_schema
+      JOIN information_schema.key_column_usage kcu
+        ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
+      JOIN information_schema.constraint_column_usage ccu
+        ON ccu.constraint_name = rc.constraint_name AND ccu.constraint_schema = rc.constraint_schema
+      JOIN information_schema.columns col
+        ON col.table_schema = tc.table_schema AND col.table_name = tc.table_name AND col.column_name = kcu.column_name
+      WHERE ccu.table_name = 'customers' AND ccu.column_name = 'id'
+        AND col.is_nullable = 'YES' AND rc.delete_rule = 'NO ACTION'
+    `)
+    for (const r of refs) {
+      await client.query(`UPDATE "${r.table_name}" SET "${r.column_name}" = NULL WHERE "${r.column_name}" = $1`, [id])
+    }
+
+    await client.query(`DELETE FROM customers WHERE id = $1`, [id])
+    await client.query('COMMIT')
+    return { id }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 module.exports = { list, getStats, getFilterOptions, getById, create, update, remove }

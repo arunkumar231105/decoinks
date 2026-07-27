@@ -4,7 +4,7 @@ import {
   BadgeCheck, Box, CalendarDays, ChevronDown, ChevronFirst, ChevronLast,
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
   PackageCheck, Plus, Printer, Search, Send, ShoppingBag,
-  Truck, Upload, Users, X,
+  Trash2, Truck, Upload, Users, X,
 } from 'lucide-react'
 import toast from '../../utils/toast'
 import { api } from '../../services/api'
@@ -282,6 +282,18 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     } catch (error: any) { toast.error(error.response?.data?.message || 'Status update failed') }
   }
 
+  const deleteSelected = async () => {
+    if (!selected.size) return
+    const noun = config.title.toLowerCase()
+    if (!window.confirm(`Permanently delete ${selected.size} ${noun}? This cannot be undone.`)) return
+    try {
+      const res = await api.post(`${config.api}/bulk-delete`, { ids: [...selected] })
+      const n = res.data?.data?.deleted ?? selected.size
+      toast.success(`${n} record${n === 1 ? '' : 's'} permanently deleted`)
+      setSelected(new Set()); setActive(null); setDetail(null); await load()
+    } catch (error: any) { toast.error(error.response?.data?.message || 'Delete failed') }
+  }
+
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
     setPeriod('all'); setDateFrom(''); setDateTo(''); setPage(1)
@@ -318,7 +330,8 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <section className="ew-bulk">
         <strong>{selected.size} selected</strong>
         <select aria-label="Update selected status" disabled={!selected.size} defaultValue="" onChange={e => { updateSelectedStatus(e.target.value); e.currentTarget.value = '' }}><option value="" disabled>Update status…</option>{config.statuses.map(s => <option key={s}>{s}</option>)}</select>
-        <button className="ew-btn" disabled={!selected.size} onClick={() => downloadCsv(`${kind}-selected.csv`, allRows.filter(r => selected.has(r.id)))}><Download size={14}/>Export selected</button><span/>
+        <button className="ew-btn" disabled={!selected.size} onClick={() => downloadCsv(`${kind}-selected.csv`, allRows.filter(r => selected.has(r.id)))}><Download size={14}/>Export selected</button>
+        <button className="ew-btn ew-danger" disabled={!selected.size} onClick={deleteSelected}><Trash2 size={14}/>Delete selected</button><span/>
         <div className="ew-columns"><button className="ew-btn" onClick={() => setColumnsOpen(v => !v)}>Columns <ChevronDown size={13}/></button>{columnsOpen && <div className="ew-columns-menu"><header><strong>Visible columns</strong><button onClick={() => setColumnsOpen(false)}><X size={14}/></button></header>{config.columns.map(c => <label key={c.key}><input type="checkbox" checked={visibleColumns.has(c.key)} onChange={() => setVisibleColumns(current => { const next = new Set(current); next.has(c.key) ? next.delete(c.key) : next.add(c.key); return next })}/>{c.label}</label>)}</div>}</div>
       </section>
 

@@ -139,6 +139,7 @@ router.post('/:id/convert-to-order',
 router.put('/:id',              validate(updateSchema),  controller.update)
 router.patch('/:id/status',     validate(statusSchema),  controller.updateStatus)
 router.patch('/:id/payment',    validate(paymentSchema), controller.recordPayment)
+router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id',           controller.remove)
 
 module.exports = router

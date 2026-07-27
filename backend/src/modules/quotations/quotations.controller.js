@@ -51,6 +51,18 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0; const errors = []
+    for (const id of ids) {
+      try { await service.remove(id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} quotation(s) deleted`)
+  } catch (err) { next(err) }
+}
+
 async function convertToInvoice(req, res, next) {
   try {
     const { invoice, alreadyExisted } = await service.convertToInvoice(req.params.id, req.user.id)
@@ -98,4 +110,4 @@ async function csvTemplate(_req, res) {
   res.send(csv)
 }
 
-module.exports = { list, getOne, getRevisions, create, update, updateStatus, remove, convertToInvoice, bulkUpload, csvTemplate }
+module.exports = { list, getOne, getRevisions, create, update, updateStatus, remove, bulkRemove, convertToInvoice, bulkUpload, csvTemplate }

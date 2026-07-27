@@ -71,6 +71,7 @@ router.get('/export',  controller.exportCsv)
 router.get('/:id',     controller.getOne)
 router.post('/',   validate(createSchema), controller.create)
 router.put('/:id', validate(updateSchema), controller.update)
+router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id', controller.remove)
 
 module.exports = router

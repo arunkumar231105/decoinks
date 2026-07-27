@@ -506,28 +506,6 @@ async function getInvoice(orderId) {
 }
 
 async function remove(id) {
-  // Block if any purchase order is linked (ON DELETE RESTRICT on purchase_orders.order_id)
-  const { rows: linkedPOs } = await query(
-    `SELECT po_number FROM purchase_orders WHERE order_id = $1 LIMIT 1`, [id]
-  )
-  if (linkedPOs[0]) {
-    throw Object.assign(
-      new Error(`This order has a linked purchase order (${linkedPOs[0].po_number}) and cannot be deleted. Delete the purchase order first.`),
-      { statusCode: 409 }
-    )
-  }
-
-  // Block if any invoice is linked to this order
-  const { rows: linkedInvoices } = await query(
-    `SELECT id FROM invoices WHERE order_id = $1 LIMIT 1`, [id]
-  )
-  if (linkedInvoices[0]) {
-    throw Object.assign(
-      new Error('This order has a linked invoice and cannot be deleted. Delete the invoice first.'),
-      { statusCode: 409 }
-    )
-  }
-
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -535,9 +513,14 @@ async function remove(id) {
       `SELECT id FROM orders WHERE id = $1`, [id]
     )
     if (!ord[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
-    // Unlink artworks and shipments (no CASCADE on their order_id FK)
-    await client.query(`UPDATE artworks  SET order_id = NULL WHERE order_id = $1`, [id])
-    await client.query(`UPDATE shipments SET order_id = NULL WHERE order_id = $1`, [id])
+    // Unlink dependents — the linked documents are kept, only the order link is
+    // detached (purchase_orders.order_id, po_orders, invoices.order_id are RESTRICT;
+    // artworks/shipments have no CASCADE on order_id).
+    await client.query(`DELETE FROM po_orders WHERE order_id = $1`, [id])
+    await client.query(`UPDATE purchase_orders SET order_id = NULL WHERE order_id = $1`, [id])
+    await client.query(`UPDATE invoices        SET order_id = NULL WHERE order_id = $1`, [id])
+    await client.query(`UPDATE artworks         SET order_id = NULL WHERE order_id = $1`, [id])
+    await client.query(`UPDATE shipments        SET order_id = NULL WHERE order_id = $1`, [id])
     // order_items_apparel/gangsheet/dtf, portal_order_visibility, portal_status_updates all CASCADE
     await client.query(`DELETE FROM orders WHERE id = $1`, [id])
     await client.query('COMMIT')

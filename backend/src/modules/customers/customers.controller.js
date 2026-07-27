@@ -73,4 +73,16 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, stats, filters, exportCsv, getOne, create, update, remove }
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0; const errors = []
+    for (const id of ids) {
+      try { await svc.remove(id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} customer(s) deleted`)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, stats, filters, exportCsv, getOne, create, update, remove, bulkRemove }

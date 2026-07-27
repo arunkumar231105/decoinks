@@ -177,6 +177,7 @@ router.patch('/:id/payment-status', async (req, res, next) => {
 })
 router.put('/:id',           validate(updateSchema), controller.update)
 router.patch('/:id/status',  validate(statusSchema), controller.updateStatus)
+router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id',        controller.remove)
 
 // ── Customer Portal Integration ───────────────────────────────────────────────

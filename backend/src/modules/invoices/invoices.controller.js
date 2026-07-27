@@ -48,6 +48,18 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0; const errors = []
+    for (const id of ids) {
+      try { await service.remove(id, req.user.id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} invoice(s) deleted`)
+  } catch (err) { next(err) }
+}
+
 async function convertToOrder(req, res, next) {
   try {
     const { order_type } = req.body
@@ -59,4 +71,4 @@ async function convertToOrder(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, recordPayment, remove, convertToOrder }
+module.exports = { list, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder }

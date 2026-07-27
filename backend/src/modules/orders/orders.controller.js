@@ -51,6 +51,18 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0; const errors = []
+    for (const id of ids) {
+      try { await service.remove(id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} order(s) deleted`)
+  } catch (err) { next(err) }
+}
+
 async function getBoard(req, res, next) {
   try {
     return success(res, await service.getBoard())
@@ -92,4 +104,4 @@ async function orderCsvTemplate(_req, res) {
   res.send(csv)
 }
 
-module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkUpload, orderCsvTemplate }
+module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, bulkRemove, convertToPO, bulkUpload, orderCsvTemplate }
