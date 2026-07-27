@@ -83,12 +83,42 @@ async function getById(id) {
   const { rows } = await query(
     `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
             COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
-            o.order_number, q.quote_number
+            o.order_number, q.quote_number,
+            COALESCE(i.customer_id, q.customer_id, l.customer_id) AS resolved_customer_id,
+            COALESCE(NULLIF(trim(c.billing_address), ''), customer_billing.address) AS customer_billing_address,
+            COALESCE(customer_shipping.address, concat_ws(', ',
+              NULLIF(trim(c.address_line1), ''),
+              NULLIF(trim(c.city), ''),
+              NULLIF(trim(c.state), ''),
+              NULLIF(trim(c.zip), ''),
+              NULLIF(trim(c.country), '')
+            )) AS customer_shipping_address,
+            q.billing_address AS quote_billing_address,
+            q.shipping_address AS quote_shipping_address
      FROM invoices i
-     LEFT JOIN customers c  ON c.id = i.customer_id
+     LEFT JOIN quotations q ON q.id = i.quote_id
+     LEFT JOIN leads l      ON l.id = q.lead_id
+     LEFT JOIN customers c  ON c.id = COALESCE(i.customer_id, q.customer_id, l.customer_id)
+     LEFT JOIN LATERAL (
+       SELECT concat_ws(', ', NULLIF(trim(ca.line1), ''), NULLIF(trim(ca.line2), ''),
+                NULLIF(trim(ca.city), ''), NULLIF(trim(ca.state), ''),
+                NULLIF(trim(ca.zipcode), ''), NULLIF(trim(ca.country), '')) AS address
+       FROM customer_addresses ca
+       WHERE ca.customer_id = c.id AND ca.address_type = 'billing'
+       ORDER BY ca.is_default DESC, ca.created_at
+       LIMIT 1
+     ) customer_billing ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT concat_ws(', ', NULLIF(trim(ca.line1), ''), NULLIF(trim(ca.line2), ''),
+                NULLIF(trim(ca.city), ''), NULLIF(trim(ca.state), ''),
+                NULLIF(trim(ca.zipcode), ''), NULLIF(trim(ca.country), '')) AS address
+       FROM customer_addresses ca
+       WHERE ca.customer_id = c.id AND ca.address_type = 'shipping'
+       ORDER BY ca.is_default DESC, ca.created_at
+       LIMIT 1
+     ) customer_shipping ON TRUE
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
-     LEFT JOIN quotations q ON q.id = i.quote_id
      LEFT JOIN users u      ON u.id = i.created_by
      WHERE i.id = $1`,
     [id]
@@ -161,16 +191,35 @@ async function create(fields_in) {
 
   if (resolvedCustomerId) {
     const { rows: cRows } = await query(
-      `SELECT name, email, company_phone_number, mobile_number, billing_address,
-              concat_ws(', ',
+      `SELECT c.name, c.email, c.company_phone_number, c.mobile_number,
+              COALESCE(NULLIF(trim(c.billing_address), ''), customer_billing.address) AS billing_address,
+              COALESCE(customer_shipping.address, concat_ws(', ',
                 NULLIF(trim(address_line1), ''),
                 NULLIF(trim(city), ''),
                 NULLIF(trim(state), ''),
                 NULLIF(trim(zip), ''),
                 NULLIF(trim(country), '')
-              ) AS shipping_address
-       FROM customers
-       WHERE id=$1 AND deleted_at IS NULL`,
+              )) AS shipping_address
+       FROM customers c
+       LEFT JOIN LATERAL (
+         SELECT concat_ws(', ', NULLIF(trim(ca.line1), ''), NULLIF(trim(ca.line2), ''),
+                  NULLIF(trim(ca.city), ''), NULLIF(trim(ca.state), ''),
+                  NULLIF(trim(ca.zipcode), ''), NULLIF(trim(ca.country), '')) AS address
+         FROM customer_addresses ca
+         WHERE ca.customer_id = c.id AND ca.address_type = 'billing'
+         ORDER BY ca.is_default DESC, ca.created_at
+         LIMIT 1
+       ) customer_billing ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT concat_ws(', ', NULLIF(trim(ca.line1), ''), NULLIF(trim(ca.line2), ''),
+                  NULLIF(trim(ca.city), ''), NULLIF(trim(ca.state), ''),
+                  NULLIF(trim(ca.zipcode), ''), NULLIF(trim(ca.country), '')) AS address
+         FROM customer_addresses ca
+         WHERE ca.customer_id = c.id AND ca.address_type = 'shipping'
+         ORDER BY ca.is_default DESC, ca.created_at
+         LIMIT 1
+       ) customer_shipping ON TRUE
+       WHERE c.id=$1 AND c.deleted_at IS NULL`,
       [resolvedCustomerId]
     )
     if (!cRows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })

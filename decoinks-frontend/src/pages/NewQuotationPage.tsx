@@ -115,6 +115,38 @@ const addDays = (date: string, days: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const normalizeAddress = (value: unknown) =>
+  String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+const addressesMatch = (billing: unknown, shipping: unknown) => {
+  const normalizedBilling = normalizeAddress(billing)
+  const normalizedShipping = normalizeAddress(shipping)
+  return Boolean(normalizedBilling && normalizedShipping && normalizedBilling === normalizedShipping)
+}
+
+const formatCustomerAddress = (address: Record<string, unknown> | undefined) =>
+  address
+    ? [address.line1, address.line2, address.city, address.state, address.zipcode, address.country]
+        .map(value => String(value ?? '').trim())
+        .filter(Boolean)
+        .join(', ')
+    : ''
+
+const customerSavedAddresses = (customer: Record<string, unknown>) => {
+  const addresses = Array.isArray(customer.addresses)
+    ? customer.addresses as Array<Record<string, unknown>>
+    : []
+  const billingRecord = addresses.find(address => address.address_type === 'billing')
+  const shippingRecord = addresses.find(address => address.address_type === 'shipping')
+  const builtAddress = [customer.address_line1, customer.city, customer.state, customer.zip, customer.country]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean)
+    .join(', ')
+  const billing = String(customer.billing_address ?? '').trim() || formatCustomerAddress(billingRecord) || builtAddress
+  const shipping = formatCustomerAddress(shippingRecord) || builtAddress || billing
+  return { billing, shipping }
+}
+
 const VARIANTS = ['Black - M', 'Black - L', 'Black - XL', 'White - M', 'White - L']
 const GANGSHEET_SIZES = ['22" x 60"', '22" x 120"', '24" x 60"', '30" x 60"']
 const APPAREL_SIZE_OPTIONS = [
@@ -1031,16 +1063,17 @@ export function NewQuotationPage() {
     setZipCode(c.zip ?? '')
 
     // Billing address: prefer stored billing_address, else build from address parts
-    const builtAddress = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
-    const billingAddr = c.billing_address || builtAddress
+    const { billing: billingAddr, shipping: shippingAddr } = customerSavedAddresses(c)
     if (billingAddr) setBillingAddress(billingAddr)
 
-    // Shipping address: if same_as_shipping is true, copy billing; else same built address
-    if (c.same_as_shipping && billingAddr) {
+    // Shipping address: restore the same-as-billing state from either the
+    // explicit customer flag or equal normalized customer address snapshots.
+    if ((c.same_as_shipping || addressesMatch(billingAddr, shippingAddr)) && billingAddr) {
       setShippingAddress(billingAddr)
       setSameAsBilling(true)
-    } else if (builtAddress) {
-      setShippingAddress(builtAddress)
+    } else if (shippingAddr) {
+      setShippingAddress(shippingAddr)
+      setSameAsBilling(false)
     }
   }, [fromCustomerData, formInitialized])
 
@@ -1062,11 +1095,15 @@ export function NewQuotationPage() {
       setLeadId(c.lead_id ?? null)
       setLeadNumber(c.lead_number ?? '')
       setCustomerSource(c.lead_source ?? c.source ?? '')
-      const built = [c.address_line1, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ')
-      const billingAddr = c.billing_address || built
+      const { billing: billingAddr, shipping: shippingAddr } = customerSavedAddresses(c)
       if (billingAddr) setBillingAddress(billingAddr)
-      if (c.same_as_shipping && billingAddr) { setShippingAddress(billingAddr); setSameAsBilling(true) }
-      else if (built) setShippingAddress(built)
+      if ((c.same_as_shipping || addressesMatch(billingAddr, shippingAddr)) && billingAddr) {
+        setShippingAddress(billingAddr)
+        setSameAsBilling(true)
+      } else if (shippingAddr) {
+        setShippingAddress(shippingAddr)
+        setSameAsBilling(false)
+      }
     } catch { /* keep whatever the user typed */ }
   }
 
@@ -1117,8 +1154,13 @@ export function NewQuotationPage() {
     setDueDate(q.due_date ?? '')
     setCustomerReqSummary(q.customer_requirement_summary ?? '')
     setQuoteEstimate(q.quote_estimate != null ? String(q.quote_estimate) : '')
-    setBillingAddress(q.billing_address ?? '')
-    setShippingAddress(q.shipping_address ?? '')
+    const savedBillingAddress = String(q.billing_address ?? '')
+    const savedShippingAddress = String(q.shipping_address ?? '')
+    setBillingAddress(savedBillingAddress)
+    setShippingAddress(savedShippingAddress)
+    // "Same as billing" is represented by equal saved snapshots. Restore the
+    // checkbox from those persisted values when an existing quote is reopened.
+    setSameAsBilling(addressesMatch(savedBillingAddress, savedShippingAddress))
     if (q.internal_notes) setInternalNotes(q.internal_notes)
     const orderType = ((q.order_type as string) || 'apparel') as QuoteTab
     setActiveTab(orderType)

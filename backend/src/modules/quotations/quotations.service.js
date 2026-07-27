@@ -72,7 +72,7 @@ async function getById(id) {
 }
 
 async function create({
-  lead_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items = [], created_by,
+  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items = [], created_by,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
@@ -93,9 +93,9 @@ async function create({
          customer_category, customer_source,
          shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
          due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
-         estimated_shipping, rush_services, payment_terms, payment_method, customer_notes
+         estimated_shipping, rush_services, payment_terms, payment_method, customer_notes, customer_id
        )
-       VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
+       VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
        RETURNING *`,
       [
         quote_number, lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
@@ -106,7 +106,7 @@ async function create({
         shipping_address || null, billing_address || null, due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
         estimated_shipping || 0, rush_services || 0, payment_terms || 'Due on Receipt',
-        payment_method || null, customer_notes || null,
+        payment_method || null, customer_notes || null, customer_id || null,
       ]
     )
     const qId = rows[0].id
@@ -134,7 +134,7 @@ async function create({
 }
 
 async function update(id, {
-  lead_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items,
+  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
@@ -160,11 +160,12 @@ async function update(id, {
            payment_terms=COALESCE($34, payment_terms),
            payment_method=COALESCE($35, payment_method),
            customer_notes=COALESCE($36, customer_notes),
+           customer_id=$37,
            -- editing an already-saved quote bumps the revision so it is
            -- visibly marked as revised (1 = original)
            revision_number=COALESCE(revision_number, 1) + 1,
            updated_at=NOW()
-       WHERE id=$37
+       WHERE id=$38
        RETURNING id`,
       [
         lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
@@ -179,6 +180,7 @@ async function update(id, {
         payment_terms || null,
         payment_method || null,
         customer_notes || null,
+        customer_id || null,
         id,
       ]
     )

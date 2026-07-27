@@ -33,6 +33,8 @@ interface Invoice {
   customer_name: string | null
   billing_email: string | null; contact_number: string | null
   billing_address: string | null; shipping_address: string | null
+  customer_billing_address?: string | null; customer_shipping_address?: string | null
+  quote_billing_address?: string | null; quote_shipping_address?: string | null
   order_type: string | null
   quote_number?: string | null
   quote_id: string | null; order_id: string | null
@@ -393,10 +395,26 @@ export function InvoicePrintPage() {
   const payMethod = titleCase(invoice.payment_method || invoice.payments?.[0]?.method)
 
   const billName     = invoice.customer_name || invoice.supplier_name || quotation?.customer_name || quotation?.company_name || '—'
-  const billAddr     = bestAddress(invoice.billing_address, quotation?.billing_address, invoice.shipping_address, quotation?.shipping_address) || '—'
+  const billAddr     = bestAddress(
+    invoice.billing_address,
+    quotation?.billing_address,
+    invoice.quote_billing_address,
+    invoice.customer_billing_address,
+    invoice.shipping_address,
+    quotation?.shipping_address,
+    invoice.customer_shipping_address,
+  ) || '—'
   const billEmail    = invoice.billing_email || quotation?.billing_email || ''
   const billPhone    = invoice.contact_number || quotation?.contact_number || ''
-  const shipAddr     = bestAddress(invoice.shipping_address, quotation?.shipping_address, invoice.billing_address, quotation?.billing_address) || '—'
+  const shipAddr     = bestAddress(
+    invoice.shipping_address,
+    quotation?.shipping_address,
+    invoice.quote_shipping_address,
+    invoice.customer_shipping_address,
+    invoice.billing_address,
+    quotation?.billing_address,
+    invoice.customer_billing_address,
+  ) || '—'
   const hasInvoiceShippingSnapshot = Boolean(bestAddress(invoice.shipping_address))
   const shipCityLine = hasInvoiceShippingSnapshot ? '' : [quotation?.shipping_city, quotation?.shipping_state, quotation?.zip_code].filter(Boolean).join(', ')
   const shipCountry  = hasInvoiceShippingSnapshot ? '' : (quotation?.shipping_country || '')

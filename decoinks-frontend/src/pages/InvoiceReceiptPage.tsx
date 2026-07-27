@@ -10,6 +10,8 @@ interface Invoice {
   contact_phone: string | null; shipping_name: string | null; shipping_address: string | null
   customer_name?: string | null; billing_email?: string | null; contact_number?: string | null
   billing_address?: string | null; payment_method?: string | null
+  customer_billing_address?: string | null; customer_shipping_address?: string | null
+  quote_billing_address?: string | null; quote_shipping_address?: string | null
   subtotal: number; discount_pct: number; discount_amt: number
   rush_services: number; shipping_charges: number
   total: number; notes: string | null; quote_id: string | null; order_type: string | null
@@ -275,8 +277,11 @@ export function InvoiceReceiptPage() {
   const billAddress = bestAddress(
     invoice.billing_address,
     quotation?.billing_address,
+    invoice.quote_billing_address,
+    invoice.customer_billing_address,
     invoice.shipping_address,
     quotation?.shipping_address,
+    invoice.customer_shipping_address,
   )
   const contactEmail = invoice.billing_email || invoice.contact_email || quotation?.billing_email
   const contactPhone = invoice.contact_number || invoice.contact_phone || quotation?.contact_number
