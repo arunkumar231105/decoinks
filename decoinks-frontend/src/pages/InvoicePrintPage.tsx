@@ -63,9 +63,6 @@ interface Artwork {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = (n: number | string | null | undefined) =>
-  '$' + Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
 const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
 
@@ -659,7 +656,7 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art = artworks[idx] ?? null
                   const frontUrl = (art?.file_url && art.file_type !== 'pdf') ? art.file_url : (item.front_image ?? null)
@@ -668,6 +665,7 @@ export function InvoicePrintPage() {
                     <tr key={item.id}>
                       <td style={{ fontWeight: 600, color: '#374151' }}>{idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#1a2b5c', fontSize: 13 }}>{item.description || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{item.sizes || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{item.artwork_count || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{item.qty}</td>
                       <td>
@@ -755,20 +753,17 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art     = artworks[idx] ?? null
                   const artBack = artworks[idx + items.length] ?? null
                   const frontUrl = (art?.file_url && art.file_type !== 'pdf') ? art.file_url : (item.front_image ?? null)
                   const backUrl  = (artBack?.file_url && artBack.file_type !== 'pdf') ? artBack.file_url : (item.back_image ?? null)
-                  const artSz   = art?.width_inches && art?.height_inches ? `${art.width_inches} x ${art.height_inches}` : '—'
-                  const artBSz  = artBack?.width_inches && artBack?.height_inches ? `${artBack.width_inches} x ${artBack.height_inches}` : '—'
                   const dotColor = colorHex(item.colors ?? null)
                   const isWhite  = item.colors?.toLowerCase().includes('white')
                   return (
                     <tr key={item.id}>
                       <td>{idx + 1}</td>
-                      <td>{item.category || '—'}</td>
                       <td className="td-l" style={{ fontWeight: 500 }}>
                         <div>{item.description}</div>
                         {(item.brand || item.model || item.catalog_sku) && (
