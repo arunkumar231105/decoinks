@@ -9,7 +9,6 @@ import {
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
-import { cn } from '../utils/cn'
 
 const COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'India', 'China', 'Japan']
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
@@ -272,7 +271,7 @@ export function CustomerDetailPage() {
               >
                 Delete
               </button>
-              <button className="lb-action-btn lb-action-primary" onClick={() => setEditing(true)}>
+              <button className="lb-action-btn lb-action-primary" onClick={() => navigate(`/customers/${id}/edit`)}>
                 <Edit2 size={14} /> Edit Customer
               </button>
             </>
@@ -653,9 +652,9 @@ export function CustomerDetailPage() {
                 <FileText size={13} /> New Quotation
               </button>
               <button
-                className={cn('lb-action-btn', editing && 'lb-action-primary')}
+                className="lb-action-btn"
                 style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}
-                onClick={() => setEditing(true)}
+                onClick={() => navigate(`/customers/${id}/edit`)}
               >
                 <Edit2 size={13} /> Edit Customer
               </button>

@@ -365,6 +365,25 @@ async function update(id, fields, actorId) {
     'customer_segment', 'tier',
     'customer_type', 'job_title', 'payment_terms', 'credit_limit', 'assigned_agent_id',
   ]
+  // Structured addresses (from the New/Edit Customer form) live in the
+  // customer_addresses table. When supplied, keep the denormalised flat
+  // columns (read by the list + detail views) in sync with the shipping
+  // address so both representations agree.
+  const addresses = Array.isArray(fields.addresses) ? fields.addresses : null
+  if (addresses) {
+    const ship = addresses.find(a => a.address_type === 'shipping') || {}
+    const bill = addresses.find(a => a.address_type === 'billing')
+    if (fields.address_line1 === undefined) fields.address_line1 = ship.line1 ?? null
+    if (fields.city    === undefined)        fields.city    = ship.city ?? null
+    if (fields.state   === undefined)        fields.state   = ship.state ?? null
+    if (fields.zip     === undefined)        fields.zip     = ship.zipcode ?? null
+    if (fields.country === undefined && ship.country) fields.country = ship.country
+    if (fields.billing_address === undefined && bill && bill.line1) {
+      fields.billing_address = [bill.line1, bill.line2, bill.city, bill.state, bill.zipcode, bill.country]
+        .filter(Boolean).join(', ')
+    }
+  }
+
   const sets = []
   const params = []
   for (const key of allowed) {
@@ -373,32 +392,64 @@ async function update(id, fields, actorId) {
       sets.push(`${key} = $${params.length}`)
     }
   }
-  if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
-  params.push(id)
-  let rows
+  if (!sets.length && !addresses) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
+
+  const client = await getClient()
   try {
-    ({ rows } = await query(
-      `UPDATE customers SET ${sets.join(', ')}, updated_at = NOW()
-       WHERE id = $${params.length} AND deleted_at IS NULL RETURNING *`,
-      params
-    ))
-  } catch (err) {
-    if (err.code === '23505' && String(err.constraint || '').includes('email')) {
-      throw Object.assign(new Error('A customer with this email already exists'), { statusCode: 409 })
+    await client.query('BEGIN')
+
+    let customer
+    if (sets.length) {
+      params.push(id)
+      const { rows } = await client.query(
+        `UPDATE customers SET ${sets.join(', ')}, updated_at = NOW()
+         WHERE id = $${params.length} AND deleted_at IS NULL RETURNING *`,
+        params
+      )
+      if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+      customer = rows[0]
+    } else {
+      const { rows } = await client.query(
+        `SELECT * FROM customers WHERE id = $1 AND deleted_at IS NULL`, [id]
+      )
+      if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
+      customer = rows[0]
     }
-    throw err
-  }
-  if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
-  if (fields.status !== undefined) {
-    try {
-      await query(
+
+    // Replace the structured address rows.
+    if (addresses) {
+      await client.query(`DELETE FROM customer_addresses WHERE customer_id = $1`, [id])
+      for (const a of addresses) {
+        if (!(a.line1 || a.city || a.state || a.zipcode)) continue
+        await client.query(
+          `INSERT INTO customer_addresses
+             (customer_id,address_type,line1,line2,city,state,zipcode,country,is_default)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, a.address_type, a.line1 || null, a.line2 || null, a.city || null,
+           a.state || null, a.zipcode || null, a.country || null, a.is_default || false]
+        )
+      }
+    }
+
+    if (fields.status !== undefined) {
+      await client.query(
         `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
          VALUES ($1, 'customer', $2, 'status_changed', $3)`,
         [actorId || null, id, `Status changed to ${normalizeStatus(fields.status)}`]
       )
-    } catch { /* non-fatal */ }
+    }
+
+    await client.query('COMMIT')
+    return customer
+  } catch (err) {
+    await client.query('ROLLBACK')
+    if (err.code === '23505' && String(err.constraint || '').includes('email')) {
+      throw Object.assign(new Error('A customer with this email already exists'), { statusCode: 409 })
+    }
+    throw err
+  } finally {
+    client.release()
   }
-  return rows[0]
 }
 
 async function remove(id) {

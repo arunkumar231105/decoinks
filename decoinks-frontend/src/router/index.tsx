@@ -118,6 +118,11 @@ export const router = createBrowserRouter([
                 handle: { title: 'New Customer', subtitle: 'Create a customer profile.' },
               },
               {
+                path: '/customers/:id/edit',
+                element: <NewCustomerPage />,
+                handle: { title: 'Edit Customer', subtitle: 'Update customer profile.' },
+              },
+              {
                 path: '/customers/:id',
                 element: <CustomerDetailPage />,
                 handle: { title: 'Customer Detail', subtitle: 'View and manage customer information.' },
