@@ -775,7 +775,8 @@ export function InvoicePrintPage() {
                     </span>
                   </th>
                   <th style={{ width: 68 }}>Color</th>
-                  <th style={{ width: 110 }}>Size &amp; QTY</th>
+                  <th style={{ width: 58 }}>Qty<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(Shirts)</span></th>
+                  <th style={{ width: 78 }}>Sizes<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(Size Ratio)</span></th>
                   <th style={{ width: 70 }}>Artwork Front</th>
                   <th style={{ width: 70 }}>Artwork Back</th>
                   <th style={{ width: 74 }}>Unit Rate<br />({currency})</th>
@@ -784,7 +785,7 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art     = artworks[idx] ?? null
                   const artBack = artworks[idx + items.length] ?? null
@@ -807,10 +808,11 @@ export function InvoicePrintPage() {
                         <span className="color-dot" style={{ background: dotColor, border: isWhite ? '1.5px solid #d1d5db' : `1px solid ${dotColor}` }} />
                         <span style={{ fontSize: 11 }}>{item.colors || '—'}</span>
                       </td>
-                      <td style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'left' }}>
-                        <div style={{ fontWeight: 600 }}>{item.sizes || '—'}</div>
-                        <div style={{ color: '#475569' }}>{formatQty(item.qty)} pcs</div>
+                      <td style={{ fontSize: 10, lineHeight: 1.4 }}>
+                        <div style={{ fontWeight: 700 }}>{formatQty(item.qty)}</div>
+                        <div style={{ color: '#64748b', fontSize: 8.5 }}>pcs</div>
                       </td>
+                      <td style={{ fontSize: 10, fontWeight: 600 }}>{item.sizes || '—'}</td>
                       <td>
                         <ArtworkThumb src={frontUrl} alt="front" label={`${art?.artwork_no || item.description} — Front`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
