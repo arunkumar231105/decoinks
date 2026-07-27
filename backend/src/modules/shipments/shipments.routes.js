@@ -21,6 +21,16 @@ const bodyFields = {
   recipient_name:     z.string().optional().nullable(),
   address:            z.string().optional().nullable(),
   notes:              z.string().optional().nullable(),
+  // Shippo tracking fields (074_shipment_tracking_fields.sql)
+  customer_name:       z.string().optional().nullable(),
+  service_type:        z.string().optional().nullable(),
+  ship_to_city:        z.string().optional().nullable(),
+  ship_to_state:       z.string().optional().nullable(),
+  ship_to_postal_code: z.string().optional().nullable(),
+  tracking_status:     z.string().optional().nullable(),
+  last_scan_city:      z.string().optional().nullable(),
+  last_scan_state:     z.string().optional().nullable(),
+  delivered_date:      z.string().optional().nullable(),
 }
 
 const createSchema = z.object({

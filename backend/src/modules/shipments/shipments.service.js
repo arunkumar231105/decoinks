@@ -13,10 +13,12 @@ async function list({ page = 1, limit = 10, status = '' }) {
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT s.*, c.name AS supplier_name, o.order_number
+    `SELECT s.*, c.name AS supplier_name, o.order_number,
+            COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name
      FROM shipments s
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
+     LEFT JOIN customers cust ON cust.id = o.customer_id
      ${where}
      ORDER BY s.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -27,10 +29,12 @@ async function list({ page = 1, limit = 10, status = '' }) {
 
 async function getById(id) {
   const { rows } = await query(
-    `SELECT s.*, c.name AS supplier_name, o.order_number
+    `SELECT s.*, c.name AS supplier_name, o.order_number,
+            COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name
      FROM shipments s
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
+     LEFT JOIN customers cust ON cust.id = o.customer_id
      WHERE s.id = $1`,
     [id]
   )
@@ -38,7 +42,8 @@ async function getById(id) {
   return rows[0]
 }
 
-async function create({ order_id, supplier_id, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by }) {
+async function create({ order_id, supplier_id, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by,
+  customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date }) {
   const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
   // Use free-text customer name as recipient_name if no explicit recipient_name given
   const resolvedRecipient = recipient_name || supplier_name_text || null
@@ -47,11 +52,15 @@ async function create({ order_id, supplier_id, supplier_name_text, agent_name, c
     ? [notes, `Agent: ${agent_name}`].filter(Boolean).join(' | ')
     : (notes || null)
   const { rows } = await query(
-    `INSERT INTO shipments (shipment_number, order_id, supplier_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+    `INSERT INTO shipments (shipment_number, order_id, supplier_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by,
+       customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
     [shipment_number, order_id || null, supplier_id || null, carrier || null, tracking_number || null,
      ship_date || null, estimated_delivery || null, weight_lbs || null, shipping_cost || null,
-     resolvedRecipient, address || null, resolvedNotes, created_by]
+     resolvedRecipient, address || null, resolvedNotes, created_by,
+     customer_name || null, service_type || null, ship_to_city || null, ship_to_state || null,
+     ship_to_postal_code || null, tracking_status || null, last_scan_city || null, last_scan_state || null,
+     delivered_date || null]
   )
   return rows[0]
 }
@@ -76,6 +85,9 @@ async function update(id, fields) {
   const allowed = [
     'carrier', 'tracking_number', 'ship_date', 'estimated_delivery',
     'weight_lbs', 'shipping_cost', 'recipient_name', 'address', 'notes',
+    'customer_name', 'service_type', 'ship_to_city', 'ship_to_state',
+    'ship_to_postal_code', 'tracking_status', 'last_scan_city', 'last_scan_state',
+    'delivered_date',
   ]
   const sets = []
   const params = []

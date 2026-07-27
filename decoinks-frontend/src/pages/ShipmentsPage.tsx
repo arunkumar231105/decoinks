@@ -27,24 +27,36 @@ interface Shipment {
   shipment_number: string
   order_number: string | null
   customer_name: string | null
-  status: 'Label Created' | 'In Transit' | 'Delivered' | 'Returned'
+  status: string
+  tracking_status: string | null
   carrier: string | null
+  service_type: string | null
   tracking_number: string | null
+  address: string | null
+  ship_to_city: string | null
+  ship_to_state: string | null
+  ship_to_postal_code: string | null
+  last_scan_city: string | null
+  last_scan_state: string | null
   shipping_cost: number | null
   ship_date: string | null
   estimated_delivery: string | null
+  delivered_date: string | null
   recipient_name: string | null
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  'Label Created': 'sh-status-label',
-  'In Transit': 'sh-status-transit',
-  'Delivered': 'sh-status-delivered',
-  'Returned': 'sh-status-label',
-}
+// The effective status a row shows: live carrier/Shippo status if present,
+// otherwise the internal workflow status.
+const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
 
-const fmt = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Map both internal statuses and Shippo statuses to a colour class.
+function statusClass(raw: string): string {
+  const v = (raw || '').toUpperCase()
+  if (v.includes('DELIVER')) return 'sh-status-delivered'
+  if (v.includes('TRANSIT') || v.includes('PICKED') || v.includes('OUT_FOR')) return 'sh-status-transit'
+  if (v.includes('FAIL') || v.includes('RETURN') || v.includes('EXCEPTION')) return 'sh-status-label'
+  return 'sh-status-label'
+}
 
 const PAGE_SIZE = 10
 
@@ -53,7 +65,7 @@ export function ShipmentsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState<'All' | Shipment['status']>('All')
+  const [statusFilter, setStatusFilter] = useState<string>('All')
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -67,7 +79,7 @@ export function ShipmentsPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const filtered = allShipments.filter((s) => {
-    const matchesStatus = statusFilter === 'All' || s.status === statusFilter
+    const matchesStatus = statusFilter === 'All' || effectiveStatus(s) === statusFilter
     const q = search.toLowerCase()
     const matchesSearch =
       (s.order_number ?? '').toLowerCase().includes(q) ||
@@ -93,14 +105,16 @@ export function ShipmentsPage() {
     ].join('\n'),
   )
 
+  const isDelivered = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('DELIVER')
+  const isTransit = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('TRANSIT')
   const stats = {
     total,
-    active: allShipments.filter(s => s.status !== 'Delivered').length,
-    inTransit: allShipments.filter(s => s.status === 'In Transit').length,
-    delivered: allShipments.filter(s => s.status === 'Delivered').length,
+    active: allShipments.filter(s => !isDelivered(s)).length,
+    inTransit: allShipments.filter(s => isTransit(s)).length,
+    delivered: allShipments.filter(s => isDelivered(s)).length,
     onTime: 0,
     delayed: 0,
-    needsAttention: 0,
+    needsAttention: allShipments.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
   }
 
   return (
@@ -194,52 +208,52 @@ export function ShipmentsPage() {
         <table className="sh-table">
           <thead>
             <tr>
-              <th>Shipment #</th>
-              <th>Order No</th>
-              <th>Customer</th>
-              <th>Status</th>
+              <th>Tracking ID</th>
+              <th>Customer Name</th>
               <th>Carrier</th>
-              <th>Tracking #</th>
-              <th>Cost</th>
-              <th>Ship Date</th>
-              <th>ETA</th>
-              <th>Recipient</th>
+              <th>Service Type</th>
+              <th>Ship-To Address</th>
+              <th>City</th>
+              <th>State</th>
+              <th>Postal Code</th>
+              <th>Status</th>
+              <th>Last Scan City</th>
+              <th>Last Scan State</th>
+              <th>Estimated Delivery</th>
+              <th>Delivered Date</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={11} className="sh-empty">Loading…</td>
+                <td colSpan={14} className="sh-empty">Loading…</td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={11} className="sh-empty">No shipments found.</td>
+                <td colSpan={14} className="sh-empty">No shipments found.</td>
               </tr>
             )}
             {!isLoading && filtered.map(s => (
               <tr key={s.id} className="sh-row">
-                <td>
-                  <span className="sh-awb">{s.shipment_number}</span>
-                </td>
-                <td>
-                  <button className="sh-order-link" onClick={() => navigate('/orders')}>{s.order_number ?? '-'}</button>
-                </td>
+                <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td className="sh-customer">{s.customer_name ?? '-'}</td>
+                <td className="sh-muted">{s.carrier ?? '-'}</td>
+                <td className="sh-muted">{s.service_type ?? '-'}</td>
+                <td className="sh-muted">{s.address ?? '-'}</td>
+                <td className="sh-muted">{s.ship_to_city ?? '-'}</td>
+                <td className="sh-muted">{s.ship_to_state ?? '-'}</td>
+                <td className="sh-muted">{s.ship_to_postal_code ?? '-'}</td>
                 <td>
-                  <span className={cn('sh-status', STATUS_STYLES[s.status] ?? '')}>
-                    {s.status}
+                  <span className={cn('sh-status', statusClass(effectiveStatus(s)))}>
+                    {effectiveStatus(s)}
                   </span>
                 </td>
-                <td className="sh-muted">{s.carrier ?? '-'}</td>
-                <td>
-                  <span className="sh-awb">{s.tracking_number ?? '-'}</span>
-                </td>
-                <td className="sh-cost">{s.shipping_cost != null ? `$${fmt(s.shipping_cost)}` : '-'}</td>
-                <td className="sh-muted">{s.ship_date ?? '-'}</td>
+                <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
+                <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
                 <td className="sh-muted">{s.estimated_delivery ?? '-'}</td>
-                <td className="sh-muted">{s.recipient_name ?? '-'}</td>
+                <td className="sh-muted">{s.delivered_date ?? '-'}</td>
                 <td>
                   <button
                     className="lb-icon-btn"
