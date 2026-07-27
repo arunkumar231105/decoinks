@@ -1,0 +1,4 @@
+order_type,customer_name,company_name,email,phone,billing_address,shipping_address,item,size,qty,unit_price,payment_terms,payment_method,issue_date,due_date,notes
+dtf,Unique Staffing,Unique Staffing LLC,orders@uniquestaffing.com,+1-602-555-0134,"77 Van Buren St, Phoenix, AZ 85001","77 Van Buren St, Phoenix, AZ 85001",Staff Logo Transfer,"11.5"" x 11.5""",800,0.18,Due on Receipt,zelle,2026-07-27,2026-08-18,Bulk staff uniform transfers
+dtf,Pam Guernsey,Guernsey Apparel,pam@guernseyapparel.com,+1-716-555-0142,"123 Main St, Buffalo, NY 14201","123 Main St, Buffalo, NY 14201",Buffalo Sabres Design,"12"" x 14""",50,4.60,Due on Receipt,paypal,2026-07-27,2026-08-22,Left chest logo
+dtf,George Rogers,Rogers Print Co,george@rogersprint.com,+1-312-555-0166,"400 Lake St, Chicago, IL 60601","400 Lake St, Chicago, IL 60601",Team Front Print,"22"" x 12""",200,2.35,Net 15,bank_transfer,2026-07-27,2026-09-05,Repeat reorder

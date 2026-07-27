@@ -164,8 +164,61 @@ Ye cheezein import ke baad **UI se bharni padengi**:
 
 ---
 
+## 5, 6. Sales Order templates (DTF + Custom)
+
+Upload: **Orders / Sales Orders** page → **Bulk Upload**. Dono files
+importer se **verified** hain (0 unrecognised, 0 skipped).
+
+| File | order_type |
+|---|---|
+| `salesorder-custom-apparel-template.csv` | `apparel` (yani "Custom Printed Apparel") |
+| `salesorder-dtf-template.csv` | `dtf` |
+
+**Columns (user bharega):**
+
+| Column | Matlab |
+|---|---|
+| `order_type` | **`apparel`** (Custom) ya **`dtf`** — bilkul yehi likhein (chhota) |
+| `customer_name` | Customer ka naam (order pe contact ke tor par jaata hai) |
+| `email` / `phone` | Contact email/phone |
+| `shipping_address` | Delivery address (comma ho to `"..."` mein) |
+| `item` | Apparel: style ka naam / DTF: transfer/artwork ka naam |
+| `color` | **Sirf Custom** — jaise Black, Navy |
+| `size` | Apparel: `XL` / DTF: transfer size `12" x 14"` |
+| `qty` | Quantity (comma na dalein) |
+| `unit_price` | Per-unit rate |
+| `payment_terms` | `Due on Receipt` / `Net 15` / `Net 30` / `Net 60` |
+| `payment_status` | `Unpaid` / `Partial` / `Paid` |
+| `order_date` / `due_date` | `YYYY-MM-DD` |
+| `notes` | Notes |
+
+> ⚠️ Custom ke liye `order_type` **`apparel`** likhna zaroori hai (system mein
+> "Custom Printed Apparel" ka andar ka naam `apparel` hai). `custom` likhoge to
+> row skip ho jayegi.
+
+## 7, 8. Invoice templates (DTF + Custom) — ⚠️ IMPORT ABHI NAHI
+
+`invoice-dtf-template.csv` aur `invoice-custom-apparel-template.csv` mein sahi
+columns hain (data entry ke liye ready), **lekin abhi Invoice ka CSV import
+system mein nahi hai** — sirf Customers, Quotations aur Sales Orders importable
+hain. Ye files data collect karne ke liye use kar lein; jab bolenge to main
+**Invoice CSV importer bana dunga** phir ye seedha feed ho jayenge.
+
+Invoice columns: `order_type (dtf/custom), customer_name, company_name, email,
+phone, billing_address, shipping_address, item, color (custom), size, qty,
+unit_price, payment_terms, payment_method (zelle/paypal/bank_transfer/cash/
+cashapp/other), issue_date, due_date, notes`.
+
+## System jo khud banata hai (in columns ko CSV mein NA rakhein)
+
+Ye kabhi CSV mein mat dalein — system automatic banata hai: `id`,
+`quote_number` / `order_number` / `invoice_number`, `subtotal` / `tax` /
+`total` / `balance_due` (items se calculate hote hain), `status` (kuch jagah),
+`created_at` / `updated_at`, koi bhi `*_id`.
+
 ## Recommended order
 
 1. Pehle **customers** import karein
-2. Phir **quotations** (type ke hisaab se alag file)
+2. Phir **quotations** aur **sales orders** (type ke hisaab se alag file)
 3. Har import se pehle **preview** dekh kar `recognisedColumns` verify karein
+4. Invoices — importer banne ka intezaar (columns ready hain)

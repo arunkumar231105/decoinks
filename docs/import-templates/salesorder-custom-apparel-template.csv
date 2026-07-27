@@ -1,0 +1,4 @@
+order_type,customer_name,email,phone,shipping_address,item,color,size,qty,unit_price,payment_terms,payment_status,order_date,due_date,notes
+apparel,Pam Guernsey,pam@guernseyapparel.com,+1-716-555-0142,"123 Main St, Buffalo, NY 14201",180G Adult 100% Cotton T-Shirt,Black,XL,5,11.00,Due on Receipt,Unpaid,2026-07-27,2026-08-15,Front print only
+apparel,Mark Taylor,mark.taylor@gmail.com,+1-214-555-0188,"88 Elm St, Dallas, TX 75201",180G Adult 100% Cotton T-Shirt,Navy,L,12,9.75,Net 30,Unpaid,2026-07-27,2026-08-20,Front and back print
+apparel,Trina Nez,trina@nezteamsports.com,+1-505-555-0110,"9 Central Ave, Albuquerque, NM 87101",270G Fleece Hooded Sweatshirt,Charcoal,XXL,25,24.50,Due on Receipt,Paid,2026-07-27,2026-09-01,Team roster names on back
