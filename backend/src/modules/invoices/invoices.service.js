@@ -10,6 +10,16 @@ function calcTotal(subtotal, discount_amt, tax_amt = 0) {
   return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
 }
 
+function bestAddress(...candidates) {
+  const addresses = candidates
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  const detailed = addresses.find(value =>
+    !/^(?:united states(?: of america)?|usa|us)$/i.test(value.replace(/[,\s]+/g, ' ').trim())
+  )
+  return detailed || addresses[0] || null
+}
+
 async function logActivity(actorId, invoiceId, action, description) {
   await query(
     `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
@@ -109,16 +119,21 @@ async function create(fields_in) {
   let resolvedCustomerName = fields.customer_name || null
   let resolvedCustomerId = customer_id || null
   let quoteData = null   // full quotation row, used to backfill contact fields + line items
+  let customerData = null
 
   // Pull totals, customer identity and contact fields from the quotation
   // when converting quote → invoice (so nothing is left blank on the invoice).
   if (quote_id) {
     const { rows: qRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, supplier_id, customer_id, order_type, currency,
-              customer_name, company_name, billing_email, contact_number,
-              shipping_address, billing_address, payment_terms, payment_method,
-              estimated_shipping, rush_services, customer_notes, discount_type, discount_value
-       FROM quotations WHERE id = $1`,
+      `SELECT q.subtotal, q.discount_amt, q.tax_amt, q.total, q.supplier_id,
+              COALESCE(q.customer_id, l.customer_id) AS customer_id,
+              q.order_type, q.currency, q.customer_name, q.company_name,
+              q.billing_email, q.contact_number, q.shipping_address, q.billing_address,
+              q.payment_terms, q.payment_method, q.estimated_shipping, q.rush_services,
+              q.customer_notes, q.discount_type, q.discount_value
+       FROM quotations q
+       LEFT JOIN leads l ON l.id = q.lead_id
+       WHERE q.id = $1`,
       [quote_id]
     )
     if (!qRows[0]) throw Object.assign(new Error('Linked quotation not found'), { statusCode: 404 })
@@ -145,11 +160,24 @@ async function create(fields_in) {
   }
 
   if (resolvedCustomerId) {
-    const { rows: cRows } = await query(`SELECT name, email, company_phone_number, mobile_number FROM customers WHERE id=$1 AND deleted_at IS NULL`, [resolvedCustomerId])
+    const { rows: cRows } = await query(
+      `SELECT name, email, company_phone_number, mobile_number, billing_address,
+              concat_ws(', ',
+                NULLIF(trim(address_line1), ''),
+                NULLIF(trim(city), ''),
+                NULLIF(trim(state), ''),
+                NULLIF(trim(zip), ''),
+                NULLIF(trim(country), '')
+              ) AS shipping_address
+       FROM customers
+       WHERE id=$1 AND deleted_at IS NULL`,
+      [resolvedCustomerId]
+    )
     if (!cRows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
-    resolvedCustomerName ||= cRows[0].name
-    fields.billing_email ||= cRows[0].email
-    fields.contact_number ||= cRows[0].mobile_number || cRows[0].company_phone_number
+    customerData = cRows[0]
+    resolvedCustomerName ||= customerData.name
+    fields.billing_email ||= customerData.email
+    fields.contact_number ||= customerData.mobile_number || customerData.company_phone_number
   }
 
   // Also try to get customer name from linked supplier record if still missing
@@ -162,6 +190,18 @@ async function create(fields_in) {
 
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
   const balance_due = total
+  const resolvedBillingAddress = bestAddress(
+    fields.billing_address,
+    quoteData?.billing_address,
+    customerData?.billing_address,
+    customerData?.shipping_address
+  )
+  const resolvedShippingAddress = bestAddress(
+    fields.shipping_address,
+    quoteData?.shipping_address,
+    customerData?.shipping_address,
+    customerData?.billing_address
+  )
 
   const { rows } = await query(
     `INSERT INTO invoices
@@ -188,8 +228,8 @@ async function create(fields_in) {
       resolvedCustomerName || null,
       fields.billing_email   ?? quoteData?.billing_email   ?? null,
       fields.contact_number  ?? quoteData?.contact_number  ?? null,
-      fields.billing_address ?? quoteData?.billing_address ?? null,
-      fields.shipping_address?? quoteData?.shipping_address?? null,
+      resolvedBillingAddress,
+      resolvedShippingAddress,
       order_type || quoteData?.order_type || null,
       fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
       fields.payment_method || quoteData?.payment_method || null,

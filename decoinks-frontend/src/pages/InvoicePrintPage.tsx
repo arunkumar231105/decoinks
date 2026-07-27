@@ -113,6 +113,14 @@ function itemArtworkCount(item: InvoiceItem | QuoteItem): number {
 const titleCase = (value: string | null | undefined) =>
   value ? value.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) : '—'
 
+function bestAddress(...candidates: Array<string | null | undefined>) {
+  const addresses = candidates.map(value => value?.trim()).filter((value): value is string => Boolean(value))
+  const detailed = addresses.find(value =>
+    !/^(?:united states(?: of america)?|usa|us)$/i.test(value.replace(/[,\s]+/g, ' ').trim())
+  )
+  return detailed || addresses[0] || null
+}
+
 // ── Company constants ─────────────────────────────────────────────────────────
 const CO = {
   address: 'Suite 111, 1218 Magnolia Avenue',
@@ -385,11 +393,11 @@ export function InvoicePrintPage() {
   const payMethod = titleCase(invoice.payment_method || invoice.payments?.[0]?.method)
 
   const billName     = invoice.customer_name || invoice.supplier_name || quotation?.customer_name || quotation?.company_name || '—'
-  const billAddr     = invoice.billing_address || quotation?.billing_address || '—'
+  const billAddr     = bestAddress(invoice.billing_address, quotation?.billing_address, invoice.shipping_address, quotation?.shipping_address) || '—'
   const billEmail    = invoice.billing_email || quotation?.billing_email || ''
   const billPhone    = invoice.contact_number || quotation?.contact_number || ''
-  const shipAddr     = invoice.shipping_address || quotation?.shipping_address || '—'
-  const hasInvoiceShippingSnapshot = Boolean(invoice.shipping_address)
+  const shipAddr     = bestAddress(invoice.shipping_address, quotation?.shipping_address, invoice.billing_address, quotation?.billing_address) || '—'
+  const hasInvoiceShippingSnapshot = Boolean(bestAddress(invoice.shipping_address))
   const shipCityLine = hasInvoiceShippingSnapshot ? '' : [quotation?.shipping_city, quotation?.shipping_state, quotation?.zip_code].filter(Boolean).join(', ')
   const shipCountry  = hasInvoiceShippingSnapshot ? '' : (quotation?.shipping_country || '')
 
@@ -439,7 +447,7 @@ export function InvoicePrintPage() {
   return (
     <ArtworkLightboxProvider>
       <style>{CSS}</style>
-      <button className="back-btn no-print" onClick={() => navigate(-1)}>
+      <button className="back-btn no-print" onClick={() => navigate(`/invoices/${id}`)}>
         ← Back
       </button>
       <button className="print-btn no-print" onClick={() => window.print()}>

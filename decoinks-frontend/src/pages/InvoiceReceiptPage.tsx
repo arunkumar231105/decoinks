@@ -8,26 +8,26 @@ interface Invoice {
   id: string; invoice_number: string; issue_date: string; due_date: string | null
   supplier_name: string | null; contact_name: string | null; contact_email: string | null
   contact_phone: string | null; shipping_name: string | null; shipping_address: string | null
+  customer_name?: string | null; billing_email?: string | null; contact_number?: string | null
+  billing_address?: string | null; payment_method?: string | null
   subtotal: number; discount_pct: number; discount_amt: number
   rush_services: number; shipping_charges: number
   total: number; notes: string | null; quote_id: string | null; order_type: string | null
   currency?: string | null
   items?: QuoteItem[]
-  payments: any[]
+  payments: Array<{ payment_method?: string | null; method?: string | null }>
 }
 interface Quotation {
   order_type: string; items: QuoteItem[]
+  customer_name?: string | null; company_name?: string | null
+  billing_email?: string | null; contact_number?: string | null
+  billing_address?: string | null; shipping_address?: string | null
 }
 interface QuoteItem {
   id: string; artwork_name?: string; description?: string; item?: string
   color?: string; size?: string; qty: number; unit_price: number; amount: number
   artwork_image?: string; front_image?: string
 }
-interface Artwork {
-  id: string; artwork_no: string; artwork_name: string; width_inches: number
-  height_inches: number; preview_url: string | null; thumbnail_url: string | null
-}
-
 // ── CSS ───────────────────────────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -216,6 +216,14 @@ const fmt = (n: number | string | null | undefined) =>
 const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'
 
+function bestAddress(...candidates: Array<string | null | undefined>) {
+  const addresses = candidates.map(value => value?.trim()).filter((value): value is string => Boolean(value))
+  const detailed = addresses.find(value =>
+    !/^(?:united states(?: of america)?|usa|us)$/i.test(value.replace(/[,\s]+/g, ' ').trim())
+  )
+  return detailed || addresses[0] || null
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export function InvoiceReceiptPage() {
   const { id } = useParams<{ id: string }>()
@@ -231,12 +239,6 @@ export function InvoiceReceiptPage() {
   const { data: quotation } = useQuery<Quotation>({
     queryKey: ['quotation-for-receipt', invoice?.quote_id],
     queryFn:  () => api.get(`/quotations/${invoice!.quote_id}`).then(r => r.data.data ?? r.data.quotation ?? r.data),
-    enabled:  !!invoice?.quote_id && authReady,
-  })
-
-  const { data: artworkData } = useQuery<{ artworks: Artwork[] }>({
-    queryKey: ['artworks-for-receipt', invoice?.quote_id],
-    queryFn:  () => api.get(`/quotations/${invoice!.quote_id}/artworks`).then(r => r.data),
     enabled:  !!invoice?.quote_id && authReady,
   })
 
@@ -260,7 +262,6 @@ export function InvoiceReceiptPage() {
   // Prefer the quotation's items; fall back to the invoice's own line items
   // (direct/converted invoices with no linked quote) — same as the full invoice view.
   const items: QuoteItem[] = (quotation?.items?.length ? quotation.items : invoice.items) ?? []
-  const artworks: Artwork[] = artworkData?.artworks ?? []
 
   const subtotal      = Number(invoice.subtotal)
   const discountAmt   = Number(invoice.discount_amt)
@@ -269,17 +270,17 @@ export function InvoiceReceiptPage() {
   const total         = Number(invoice.total)
   const savedAmt      = discountAmt
 
-  const custName    = invoice.supplier_name || invoice.contact_name || '—'
-  const billAddress = invoice.shipping_address
+  const custName = invoice.customer_name || invoice.supplier_name || invoice.contact_name
+    || quotation?.customer_name || quotation?.company_name || '—'
+  const billAddress = bestAddress(
+    invoice.billing_address,
+    quotation?.billing_address,
+    invoice.shipping_address,
+    quotation?.shipping_address,
+  )
+  const contactEmail = invoice.billing_email || invoice.contact_email || quotation?.billing_email
+  const contactPhone = invoice.contact_number || invoice.contact_phone || quotation?.contact_number
   const isDtf       = (quotation?.order_type ?? invoice.order_type) === 'dtf'
-
-  // Get artwork image for an item
-  const artImg = (item: QuoteItem, idx: number): string | null => {
-    if (item.artwork_image) return item.artwork_image
-    if (item.front_image)   return item.front_image
-    const art = artworks[idx]
-    return art?.preview_url ?? art?.thumbnail_url ?? null
-  }
 
   // Item display label
   const itemLabel = (item: QuoteItem) => {
@@ -291,7 +292,7 @@ export function InvoiceReceiptPage() {
   const itemSub = (item: QuoteItem) => {
     const parts: string[] = []
     if (item.size)  parts.push(item.size)
-    if ((item as any).color) parts.push((item as any).color)
+    if (item.color) parts.push(item.color)
     return parts.join(' · ')
   }
 
@@ -307,7 +308,7 @@ export function InvoiceReceiptPage() {
   return (
     <>
       <style>{CSS}</style>
-      <button className="back-btn" onClick={() => navigate(-1)}>
+      <button className="back-btn" onClick={() => navigate(`/invoices/${id}`)}>
         ← Back
       </button>
       <button className="print-btn" onClick={() => window.print()}>
@@ -343,13 +344,12 @@ export function InvoiceReceiptPage() {
           {items.length === 0 ? (
             <div style={{ padding:'16px 0', color:'#9ca3af', fontSize:13 }}>No items</div>
           ) : items.map((item, idx) => {
-            const img    = artImg(item, idx)
             const orig   = origPrice(item)
             const final  = Number(item.amount)
             const hasDisc = discountAmt > 0 && Math.abs(orig - final) > 0.01
 
             return (
-              <div className="rc-item" key={item.id}>
+              <div className="rc-item" key={item.id || idx}>
 
                 {/* Info */}
                 <div className="rc-item-body">
@@ -444,15 +444,15 @@ export function InvoiceReceiptPage() {
             </div>
           </div>
 
-          {(invoice.contact_email || invoice.contact_phone) && (
+          {(contactEmail || contactPhone) && (
             <div className="rc-cust-group">
               <div className="rc-cust-group-lbl">Contact</div>
               <div className="rc-cust-group-val">
-                {invoice.contact_email && (
-                  <a href={`mailto:${invoice.contact_email}`}>{invoice.contact_email}</a>
+                {contactEmail && (
+                  <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
                 )}
-                {invoice.contact_email && invoice.contact_phone && <br />}
-                {invoice.contact_phone && <span>{invoice.contact_phone}</span>}
+                {contactEmail && contactPhone && <br />}
+                {contactPhone && <span>{contactPhone}</span>}
               </div>
             </div>
           )}
@@ -460,7 +460,7 @@ export function InvoiceReceiptPage() {
           <div className="rc-cust-group">
             <div className="rc-cust-group-lbl">Payment</div>
             <div className="rc-payment-badge">
-              💳 {(invoice.payments?.[0]?.payment_method ?? 'Pending').replace(/_/g,' ').replace(/\b\w/g, (l:string) => l.toUpperCase())}
+              💳 {(invoice.payments?.[0]?.payment_method ?? invoice.payments?.[0]?.method ?? invoice.payment_method ?? 'Pending').replace(/_/g,' ').replace(/\b\w/g, (l:string) => l.toUpperCase())}
             </div>
           </div>
         </div>
