@@ -115,6 +115,11 @@ function itemArtworkCount(item: InvoiceItem | QuoteItem): number {
 const titleCase = (value: string | null | undefined) =>
   value ? value.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) : '—'
 
+const formatQty = (value: number | string) => {
+  const quantity = Number(value)
+  return Number.isInteger(quantity) ? quantity.toString() : quantity.toLocaleString('en-US')
+}
+
 function bestAddress(...candidates: Array<string | null | undefined>) {
   const addresses = candidates.map(value => value?.trim()).filter((value): value is string => Boolean(value))
   const detailed = addresses.find(value =>
@@ -802,7 +807,10 @@ export function InvoicePrintPage() {
                         <span className="color-dot" style={{ background: dotColor, border: isWhite ? '1.5px solid #d1d5db' : `1px solid ${dotColor}` }} />
                         <span style={{ fontSize: 11 }}>{item.colors || '—'}</span>
                       </td>
-                      <td style={{ fontSize: 10, lineHeight: 1.6, textAlign: 'left' }}>{item.sizes || '—'}</td>
+                      <td style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'left' }}>
+                        <div style={{ fontWeight: 600 }}>{item.sizes || '—'}</div>
+                        <div style={{ color: '#475569' }}>{formatQty(item.qty)} pcs</div>
+                      </td>
                       <td>
                         <ArtworkThumb src={frontUrl} alt="front" label={`${art?.artwork_no || item.description} — Front`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
