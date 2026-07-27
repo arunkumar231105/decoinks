@@ -1,0 +1,5 @@
+order_type,customer_name,company_name,email,phone,whatsapp,wechat,customer_category,customer_source,country,state,city,zip,shipping_address,billing_address,product,qty,unit_price,artwork_count,due_date,status,quote_estimate,internal_notes
+gangsheet,Pam Guernsey,Guernsey Apparel,pam@guernseyapparel.com,+1-716-555-0142,+1-716-555-0143,,Retail,Email,USA,NY,Buffalo,14201,"123 Main St, Buffalo, NY 14201",,"22"" x 60""",4,25.00,12,2026-08-16,Draft,100.00,Mixed logo sheet
+gangsheet,Trina Nez,Nez Team Sports,trina@nezteamsports.com,+1-505-555-0110,+1-505-555-0110,,Wholesale,Referral,USA,NM,Albuquerque,87101,"9 Central Ave, Albuquerque, NM 87101",,"22"" x 84""",6,35.00,20,2026-08-28,Draft,210.00,Team number sheet
+gangsheet,Unique Staffing,Unique Staffing LLC,orders@uniquestaffing.com,+1-602-555-0134,,,Corporate,Email,USA,AZ,Phoenix,85001,"77 Van Buren St, Phoenix, AZ 85001",,"22"" x 120""",10,48.00,35,2026-09-02,Sent,480.00,Full roll gang sheet
+gangsheet,George Rogers,Rogers Print Co,george@rogersprint.com,+1-312-555-0166,,,Wholesale,Email,USA,IL,Chicago,60601,"400 Lake St, Chicago, IL 60601",,"22"" x 60""",2,25.00,8,2026-09-08,Draft,50.00,Sample gang sheet

@@ -1,0 +1,6 @@
+name,first_name,last_name,company_name,email,phone,mobile_number,whatsapp,customer_segment,customer_type,city,state,zip,country,notes
+Pam Guernsey,Pam,Guernsey,Guernsey Apparel,pam@guernseyapparel.com,+1-716-555-0142,+1-716-555-0143,+1-716-555-0143,retail,business,Buffalo,NY,14201,USA,Repeat DTF customer
+Mark Taylor,Mark,Taylor,,mark.taylor@gmail.com,+1-214-555-0188,+1-214-555-0188,,retail,individual,Dallas,TX,75201,USA,Walk-in customer
+Trina Nez,Trina,Nez,Nez Team Sports,trina@nezteamsports.com,+1-505-555-0110,,+1-505-555-0110,wholesale,business,Albuquerque,NM,87101,USA,Bulk team orders
+George Rogers,George,Rogers,Rogers Print Co,george@rogersprint.com,+1-312-555-0166,+1-312-555-0167,,wholesale,business,Chicago,IL,60601,USA,Net 30 terms discussed
+Unique Staffing,,,Unique Staffing LLC,orders@uniquestaffing.com,+1-602-555-0134,,,corporate,business,Phoenix,AZ,85001,USA,Large volume DTF transfers

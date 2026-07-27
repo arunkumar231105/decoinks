@@ -1,0 +1,5 @@
+order_type,customer_name,company_name,email,phone,whatsapp,wechat,customer_category,customer_source,country,state,city,zip,shipping_address,billing_address,product,qty,unit_price,artwork_count,due_date,status,quote_estimate,internal_notes
+DTF Transfer,Unique Staffing,Unique Staffing LLC,orders@uniquestaffing.com,+1-602-555-0134,,,Corporate,Email,USA,AZ,Phoenix,85001,"77 Van Buren St, Phoenix, AZ 85001",,"11.5"" x 11.5""",800,0.18,1,2026-08-18,Draft,144.00,Bulk staff uniform transfers
+DTF Transfer,Pam Guernsey,Guernsey Apparel,pam@guernseyapparel.com,+1-716-555-0142,+1-716-555-0143,,Retail,WhatsApp,USA,NY,Buffalo,14201,"123 Main St, Buffalo, NY 14201",,"12"" x 14""",50,4.60,1,2026-08-22,Draft,230.00,Buffalo Sabres design
+DTF Transfer,Mark Taylor,,mark.taylor@gmail.com,+1-214-555-0188,,,Retail,Walk-in,USA,TX,Dallas,75201,"88 Elm St, Dallas, TX 75201",,"8"" x 10""",1,6.66,1,2026-08-25,Draft,6.66,Single sample transfer
+DTF Transfer,George Rogers,Rogers Print Co,george@rogersprint.com,+1-312-555-0166,,,Wholesale,Email,USA,IL,Chicago,60601,"400 Lake St, Chicago, IL 60601",,"22"" x 12""",200,2.35,1,2026-09-05,Sent,470.00,Repeat reorder
