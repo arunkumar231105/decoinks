@@ -28,6 +28,7 @@ export function NewCustomerPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const [saving, setSaving] = useState(false)
+  const [sameAsShipping, setSameAsShipping] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const set = (key: keyof typeof form, value: string) => setForm(v => ({ ...v, [key]: value }))
 
@@ -67,19 +68,24 @@ export function NewCustomerPage() {
       billing_zipcode: bill?.zipcode ?? '',
       billing_country: bill?.country ?? 'USA',
     })
+    setSameAsShipping(!!existing.same_as_shipping)
   }, [existing])
 
   const save = async () => {
     if (!form.first_name.trim()) return toast.error('First name is required')
     setSaving(true)
     try {
+      // When "Same as Shipping" is ticked, billing mirrors the shipping address.
+      const billing = sameAsShipping
+        ? { line1: form.shipping_line1, line2: form.shipping_line2, city: form.shipping_city,
+            state: form.shipping_state, zipcode: form.shipping_zipcode, country: form.shipping_country }
+        : { line1: form.billing_line1, line2: form.billing_line2, city: form.billing_city,
+            state: form.billing_state, zipcode: form.billing_zipcode, country: form.billing_country }
       const addresses = [
         { address_type: 'shipping', line1: form.shipping_line1, line2: form.shipping_line2,
           city: form.shipping_city, state: form.shipping_state, zipcode: form.shipping_zipcode,
           country: form.shipping_country, is_default: true },
-        { address_type: 'billing', line1: form.billing_line1, line2: form.billing_line2,
-          city: form.billing_city, state: form.billing_state, zipcode: form.billing_zipcode,
-          country: form.billing_country, is_default: true },
+        { address_type: 'billing', ...billing, is_default: true },
       ].filter(a => a.line1 || a.city || a.state || a.zipcode)
       const payload = {
         name: [form.first_name, form.last_name].filter(Boolean).join(' '),
@@ -88,7 +94,8 @@ export function NewCustomerPage() {
         company_phone_number: form.company_phone_number || null,
         phone: form.company_phone_number || null, whatsapp: form.whatsapp_number || null,
         mobile_number: form.mobile_number || null, preferred_language: form.preferred_language,
-        customer_segment: form.customer_segment, tier: form.tier, addresses,
+        customer_segment: form.customer_segment, tier: form.tier,
+        same_as_shipping: sameAsShipping, addresses,
       }
       if (isEdit) {
         await api.put(`/customers/${id}`, payload)
@@ -107,6 +114,17 @@ export function NewCustomerPage() {
   const field = (label: string, key: keyof typeof form, type = 'text') => (
     <div className="al-field"><label>{label}</label><input className="al-input" type={type} value={form[key]} onChange={e => set(key, e.target.value)} /></div>
   )
+
+  // Billing field: when "Same as Shipping" is on, it shows the shipping value
+  // (read-only) so the user sees exactly what will be saved.
+  const billingField = (label: string, key: keyof typeof form) => {
+    const shipKey = key.replace('billing_', 'shipping_') as keyof typeof form
+    const value = sameAsShipping ? form[shipKey] : form[key]
+    return <div className="al-field"><label>{label}</label>
+      <input className="al-input" value={value} disabled={sameAsShipping}
+        onChange={e => set(key, e.target.value)}
+        style={sameAsShipping ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } : undefined} /></div>
+  }
 
   const segmentOptions = Array.from(new Set([...SEGMENTS, form.customer_segment].filter(Boolean)))
   const tierOptions = Array.from(new Set([...TIERS, form.tier].filter(Boolean)))
@@ -129,7 +147,13 @@ export function NewCustomerPage() {
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
         <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode')}{field('Country','shipping_country')}</div>
-        <h5 style={{marginTop:20}}>Billing Address</h5>{field('Address Line 1','billing_line1')}{field('Address Line 2','billing_line2')}<div className="al-field-row">{field('City','billing_city')}{field('State','billing_state')}</div><div className="al-field-row">{field('ZIP Code','billing_zipcode')}{field('Country','billing_country')}</div>
+        <h5 style={{marginTop:20}}>Billing Address</h5>
+        <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
+          <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
+          <span className="ncust-check-box" />
+          Same as Shipping Address
+        </label>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode')}{billingField('Country','billing_country')}</div>
       </div></section></div>
     </div>
   </div>
