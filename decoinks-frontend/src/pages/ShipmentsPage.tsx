@@ -90,7 +90,7 @@ export function ShipmentsPage() {
 
   const selectedShipment = allShipments.find(s => s.id === menuAnchor?.id)
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => api.patch(`/shipments/${id}/status`, { status: 'Returned' }),
+    mutationFn: (id: string) => api.patch(`/shipments/${id}/status`, { status: 'Exception' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['shipments'] }),
   })
   const printShipment = (shipment: Shipment) => printPanel(

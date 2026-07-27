@@ -42,7 +42,7 @@ async function getById(id) {
   return rows[0]
 }
 
-async function create({ order_id, supplier_id, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by,
+async function create({ order_id, supplier_id, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by, status,
   customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date }) {
   const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
   // Use free-text customer name as recipient_name if no explicit recipient_name given
@@ -52,12 +52,12 @@ async function create({ order_id, supplier_id, supplier_name_text, agent_name, c
     ? [notes, `Agent: ${agent_name}`].filter(Boolean).join(' | ')
     : (notes || null)
   const { rows } = await query(
-    `INSERT INTO shipments (shipment_number, order_id, supplier_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by,
+    `INSERT INTO shipments (shipment_number, order_id, supplier_id, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by, status,
        customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,'Pending')::shipment_status,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
     [shipment_number, order_id || null, supplier_id || null, carrier || null, tracking_number || null,
      ship_date || null, estimated_delivery || null, weight_lbs || null, shipping_cost || null,
-     resolvedRecipient, address || null, resolvedNotes, created_by,
+     resolvedRecipient, address || null, resolvedNotes, created_by, status || null,
      customer_name || null, service_type || null, ship_to_city || null, ship_to_state || null,
      ship_to_postal_code || null, tracking_status || null, last_scan_city || null, last_scan_state || null,
      delivered_date || null]
