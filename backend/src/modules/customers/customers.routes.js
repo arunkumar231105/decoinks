@@ -7,31 +7,49 @@ const controller = require('./customers.controller')
 const router = Router()
 router.use(verifyToken)
 
+// ── Field validators ─────────────────────────────────────────────────────────
+// Strict formats, but every field stays optional/nullable and also tolerates an
+// empty string, so the existing data flow (empty optional fields, empty address
+// sub-fields) is never blocked. This mirrors the client-side rules.
+const RE_NAME = /^[A-Za-z\s'.-]{1,50}$/
+const RE_ZIP = /^\d{5}$/
+const RE_PHONE = /^[\d\s()+-]+$/
+const emptyable = (schema) => schema.or(z.literal('')).optional().nullable()
+const nameField = emptyable(z.string().regex(RE_NAME, "Only letters, spaces, . - ' allowed (max 50)"))
+const emailField = emptyable(z.string().email('Invalid email address'))
+const phoneField = emptyable(
+  z.string().regex(RE_PHONE, 'Invalid phone number').refine((s) => {
+    const d = s.replace(/\D/g, '')
+    return d.length >= 7 && d.length <= 15
+  }, 'Phone must contain 7–15 digits'),
+)
+const zipField = emptyable(z.string().regex(RE_ZIP, 'ZIP code must be exactly 5 digits'))
+
 const customerFields = {
   lead_id:          z.string().uuid().optional().nullable(),
   name:             z.string().min(1),
-  email:            z.string().optional().nullable(),   // no .email() — front-end shows UX hint
-  phone:            z.string().optional().nullable(),
-  whatsapp:         z.string().optional().nullable(),
+  email:            emailField,
+  phone:            phoneField,
+  whatsapp:         phoneField,
   company:          z.string().optional().nullable(),
   website:          z.string().optional().nullable(),
   facebook_id:      z.string().optional().nullable(),
   instagram_id:     z.string().optional().nullable(),
-  address_line1:    z.string().optional().nullable(),
-  city:             z.string().optional().nullable(),
-  state:            z.string().optional().nullable(),
-  zip:              z.string().optional().nullable(),
+  address_line1:    emptyable(z.string().max(100)),
+  city:             nameField,
+  state:            nameField,
+  zip:              zipField,
   country:          z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
   same_as_shipping: z.boolean().optional(),
   buyer_type:       z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
-  first_name:       z.string().min(1).optional(),
-  last_name:        z.string().optional().nullable(),
-  company_name:     z.string().optional().nullable(),
-  company_phone_number: z.string().optional().nullable(),
-  mobile_number:    z.string().optional().nullable(),
+  first_name:       nameField,
+  last_name:        nameField,
+  company_name:     emptyable(z.string().min(2, 'Company name must be 2–100 characters').max(100, 'Company name must be 2–100 characters')),
+  company_phone_number: phoneField,
+  mobile_number:    phoneField,
   preferred_language: z.string().optional().nullable(),
   customer_segment: z.string().optional().nullable(),
   tier:             z.string().optional().nullable(),
@@ -42,9 +60,9 @@ const customerFields = {
   assigned_agent_id: z.string().uuid().optional().nullable(),
   addresses: z.array(z.object({
     address_type: z.enum(['billing', 'shipping']),
-    line1: z.string().optional().nullable(), line2: z.string().optional().nullable(),
-    city: z.string().optional().nullable(), state: z.string().optional().nullable(),
-    zipcode: z.string().optional().nullable(), country: z.string().optional().nullable(),
+    line1: emptyable(z.string().max(100)), line2: emptyable(z.string().max(100)),
+    city: nameField, state: nameField,
+    zipcode: zipField, country: z.string().optional().nullable(),
     is_default: z.boolean().optional(),
   })).optional(),
 }

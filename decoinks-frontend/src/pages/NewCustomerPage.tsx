@@ -8,6 +8,67 @@ import toast from '../utils/toast'
 const SEGMENTS = ['retail', 'reseller', 'corporate', 'non-profit', 'individual']
 const TIERS = ['Standard', 'Silver', 'Gold', 'Platinum']
 
+// ── Validation ──────────────────────────────────────────────────────────────
+// Strict rules, but only First Name is required. Every other field is optional
+// and is validated *only when the user has entered something* — an empty
+// optional field never blocks the save, so nothing in the data flow breaks.
+const RE_NAME = /^[A-Za-z\s'.-]+$/          // letters, spaces, . - '
+const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const RE_ZIP = /^\d{5}$/                     // US standard: exactly 5 digits
+const RE_PHONE = /^[\d\s()+-]+$/            // digits + common formatting chars
+
+function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
+  const errs: Record<string, string> = {}
+  const val = (k: keyof typeof form) => (form[k] ?? '').trim()
+
+  // First Name — the only required field
+  const fn = val('first_name')
+  if (!fn) errs.first_name = 'First name is required'
+  else if (!RE_NAME.test(fn) || fn.length > 50) errs.first_name = 'Letters only, max 50 characters'
+
+  // Name-like fields: letters only, max 50 (validated only when filled)
+  const nameCheck = (k: keyof typeof form, label: string) => {
+    const v = val(k); if (!v) return
+    if (!RE_NAME.test(v) || v.length > 50) errs[k] = `${label} must be letters only (max 50)`
+  }
+  nameCheck('last_name', 'Last name')
+  nameCheck('shipping_city', 'City'); nameCheck('shipping_state', 'State')
+  if (!sameAsShipping) { nameCheck('billing_city', 'City'); nameCheck('billing_state', 'State') }
+
+  // Company Name — 2–100 chars
+  const cn = val('company_name')
+  if (cn && (cn.length < 2 || cn.length > 100)) errs.company_name = 'Company name must be 2–100 characters'
+
+  // Email — valid format
+  const em = val('email')
+  if (em && !RE_EMAIL.test(em)) errs.email = 'Enter a valid email address'
+
+  // Phones — optional; if filled, allow formatting chars and require 7–15 digits
+  const phoneCheck = (k: keyof typeof form) => {
+    const v = val(k); if (!v) return
+    const digits = v.replace(/\D/g, '')
+    if (!RE_PHONE.test(v) || digits.length < 7 || digits.length > 15)
+      errs[k] = 'Enter a valid phone number (7–15 digits)'
+  }
+  phoneCheck('company_phone_number'); phoneCheck('mobile_number'); phoneCheck('whatsapp_number')
+
+  // ZIP — 3–10 chars, alphanumeric + hyphen/space
+  const zipCheck = (k: keyof typeof form) => {
+    const v = val(k); if (!v) return
+    if (!RE_ZIP.test(v)) errs[k] = 'ZIP code must be exactly 5 digits'
+  }
+  zipCheck('shipping_zipcode'); if (!sameAsShipping) zipCheck('billing_zipcode')
+
+  // Address lines — max 100 chars
+  const lenCheck = (k: keyof typeof form) => {
+    const v = val(k); if (v && v.length > 100) errs[k] = 'Address is too long (max 100 characters)'
+  }
+  lenCheck('shipping_line1'); lenCheck('shipping_line2')
+  if (!sameAsShipping) { lenCheck('billing_line1'); lenCheck('billing_line2') }
+
+  return errs
+}
+
 const EMPTY_FORM = {
   first_name: '', last_name: '', company_name: '', email: '',
   company_phone_number: '', whatsapp_number: '', mobile_number: '',
@@ -30,7 +91,15 @@ export function NewCustomerPage() {
   const [saving, setSaving] = useState(false)
   const [sameAsShipping, setSameAsShipping] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
-  const set = (key: keyof typeof form, value: string) => setForm(v => ({ ...v, [key]: value }))
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const set = (key: keyof typeof form, value: string) => {
+    setForm(v => ({ ...v, [key]: value }))
+    // Clear the field's error as soon as the user edits it.
+    setErrors(e => {
+      if (!e[key]) return e
+      const next = { ...e }; delete next[key]; return next
+    })
+  }
 
   // ── Edit mode: load the existing customer and pre-fill the same form ──
   const { data: existing } = useQuery({
@@ -72,7 +141,12 @@ export function NewCustomerPage() {
   }, [existing])
 
   const save = async () => {
-    if (!form.first_name.trim()) return toast.error('First name is required')
+    const errs = validateCustomer(form, sameAsShipping)
+    if (Object.keys(errs).length) {
+      setErrors(errs)
+      return toast.error('Please fix the highlighted fields')
+    }
+    setErrors({})
     setSaving(true)
     try {
       // When "Same as Shipping" is ticked, billing mirrors the shipping address.
@@ -111,19 +185,27 @@ export function NewCustomerPage() {
     } finally { setSaving(false) }
   }
 
-  const field = (label: string, key: keyof typeof form, type = 'text') => (
-    <div className="al-field"><label>{label}</label><input className="al-input" type={type} value={form[key]} onChange={e => set(key, e.target.value)} /></div>
+  const field = (label: string, key: keyof typeof form, type = 'text', maxLength?: number) => (
+    <div className="al-field"><label>{label}</label>
+      <input className="al-input" type={type} maxLength={maxLength} value={form[key]} onChange={e => set(key, e.target.value)}
+        aria-invalid={!!errors[key]} style={errors[key] ? { borderColor: '#dc2626' } : undefined} />
+      {errors[key] && <span style={{ color: '#dc2626', fontSize: 12, marginTop: 4, display: 'block' }}>{errors[key]}</span>}
+    </div>
   )
 
   // Billing field: when "Same as Shipping" is on, it shows the shipping value
   // (read-only) so the user sees exactly what will be saved.
-  const billingField = (label: string, key: keyof typeof form) => {
+  const billingField = (label: string, key: keyof typeof form, maxLength?: number) => {
     const shipKey = key.replace('billing_', 'shipping_') as keyof typeof form
     const value = sameAsShipping ? form[shipKey] : form[key]
     return <div className="al-field"><label>{label}</label>
-      <input className="al-input" value={value} disabled={sameAsShipping}
+      <input className="al-input" value={value} disabled={sameAsShipping} maxLength={maxLength}
         onChange={e => set(key, e.target.value)}
-        style={sameAsShipping ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } : undefined} /></div>
+        aria-invalid={!sameAsShipping && !!errors[key]}
+        style={sameAsShipping ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }
+          : errors[key] ? { borderColor: '#dc2626' } : undefined} />
+      {!sameAsShipping && errors[key] && <span style={{ color: '#dc2626', fontSize: 12, marginTop: 4, display: 'block' }}>{errors[key]}</span>}
+    </div>
   }
 
   const segmentOptions = Array.from(new Set([...SEGMENTS, form.customer_segment].filter(Boolean)))
@@ -146,14 +228,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode')}{field('Country','shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5)}{field('Country','shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode')}{billingField('Country','billing_country')}</div>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5)}{billingField('Country','billing_country')}</div>
       </div></section></div>
     </div>
   </div>
