@@ -327,6 +327,17 @@ async function create(data) {
         paymentMethod: payment_method, reference: payment_reference, paymentDate: payment_date, actorId: created_by,
       })
     }
+    // Back-link the invoice to this order (circular FK orders.invoice_id ↔
+    // invoices.order_id). Without this the invoice UI never learns an order was
+    // created and keeps offering "Convert to Order" — which produced duplicate
+    // orders. Idempotent: only fills when not already linked, so nothing is
+    // ever overwritten or lost.
+    if (invoice_id) {
+      await client.query(
+        `UPDATE invoices SET order_id = $1, updated_at = NOW() WHERE id = $2 AND order_id IS NULL`,
+        [order.id, invoice_id]
+      )
+    }
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
        VALUES ($1, 'order', $2, 'created', $3)`,
