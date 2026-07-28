@@ -393,6 +393,50 @@ export function NewOrderPage() {
     }
   }, [sourceQuote])
 
+  // Convert/edit apparel rows carry catalog IDs but not the option lists, so the
+  // Color/Size dropdowns render empty. Hydrate colors/sizes/variants (+ display
+  // names, SKU and preview) from the product master so the saved selection shows
+  // and isn't wiped on re-save. Mirrors the invoice form's backfill; snapshots
+  // are untouched (values only fill when currently empty).
+  useEffect(() => {
+    const missing = apparel.filter(item => item.styleId && !item.availableColors)
+    if (!missing.length) return
+    let cancelled = false
+    Promise.all(missing.map(async item => {
+      try {
+        const style = (await api.get(`/products/${item.styleId}`)).data.data as ApparelCatalogStyle
+        const color = style.colors?.find(value => value.style_color_id === item.colorId)
+        const size = style.sizes?.find(value => value.style_size_id === item.sizeId)
+        const variant = style.variants?.find(value => value.style_color_id === item.colorId && value.style_size_id === item.sizeId)
+        return {
+          id: item.id,
+          patch: {
+            item:             item.item || style.name,
+            styleCode:        item.styleCode || style.sku,
+            brand:            item.brand || style.brand,
+            productImage:     item.productImage || style.images?.[0]?.image_url || style.image_url,
+            styleDescription: item.styleDescription || style.description,
+            availableColors:  style.colors ?? [],
+            availableSizes:   style.sizes ?? [],
+            availableVariants: style.variants ?? [],
+            color:            item.color || color?.display_name || '',
+            size:             item.size || size?.size_name || '',
+            sku:              item.sku || variant?.sku_code || '',
+          } as Partial<ApparelItem>,
+        }
+      } catch {
+        return null
+      }
+    })).then(results => {
+      if (cancelled) return
+      setApparel(previous => previous.map(item => {
+        const match = results.find(result => result?.id === item.id)
+        return match ? { ...item, ...match.patch } : item
+      }))
+    })
+    return () => { cancelled = true }
+  }, [apparel])
+
   // ── Load customers & agents ──
   const { data: customerData } = useQuery({
     queryKey: ['customers-list'],
