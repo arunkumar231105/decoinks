@@ -114,6 +114,7 @@ export function ArtworkThumb({
   const lightbox = useContext(ArtworkLightboxContext)
   const id = useId()
   const anchorRef = useRef<HTMLAnchorElement>(null)
+  const [failed, setFailed] = useState(false)
   const register = lightbox?.register
   const imageLabel = label || alt || 'Artwork'
   const linkable = !!src && !/^(data|blob):/i.test(src)
@@ -124,9 +125,9 @@ export function ArtworkThumb({
     return register({ id, src, label: imageLabel, element: anchorRef.current })
   }, [id, imageLabel, register, src])
 
-  if (!src) return <>{fallback}</>
+  if (!src || failed) return <>{fallback}</>
 
-  const image = <img src={src} alt={alt} className={className} style={style} />
+  const image = <img src={src} alt={alt} className={className} style={style} onError={() => setFailed(true)} />
   if (!absoluteUrl) return image
 
   const openLightbox = (event: MouseEvent<HTMLAnchorElement>) => {

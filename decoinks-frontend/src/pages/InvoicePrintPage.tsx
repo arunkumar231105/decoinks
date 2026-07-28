@@ -438,8 +438,15 @@ export function InvoicePrintPage() {
       ? Number(invoice.total) - Number(invoice.amount_paid || 0)
       : Number(invoice.balance_due))
   const currency = invoice.currency || 'USD'
-  const money = (value: number | string | null | undefined) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(value ?? 0))
+  const money = (value: number | string | null | undefined) => {
+    const amount = Number(value ?? 0) || 0
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
+    } catch {
+      // Invalid / non-ISO currency code must never crash the print view — use USD.
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+    }
+  }
   const customerNotes = invoice.customer_notes || quotation?.customer_notes || ''
 
   // DTF is one commercial line with artwork detail rows. Split only when the
@@ -447,7 +454,7 @@ export function InvoicePrintPage() {
   const dtfGroups: DtfGroup[] = []
   items.forEach((item, idx) => {
     const art = artworks[idx] ?? null
-    const invSuffix = invoice.invoice_number.replace(/\D/g, '').slice(-4) || '0001'
+    const invSuffix = (invoice.invoice_number ?? '').replace(/\D/g, '').slice(-4) || '0001'
     const artNo  = item.artwork_no || art?.artwork_no || `DTF-${invSuffix}-${String(idx + 1).padStart(3, '0')}`
     const sizeStr = art?.width_inches && art?.height_inches
       ? `${art.width_inches} x ${art.height_inches}`

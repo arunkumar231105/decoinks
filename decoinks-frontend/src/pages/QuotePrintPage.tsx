@@ -354,9 +354,10 @@ export function QuotePrintPage() {
   }
 
   const orderType    = quote.order_type ?? 'dtf'
-  const totalItems   = quote.items.length
-  const totalQty     = quote.items.reduce((s, i) => s + i.qty, 0)
-  const totalArt     = artworks.length || quote.items.reduce((s, i) => s + (i.artwork_count || 0), 0)
+  const items        = Array.isArray(quote.items) ? quote.items : []
+  const totalItems   = items.length
+  const totalQty     = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
+  const totalArt     = artworks.length || items.reduce((s, i) => s + (i.artwork_count || 0), 0)
   const custName     = quote.customer_name || quote.supplier_name || '—'
   const termStr      = quote.payment_terms || 'Net 15'
   const rushAmt      = Number(quote.rush_services ?? 0)
@@ -499,10 +500,10 @@ export function QuotePrintPage() {
 
         {/* ── ITEMS TABLE ── */}
         <div className="tbl-wrap">
-          {orderType === 'apparel' && <ApparelTable items={quote.items} artworks={artworks} />}
-          {orderType === 'dtf'     && <DtfTable     items={quote.items} artworks={artworks} />}
-          {orderType === 'gangsheet' && <GangsheetTable items={quote.items} />}
-          {!['dtf', 'apparel', 'gangsheet'].includes(orderType) && <GenericTable items={quote.items} />}
+          {orderType === 'apparel' && <ApparelTable items={items} artworks={artworks} />}
+          {orderType === 'dtf'     && <DtfTable     items={items} artworks={artworks} />}
+          {orderType === 'gangsheet' && <GangsheetTable items={items} />}
+          {!['dtf', 'apparel', 'gangsheet'].includes(orderType) && <GenericTable items={items} />}
         </div>
 
         {/* ── STATS BAR ── */}
@@ -651,6 +652,8 @@ export function QuotePrintPage() {
 
 // ── APPAREL TABLE ─────────────────────────────────────────────────────────────
 
+const fmt2 = (value: number | string | null | undefined) => (Number(value ?? 0) || 0).toFixed(2)
+
 function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[] }) {
   return (
     <table className="items-tbl">
@@ -724,8 +727,8 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
               <td>
                 <ArtworkThumb src={backUrl} alt="back artwork" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
               </td>
-              <td style={{ fontWeight: 600 }}>$ {item.unit_price.toFixed(2)}</td>
-              <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
+              <td style={{ fontWeight: 600 }}>$ {fmt2(item.unit_price)}</td>
+              <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
             </tr>
           )
         })}
@@ -783,8 +786,8 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
             </td>
             <td style={{ fontWeight: 600, fontSize: 11 }}>{row.size}</td>
             <td style={{ fontWeight: 600 }}>{row.item.qty} pcs</td>
-            {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {row.item.unit_price.toFixed(2)}</td>}
-            <td style={{ fontWeight: 700 }}>$ {row.item.amount.toFixed(2)}</td>
+            {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {fmt2(row.item.unit_price)}</td>}
+            <td style={{ fontWeight: 700 }}>$ {fmt2(row.item.amount)}</td>
           </tr>
         ))}
       </tbody>
@@ -822,8 +825,8 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
             <td>
               <ArtworkThumb src={item.back_image} alt="back" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>
-            <td>$ {item.unit_price.toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
+            <td>$ {fmt2(item.unit_price)}</td>
+            <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
           </tr>
         ))}
       </tbody>
@@ -851,8 +854,8 @@ function GenericTable({ items }: { items: QuoteItem[] }) {
             <td style={{ fontWeight: 700 }}>{idx + 1}</td>
             <td className="left"><div className="item-main">{item.description}</div></td>
             <td style={{ fontWeight: 600 }}>{item.qty}</td>
-            <td>$ {item.unit_price.toFixed(2)}</td>
-            <td style={{ fontWeight: 700 }}>$ {item.amount.toFixed(2)}</td>
+            <td>$ {fmt2(item.unit_price)}</td>
+            <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
           </tr>
         ))}
       </tbody>
