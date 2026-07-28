@@ -647,7 +647,16 @@ export function NewOrderPage() {
   const validateItems = (): string | null => {
     if (orderType === 'apparel') {
       for (let i = 0; i < apparel.length; i++) {
-        if (!apparel[i].item.trim()) return `Row ${i + 1}: Item name is required`
+        const row = apparel[i]
+        if (!row.item.trim()) return `Row ${i + 1}: Item name is required`
+        // Catalog items (picked from a Product Master style) must have a colour
+        // and size selected and a price — this is what was saving blank rows.
+        // Legacy free-text rows (no styleId) are intentionally left untouched.
+        if (row.styleId) {
+          if (!row.colorId) return `Row ${i + 1}: Select a colour for this catalog item`
+          if (!row.sizeId)  return `Row ${i + 1}: Select a size for this catalog item`
+          if (!(Number(row.unitPrice) > 0)) return `Row ${i + 1}: Enter a unit price`
+        }
       }
     }
     if (orderType === 'dtf') {
@@ -655,11 +664,13 @@ export function NewOrderPage() {
         if (!dtf[i].artworkNo.trim()) return `Row ${i + 1}: Artwork No. is required`
         if (!(Number(dtf[i].width) > 0)) return `Row ${i + 1}: Width is required`
         if (!(Number(dtf[i].height) > 0)) return `Row ${i + 1}: Height is required`
+        if (!(Number(dtf[i].unitPrice) > 0)) return `Row ${i + 1}: Enter a unit price`
       }
     }
     if (orderType === 'gangsheet') {
       for (let i = 0; i < gangsheet.length; i++) {
         if (!(Number(gangsheet[i].height) > 0)) return `Gangsheet ${i + 1}: Height is required`
+        if (!(Number(gangsheet[i].pricePerSheet) > 0)) return `Gangsheet ${i + 1}: Enter a price per sheet`
       }
     }
     return null
