@@ -20,7 +20,14 @@ const COUNTRY_ALIASES: Record<string, string> = {
 }
 const resolveCountry = (v?: string | null) => (v ? COUNTRY_ALIASES[v] ?? v : '')
 const isoForCountry = (name: string) => COUNTRIES.find(c => c.name === name)?.isoCode ?? ''
-const statesForCountry = (name: string) => State.getStatesOfCountry(isoForCountry(name)).map(s => s.name)
+// Resolve a stored state (full name OR code) to its short code (e.g. "New
+// York" / "NY" → "NY"). Unknown values pass through unchanged.
+const stateCodeFor = (countryName: string, val?: string | null) => {
+  if (!val) return ''
+  const list = State.getStatesOfCountry(isoForCountry(countryName))
+  const hit = list.find(s => s.isoCode === val || s.name.toLowerCase() === val.toLowerCase())
+  return hit ? hit.isoCode : val
+}
 
 // ── Validation ──────────────────────────────────────────────────────────────
 // Strict rules, but only First Name is required. Every other field is optional
@@ -132,6 +139,8 @@ export function NewCustomerPage() {
     const addrs: CustomerAddress[] = existing.addresses ?? []
     const ship = addrs.find(a => a.address_type === 'shipping')
     const bill = addrs.find(a => a.address_type === 'billing')
+    const shipCountry = resolveCountry(ship?.country ?? existing.country) || 'United States'
+    const billCountry = resolveCountry(bill?.country) || 'United States'
     setForm({
       first_name: existing.first_name ?? (existing.name?.split(' ')[0] ?? ''),
       last_name: existing.last_name ?? (existing.name?.split(' ').slice(1).join(' ') ?? ''),
@@ -146,15 +155,15 @@ export function NewCustomerPage() {
       shipping_line1: ship?.line1 ?? existing.address_line1 ?? '',
       shipping_line2: ship?.line2 ?? '',
       shipping_city: ship?.city ?? existing.city ?? '',
-      shipping_state: ship?.state ?? existing.state ?? '',
+      shipping_state: stateCodeFor(shipCountry, ship?.state ?? existing.state),
       shipping_zipcode: ship?.zipcode ?? existing.zip ?? '',
-      shipping_country: resolveCountry(ship?.country ?? existing.country) || 'United States',
+      shipping_country: shipCountry,
       billing_line1: bill?.line1 ?? '',
       billing_line2: bill?.line2 ?? '',
       billing_city: bill?.city ?? '',
-      billing_state: bill?.state ?? '',
+      billing_state: stateCodeFor(billCountry, bill?.state),
       billing_zipcode: bill?.zipcode ?? '',
-      billing_country: resolveCountry(bill?.country) || 'United States',
+      billing_country: billCountry,
     })
     setSameAsShipping(!!existing.same_as_shipping)
   }, [existing])
@@ -256,7 +265,7 @@ export function NewCustomerPage() {
     const shipCountryKey = countryKey.replace('billing_', 'shipping_') as keyof typeof form
     const value = mirror ? form[shipKey] : form[key]
     const countryVal = mirror ? form[shipCountryKey] : form[countryKey]
-    const states = statesForCountry(countryVal)
+    const states = State.getStatesOfCountry(isoForCountry(countryVal)) // [{ isoCode, name }]
     if (!states.length) {
       return <div className="al-field"><label>State</label>
         <input className="al-input" value={value} disabled={mirror} onChange={e => set(key, e.target.value)}
@@ -265,12 +274,14 @@ export function NewCustomerPage() {
         {!mirror && errors[key] && <span style={{ color: '#dc2626', fontSize: 12, marginTop: 4, display: 'block' }}>{errors[key]}</span>}
       </div>
     }
-    const options = value && !states.includes(value) ? [value, ...states] : states
+    // Store the short code (e.g. "NY"); keep an unrecognised legacy value visible.
+    const options = value && !states.some(s => s.isoCode === value)
+      ? [{ isoCode: value, name: value }, ...states] : states
     return <div className="al-field"><label>State</label>
       <select className="al-input" value={value} disabled={mirror} onChange={e => set(key, e.target.value)}
         style={mirror ? mutedStyle : undefined}>
         <option value="">Select state…</option>
-        {options.map(s => <option key={s} value={s}>{s}</option>)}
+        {options.map(s => <option key={s.isoCode} value={s.isoCode}>{s.isoCode} — {s.name}</option>)}
       </select></div>
   }
 
