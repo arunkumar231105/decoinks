@@ -33,7 +33,7 @@ const stateCodeFor = (countryName: string, val?: string | null) => {
 // Strict rules, but only First Name is required. Every other field is optional
 // and is validated *only when the user has entered something* — an empty
 // optional field never blocks the save, so nothing in the data flow breaks.
-const RE_NAME = /^[A-Za-z\s'.-]+$/          // letters, spaces, . - '
+const RE_NAME = /^[\p{L}\s'.-]+$/u          // Unicode letters (incl. accents), spaces, . - '
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const RE_ZIP = /^[A-Za-z0-9][A-Za-z0-9\s-]{1,11}$/   // 2–12 chars: US ZIP, ZIP+4 and international postcodes
 const RE_PHONE = /^[\d\s()+-]+$/            // digits + common formatting chars
@@ -214,7 +214,7 @@ export function NewCustomerPage() {
         navigate(`/customers/${res.data.data?.id ?? res.data.id}`)
       }
     } catch (e: any) {
-      toast.error(e.response?.data?.message ?? `Failed to ${isEdit ? 'update' : 'create'} customer`)
+      toast.apiError(e)
     } finally { setSaving(false) }
   }
 

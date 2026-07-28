@@ -69,6 +69,7 @@ export function NewSupplierPage() {
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) { toast.error('First and Last Name are required'); return }
     if (!email.trim()) { toast.error('Email is required'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.error('Enter a valid email address (e.g. name@example.com)'); return }
     if (portalEnabled) {
       if (!portalUsername.trim()) { toast.error('Portal username is required when portal access is enabled'); return }
       if (portalPassword.length < 8) { toast.error('Portal password must be at least 8 characters'); return }
@@ -86,7 +87,7 @@ export function NewSupplierPage() {
       toast.success('Supplier created')
       navigate('/suppliers')
     } catch (err: any) {
-      toast.error(err.response?.data?.message ?? err.response?.data?.error ?? 'Failed to save supplier')
+      toast.apiError(err)
     } finally {
       setSaving(false)
     }
