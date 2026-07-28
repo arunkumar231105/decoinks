@@ -1539,7 +1539,7 @@ export function NewQuotationPage() {
 
           <SupplierSection billingAddress={billingAddress} setBillingAddress={setBillingAddress} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} sameAsBilling={sameAsBilling} setSameAsBilling={setSameAsBilling} customerId={customerId} />
 
-          {(leadId || leadItems.length > 0) && (
+          {leadItems.length > 0 && (
             <LeadItemsSection items={leadItems} setItems={setLeadItems} />
           )}
 
