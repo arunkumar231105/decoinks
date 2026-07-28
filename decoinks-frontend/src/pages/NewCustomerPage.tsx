@@ -185,9 +185,10 @@ export function NewCustomerPage() {
     } finally { setSaving(false) }
   }
 
-  const field = (label: string, key: keyof typeof form, type = 'text', maxLength?: number) => (
+  const field = (label: string, key: keyof typeof form, type = 'text', maxLength?: number, numeric = false) => (
     <div className="al-field"><label>{label}</label>
-      <input className="al-input" type={type} maxLength={maxLength} value={form[key]} onChange={e => set(key, e.target.value)}
+      <input className="al-input" type={type} maxLength={maxLength} inputMode={numeric ? 'numeric' : undefined}
+        value={form[key]} onChange={e => set(key, numeric ? e.target.value.replace(/\D/g, '') : e.target.value)}
         aria-invalid={!!errors[key]} style={errors[key] ? { borderColor: '#dc2626' } : undefined} />
       {errors[key] && <span style={{ color: '#dc2626', fontSize: 12, marginTop: 4, display: 'block' }}>{errors[key]}</span>}
     </div>
@@ -195,12 +196,13 @@ export function NewCustomerPage() {
 
   // Billing field: when "Same as Shipping" is on, it shows the shipping value
   // (read-only) so the user sees exactly what will be saved.
-  const billingField = (label: string, key: keyof typeof form, maxLength?: number) => {
+  const billingField = (label: string, key: keyof typeof form, maxLength?: number, numeric = false) => {
     const shipKey = key.replace('billing_', 'shipping_') as keyof typeof form
     const value = sameAsShipping ? form[shipKey] : form[key]
     return <div className="al-field"><label>{label}</label>
       <input className="al-input" value={value} disabled={sameAsShipping} maxLength={maxLength}
-        onChange={e => set(key, e.target.value)}
+        inputMode={numeric ? 'numeric' : undefined}
+        onChange={e => set(key, numeric ? e.target.value.replace(/\D/g, '') : e.target.value)}
         aria-invalid={!sameAsShipping && !!errors[key]}
         style={sameAsShipping ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }
           : errors[key] ? { borderColor: '#dc2626' } : undefined} />
@@ -228,14 +230,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5)}{field('Country','shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{field('Country','shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5)}{billingField('Country','billing_country')}</div>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{billingField('Country','billing_country')}</div>
       </div></section></div>
     </div>
   </div>
