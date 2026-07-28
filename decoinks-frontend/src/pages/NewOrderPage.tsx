@@ -328,6 +328,8 @@ export function NewOrderPage() {
     queryKey: ['convert-from-invoice', fromInvoiceId],
     queryFn:  () => api.get(`/invoices/${fromInvoiceId}`).then(r => r.data.data ?? r.data),
     enabled:  !!fromInvoiceId,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   // Fetch linked quotation to get items
@@ -335,6 +337,8 @@ export function NewOrderPage() {
     queryKey: ['convert-from-quote', sourceInvoice?.quote_id],
     queryFn:  () => api.get(`/quotations/${sourceInvoice!.quote_id}`).then(r => r.data.data ?? r.data),
     enabled:  !!sourceInvoice?.quote_id,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   useEffect(() => {

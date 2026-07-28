@@ -417,6 +417,8 @@ export function NewPurchaseOrderPage() {
     queryKey: ['convert-from-order', fromOrderId],
     queryFn: () => api.get(`/orders/${fromOrderId}`).then(r => r.data.data ?? r.data),
     enabled: !!fromOrderId && !isEdit,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   useEffect(() => {

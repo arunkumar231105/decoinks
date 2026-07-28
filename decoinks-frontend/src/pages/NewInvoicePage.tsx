@@ -475,6 +475,10 @@ export function NewInvoicePage() {
     queryKey: ['convert-from-quote', fromQuoteId],
     queryFn:  () => api.get(`/quotations/${fromQuoteId}`).then(r => r.data.data ?? r.data),
     enabled:  !!fromQuoteId,
+    // Always pull the latest quote when converting, so re-convert after editing
+    // the quote syncs the newest totals/payment (not a 5-min stale cache).
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   // Pre-populate form fields from quote once data arrives
@@ -625,7 +629,7 @@ export function NewInvoicePage() {
         return
       }
       navigateAfterSave.current = null
-      toast.success('Invoice saved')
+      toast.success(inv?._action === 'updated' ? 'Invoice updated' : 'Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
     onError: (err: any) => {

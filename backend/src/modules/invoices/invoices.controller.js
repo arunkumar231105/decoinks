@@ -18,7 +18,7 @@ async function getOne(req, res, next) {
 async function create(req, res, next) {
   try {
     const inv = await service.create({ ...req.body, created_by: req.user.id })
-    return created(res, inv, 'Invoice created')
+    return created(res, inv, inv?._action === 'updated' ? 'Invoice updated' : 'Invoice created')
   } catch (err) { next(err) }
 }
 

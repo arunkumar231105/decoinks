@@ -579,6 +579,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
       }
 
       await cacheDel('dashboard:stats')
+      createdInvoice._action = 'created'   // signal to UI: newly created (not synced)
       return createdInvoice
     }
 
@@ -638,6 +639,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
     await client.query('COMMIT')
 
     await cacheDel('dashboard:stats')
+    updRows[0]._action = 'updated'   // signal to UI: existing invoice was synced
     return updRows[0]
   } catch (err) {
     try { await client.query('ROLLBACK') } catch (_) { /* nothing to roll back */ }
