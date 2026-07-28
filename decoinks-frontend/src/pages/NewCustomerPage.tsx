@@ -35,7 +35,7 @@ const stateCodeFor = (countryName: string, val?: string | null) => {
 // optional field never blocks the save, so nothing in the data flow breaks.
 const RE_NAME = /^[\p{L}\s'.-]+$/u          // Unicode letters (incl. accents), spaces, . - '
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const RE_ZIP = /^[A-Za-z0-9][A-Za-z0-9\s-]{1,11}$/   // 2–12 chars: US ZIP, ZIP+4 and international postcodes
+const RE_ZIP = /^\d{5}$/                     // US standard: exactly 5 digits
 const RE_PHONE = /^[\d\s()+-]+$/            // digits + common formatting chars
 
 function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
@@ -81,7 +81,7 @@ function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
   // ZIP — 3–10 chars, alphanumeric + hyphen/space
   const zipCheck = (k: keyof typeof form) => {
     const v = val(k); if (!v) return
-    if (!RE_ZIP.test(v)) errs[k] = 'Enter a valid ZIP / postal code'
+    if (!RE_ZIP.test(v)) errs[k] = 'ZIP code must be exactly 5 digits'
   }
   zipCheck('shipping_zipcode'); if (!sameAsShipping) zipCheck('billing_zipcode')
 
@@ -310,14 +310,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',12,false)}{countrySelect('shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{countrySelect('shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',12,false)}{countrySelect('billing_country')}</div>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
       </div></section></div>
     </div>
   </div>
