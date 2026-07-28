@@ -96,7 +96,7 @@ export function OrderDetailPage() {
 
       <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
         <MenuItem onClick={() => { setMoreAnchor(null); navigate('/orders/new', { state: { editOrderId: order.id } }) }}>Edit operational details</MenuItem>
-        <MenuItem onClick={() => { setMoreAnchor(null); navigate('/purchase-orders/new', { state: { fromOrderId: order.id } }) }}>Generate Purchase Order</MenuItem>
+        <MenuItem onClick={() => { setMoreAnchor(null); if (pos.length && !window.confirm(`This order already has ${pos.length} purchase order(s). Create another one anyway?`)) return; navigate('/purchase-orders/new', { state: { fromOrderId: order.id } }) }}>Generate Purchase Order</MenuItem>
         <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/orders/${order.id}/print`) }}>Print Work Order</MenuItem>
       </Menu>
 
