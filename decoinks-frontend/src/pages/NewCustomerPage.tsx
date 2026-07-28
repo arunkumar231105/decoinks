@@ -2,11 +2,25 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, UserRound, MapPin } from 'lucide-react'
+import { Country, State } from 'country-state-city'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 
 const SEGMENTS = ['retail', 'reseller', 'corporate', 'non-profit', 'individual']
 const TIERS = ['Standard', 'Silver', 'Gold', 'Platinum']
+
+// ── Country / State data (all 250 countries + their states) ──────────────────
+const COUNTRIES = Country.getAllCountries()
+const COUNTRY_NAMES = COUNTRIES.map(c => c.name)
+// Map legacy/short country values onto the canonical dropdown names so old
+// records still show a selected country instead of a blank field.
+const COUNTRY_ALIASES: Record<string, string> = {
+  USA: 'United States', US: 'United States', 'U.S.A.': 'United States', 'U.S.': 'United States',
+  UK: 'United Kingdom', UAE: 'United Arab Emirates',
+}
+const resolveCountry = (v?: string | null) => (v ? COUNTRY_ALIASES[v] ?? v : '')
+const isoForCountry = (name: string) => COUNTRIES.find(c => c.name === name)?.isoCode ?? ''
+const statesForCountry = (name: string) => State.getStatesOfCountry(isoForCountry(name)).map(s => s.name)
 
 // ── Validation ──────────────────────────────────────────────────────────────
 // Strict rules, but only First Name is required. Every other field is optional
@@ -32,8 +46,13 @@ function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
     if (!RE_NAME.test(v) || v.length > 50) errs[k] = `${label} must be letters only (max 50)`
   }
   nameCheck('last_name', 'Last name')
-  nameCheck('shipping_city', 'City'); nameCheck('shipping_state', 'State')
-  if (!sameAsShipping) { nameCheck('billing_city', 'City'); nameCheck('billing_state', 'State') }
+  // City/State are international (accents, punctuation, dropdown-selected state)
+  // so we only cap length rather than restricting characters.
+  const cityStateCheck = (k: keyof typeof form, label: string) => {
+    const v = val(k); if (v && v.length > 100) errs[k] = `${label} is too long (max 100)`
+  }
+  cityStateCheck('shipping_city', 'City'); cityStateCheck('shipping_state', 'State')
+  if (!sameAsShipping) { cityStateCheck('billing_city', 'City'); cityStateCheck('billing_state', 'State') }
 
   // Company Name — 2–100 chars
   const cn = val('company_name')
@@ -74,9 +93,9 @@ const EMPTY_FORM = {
   company_phone_number: '', whatsapp_number: '', mobile_number: '',
   preferred_language: 'en', customer_segment: 'retail', tier: 'Standard',
   shipping_line1: '', shipping_line2: '', shipping_city: '', shipping_state: '',
-  shipping_zipcode: '', shipping_country: 'USA',
+  shipping_zipcode: '', shipping_country: 'United States',
   billing_line1: '', billing_line2: '', billing_city: '', billing_state: '',
-  billing_zipcode: '', billing_country: 'USA',
+  billing_zipcode: '', billing_country: 'United States',
 }
 
 interface CustomerAddress {
@@ -129,13 +148,13 @@ export function NewCustomerPage() {
       shipping_city: ship?.city ?? existing.city ?? '',
       shipping_state: ship?.state ?? existing.state ?? '',
       shipping_zipcode: ship?.zipcode ?? existing.zip ?? '',
-      shipping_country: ship?.country ?? existing.country ?? 'USA',
+      shipping_country: resolveCountry(ship?.country ?? existing.country) || 'United States',
       billing_line1: bill?.line1 ?? '',
       billing_line2: bill?.line2 ?? '',
       billing_city: bill?.city ?? '',
       billing_state: bill?.state ?? '',
       billing_zipcode: bill?.zipcode ?? '',
-      billing_country: bill?.country ?? 'USA',
+      billing_country: resolveCountry(bill?.country) || 'United States',
     })
     setSameAsShipping(!!existing.same_as_shipping)
   }, [existing])
@@ -210,6 +229,51 @@ export function NewCustomerPage() {
     </div>
   }
 
+  const mutedStyle = { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } as const
+
+  // Country dropdown (all countries). Billing mirrors shipping when "Same as
+  // Shipping" is on. Changing the country resets that block's state field.
+  const countrySelect = (key: 'shipping_country' | 'billing_country') => {
+    const mirror = key.startsWith('billing_') && sameAsShipping
+    const value = mirror ? form[key.replace('billing_', 'shipping_') as keyof typeof form] : form[key]
+    const stateKey = key.replace('country', 'state') as keyof typeof form
+    // Keep an unrecognised legacy value visible as its own option.
+    const options = value && !COUNTRY_NAMES.includes(value) ? [value, ...COUNTRY_NAMES] : COUNTRY_NAMES
+    return <div className="al-field"><label>Country</label>
+      <select className="al-input" value={value} disabled={mirror}
+        onChange={e => { set(key, e.target.value); set(stateKey, '') }}
+        style={mirror ? mutedStyle : undefined}>
+        {options.map(c => <option key={c} value={c}>{c}</option>)}
+      </select></div>
+  }
+
+  // State dropdown for the chosen country; falls back to free text when the
+  // country has no predefined states, so every country still works.
+  const stateSelect = (key: 'shipping_state' | 'billing_state') => {
+    const mirror = key.startsWith('billing_') && sameAsShipping
+    const shipKey = key.replace('billing_', 'shipping_') as keyof typeof form
+    const countryKey = key.replace('state', 'country') as keyof typeof form
+    const shipCountryKey = countryKey.replace('billing_', 'shipping_') as keyof typeof form
+    const value = mirror ? form[shipKey] : form[key]
+    const countryVal = mirror ? form[shipCountryKey] : form[countryKey]
+    const states = statesForCountry(countryVal)
+    if (!states.length) {
+      return <div className="al-field"><label>State</label>
+        <input className="al-input" value={value} disabled={mirror} onChange={e => set(key, e.target.value)}
+          aria-invalid={!mirror && !!errors[key]}
+          style={mirror ? mutedStyle : errors[key] ? { borderColor: '#dc2626' } : undefined} />
+        {!mirror && errors[key] && <span style={{ color: '#dc2626', fontSize: 12, marginTop: 4, display: 'block' }}>{errors[key]}</span>}
+      </div>
+    }
+    const options = value && !states.includes(value) ? [value, ...states] : states
+    return <div className="al-field"><label>State</label>
+      <select className="al-input" value={value} disabled={mirror} onChange={e => set(key, e.target.value)}
+        style={mirror ? mutedStyle : undefined}>
+        <option value="">Select state…</option>
+        {options.map(s => <option key={s} value={s}>{s}</option>)}
+      </select></div>
+  }
+
   const segmentOptions = Array.from(new Set([...SEGMENTS, form.customer_segment].filter(Boolean)))
   const tierOptions = Array.from(new Set([...TIERS, form.tier].filter(Boolean)))
   const title = isEdit ? 'Edit Customer' : 'New Customer'
@@ -230,14 +294,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{field('State','shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{field('Country','shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{countrySelect('shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{billingField('State','billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{billingField('Country','billing_country')}</div>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
       </div></section></div>
     </div>
   </div>
