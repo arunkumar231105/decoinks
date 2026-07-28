@@ -1,6 +1,6 @@
 ﻿import { useMemo, useRef, useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { Avatar, Menu, MenuItem } from '@mui/material'
 import { api } from '../services/api'
@@ -585,11 +585,18 @@ export function NewInvoicePage() {
   // After save, navigate to print/receipt if preview or short invoice was
   // triggered — otherwise go to invoice detail
   const navigateAfterSave = useRef<'print' | 'receipt' | null>(null)
+  const queryClient = useQueryClient()
 
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
     onSuccess: (inv: any) => {
+      // Refresh invoice-related caches so lists, dashboard figures and the
+      // converted quote's status reflect the new/updated invoice immediately.
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['quotations'] })
+      queryClient.invalidateQueries({ queryKey: ['order-invoice-options'] })
       if (navigateAfterSave.current === 'print' && inv?.id) {
         navigateAfterSave.current = null
         navigate(`/invoices/${inv.id}/print`)
@@ -606,7 +613,10 @@ export function NewInvoicePage() {
     },
     onError: (err: any) => {
       navigateAfterSave.current = null
-      toast.error(err.response?.data?.message ?? 'Failed to save invoice')
+      // Route through the shared parser so 422 field details render as bullets.
+      // The verified 409 conflict message is preserved: parseApiError surfaces
+      // the backend message for 4xx responses (see utils/apiErrorParser.ts).
+      toast.apiError(err)
     },
   })
 
@@ -779,6 +789,7 @@ export function NewInvoicePage() {
   })
 
   const saveDraft = () => {
+    if (saveMutation.isPending) return   // guard against duplicate submissions
     if (!supplierId && !supplierText) {
       toast.error('Please select a customer before saving')
       return
@@ -787,6 +798,7 @@ export function NewInvoicePage() {
   }
 
   const previewInvoice = () => {
+    if (saveMutation.isPending) return   // guard against duplicate submissions
     if (!supplierId && !supplierText) {
       toast.error('Please select a customer before saving')
       return
@@ -797,6 +809,7 @@ export function NewInvoicePage() {
 
   // Saves the invoice, then opens the compact receipt-style view
   const shortInvoice = () => {
+    if (saveMutation.isPending) return   // guard against duplicate submissions
     if (!supplierId && !supplierText) {
       toast.error('Please select a customer before saving')
       return
@@ -831,9 +844,9 @@ export function NewInvoicePage() {
           <h2 className="ni-page-title">New Invoice</h2>
         </div>
         <div className="ni-header-actions">
-          <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview</button>
-          <button className="lb-action-btn" onClick={shortInvoice} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
-          <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
+          <button className="lb-action-btn" onClick={previewInvoice} disabled={saveMutation.isPending}><Eye size={13} /> Preview</button>
+          <button className="lb-action-btn" onClick={shortInvoice} disabled={saveMutation.isPending} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
+          <button className="lb-action-btn" onClick={saveDraft} disabled={saveMutation.isPending} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
           <button className="lb-action-btn" title={isEditing ? 'Invoice is editable' : 'Edit invoice'} onClick={() => setIsEditing(true)}>
             <Pencil size={13} /> Edit
           </button>
@@ -1412,9 +1425,9 @@ export function NewInvoicePage() {
       {/* â"€â"€ BOTTOM BAR â"€â"€ */}
       <div className="ni-bottom-bar">
         <div className="ni-bottom-left">
-          <button className="lb-action-btn" onClick={saveDraft} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
-          <button className="lb-action-btn" onClick={previewInvoice}><Eye size={13} /> Preview Invoice</button>
-          <button className="lb-action-btn" onClick={shortInvoice} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
+          <button className="lb-action-btn" onClick={saveDraft} disabled={saveMutation.isPending} style={{ gap: 6 }}><Save size={14} /> Save Draft</button>
+          <button className="lb-action-btn" onClick={previewInvoice} disabled={saveMutation.isPending}><Eye size={13} /> Preview Invoice</button>
+          <button className="lb-action-btn" onClick={shortInvoice} disabled={saveMutation.isPending} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>🧾 Short Invoice</button>
         </div>
         <div className="ni-bottom-right">
           <div className="ni-send-split">

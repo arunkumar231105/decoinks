@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, UserRound, MapPin } from 'lucide-react'
 import { Country, State } from 'country-state-city'
 import { api } from '../services/api'
@@ -35,7 +35,7 @@ const stateCodeFor = (countryName: string, val?: string | null) => {
 // optional field never blocks the save, so nothing in the data flow breaks.
 const RE_NAME = /^[A-Za-z\s'.-]+$/          // letters, spaces, . - '
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const RE_ZIP = /^\d{5}$/                     // US standard: exactly 5 digits
+const RE_ZIP = /^[A-Za-z0-9][A-Za-z0-9\s-]{1,11}$/   // 2–12 chars: US ZIP, ZIP+4 and international postcodes
 const RE_PHONE = /^[\d\s()+-]+$/            // digits + common formatting chars
 
 function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
@@ -81,7 +81,7 @@ function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
   // ZIP — 3–10 chars, alphanumeric + hyphen/space
   const zipCheck = (k: keyof typeof form) => {
     const v = val(k); if (!v) return
-    if (!RE_ZIP.test(v)) errs[k] = 'ZIP code must be exactly 5 digits'
+    if (!RE_ZIP.test(v)) errs[k] = 'Enter a valid ZIP / postal code'
   }
   zipCheck('shipping_zipcode'); if (!sameAsShipping) zipCheck('billing_zipcode')
 
@@ -128,6 +128,7 @@ export function NewCustomerPage() {
   }
 
   // ── Edit mode: load the existing customer and pre-fill the same form ──
+  const qc = useQueryClient()
   const { data: existing } = useQuery({
     queryKey: ['customer', id],
     queryFn: () => api.get(`/customers/${id}`).then(r => r.data.data),
@@ -201,10 +202,14 @@ export function NewCustomerPage() {
       }
       if (isEdit) {
         await api.put(`/customers/${id}`, payload)
+        qc.invalidateQueries({ queryKey: ['customers'] })
+        qc.invalidateQueries({ queryKey: ['customer', id] })
+        qc.invalidateQueries({ queryKey: ['customer-details', id] })
         toast.success('Customer updated')
         navigate(`/customers/${id}`)
       } else {
         const res = await api.post('/customers', payload)
+        qc.invalidateQueries({ queryKey: ['customers'] })
         toast.success('Customer created')
         navigate(`/customers/${res.data.data?.id ?? res.data.id}`)
       }
@@ -305,14 +310,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{countrySelect('shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',12,false)}{countrySelect('shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
+        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',12,false)}{countrySelect('billing_country')}</div>
       </div></section></div>
     </div>
   </div>

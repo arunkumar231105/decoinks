@@ -1050,17 +1050,24 @@ export function NewQuotationPage() {
     setCustomerId(c.id as string)
     setCustomerText(c.name ?? '')
     setCustomerName(c.name ?? '')
-    setCompanyName(c.company ?? '')
+    setCompanyName(c.company_name || c.company || '')
     setBillingEmail(c.email ?? '')
-    setContactNumber(c.phone ?? '')
+    setContactNumber(c.company_phone_number || c.phone || '')
     setWhatsapp(c.whatsapp ?? '')
     if (c.lead_id) setLeadId(c.lead_id as string)
 
-    // Address fields
-    setShippingCountry(c.country ?? '')
-    setShippingState(c.state ?? '')
-    setShippingCity(c.city ?? '')
-    setZipCode(c.zip ?? '')
+    // Address fields — discrete City/State/ZIP/Country come from the saved
+    // addresses array (prefer default shipping, then first shipping, then first
+    // available); fall back to legacy flat fields.
+    const addrList = Array.isArray(c.addresses) ? c.addresses : []
+    const addr =
+      addrList.find(a => a.address_type === 'shipping' && a.is_default) ??
+      addrList.find(a => a.address_type === 'shipping') ??
+      addrList[0]
+    setShippingCountry(addr?.country || c.country || '')
+    setShippingState(addr?.state || c.state || '')
+    setShippingCity(addr?.city || c.city || '')
+    setZipCode(addr?.zipcode || c.zip || '')
 
     // Billing address: prefer stored billing_address, else build from address parts
     const { billing: billingAddr, shipping: shippingAddr } = customerSavedAddresses(c)
@@ -1083,15 +1090,24 @@ export function NewQuotationPage() {
   async function fillFromCustomer(id: string) {
     try {
       const c = (await api.get(`/customers/${id}`)).data.data as Record<string, any>
+      // Discrete City/State/ZIP/Country come from the saved addresses array
+      // (the current customer shape stores them there, not in flat columns):
+      // prefer the default shipping address, then the first shipping address,
+      // then the first saved address; fall back to legacy flat fields.
+      const addrList = Array.isArray(c.addresses) ? c.addresses : []
+      const addr =
+        addrList.find(a => a.address_type === 'shipping' && a.is_default) ??
+        addrList.find(a => a.address_type === 'shipping') ??
+        addrList[0]
       setCustomerName(c.name ?? '')
-      setCompanyName(c.company ?? '')
+      setCompanyName(c.company_name || c.company || '')
       setBillingEmail(c.email ?? '')
-      setContactNumber(c.phone ?? '')
+      setContactNumber(c.company_phone_number || c.phone || '')
       setWhatsapp(c.whatsapp ?? '')
-      setShippingCountry(c.country ?? '')
-      setShippingState(c.state ?? '')
-      setShippingCity(c.city ?? '')
-      setZipCode(c.zip ?? '')
+      setShippingCountry(addr?.country || c.country || '')
+      setShippingState(addr?.state || c.state || '')
+      setShippingCity(addr?.city || c.city || '')
+      setZipCode(addr?.zipcode || c.zip || '')
       setLeadId(c.lead_id ?? null)
       setLeadNumber(c.lead_number ?? '')
       setCustomerSource(c.lead_source ?? c.source ?? '')

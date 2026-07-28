@@ -160,6 +160,7 @@ export function CustomerDetailPage() {
     mutationFn: () => api.delete(`/customers/${id}`),
     onSuccess: () => {
       toast.success('Customer deleted')
+      qc.invalidateQueries({ queryKey: ['customers'] })
       navigate('/customers')
     },
     onError: () => toast.error('Failed to delete customer'),
