@@ -140,6 +140,23 @@ function ArtworkSizePicker({ value, onChange, autoDetected = false }: { value: s
 // Main component
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// Payment-method values differ across forms (quotes/invoices may store
+// "Bank Transfer" or "bank_transfer"). Normalise known variants to this form's
+// option values on convert; any unknown/legacy value is returned unchanged so
+// nothing is lost (a fallback <option> renders it).
+const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'bank_transfer', 'cash', 'other']
+const normalizePaymentMethod = (v?: string | null): string => {
+  const raw = String(v ?? '').trim()
+  if (!raw) return ''
+  const map: Record<string, string> = {
+    'bank transfer': 'bank_transfer', bank_transfer: 'bank_transfer',
+    paypal: 'paypal', zelle: 'zelle',
+    'cash app': 'cashapp', cash_app: 'cashapp', cashapp: 'cashapp',
+    cash: 'cash', other: 'other',
+  }
+  return map[raw.toLowerCase()] ?? raw
+}
+
 export function NewOrderPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -328,7 +345,7 @@ export function NewOrderPage() {
     if (sourceInvoice.billing_email)    setContactEmail(sourceInvoice.billing_email)
     if (sourceInvoice.contact_number)   setContactPhone(sourceInvoice.contact_number)
     if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
-    if (sourceInvoice.payment_method)   setPaymentMethod(sourceInvoice.payment_method)
+    if (sourceInvoice.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceInvoice.payment_method))
     if (sourceInvoice.payment_terms)    setPaymentTerms(sourceInvoice.payment_terms)
     if (sourceInvoice.notes)            setOrderNotes(sourceInvoice.notes)
     if (sourceInvoice.shipping_charges) setShippingCharges(Number(sourceInvoice.shipping_charges))
@@ -1197,6 +1214,7 @@ export function NewOrderPage() {
               <div className="no-payment-field">
                 <label className="no-payment-label">Payment Method</label>
                 <select className="no-info-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as typeof paymentMethod)}>
+                  {paymentMethod && !PM_KNOWN.includes(paymentMethod) && <option value={paymentMethod}>{paymentMethod}</option>}
                   <option value="cashapp">CashApp</option>
                   <option value="zelle">Zelle</option>
                   <option value="paypal">PayPal</option>

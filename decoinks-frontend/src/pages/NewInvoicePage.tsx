@@ -398,6 +398,23 @@ function getInvoiceCounters(
 
 // â"€â"€â"€ Componeno â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// Payment-method values differ across forms (quotes store "Bank Transfer",
+// invoices/orders use "bank_transfer"). Normalise known variants to this form's
+// option values on convert; any unknown/legacy value is returned unchanged so
+// nothing is lost (a fallback <option> renders it).
+const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'bank_transfer', 'cash', 'other']
+const normalizePaymentMethod = (v?: string | null): string => {
+  const raw = String(v ?? '').trim()
+  if (!raw) return ''
+  const map: Record<string, string> = {
+    'bank transfer': 'bank_transfer', bank_transfer: 'bank_transfer',
+    paypal: 'paypal', zelle: 'zelle',
+    'cash app': 'cashapp', cash_app: 'cashapp', cashapp: 'cashapp',
+    cash: 'cash', other: 'other',
+  }
+  return map[raw.toLowerCase()] ?? raw
+}
+
 export function NewInvoicePage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -487,7 +504,7 @@ export function NewInvoicePage() {
     // Totals
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
-    if (sourceQuote.payment_method)   setPaymentMethod(sourceQuote.payment_method)
+    if (sourceQuote.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceQuote.payment_method))
     if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
     if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
@@ -1357,6 +1374,7 @@ export function NewInvoicePage() {
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Method</label>
                 <select className="ni-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                  {paymentMethod && !PM_KNOWN.includes(paymentMethod) && <option value={paymentMethod}>{paymentMethod}</option>}
                   <option value="cashapp">Cashapp</option>
                   <option value="zelle">Zelle</option>
                   <option value="paypal">PayPal</option>
