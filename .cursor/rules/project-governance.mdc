@@ -1,0 +1,23 @@
+---
+description: Mandatory project governance — read the entry points before any code change.
+globs:
+alwaysApply: true
+---
+
+# Project Governance (always applies)
+
+This is a **live production business system**. Stability outranks everything; the current production behavior is the baseline.
+
+**Before modifying any code in this repository, you MUST read, in order:**
+1. [`AGENTS.md`](../../AGENTS.md) — the universal AI entry point and mandatory workflow.
+2. [`docs/ENGINEERING_CONSTITUTION.md`](../../docs/ENGINEERING_CONSTITUTION.md) — the mandatory rules, protected files, and approval policy (this is the law).
+3. [`docs/PROJECT_KNOWLEDGE_BASE.md`](../../docs/PROJECT_KNOWLEDGE_BASE.md) — architecture, high-risk areas, and pitfalls (the map).
+
+**Then, for every change, follow `AGENTS.md` §2:**
+- Estimate blast radius; list affected modules, services, APIs, database tables, and frontend screens.
+- Classify risk (Safe / Medium / High / Production-Critical).
+- Stop and request approval whenever the Constitution requires it (protected files, the conversion core `quote→invoice→order→PO`, auth, storage, database schema, more than one module, or any workflow / API / UI / DB-behavior change).
+- Never expand approved scope; never refactor, optimize, or rename unrelated code; never touch files outside the approved blast radius.
+- Perform the mandatory self-review and provide a Change Summary (files modified, reason, blast radius, regression risks, required testing, rollback plan).
+
+**Never** deploy, push, restart services, run migrations, or write to the database unless the current request explicitly asks for it. **Never** rely only on memory — verify the current code before acting.
