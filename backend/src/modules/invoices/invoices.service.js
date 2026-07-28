@@ -235,8 +235,6 @@ async function create(fields_in) {
     if (sRows[0]) resolvedCustomerName = sRows[0].name
   }
 
-  const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
-
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
   const balance_due = total
   const resolvedBillingAddress = bestAddress(
@@ -251,6 +249,23 @@ async function create(fields_in) {
     customerData?.shipping_address,
     customerData?.billing_address
   )
+
+  // ── Quote → invoice: create-or-sync under a per-quote advisory lock ──────────
+  // Guarantees at most ONE invoice per quotation. Concurrent Approve/convert
+  // requests for the same quote serialise on the lock; a repeat either updates
+  // the same still-editable draft invoice or returns a locked-invoice conflict.
+  // (The order_id / no-quote path below is unchanged.)
+  if (quote_id) {
+    return await createOrSyncInvoiceFromQuote({
+      quote_id, order_id,
+      resolvedCustomerName, resolvedSupplierId, resolvedCustomerId,
+      resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, total, balance_due,
+      resolvedBillingAddress, resolvedShippingAddress,
+      issue_date, due_date, notes, created_by, order_type, items, fields, quoteData,
+    })
+  }
+
+  const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
 
   const { rows } = await query(
     `INSERT INTO invoices
@@ -389,6 +404,247 @@ async function create(fields_in) {
 
   await cacheDel('dashboard:stats')
   return createdInvoice
+}
+
+// ── Quote → invoice: shared line-item writer ──────────────────────────────────
+// Writes invoice_items using explicit `items` when supplied, otherwise copies the
+// quotation's line items. `exec` is a query function bound to the active client so
+// the writes participate in the caller's transaction. Errors are NOT swallowed —
+// a failed item write must roll the whole conversion back (no orphan invoices).
+async function writeInvoiceItems(exec, invoiceId, { items, quote_id }) {
+  if (Array.isArray(items) && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      await exec(
+        `INSERT INTO invoice_items
+           (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
+            front_image, back_image, artwork_image, sizes, colors,
+            catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
+            brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+        [
+          invoiceId,
+          it.category || null,
+          it.description || null,
+          Number(it.qty) || 1,
+          Number(it.unit_price) || 0,
+          Number(it.amount) || 0,
+          Number(it.artwork_count) || 0,
+          it.sort_order ?? i,
+          it.front_image || null,
+          it.back_image  || null,
+          it.artwork_image || null,
+          it.sizes || null,
+          it.colors || null,
+          it.catalog_style_id || null,
+          it.catalog_color_id || null,
+          it.catalog_size_id || null,
+          it.catalog_sku || null,
+          it.brand || null,
+          it.model || null,
+          it.product_image || null,
+          it.style_description || null,
+          it.artwork_no || null,
+          Number(it.line_discount) || 0,
+          it.tax_code || null,
+        ]
+      )
+    }
+  } else if (quote_id) {
+    await exec(
+      `INSERT INTO invoice_items
+         (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
+          front_image, back_image, artwork_image, sizes, colors,
+          catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no)
+       SELECT $1, category, description, qty, unit_price, amount,
+              COALESCE(artwork_count, 0), COALESCE(sort_order, 0),
+              front_image, back_image, artwork_image, sizes, colors,
+              catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku, brand, model, artwork_no
+       FROM quotation_items WHERE quotation_id = $2
+       ORDER BY sort_order, id`,
+      [invoiceId, quote_id]
+    )
+  }
+}
+
+// ── Quote → invoice: create-or-sync (transactional, advisory-locked) ──────────
+// CASE 1  no invoice for the quote      → create it (invoice + items) atomically.
+// CASE 2  invoice exists and is editable → sync header + replace items atomically.
+// CASE 3  invoice exists and is locked   → 409 conflict, no writes.
+// Editable ⇔ status='Draft' AND no payments AND amount_paid=0 AND no linked order.
+async function createOrSyncInvoiceFromQuote(ctx) {
+  const {
+    quote_id, order_id,
+    resolvedCustomerName, resolvedSupplierId, resolvedCustomerId,
+    resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, total, balance_due,
+    resolvedBillingAddress, resolvedShippingAddress,
+    issue_date, due_date, notes, created_by, order_type, items, fields, quoteData,
+  } = ctx
+
+  const discountPct = Number(fields.discount_pct ?? (fields.discount_type === 'percentage' ? fields.discount_value : 0)) || 0
+  const taxPct      = Number(fields.tax_pct) || 0
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+
+    // Serialise all create/convert traffic for THIS quote. Transaction-scoped:
+    // released automatically at COMMIT/ROLLBACK. Two concurrent requests cannot
+    // both pass the existence check below.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`INV:QUOTE:${quote_id}`])
+
+    // Existing invoice for this quote (+ editability signals), if any.
+    const { rows: existingRows } = await client.query(
+      `SELECT i.id, i.invoice_number, i.status, i.amount_paid, i.order_id,
+              (SELECT COUNT(*)::int FROM payments p WHERE p.invoice_id = i.id) AS payment_count,
+              EXISTS (SELECT 1 FROM orders o WHERE o.invoice_id = i.id AND o.deleted_at IS NULL) AS has_active_order
+       FROM invoices i
+       WHERE i.quote_id = $1
+       ORDER BY i.created_at, i.id
+       LIMIT 1`,
+      [quote_id]
+    )
+    const existing = existingRows[0]
+
+    if (!existing) {
+      // ── CASE 1: create the invoice + items in one transaction ────────────────
+      const invoice_number = await getNextInvoiceNumber(resolvedCustomerName)
+      const { rows } = await client.query(
+        `INSERT INTO invoices
+           (invoice_number, internal_no, quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
+            subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total, amount_paid, balance_due,
+            notes, customer_notes, sales_agent_name, created_by,
+            customer_name, billing_email, contact_number, billing_address, shipping_address,
+            order_type, payment_terms, payment_method, currency, rush_services, rush_charges,
+            shipping_charges, discount_type, discount_value)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+         RETURNING *`,
+        [
+          invoice_number, `INV-INT-${invoice_number}`, quote_id, order_id || null, resolvedSupplierId, resolvedCustomerId,
+          issue_date || new Date().toISOString().split('T')[0], due_date || null,
+          resolvedSubtotal, discountPct, resolvedDiscountAmt, taxPct, resolvedTaxAmt, total, 0, balance_due,
+          notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
+          resolvedCustomerName || null,
+          fields.billing_email   ?? quoteData?.billing_email   ?? null,
+          fields.contact_number  ?? quoteData?.contact_number  ?? null,
+          resolvedBillingAddress, resolvedShippingAddress,
+          order_type || quoteData?.order_type || null,
+          fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+          fields.payment_method || quoteData?.payment_method || null,
+          fields.currency       || quoteData?.currency       || 'USD',
+          Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
+          Number(fields.rush_charges) || 0,
+          Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+          fields.discount_type || quoteData?.discount_type || 'percentage',
+          Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
+        ]
+      )
+      await writeInvoiceItems(client.query.bind(client), rows[0].id, { items, quote_id })
+      await client.query('COMMIT')
+
+      // Post-commit, best-effort (not part of the atomic guarantee) — matches
+      // the prior create() semantics for the quote path.
+      await logPipelineEvent({
+        event_type: 'invoice_created_from_quote',
+        source_table: 'quotations',
+        source_id: quote_id,
+        target_table: 'invoices',
+        target_id: rows[0].id,
+        triggered_by: created_by,
+      })
+
+      let createdInvoice = rows[0]
+      if (fields.mark_paid) {
+        if (total > 0) {
+          createdInvoice = await recordPayment(
+            rows[0].id,
+            {
+              amount: total,
+              payment_method: fields.payment_method || 'other',
+              notes: 'Full payment recorded when invoice was created',
+            },
+            created_by
+          )
+        } else {
+          const paidResult = await query(
+            `UPDATE invoices
+             SET status = 'Paid', amount_paid = 0, balance_due = 0,
+                 paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [rows[0].id]
+          )
+          createdInvoice = paidResult.rows[0]
+        }
+      }
+
+      await cacheDel('dashboard:stats')
+      return createdInvoice
+    }
+
+    // Existing invoice → is it still a safely-editable draft?
+    const editable =
+      existing.status === 'Draft' &&
+      existing.payment_count === 0 &&
+      Number(existing.amount_paid) === 0 &&
+      existing.order_id == null &&
+      existing.has_active_order === false
+
+    if (!editable) {
+      // ── CASE 3: locked — do not overwrite, do not duplicate ──────────────────
+      // Roll back happens in catch; surface a 409 naming the existing invoice.
+      throw Object.assign(
+        new Error(
+          `An invoice (${existing.invoice_number}) already exists for this quotation and can no longer be modified ` +
+          `(id ${existing.id}, status ${existing.status}). It has a payment, balance, or linked sales order.`
+        ),
+        { statusCode: 409 }
+      )
+    }
+
+    // ── CASE 2: sync header + replace items on the existing draft, atomically ──
+    const { rows: updRows } = await client.query(
+      `UPDATE invoices SET
+         supplier_id=$2, customer_id=$3, customer_name=$4, billing_email=$5, contact_number=$6,
+         billing_address=$7, shipping_address=$8, order_type=$9,
+         subtotal=$10, discount_pct=$11, discount_amt=$12, tax_pct=$13, tax_amt=$14,
+         total=$15, balance_due=$16, notes=$17, customer_notes=$18, sales_agent_name=$19,
+         payment_terms=$20, payment_method=$21, currency=$22,
+         rush_services=$23, rush_charges=$24, shipping_charges=$25,
+         discount_type=$26, discount_value=$27, updated_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [
+        existing.id, resolvedSupplierId, resolvedCustomerId, resolvedCustomerName || null,
+        fields.billing_email   ?? quoteData?.billing_email   ?? null,
+        fields.contact_number  ?? quoteData?.contact_number  ?? null,
+        resolvedBillingAddress, resolvedShippingAddress,
+        order_type || quoteData?.order_type || null,
+        resolvedSubtotal, discountPct, resolvedDiscountAmt, taxPct, resolvedTaxAmt,
+        total, balance_due, notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null,
+        fields.sales_agent_name || null,
+        fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+        fields.payment_method || quoteData?.payment_method || null,
+        fields.currency       || quoteData?.currency       || 'USD',
+        Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
+        Number(fields.rush_charges) || 0,
+        Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+        fields.discount_type || quoteData?.discount_type || 'percentage',
+        Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
+      ]
+    )
+    await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [existing.id])
+    await writeInvoiceItems(client.query.bind(client), existing.id, { items, quote_id })
+    await client.query('COMMIT')
+
+    await cacheDel('dashboard:stats')
+    return updRows[0]
+  } catch (err) {
+    try { await client.query('ROLLBACK') } catch (_) { /* nothing to roll back */ }
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function update(id, fields) {
