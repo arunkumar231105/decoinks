@@ -465,23 +465,12 @@ async function remove(id) {
     )
     if (!cust[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
 
-    const { rows: refs } = await client.query(`
-      SELECT tc.table_name, kcu.column_name
-      FROM information_schema.referential_constraints rc
-      JOIN information_schema.table_constraints tc
-        ON tc.constraint_name = rc.constraint_name AND tc.constraint_schema = rc.constraint_schema
-      JOIN information_schema.key_column_usage kcu
-        ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
-      JOIN information_schema.constraint_column_usage ccu
-        ON ccu.constraint_name = rc.constraint_name AND ccu.constraint_schema = rc.constraint_schema
-      JOIN information_schema.columns col
-        ON col.table_schema = tc.table_schema AND col.table_name = tc.table_name AND col.column_name = kcu.column_name
-      WHERE ccu.table_name = 'customers' AND ccu.column_name = 'id'
-        AND col.is_nullable = 'YES' AND rc.delete_rule = 'NO ACTION'
-    `)
-    for (const r of refs) {
-      await client.query(`UPDATE "${r.table_name}" SET "${r.column_name}" = NULL WHERE "${r.column_name}" = $1`, [id])
-    }
+    // These are the only nullable customer FKs whose constraints use NO ACTION.
+    // All other verified customer references are handled by their FK SET NULL or
+    // CASCADE rules. Keeping this explicit avoids an expensive information_schema
+    // scan on every delete (which previously made one deletion take 10–20+ seconds).
+    await client.query(`UPDATE leads SET customer_id = NULL WHERE customer_id = $1`, [id])
+    await client.query(`UPDATE quotations SET customer_id = NULL WHERE customer_id = $1`, [id])
 
     await client.query(`DELETE FROM customers WHERE id = $1`, [id])
     await client.query('COMMIT')
