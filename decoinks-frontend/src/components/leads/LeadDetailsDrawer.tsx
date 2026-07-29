@@ -1,13 +1,16 @@
 import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Mail, MessageSquare, Phone, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { Mail, MessageSquare, Phone, UserPlus, X } from 'lucide-react'
 import { api } from '../../services/api'
+import toast from '../../utils/toast'
 
 export interface LeadDetails {
   id: string; display_number?: string; lead_number: string; customer_name?: string; supplier_name?: string
   company_name?: string; email?: string; phone?: string; whatsapp?: string; source?: string; stage: string; status: string
   created_at: string; conversion_score?: number; urgency?: string; customer_intent?: string; product_interest?: string
   estimated_value?: number; agent_name?: string; last_contact_at?: string; next_action?: string; next_followup_date?: string
+  customer_id?: string
   activity?: Array<{ id: string; description: string; created_at: string; user_name?: string }>
   qualification?: Record<string, boolean | number | string | null>; productInterest?: Array<{ product_type?: string }>
 }
@@ -16,9 +19,32 @@ const fmt = (value?: string) => value ? new Date(value).toLocaleString('en-US', 
 const initials = (name: string) => name.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase()
 
 export function LeadDetailsDrawer({ leadId, onClose }: { leadId: string | null; onClose: () => void }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { data: lead, isLoading } = useQuery<LeadDetails>({
     queryKey: ['lead-details', leadId], enabled: Boolean(leadId),
     queryFn: () => api.get(`/leads/${leadId}`).then(r => r.data.data),
+  })
+  const convertToCustomer = useMutation({
+    mutationFn: (id: string) => api.post(`/leads/${id}/convert-to-customer`),
+    onSuccess: (res: any) => {
+      const customerId: string | undefined = res.data?.data?.id ?? res.data?.customer_id
+      toast.success(res.data?.message === 'Already converted' ? 'Already a customer — opening profile' : 'Lead converted to customer')
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      onClose()
+      navigate(customerId ? `/customers/${customerId}` : '/customers')
+    },
+    onError: (err: any) => {
+      const customerId: string | undefined = err.response?.data?.data?.customer_id
+      if (customerId) {
+        toast.success('Already a customer — opening profile')
+        onClose()
+        navigate(`/customers/${customerId}`)
+      } else {
+        toast.error(err.response?.data?.message ?? 'Could not convert lead to customer')
+      }
+    },
   })
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
@@ -48,6 +74,12 @@ export function LeadDetailsDrawer({ leadId, onClose }: { leadId: string | null; 
           <a className={!lead.phone ? 'disabled' : ''} href={lead.phone ? `tel:${lead.phone}` : undefined} title={lead.phone ? 'Call lead' : 'No phone number'}><Phone size={17}/><span>Call</span></a>
           <a className={!lead.email ? 'disabled' : ''} href={lead.email ? `mailto:${lead.email}` : undefined} title={lead.email ? 'Email lead' : 'No email address'}><Mail size={17}/><span>Email</span></a>
         </div>
+        <section className="leads-drawer-section">
+          <button className="leads-btn primary" style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => convertToCustomer.mutate(lead.id)} disabled={convertToCustomer.isPending}>
+            <UserPlus size={17}/>{convertToCustomer.isPending ? 'Converting…' : lead.customer_id ? 'Open Customer' : 'Convert to Customer'}
+          </button>
+        </section>
         <section className="leads-drawer-section"><div className="leads-section-title"><h3>Qualification Score</h3><strong>{score}<small>/100</small></strong></div><div className="leads-score-track"><i style={{ width: `${Math.min(100, score)}%` }}/></div><p className="leads-score-label">{score >= 60 ? 'Qualified' : score >= 30 ? 'Developing' : 'Unqualified'}</p><div className="leads-checks">{qualificationLabels.map(([key, label]) => { const value = lead.qualification?.[key]; return <div key={key} className={value === true ? 'done' : ''}>{value === true ? '✓' : value === false ? '○' : '—'} {label}</div> })}</div></section>
         <section className="leads-drawer-section"><h3>Lead Information</h3><dl className="leads-info"><dt>Lead No</dt><dd>{lead.display_number || lead.lead_number}</dd><dt>Source</dt><dd>{lead.source || '—'}</dd><dt>Product Interest</dt><dd>{product}</dd><dt>Purchase Intent</dt><dd>{lead.customer_intent || '—'}</dd><dt>Estimated Value</dt><dd>{lead.estimated_value == null ? '—' : `$${Number(lead.estimated_value).toLocaleString()}`}</dd><dt>Assigned Agent</dt><dd>{lead.agent_name || '—'}</dd><dt>Last Activity</dt><dd>{fmt(lead.last_contact_at)}</dd><dt>Next Action</dt><dd>{lead.next_action || '—'}</dd></dl></section>
         <section className="leads-drawer-section"><h3>Activity Timeline</h3>{lead.activity?.length ? <div className="leads-timeline">{lead.activity.map(item => <div key={item.id}><i/><p>{item.description}<small>{item.user_name ? `${item.user_name} · ` : ''}{fmt(item.created_at)}</small></p></div>)}</div> : <p className="leads-neutral">No activity recorded.</p>}</section>
