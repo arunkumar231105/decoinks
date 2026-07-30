@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   Truck,
+  Upload,
 } from 'lucide-react'
 import { Menu, MenuItem, Dialog, DialogContent } from '@mui/material'
 import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -24,6 +25,7 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
+import { ShipmentImportModal } from '../components/ShipmentImportModal'
 
 interface TrackingScan {
   status: string | null
@@ -90,6 +92,7 @@ export function ShipmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('All')
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['shipments', { page }],
@@ -124,6 +127,19 @@ export function ShipmentsPage() {
       toast.success(`Tracking updated: ${updated.tracking_status ?? updated.status}`)
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not refresh tracking'),
+  })
+  // Refresh live tracking for every shipment on the current page (that has a tracking #).
+  const refreshAllMutation = useMutation({
+    mutationFn: async () => {
+      const targets = allShipments.filter(s => s.tracking_number)
+      const results = await Promise.allSettled(targets.map(s => api.post(`/shipments/${s.id}/track`)))
+      return { ok: results.filter(r => r.status === 'fulfilled').length, total: targets.length }
+    },
+    onSuccess: ({ ok, total }) => {
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      toast.success(`Refreshed ${ok}/${total} shipments`)
+    },
+    onError: () => toast.error('Could not refresh tracking'),
   })
   const printShipment = (shipment: Shipment) => printPanel(
     `Shipment ${shipment.shipment_number}`,
@@ -177,6 +193,16 @@ export function ShipmentsPage() {
         </div>
         <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'In Transit' : 'All')}>
           <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
+        </button>
+        <button className="lb-action-btn" onClick={() => setShowImport(true)}>
+          <Upload size={13} /> Import CSV
+        </button>
+        <button
+          className="lb-action-btn"
+          onClick={() => refreshAllMutation.mutate()}
+          disabled={refreshAllMutation.isPending || allShipments.length === 0}
+        >
+          <RefreshCw size={13} /> {refreshAllMutation.isPending ? 'Refreshing…' : 'Refresh All'}
         </button>
         <button
           className="lb-action-btn lb-action-primary"
@@ -376,6 +402,8 @@ export function ShipmentsPage() {
         onRefresh={id => refreshMutation.mutate(id)}
         refreshing={refreshMutation.isPending}
       />
+
+      {showImport && <ShipmentImportModal onClose={() => setShowImport(false)} />}
     </div>
   )
 }

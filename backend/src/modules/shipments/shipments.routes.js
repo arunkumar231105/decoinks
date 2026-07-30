@@ -1,4 +1,6 @@
 const { Router } = require('express')
+const multer = require('multer')
+const os = require('os')
 const { z } = require('zod')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
@@ -6,6 +8,20 @@ const controller = require('./shipments.controller')
 
 const router = Router()
 router.use(verifyToken)
+
+// CSV upload for bulk shipment import (Shippo "Shipping Fee" export).
+const uploadCsv = multer({
+  storage: multer.diskStorage({
+    destination: (_r, _f, cb) => cb(null, os.tmpdir()),
+    filename: (_r, file, cb) => cb(null, `shipimport_${Date.now()}_${file.originalname}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_r, file, cb) => {
+    const ok = file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' ||
+      file.originalname.toLowerCase().endsWith('.csv')
+    ok ? cb(null, true) : cb(new Error('Only .csv files are allowed'), false)
+  },
+}).single('file')
 
 const STATUSES = ['Pending', 'Label Created', 'Picked Up', 'In Transit', 'Delivered', 'Exception']
 
@@ -53,6 +69,13 @@ router.get('/',             controller.list)
 router.get('/:id',          controller.getOne)
 router.post('/',            validate(createSchema), controller.create)
 router.put('/:id',          validate(updateSchema), controller.update)
+const trackPreviewSchema = z.object({
+  carrier:         z.string().min(1),
+  tracking_number: z.string().min(1),
+})
+
+router.post('/import',        uploadCsv, controller.importCsv)
+router.post('/track-preview', validate(trackPreviewSchema), controller.trackPreview)
 router.patch('/:id/status', validate(statusSchema), controller.updateStatus)
 router.post('/:id/track',   controller.refreshTracking)
 router.delete('/:id',       controller.remove)

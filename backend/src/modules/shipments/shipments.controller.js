@@ -1,3 +1,5 @@
+const fs = require('fs')
+const { parse } = require('csv-parse/sync')
 const service = require('./shipments.service')
 const { success, created, paginated } = require('../../utils/response')
 
@@ -35,6 +37,27 @@ async function refreshTracking(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// Live-fetch tracking from Shippo without saving (New Shipment form preview).
+async function trackPreview(req, res, next) {
+  try {
+    const { carrier, tracking_number } = req.body
+    return success(res, await service.previewTracking(carrier, tracking_number))
+  } catch (err) { next(err) }
+}
+
+// Bulk import shipments from a Shippo "Shipping Fee" CSV export.
+async function importCsv(req, res, next) {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No CSV file uploaded' })
+    const text = fs.readFileSync(req.file.path, 'utf8')
+    fs.unlink(req.file.path, () => {})
+    const records = parse(text, { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true })
+    const previewOnly = req.query.preview === 'true'
+    const result = await service.importFromCsv(records, req.user.id, { previewOnly })
+    return success(res, result, previewOnly ? 'Preview ready' : 'Import complete')
+  } catch (err) { next(err) }
+}
+
 async function remove(req, res, next) {
   try {
     await service.remove(req.params.id)
@@ -42,4 +65,4 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, refreshTracking, remove }
+module.exports = { list, getOne, create, update, updateStatus, refreshTracking, trackPreview, importCsv, remove }

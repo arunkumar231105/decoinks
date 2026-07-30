@@ -163,4 +163,79 @@ async function refreshTracking(id) {
   return getById(id)
 }
 
-module.exports = { list, getById, create, update, updateStatus, remove, refreshTracking }
+// Live-fetch tracking from Shippo WITHOUT saving — used by the New Shipment
+// form so the user can enter a tracking id and instantly see the details.
+async function previewTracking(carrier, tracking_number) {
+  return shippo.fetchTracking(carrier, tracking_number)
+}
+
+// Map the Shippo "Shipping Fee" CSV export onto shipment rows.
+// The export lists one row per billing line, so a tracking number can repeat
+// (base charge + corrections + refunds). We collapse to one shipment per unique
+// tracking number: earliest ship date, summed net cost, carrier + service level.
+// The file carries no PO / customer / address — those come from Shippo on refresh.
+function aggregateCsvRows(records) {
+  const byTracking = new Map()
+  for (const r of records) {
+    const tn = String(r['Tracking Number'] || '').trim()
+    if (!tn) continue                                   // skip totals / blank rows
+    const amount = parseFloat(r['Amount']) || 0
+    const shipDate = String(r['Transaction Creation Date'] || '').slice(0, 10) || null
+    if (!byTracking.has(tn)) {
+      byTracking.set(tn, {
+        tracking_number: tn,
+        carrier:      String(r['Carrier'] || '').trim() || null,
+        service_type: String(r['Service Level'] || '').trim() || null,
+        ship_date:    shipDate,
+        shipping_cost: 0,
+        invoice:      String(r['Invoice Number'] || '').trim() || null,
+      })
+    }
+    const agg = byTracking.get(tn)
+    agg.shipping_cost += amount
+    if (shipDate && (!agg.ship_date || shipDate < agg.ship_date)) agg.ship_date = shipDate
+  }
+  return [...byTracking.values()]
+}
+
+// Import shipments from parsed CSV records. Idempotent: tracking numbers that
+// already exist are skipped, so re-importing the same file is safe.
+// previewOnly returns the counts without writing anything.
+async function importFromCsv(records, created_by, { previewOnly = false } = {}) {
+  const unique = aggregateCsvRows(records)
+  const tns = unique.map(u => u.tracking_number)
+
+  let existing = new Set()
+  if (tns.length) {
+    const { rows } = await query(
+      `SELECT tracking_number FROM shipments WHERE tracking_number = ANY($1::text[])`,
+      [tns]
+    )
+    existing = new Set(rows.map(r => r.tracking_number))
+  }
+
+  const toInsert = unique.filter(u => !existing.has(u.tracking_number))
+  if (previewOnly) {
+    return { total: unique.length, willImport: toInsert.length, willSkip: unique.length - toInsert.length }
+  }
+
+  let imported = 0, skipped = unique.length - toInsert.length
+  for (const u of toInsert) {
+    try {
+      await create({
+        carrier:        u.carrier,
+        tracking_number: u.tracking_number,
+        service_type:   u.service_type,
+        ship_date:      u.ship_date,
+        shipping_cost:  Math.max(0, Math.round(u.shipping_cost * 100) / 100),
+        status:         'In Transit',
+        notes:          u.invoice ? `Shippo Invoice: ${u.invoice}` : null,
+        created_by,
+      })
+      imported++
+    } catch (e) { skipped++ }
+  }
+  return { total: unique.length, imported, skipped }
+}
+
+module.exports = { list, getById, create, update, updateStatus, remove, refreshTracking, previewTracking, importFromCsv }
