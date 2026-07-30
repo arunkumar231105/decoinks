@@ -10,25 +10,40 @@ import {
   Clock,
   Download,
   Filter,
+  MapPin,
   MoreVertical,
   Package,
   Plus,
+  RefreshCw,
   Search,
   Truck,
 } from 'lucide-react'
-import { Menu, MenuItem } from '@mui/material'
+import { Menu, MenuItem, Dialog, DialogContent } from '@mui/material'
 import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
+
+interface TrackingScan {
+  status: string | null
+  substatus: string | null
+  status_details: string | null
+  status_date: string | null
+  location: { city: string | null; state: string | null; zip: string | null; country: string | null } | null
+}
 
 interface Shipment {
   id: string
   shipment_number: string
   order_number: string | null
+  po_number: string | null
+  po_shipping_address: string | null
   customer_name: string | null
   status: string
   tracking_status: string | null
+  substatus: string | null
+  status_details: string | null
   carrier: string | null
   service_type: string | null
   tracking_number: string | null
@@ -36,13 +51,20 @@ interface Shipment {
   ship_to_city: string | null
   ship_to_state: string | null
   ship_to_postal_code: string | null
+  address_from_city: string | null
+  address_from_state: string | null
+  address_from_postal_code: string | null
   last_scan_city: string | null
   last_scan_state: string | null
   shipping_cost: number | null
   ship_date: string | null
   estimated_delivery: string | null
+  original_eta: string | null
   delivered_date: string | null
   recipient_name: string | null
+  tracking_history: TrackingScan[] | null
+  tracking_messages: unknown[] | null
+  tracking_synced_at: string | null
 }
 
 // The effective status a row shows: live carrier/Shippo status if present,
@@ -67,6 +89,7 @@ export function ShipmentsPage() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('All')
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
+  const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['shipments', { page }],
@@ -93,6 +116,15 @@ export function ShipmentsPage() {
     mutationFn: (id: string) => api.patch(`/shipments/${id}/status`, { status: 'Exception' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['shipments'] }),
   })
+  const refreshMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/shipments/${id}/track`).then(r => r.data.data),
+    onSuccess: (updated: Shipment) => {
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      setDetailShipment(prev => (prev && prev.id === updated.id ? updated : prev))
+      toast.success(`Tracking updated: ${updated.tracking_status ?? updated.status}`)
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not refresh tracking'),
+  })
   const printShipment = (shipment: Shipment) => printPanel(
     `Shipment ${shipment.shipment_number}`,
     [
@@ -107,13 +139,26 @@ export function ShipmentsPage() {
 
   const isDelivered = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('DELIVER')
   const isTransit = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('TRANSIT')
+  // Promised delivery date: the original ETA if known, else the current estimate.
+  const promisedEta = (s: Shipment) => s.original_eta || s.estimated_delivery
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isOnTime = (s: Shipment) => {
+    const eta = promisedEta(s)
+    return Boolean(s.delivered_date && eta && s.delivered_date <= eta)
+  }
+  const isDelayed = (s: Shipment) => {
+    const eta = promisedEta(s)
+    if (!eta) return false
+    if (s.delivered_date) return s.delivered_date > eta          // delivered late
+    return !isDelivered(s) && todayStr > eta                     // overdue, still not delivered
+  }
   const stats = {
     total,
     active: allShipments.filter(s => !isDelivered(s)).length,
     inTransit: allShipments.filter(s => isTransit(s)).length,
     delivered: allShipments.filter(s => isDelivered(s)).length,
-    onTime: 0,
-    delayed: 0,
+    onTime: allShipments.filter(isOnTime).length,
+    delayed: allShipments.filter(isDelayed).length,
     needsAttention: allShipments.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
   }
 
@@ -210,6 +255,7 @@ export function ShipmentsPage() {
             <tr>
               <th>Tracking ID</th>
               <th>Customer Name</th>
+              <th>PO #</th>
               <th>Carrier</th>
               <th>Service Type</th>
               <th>Ship-To Address</th>
@@ -227,18 +273,19 @@ export function ShipmentsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={14} className="sh-empty">Loading…</td>
+                <td colSpan={15} className="sh-empty">Loading…</td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={14} className="sh-empty">No shipments found.</td>
+                <td colSpan={15} className="sh-empty">No shipments found.</td>
               </tr>
             )}
             {!isLoading && filtered.map(s => (
               <tr key={s.id} className="sh-row">
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td className="sh-customer">{s.customer_name ?? '-'}</td>
+                <td className="sh-muted">{s.po_number ?? '-'}</td>
                 <td className="sh-muted">{s.carrier ?? '-'}</td>
                 <td className="sh-muted">{s.service_type ?? '-'}</td>
                 <td className="sh-muted">{s.address ?? '-'}</td>
@@ -312,11 +359,110 @@ export function ShipmentsPage() {
       </div>
 
       <Menu anchorEl={menuAnchor?.el} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { if (selectedShipment) printShipment(selectedShipment); setMenuAnchor(null) }}>View Details</MenuItem>
-        <MenuItem onClick={() => { if (selectedShipment?.tracking_number) window.open(`https://www.google.com/search?q=${encodeURIComponent(selectedShipment.tracking_number)}`, '_blank'); setMenuAnchor(null) }}>Track Shipment</MenuItem>
+        <MenuItem onClick={() => { if (selectedShipment) setDetailShipment(selectedShipment); setMenuAnchor(null) }}>View Details</MenuItem>
+        <MenuItem
+          disabled={refreshMutation.isPending}
+          onClick={() => { if (menuAnchor?.id) refreshMutation.mutate(menuAnchor.id); setMenuAnchor(null) }}
+        >
+          Refresh Tracking
+        </MenuItem>
         <MenuItem onClick={() => { if (selectedShipment) printShipment(selectedShipment); setMenuAnchor(null) }}>Print Label</MenuItem>
         <MenuItem onClick={() => { if (menuAnchor?.id) cancelMutation.mutate(menuAnchor.id); setMenuAnchor(null) }} style={{ color: '#ef4444' }}>Cancel Shipment</MenuItem>
       </Menu>
+
+      <ShipmentDetailDialog
+        shipment={detailShipment}
+        onClose={() => setDetailShipment(null)}
+        onRefresh={id => refreshMutation.mutate(id)}
+        refreshing={refreshMutation.isPending}
+      />
     </div>
+  )
+}
+
+// ─── Detail dialog: full Shippo fields + scan-by-scan tracking timeline ──────
+
+const fmtLoc = (c?: string | null, st?: string | null, zip?: string | null) =>
+  [c, st, zip].filter(Boolean).join(', ') || '—'
+
+function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
+  shipment: Shipment | null
+  onClose: () => void
+  onRefresh: (id: string) => void
+  refreshing: boolean
+}) {
+  if (!shipment) return null
+  const s = shipment
+  const rows: [string, string][] = [
+    ['Shipment #', s.shipment_number],
+    ['Order #', s.order_number ?? '—'],
+    ['PO #', s.po_number ?? '—'],
+    ['Customer', s.customer_name ?? '—'],
+    ['Carrier', s.carrier ?? '—'],
+    ['Service', s.service_type ?? '—'],
+    ['Tracking #', s.tracking_number ?? '—'],
+    ['Status', effectiveStatus(s)],
+    ['Sub-status', s.substatus ?? '—'],
+    ['Details', s.status_details ?? '—'],
+    ['From', fmtLoc(s.address_from_city, s.address_from_state, s.address_from_postal_code)],
+    ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
+    ['Last Scan', fmtLoc(s.last_scan_city, s.last_scan_state)],
+    ['Original ETA', s.original_eta ?? '—'],
+    ['Estimated Delivery', s.estimated_delivery ?? '—'],
+    ['Delivered', s.delivered_date ?? '—'],
+    ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
+  ]
+  const history = Array.isArray(s.tracking_history) ? s.tracking_history : []
+
+  return (
+    <Dialog open={Boolean(shipment)} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogContent>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Shipment {s.shipment_number}</h3>
+          <button
+            className="lb-action-btn lb-action-primary"
+            disabled={refreshing || !s.tracking_number}
+            onClick={() => onRefresh(s.id)}
+            title={!s.tracking_number ? 'Add a tracking number first' : 'Pull latest status from Shippo'}
+          >
+            <RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh Tracking'}
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginBottom: 20 }}>
+          {rows.map(([label, val]) => (
+            <div key={label} style={{ display: 'flex', gap: 8, fontSize: 13 }}>
+              <span style={{ color: '#64748b', minWidth: 130 }}>{label}</span>
+              <span style={{ fontWeight: 500, wordBreak: 'break-word' }}>{val}</span>
+            </div>
+          ))}
+        </div>
+
+        <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Tracking Timeline</h4>
+        {history.length === 0 ? (
+          <p style={{ color: '#94a3b8', fontSize: 13 }}>
+            No scan history yet. Click “Refresh Tracking” to pull the latest from Shippo.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {history.slice().reverse().map((h, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <MapPin size={15} style={{ color: '#0ea5e9', marginTop: 2, flexShrink: 0 }} />
+                <div style={{ fontSize: 13 }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {h.status ?? '—'}{h.substatus ? ` · ${h.substatus}` : ''}
+                  </div>
+                  {h.status_details && <div style={{ color: '#475569' }}>{h.status_details}</div>}
+                  <div style={{ color: '#94a3b8' }}>
+                    {fmtLoc(h.location?.city, h.location?.state, h.location?.zip)}
+                    {h.status_date ? ` — ${new Date(h.status_date).toLocaleString()}` : ''}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

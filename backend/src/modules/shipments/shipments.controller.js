@@ -29,6 +29,12 @@ async function updateStatus(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function refreshTracking(req, res, next) {
+  try {
+    return success(res, await service.refreshTracking(req.params.id), 'Tracking refreshed')
+  } catch (err) { next(err) }
+}
+
 async function remove(req, res, next) {
   try {
     await service.remove(req.params.id)
@@ -36,4 +42,4 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, remove }
+module.exports = { list, getOne, create, update, updateStatus, refreshTracking, remove }

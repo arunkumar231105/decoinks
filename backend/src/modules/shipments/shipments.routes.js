@@ -21,6 +21,9 @@ const bodyFields = {
   recipient_name:     z.string().optional().nullable(),
   address:            z.string().optional().nullable(),
   notes:              z.string().optional().nullable(),
+  // Purchase-order linkage (075_po_shipment_fulfillment.sql)
+  po_id:              z.string().uuid().optional().nullable(),
+  ship_source:        z.enum(['vendor', 'self']).optional().nullable(),
   // Shippo tracking fields (074_shipment_tracking_fields.sql)
   customer_name:       z.string().optional().nullable(),
   service_type:        z.string().optional().nullable(),
@@ -51,6 +54,7 @@ router.get('/:id',          controller.getOne)
 router.post('/',            validate(createSchema), controller.create)
 router.put('/:id',          validate(updateSchema), controller.update)
 router.patch('/:id/status', validate(statusSchema), controller.updateStatus)
+router.post('/:id/track',   controller.refreshTracking)
 router.delete('/:id',       controller.remove)
 
 module.exports = router

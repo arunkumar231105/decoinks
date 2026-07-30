@@ -89,6 +89,71 @@ function OrderCombobox({ orderText, onSelect }: {
   )
 }
 
+// ─── Combobox for Purchase Orders ───────────────────────────────────────────
+
+interface PoRow {
+  id: string
+  po_number: string
+  vendor_name?: string | null
+  customer_name?: string | null
+  shipping_address?: string | null
+}
+
+function PoCombobox({ poText, onSelect }: {
+  poText: string
+  onSelect: (po: PoRow | null, text: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState(poText)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const { data: pos = [] } = useQuery({
+    queryKey: ['pos-list-for-shipment'],
+    queryFn: () => api.get('/purchase-orders', { params: { limit: 100 } }).then(r => r.data.data.rows),
+  })
+
+  const filtered = pos.filter((p: PoRow) =>
+    p.po_number.toLowerCase().includes(text.toLowerCase()) ||
+    (p.customer_name ?? p.vendor_name ?? '').toLowerCase().includes(text.toLowerCase())
+  )
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div className="no-customer-wrap" ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="ns-cell-select ns-order-select no-customer-input"
+        value={text}
+        placeholder="Type or select a purchase order..."
+        onChange={e => { setText(e.target.value); onSelect(null, e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && filtered.length > 0 && (
+        <div className="no-customer-suggestions">
+          {filtered.slice(0, 8).map((p: PoRow) => (
+            <div
+              key={p.id}
+              className="no-customer-suggestion-item"
+              onMouseDown={() => {
+                setText(p.po_number)
+                onSelect(p, p.po_number)
+                setOpen(false)
+              }}
+            >
+              <span className="no-cust-name">{p.po_number}</span>
+              {(p.customer_name ?? p.vendor_name) && <span className="no-cust-email">{p.customer_name ?? p.vendor_name}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function NewShipmentPage() {
@@ -97,6 +162,9 @@ export function NewShipmentPage() {
   // Link
   const [orderId,   setOrderId]   = useState('')
   const [orderText, setOrderText] = useState('')
+  const [poId,      setPoId]      = useState('')
+  const [poText,    setPoText]    = useState('')
+  const [shipSource, setShipSource] = useState('vendor')
 
   // Carrier + tracking
   const [carrier,       setCarrier]       = useState('USPS')
@@ -129,6 +197,8 @@ export function NewShipmentPage() {
   const handleSave = () => {
     saveMutation.mutate({
       order_id:            orderId || null,
+      po_id:               poId || null,
+      ship_source:         shipSource || null,
       carrier:             carrier || null,
       service_type:        serviceType || null,
       tracking_number:     trackingNumber.trim() || null,
@@ -157,6 +227,16 @@ export function NewShipmentPage() {
       const name = order.customer_name ?? order.contact_name ?? order.shipping_name ?? order.supplier_name ?? ''
       if (name && !customerName) setCustomerName(name)
       if (order.shipping_address && !address) setAddress(order.shipping_address)
+    }
+  }
+
+  // When a PO is picked, link it and best-effort auto-fill customer + address.
+  const applyPo = (po: PoRow | null, text: string) => {
+    setPoId(po?.id ?? '')
+    setPoText(text)
+    if (po) {
+      if (po.customer_name && !customerName) setCustomerName(po.customer_name)
+      if (po.shipping_address && !address) setAddress(po.shipping_address)
     }
   }
 
@@ -191,6 +271,10 @@ export function NewShipmentPage() {
           <span>Order</span>
           <OrderCombobox orderText={orderText} onSelect={applyOrder} />
         </div>
+        <div className="ns-info-cell">
+          <span>Purchase Order</span>
+          <PoCombobox poText={poText} onSelect={applyPo} />
+        </div>
       </div>
 
       {/* ── CONTENT ── */}
@@ -224,6 +308,13 @@ export function NewShipmentPage() {
                 <label>Status</label>
                 <select className="al-input" value={shipStatus} onChange={e => setShipStatus(e.target.value)}>
                   {SHIPMENT_STATUSES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="al-field">
+                <label>Ship Source</label>
+                <select className="al-input" value={shipSource} onChange={e => setShipSource(e.target.value)}>
+                  <option value="vendor">Vendor ships directly</option>
+                  <option value="self">We ship (self)</option>
                 </select>
               </div>
             </div>
