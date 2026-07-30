@@ -241,4 +241,58 @@ async function importFromCsv(records, created_by, { previewOnly = false } = {}) 
   return { total: unique.length, imported, skipped }
 }
 
-module.exports = { list, getById, create, update, updateStatus, remove, refreshTracking, previewTracking, importFromCsv }
+// ── Shipping label generation (Shippo) ───────────────────────────────────────
+
+// Get live rate options for a from/to/parcel. Nothing is saved or charged.
+async function getRates({ from, to, parcel }) {
+  return shippo.getRates(from, to, parcel)
+}
+
+// Buy a label for the chosen rate, then create a shipment holding the label +
+// tracking number. This charges the Shippo account (real money unless a test
+// key is configured).
+async function buyLabel({ rate_id, carrier, service, amount, to_name, to_street, to_city, to_state, to_zip, order_id, po_id, created_by }) {
+  const label = await shippo.buyLabel(rate_id)
+
+  const s = await create({
+    carrier:        carrier || null,
+    service_type:   service || null,
+    tracking_number: label.tracking_number,
+    shipping_cost:  amount != null ? (parseFloat(amount) || null) : null,
+    status:         'Label Created',
+    recipient_name: to_name || null,
+    customer_name:  to_name || null,
+    address:        to_street || null,
+    ship_to_city:   to_city || null,
+    ship_to_state:  to_state || null,
+    ship_to_postal_code: to_zip || null,
+    order_id:       order_id || null,
+    po_id:          po_id || null,
+    created_by,
+  })
+
+  await query(
+    `UPDATE shipments SET label_url=$1, shippo_transaction_id=$2, shippo_rate_id=$3,
+       label_status='PURCHASED', updated_at=NOW() WHERE id=$4`,
+    [label.label_url, label.transaction_id, rate_id, s.id]
+  )
+  return getById(s.id)
+}
+
+// Request a refund / void of a shipment's label.
+async function voidLabel(id) {
+  const s = await getById(id)
+  if (!s.shippo_transaction_id) {
+    throw Object.assign(new Error('This shipment has no purchased label to void'), { statusCode: 400 })
+  }
+  const r = await shippo.refundLabel(s.shippo_transaction_id)
+  const status = r.status === 'SUCCESS' ? 'REFUNDED' : 'REFUND_REQUESTED'
+  await query(`UPDATE shipments SET label_status=$1, updated_at=NOW() WHERE id=$2`, [status, id])
+  return getById(id)
+}
+
+module.exports = {
+  list, getById, create, update, updateStatus, remove,
+  refreshTracking, previewTracking, importFromCsv,
+  getRates, buyLabel, voidLabel,
+}

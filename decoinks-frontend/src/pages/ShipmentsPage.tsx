@@ -16,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Tag,
   Truck,
   Upload,
 } from 'lucide-react'
@@ -26,6 +27,7 @@ import { api } from '../services/api'
 import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
+import { LabelModal } from '../components/LabelModal'
 
 interface TrackingScan {
   status: string | null
@@ -67,6 +69,9 @@ interface Shipment {
   tracking_history: TrackingScan[] | null
   tracking_messages: unknown[] | null
   tracking_synced_at: string | null
+  label_url: string | null
+  label_status: string | null
+  shippo_transaction_id: string | null
 }
 
 // The effective status a row shows: live carrier/Shippo status if present,
@@ -93,6 +98,7 @@ export function ShipmentsPage() {
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showLabel, setShowLabel] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['shipments', { page }],
@@ -140,6 +146,11 @@ export function ShipmentsPage() {
       toast.success(`Refreshed ${ok}/${total} shipments`)
     },
     onError: () => toast.error('Could not refresh tracking'),
+  })
+  const voidMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/shipments/${id}/void-label`).then(r => r.data.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); toast.success('Label void requested') },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not void label'),
   })
   const printShipment = (shipment: Shipment) => printPanel(
     `Shipment ${shipment.shipment_number}`,
@@ -193,6 +204,9 @@ export function ShipmentsPage() {
         </div>
         <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'In Transit' : 'All')}>
           <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
+        </button>
+        <button className="lb-action-btn" onClick={() => setShowLabel(true)}>
+          <Tag size={13} /> Create Label
         </button>
         <button className="lb-action-btn" onClick={() => setShowImport(true)}>
           <Upload size={13} /> Import CSV
@@ -392,7 +406,18 @@ export function ShipmentsPage() {
         >
           Refresh Tracking
         </MenuItem>
-        <MenuItem onClick={() => { if (selectedShipment) printShipment(selectedShipment); setMenuAnchor(null) }}>Print Label</MenuItem>
+        {selectedShipment?.label_url && (
+          <MenuItem onClick={() => { window.open(selectedShipment.label_url!, '_blank'); setMenuAnchor(null) }}>Download Label</MenuItem>
+        )}
+        <MenuItem onClick={() => { if (selectedShipment) printShipment(selectedShipment); setMenuAnchor(null) }}>Print Summary</MenuItem>
+        {selectedShipment?.label_status === 'PURCHASED' && (
+          <MenuItem
+            onClick={() => { if (menuAnchor?.id && window.confirm('Void / refund this label?')) voidMutation.mutate(menuAnchor.id); setMenuAnchor(null) }}
+            style={{ color: '#b45309' }}
+          >
+            Void Label
+          </MenuItem>
+        )}
         <MenuItem onClick={() => { if (menuAnchor?.id) cancelMutation.mutate(menuAnchor.id); setMenuAnchor(null) }} style={{ color: '#ef4444' }}>Cancel Shipment</MenuItem>
       </Menu>
 
@@ -404,6 +429,7 @@ export function ShipmentsPage() {
       />
 
       {showImport && <ShipmentImportModal onClose={() => setShowImport(false)} />}
+      {showLabel && <LabelModal onClose={() => setShowLabel(false)} />}
     </div>
   )
 }
@@ -447,14 +473,19 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
       <DialogContent>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Shipment {s.shipment_number}</h3>
-          <button
-            className="lb-action-btn lb-action-primary"
-            disabled={refreshing || !s.tracking_number}
-            onClick={() => onRefresh(s.id)}
-            title={!s.tracking_number ? 'Add a tracking number first' : 'Pull latest status from Shippo'}
-          >
-            <RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh Tracking'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {s.label_url && (
+              <button className="lb-action-btn" onClick={() => window.open(s.label_url!, '_blank')}>Download Label</button>
+            )}
+            <button
+              className="lb-action-btn lb-action-primary"
+              disabled={refreshing || !s.tracking_number}
+              onClick={() => onRefresh(s.id)}
+              title={!s.tracking_number ? 'Add a tracking number first' : 'Pull latest status from Shippo'}
+            >
+              <RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh Tracking'}
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginBottom: 20 }}>

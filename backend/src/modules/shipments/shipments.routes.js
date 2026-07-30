@@ -74,8 +74,46 @@ const trackPreviewSchema = z.object({
   tracking_number: z.string().min(1),
 })
 
+const addressSchema = z.object({
+  name:    z.string().optional().nullable(),
+  street1: z.string().min(1),
+  city:    z.string().min(1),
+  state:   z.string().min(1),
+  zip:     z.string().min(1),
+  country: z.string().optional().default('US'),
+  phone:   z.string().optional().nullable(),
+  email:   z.string().optional().nullable(),
+})
+const parcelSchema = z.object({
+  length: z.coerce.number().positive(),
+  width:  z.coerce.number().positive(),
+  height: z.coerce.number().positive(),
+  weight: z.coerce.number().positive(),
+})
+const ratesSchema = z.object({
+  from:   addressSchema,
+  to:     addressSchema,
+  parcel: parcelSchema,
+})
+const labelSchema = z.object({
+  rate_id:   z.string().min(1),
+  carrier:   z.string().optional().nullable(),
+  service:   z.string().optional().nullable(),
+  amount:    z.union([z.string(), z.number()]).optional().nullable(),
+  to_name:   z.string().optional().nullable(),
+  to_street: z.string().optional().nullable(),
+  to_city:   z.string().optional().nullable(),
+  to_state:  z.string().optional().nullable(),
+  to_zip:    z.string().optional().nullable(),
+  order_id:  z.string().uuid().optional().nullable(),
+  po_id:     z.string().uuid().optional().nullable(),
+})
+
 router.post('/import',        uploadCsv, controller.importCsv)
 router.post('/track-preview', validate(trackPreviewSchema), controller.trackPreview)
+router.post('/rates',         validate(ratesSchema), controller.getRates)
+router.post('/label',         validate(labelSchema), controller.buyLabel)
+router.post('/:id/void-label', controller.voidLabel)
 router.patch('/:id/status', validate(statusSchema), controller.updateStatus)
 router.post('/:id/track',   controller.refreshTracking)
 router.delete('/:id',       controller.remove)

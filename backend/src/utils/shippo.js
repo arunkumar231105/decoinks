@@ -6,8 +6,13 @@
 // timeout so a slow Shippo call can never hang a request (KB §6.9).
 
 const SHIPPO_KEY  = process.env.SHIPPO_API_KEY
+// Label purchases can run against a Shippo TEST token (free) when one is set,
+// so the buy flow can be exercised without spending real money. Falls back to
+// the live key. Tracking always uses the live key.
+const LABEL_KEY   = process.env.SHIPPO_LABEL_KEY || process.env.SHIPPO_API_KEY
 const SHIPPO_BASE = process.env.SHIPPO_BASE_URL || 'https://api.goshippo.com'
 const TIMEOUT_MS  = Number(process.env.SHIPPO_TIMEOUT_MS) || 12000
+const LABEL_TIMEOUT_MS = Number(process.env.SHIPPO_LABEL_TIMEOUT_MS) || 25000
 
 // Map the carrier names used in the UI / DB to Shippo carrier tokens.
 // https://docs.goshippo.com/docs/tracking/tracking/  (carrier token list)
@@ -189,4 +194,96 @@ async function fetchTracking(carrier, trackingNumber) {
   return mapped
 }
 
-module.exports = { fetchTracking, carrierToken, detectCarrier, isConfigured }
+// ── Label generation (buying postage through Shippo) ─────────────────────────
+
+const labelConfigured = () => Boolean(LABEL_KEY)
+const isTestLabelKey = () => String(LABEL_KEY || '').startsWith('shippo_test')
+
+// Shared POST helper: JSON in/out, AbortController timeout, uniform errors.
+async function shippoPost(path, body, key, timeoutMs) {
+  if (!key) throw Object.assign(new Error('Shippo is not configured'), { statusCode: 400 })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let res
+  try {
+    res = await fetch(`${SHIPPO_BASE}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `ShippoToken ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } catch (e) {
+    if (e.name === 'AbortError') throw Object.assign(new Error('Shippo request timed out'), { statusCode: 504 })
+    throw Object.assign(new Error('Could not reach Shippo'), { statusCode: 502 })
+  } finally {
+    clearTimeout(timer)
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const detail = data && (data.detail || (data.messages && data.messages[0] && data.messages[0].text))
+    throw Object.assign(new Error(`Shippo error (${res.status})${detail ? `: ${detail}` : ''}`), { statusCode: 502 })
+  }
+  return data
+}
+
+// Get live rate options for a parcel. address_from/to: {name,street1,city,state,zip,country,phone}.
+// parcel: {length,width,height,weight} in inches / lb.
+async function getRates(address_from, address_to, parcel) {
+  const shipment = await shippoPost('/shipments/', {
+    address_from,
+    address_to,
+    parcels: [{
+      length: String(parcel.length), width: String(parcel.width), height: String(parcel.height),
+      distance_unit: 'in', weight: String(parcel.weight), mass_unit: 'lb',
+    }],
+    async: false,
+  }, LABEL_KEY, LABEL_TIMEOUT_MS)
+
+  const messages = (shipment.messages || []).map(m => m.text).filter(Boolean)
+  const rates = (shipment.rates || []).map(r => ({
+    id:             r.object_id,
+    carrier:        r.provider,
+    service:        r.servicelevel && r.servicelevel.name,
+    amount:         r.amount,
+    currency:       r.currency,
+    estimated_days: r.estimated_days,
+    duration_terms: r.duration_terms,
+  })).sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount))
+
+  if (!rates.length) {
+    throw Object.assign(
+      new Error(`No rates returned${messages.length ? `: ${messages.join('; ')}` : ' (check addresses / parcel)'}`),
+      { statusCode: 400 }
+    )
+  }
+  return { rates, messages, test: isTestLabelKey() }
+}
+
+// Buy a label for a chosen rate id. Returns tracking number + printable label.
+async function buyLabel(rateId) {
+  const tx = await shippoPost('/transactions/', {
+    rate: rateId, label_file_type: 'PDF_4x6', async: false,
+  }, LABEL_KEY, LABEL_TIMEOUT_MS)
+
+  if (tx.status !== 'SUCCESS') {
+    const msg = (tx.messages || []).map(m => m.text).filter(Boolean).join('; ')
+    throw Object.assign(new Error(`Label purchase failed${msg ? `: ${msg}` : ''}`), { statusCode: 502 })
+  }
+  return {
+    transaction_id:  tx.object_id,
+    tracking_number: tx.tracking_number || null,
+    label_url:       tx.label_url || null,
+    tracking_url:    tx.tracking_url_provider || null,
+  }
+}
+
+// Request a refund / void of an unused label (Shippo processes it async).
+async function refundLabel(transactionId) {
+  const refund = await shippoPost('/refunds/', { transaction: transactionId, async: false }, LABEL_KEY, LABEL_TIMEOUT_MS)
+  return { status: refund.status || 'QUEUED' }   // QUEUED | PENDING | SUCCESS | ERROR
+}
+
+module.exports = {
+  fetchTracking, carrierToken, detectCarrier, isConfigured,
+  getRates, buyLabel, refundLabel, labelConfigured, isTestLabelKey,
+}

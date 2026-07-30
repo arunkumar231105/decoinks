@@ -65,4 +65,22 @@ async function remove(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, refreshTracking, trackPreview, importCsv, remove }
+async function getRates(req, res, next) {
+  try {
+    return success(res, await service.getRates(req.body))
+  } catch (err) { next(err) }
+}
+
+async function buyLabel(req, res, next) {
+  try {
+    return created(res, await service.buyLabel({ ...req.body, created_by: req.user.id }), 'Label purchased')
+  } catch (err) { next(err) }
+}
+
+async function voidLabel(req, res, next) {
+  try {
+    return success(res, await service.voidLabel(req.params.id), 'Label void requested')
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, getOne, create, update, updateStatus, refreshTracking, trackPreview, importCsv, getRates, buyLabel, voidLabel, remove }
