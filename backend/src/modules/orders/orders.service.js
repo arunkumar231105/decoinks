@@ -68,7 +68,7 @@ async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {})
      SET amount_paid = $2,
          balance_due = GREATEST(total - $2, 0),
          status      = $3,
-         paid_at     = CASE WHEN $3 = 'Paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END,
+         paid_at     = CASE WHEN $3 = 'Paid'::invoice_status THEN COALESCE(paid_at, NOW()) ELSE paid_at END,
          updated_at  = NOW()
      WHERE id = $1`,
     [invoiceId, finalPaid, status]
