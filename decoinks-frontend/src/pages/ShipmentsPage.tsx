@@ -307,6 +307,7 @@ export function ShipmentsPage() {
         <table className="sh-table">
           <thead>
             <tr>
+              <th>Ship Date</th>
               <th>Tracking ID</th>
               <th>Customer Name</th>
               <th>PO #</th>
@@ -327,16 +328,17 @@ export function ShipmentsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={15} className="sh-empty">Loading…</td>
+                <td colSpan={16} className="sh-empty">Loading…</td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={15} className="sh-empty">No shipments found.</td>
+                <td colSpan={16} className="sh-empty">No shipments found.</td>
               </tr>
             )}
             {!isLoading && filtered.map(s => (
               <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
+                <td className="sh-muted">{s.ship_date ?? '-'}</td>
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td className="sh-customer">{s.customer_name ?? '-'}</td>
                 <td className="sh-muted">{s.po_number ?? '-'}</td>
