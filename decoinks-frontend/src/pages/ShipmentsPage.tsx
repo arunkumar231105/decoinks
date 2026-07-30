@@ -20,7 +20,7 @@ import {
   Truck,
   Upload,
 } from 'lucide-react'
-import { Menu, MenuItem, Dialog, DialogContent } from '@mui/material'
+import { Menu, MenuItem, Drawer } from '@mui/material'
 import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
@@ -105,6 +105,11 @@ export function ShipmentsPage() {
     queryFn: () => api.get('/shipments', { params: { page, limit: PAGE_SIZE } }).then(r => r.data.data),
     placeholderData: keepPreviousData,
   })
+  // Dashboard-card counts aggregated across ALL shipments (not just this page).
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats'],
+    queryFn: () => api.get('/shipments/stats').then(r => r.data.data),
+  })
 
   const allShipments: Shipment[] = data?.rows ?? []
   const total: number = data?.total ?? 0
@@ -179,7 +184,16 @@ export function ShipmentsPage() {
     if (s.delivered_date) return s.delivered_date > eta          // delivered late
     return !isDelivered(s) && todayStr > eta                     // overdue, still not delivered
   }
-  const stats = {
+  // Prefer the server-side aggregate (all shipments); fall back to page-computed.
+  const stats = statsData ? {
+    total: statsData.total,
+    active: statsData.active,
+    inTransit: statsData.in_transit,
+    delivered: statsData.delivered,
+    onTime: statsData.on_time,
+    delayed: statsData.delayed,
+    needsAttention: statsData.needs_attention,
+  } : {
     total,
     active: allShipments.filter(s => !isDelivered(s)).length,
     inTransit: allShipments.filter(s => isTransit(s)).length,
@@ -322,7 +336,7 @@ export function ShipmentsPage() {
               </tr>
             )}
             {!isLoading && filtered.map(s => (
-              <tr key={s.id} className="sh-row">
+              <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td className="sh-customer">{s.customer_name ?? '-'}</td>
                 <td className="sh-muted">{s.po_number ?? '-'}</td>
@@ -341,10 +355,10 @@ export function ShipmentsPage() {
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
                 <td className="sh-muted">{s.estimated_delivery ?? '-'}</td>
                 <td className="sh-muted">{s.delivered_date ?? '-'}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <button
                     className="lb-icon-btn"
-                    onClick={e => setMenuAnchor({ el: e.currentTarget, id: s.id })}
+                    onClick={e => { e.stopPropagation(); setMenuAnchor({ el: e.currentTarget, id: s.id }) }}
                   >
                     <MoreVertical size={15} />
                   </button>
@@ -469,8 +483,8 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
   const history = Array.isArray(s.tracking_history) ? s.tracking_history : []
 
   return (
-    <Dialog open={Boolean(shipment)} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogContent>
+    <Drawer anchor="right" open={Boolean(shipment)} onClose={onClose}>
+      <div style={{ padding: 24, width: 'min(560px, 100vw)', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Shipment {s.shipment_number}</h3>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -521,7 +535,7 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
             ))}
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </Drawer>
   )
 }

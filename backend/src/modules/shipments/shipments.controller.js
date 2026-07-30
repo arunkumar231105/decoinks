@@ -13,6 +13,9 @@ async function list(req, res, next) {
 async function getOne(req, res, next) {
   try { return success(res, await service.getById(req.params.id)) } catch (err) { next(err) }
 }
+async function stats(req, res, next) {
+  try { return success(res, await service.stats()) } catch (err) { next(err) }
+}
 async function create(req, res, next) {
   try {
     const s = await service.create({ ...req.body, created_by: req.user.id })
@@ -83,4 +86,4 @@ async function voidLabel(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, refreshTracking, trackPreview, importCsv, getRates, buyLabel, voidLabel, remove }
+module.exports = { list, getOne, stats, create, update, updateStatus, refreshTracking, trackPreview, importCsv, getRates, buyLabel, voidLabel, remove }

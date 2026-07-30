@@ -66,6 +66,7 @@ const statusSchema = z.object({
 })
 
 router.get('/',             controller.list)
+router.get('/stats',        controller.stats)
 router.get('/:id',          controller.getOne)
 router.post('/',            validate(createSchema), controller.create)
 router.put('/:id',          validate(updateSchema), controller.update)

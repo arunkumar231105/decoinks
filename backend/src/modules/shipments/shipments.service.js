@@ -30,6 +30,29 @@ async function list({ page = 1, limit = 10, status = '' }) {
   return { rows, total }
 }
 
+// Aggregate counts across ALL shipments for the dashboard cards (not just the
+// current page). effective status = tracking_status (Shippo) when present, else
+// the internal status enum. Promised ETA = original_eta, else estimated_delivery.
+async function stats() {
+  const eff = `COALESCE(NULLIF(tracking_status, ''), status::text)`
+  const eta = `COALESCE(original_eta, estimated_delivery)`
+  const { rows } = await query(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE ${eff} NOT ILIKE '%deliver%')::int AS active,
+       COUNT(*) FILTER (WHERE ${eff} ILIKE '%transit%')::int AS in_transit,
+       COUNT(*) FILTER (WHERE ${eff} ILIKE '%deliver%')::int AS delivered,
+       COUNT(*) FILTER (WHERE delivered_date IS NOT NULL AND ${eta} IS NOT NULL AND delivered_date <= ${eta})::int AS on_time,
+       COUNT(*) FILTER (WHERE ${eta} IS NOT NULL AND (
+           (delivered_date IS NOT NULL AND delivered_date > ${eta})
+           OR (delivered_date IS NULL AND ${eff} NOT ILIKE '%deliver%' AND CURRENT_DATE > ${eta})
+       ))::int AS delayed,
+       COUNT(*) FILTER (WHERE ${eff} ~* 'fail|exception|return')::int AS needs_attention
+     FROM shipments`
+  )
+  return rows[0]
+}
+
 async function getById(id) {
   const { rows } = await query(
     `SELECT s.*, c.name AS supplier_name, o.order_number,
@@ -294,5 +317,5 @@ async function voidLabel(id) {
 module.exports = {
   list, getById, create, update, updateStatus, remove,
   refreshTracking, previewTracking, importFromCsv,
-  getRates, buyLabel, voidLabel,
+  getRates, buyLabel, voidLabel, stats,
 }
