@@ -126,7 +126,7 @@ async function remove(id) {
 // Columns that a Shippo tracking refresh is permitted to write, and which of
 // them are JSONB (need an explicit ::jsonb cast on the bound text value).
 const TRACKING_COLUMNS = new Set([
-  'tracking_status', 'substatus', 'status_details', 'last_scan_city', 'last_scan_state',
+  'carrier', 'tracking_status', 'substatus', 'status_details', 'last_scan_city', 'last_scan_state',
   'estimated_delivery', 'original_eta', 'service_type',
   'address_from_city', 'address_from_state', 'address_from_postal_code',
   'ship_to_city', 'ship_to_state', 'ship_to_postal_code',
@@ -145,10 +145,13 @@ async function refreshTracking(id) {
   const params = []
   for (const [key, value] of Object.entries(mapped)) {
     if (!TRACKING_COLUMNS.has(key)) continue          // allow-list guard
-    params.push(value)
-    sets.push(JSONB_COLUMNS.has(key)
-      ? `${key} = $${params.length}::jsonb`
-      : `${key} = $${params.length}`)
+    if (JSONB_COLUMNS.has(key)) {
+      params.push(JSON.stringify(value))              // arrays → JSON text for the ::jsonb cast
+      sets.push(`${key} = $${params.length}::jsonb`)
+    } else {
+      params.push(value)
+      sets.push(`${key} = $${params.length}`)
+    }
   }
 
   params.push(id)

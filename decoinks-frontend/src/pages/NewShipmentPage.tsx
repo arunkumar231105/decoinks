@@ -5,11 +5,6 @@ import toast from '../utils/toast'
 import { ChevronRight, MapPin, RefreshCw } from 'lucide-react'
 import { api } from '../services/api'
 
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-// Only carriers Shippo can live-track (matches backend carrierToken map).
-const CARRIERS = ['UPS', 'USPS', 'FedEx', 'DHL']
-
 // ─── Shippo tracking preview shape (returned by /shipments/track-preview) ─────
 
 interface Scan {
@@ -20,6 +15,7 @@ interface Scan {
   location?: { city?: string | null; state?: string | null; zip?: string | null } | null
 }
 interface TrackPreview {
+  carrier?: string
   tracking_status?: string
   status_details?: string
   substatus?: string
@@ -103,14 +99,13 @@ function PoCombobox({ onSelect }: { onSelect: (po: PoRow | null, text: string) =
 export function NewShipmentPage() {
   const navigate = useNavigate()
 
-  const [carrier, setCarrier] = useState('UPS')
   const [trackingNumber, setTrackingNumber] = useState('')
   const [poId, setPoId] = useState('')
   const [preview, setPreview] = useState<TrackPreview | null>(null)
 
   const fetchMutation = useMutation({
     mutationFn: () => api.post('/shipments/track-preview', {
-      carrier, tracking_number: trackingNumber.trim(),
+      tracking_number: trackingNumber.trim(),
     }).then(r => r.data.data as TrackPreview),
     onSuccess: (data) => {
       setPreview(data)
@@ -122,7 +117,7 @@ export function NewShipmentPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/shipments', {
-        carrier,
+        carrier: preview?.carrier ?? null,
         tracking_number: trackingNumber.trim(),
         service_type: preview?.service_type ?? null,
         po_id: poId || null,
@@ -138,7 +133,7 @@ export function NewShipmentPage() {
   })
 
   const canFetch = trackingNumber.trim().length > 0 && !fetchMutation.isPending
-  const history = preview?.tracking_history ?? []
+  const history = Array.isArray(preview?.tracking_history) ? preview!.tracking_history : []
 
   return (
     <div className="ns-page">
@@ -171,24 +166,16 @@ export function NewShipmentPage() {
             <h4>Track a Shipment</h4>
           </div>
           <div className="ns-section-body">
-            <div className="ns-fields-grid">
-              <div className="al-field">
-                <label>Carrier</label>
-                <select className="al-input" value={carrier} onChange={e => { setCarrier(e.target.value); setPreview(null) }}>
-                  {CARRIERS.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="al-field" style={{ gridColumn: 'span 2' }}>
-                <label>Tracking ID</label>
+            <div className="al-field">
+              <label>Tracking ID</label>
+              <div style={{ display: 'flex', gap: 10 }}>
                 <input
-                  type="text" className="al-input" value={trackingNumber}
+                  type="text" className="al-input" value={trackingNumber} style={{ flex: 1 }}
                   onChange={e => { setTrackingNumber(e.target.value); setPreview(null) }}
-                  placeholder="Enter tracking number"
+                  placeholder="Paste tracking number — carrier is auto-detected"
                   onKeyDown={e => { if (e.key === 'Enter' && canFetch) fetchMutation.mutate() }}
                 />
-              </div>
-              <div className="al-field" style={{ display: 'flex', alignItems: 'flex-end' }}>
-                <button className="lb-action-btn lb-action-primary" onClick={() => fetchMutation.mutate()} disabled={!canFetch} style={{ gap: 6 }}>
+                <button className="lb-action-btn lb-action-primary" onClick={() => fetchMutation.mutate()} disabled={!canFetch} style={{ gap: 6, whiteSpace: 'nowrap' }}>
                   <RefreshCw size={14} /> {fetchMutation.isPending ? 'Fetching…' : 'Fetch from Shippo'}
                 </button>
               </div>
@@ -199,6 +186,7 @@ export function NewShipmentPage() {
               <div style={{ marginTop: 18, borderTop: '1px solid #eef2f7', paddingTop: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px' }}>
                   {[
+                    ['Carrier', preview.carrier ?? '—'],
                     ['Status', preview.tracking_status ?? '—'],
                     ['Details', preview.status_details ?? '—'],
                     ['Sub-status', preview.substatus ?? '—'],

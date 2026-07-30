@@ -70,7 +70,7 @@ router.get('/:id',          controller.getOne)
 router.post('/',            validate(createSchema), controller.create)
 router.put('/:id',          validate(updateSchema), controller.update)
 const trackPreviewSchema = z.object({
-  carrier:         z.string().min(1),
+  carrier:         z.string().optional().nullable(),   // auto-detected from tracking # when omitted
   tracking_number: z.string().min(1),
 })
 

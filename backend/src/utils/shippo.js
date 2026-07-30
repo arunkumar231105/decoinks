@@ -26,6 +26,23 @@ function carrierToken(carrier) {
   return CARRIER_TOKENS[carrier.trim().toLowerCase()] || null
 }
 
+const TOKEN_DISPLAY = { usps: 'USPS', ups: 'UPS', fedex: 'FedEx', dhl_express: 'DHL', dhl_ecommerce: 'DHL', canada_post: 'Canada Post' }
+
+// Guess the Shippo carrier token from the tracking number format, so the user
+// only has to paste a tracking id (no carrier picker). Covers the common
+// UPS / USPS / FedEx / DHL patterns; returns null when it can't tell.
+function detectCarrier(trackingNumber) {
+  const s = String(trackingNumber || '').trim().toUpperCase().replace(/\s+/g, '')
+  if (!s) return null
+  if (/^1Z[0-9A-Z]{16}$/.test(s)) return 'ups'          // UPS: 1Z + 16
+  if (/^[A-Z]{2}\d{9}US$/.test(s)) return 'usps'         // USPS intl (e.g. EA123456789US)
+  if (/^9\d{15,25}$/.test(s)) return 'usps'              // USPS 20–26 digit (94xx/93xx/92xx…)
+  if (/^\d{12}$/.test(s) || /^\d{15}$/.test(s)) return 'fedex' // FedEx 12/15 digit
+  if (/^\d{10}$/.test(s)) return 'dhl_express'           // DHL 10 digit
+  if (/^1Z/.test(s)) return 'ups'                        // UPS fallback
+  return null
+}
+
 function isConfigured() {
   return Boolean(SHIPPO_KEY)
 }
@@ -91,14 +108,16 @@ function mapTracking(data) {
   }
 
   // Full scan-by-scan history (oldest → newest as Shippo returns it).
+  // Kept as a real array here; the DB-write layer stringifies for the JSONB
+  // column, while the New-Shipment preview consumes it directly as an array.
   if (Array.isArray(data.tracking_history)) {
-    out.tracking_history = JSON.stringify(data.tracking_history.map(h => ({
+    out.tracking_history = data.tracking_history.map(h => ({
       status:         h.status || null,
       substatus:      h.substatus ? (h.substatus.text || h.substatus.code || null) : null,
       status_details: h.status_details || null,
       status_date:    h.status_date || null,
       location:       mapLocation(h.location),
-    })))
+    }))
 
     // Derive the delivered date from the DELIVERED scan, if any.
     const deliveredScan = data.tracking_history.find(h => h.status === 'DELIVERED')
@@ -108,7 +127,7 @@ function mapTracking(data) {
   }
 
   if (Array.isArray(data.messages) && data.messages.length) {
-    out.tracking_messages = JSON.stringify(data.messages)
+    out.tracking_messages = data.messages
   }
 
   return out
@@ -120,15 +139,17 @@ async function fetchTracking(carrier, trackingNumber) {
   if (!isConfigured()) {
     throw Object.assign(new Error('Shippo is not configured (SHIPPO_API_KEY is not set)'), { statusCode: 400 })
   }
-  const token = carrierToken(carrier)
-  if (!token) {
-    throw Object.assign(
-      new Error(`Live tracking is not supported for carrier "${carrier || 'unknown'}". Supported: USPS, UPS, FedEx, DHL.`),
-      { statusCode: 400 }
-    )
-  }
   if (!trackingNumber || !trackingNumber.trim()) {
     throw Object.assign(new Error('A tracking number is required to refresh tracking'), { statusCode: 400 })
+  }
+  // Use the given carrier if we recognise it, otherwise auto-detect from the
+  // tracking number format so the user never has to pick a carrier.
+  const token = carrierToken(carrier) || detectCarrier(trackingNumber)
+  if (!token) {
+    throw Object.assign(
+      new Error('Could not detect the carrier from this tracking number. Supported: USPS, UPS, FedEx, DHL.'),
+      { statusCode: 400 }
+    )
   }
 
   const controller = new AbortController()
@@ -163,7 +184,9 @@ async function fetchTracking(carrier, trackingNumber) {
   const data = await res.json().catch(() => null)
   if (!data) throw Object.assign(new Error('Shippo returned an empty response'), { statusCode: 502 })
 
-  return mapTracking(data)
+  const mapped = mapTracking(data)
+  mapped.carrier = TOKEN_DISPLAY[token] || carrier || null   // resolved carrier for the caller
+  return mapped
 }
 
-module.exports = { fetchTracking, carrierToken, isConfigured }
+module.exports = { fetchTracking, carrierToken, detectCarrier, isConfigured }
