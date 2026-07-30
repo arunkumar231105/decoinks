@@ -252,7 +252,7 @@ async function getRates(address_from, address_to, parcel) {
 
   if (!rates.length) {
     throw Object.assign(
-      new Error(`No rates returned${messages.length ? `: ${messages.join('; ')}` : ' (check addresses / parcel)'}`),
+      new Error('No rates returned. Ship From and Ship To must be complete, valid US addresses (2-letter state like CA, a real US ZIP) — your connected carriers ship within the US.'),
       { statusCode: 400 }
     )
   }

@@ -87,6 +87,9 @@ export function LabelModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 6, padding: '8px 10px', marginBottom: 14 }}>
+            Use <strong>US addresses</strong> (2-letter state like <strong>CA</strong>, real US ZIP). Your carriers (USPS/UPS) ship within the US.
+          </div>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 8px', color: '#0f766e' }}>Ship From</h3>
           {addrFields(from, setFrom, true)}
 
