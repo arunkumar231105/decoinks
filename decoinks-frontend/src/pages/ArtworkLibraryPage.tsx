@@ -48,6 +48,20 @@ interface VaultAsset {
   download_url?: string | null
   folder_files?: Array<Pick<VaultAsset, 'id' | 'file_name' | 'asset_type' | 'is_cover' | 'thumbnail_url' | 'lifecycle_code' | 'version_no'>>
   family_files?: VaultAsset[]
+  revisions?: ArtworkRevision[]
+}
+
+interface ArtworkRevision {
+  id: string
+  version_no: number
+  file_name: string
+  mime_type?: string | null
+  file_size_bytes: number
+  storage_path: string
+  source_app?: string | null
+  created_at: string
+  thumbnail_url?: string | null
+  download_url?: string | null
 }
 
 interface VaultStats {
@@ -87,6 +101,13 @@ function apiAssetUrl(url?: string | null) {
   return url.startsWith('/api/') ? url.slice(4) : url
 }
 
+// Revision snapshots (and any non-Nextcloud asset) live at public /storage or
+// absolute URLs — these must be fetched directly, NOT through the /api axios
+// base, or they resolve to /api/storage/... and 404.
+function isDirectUrl(url?: string | null) {
+  return Boolean(url && (/^https?:\/\//i.test(url) || url.startsWith('/storage/')))
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '—'
   return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -102,6 +123,7 @@ function useAuthenticatedPreview(url: string, enabled: boolean) {
   return useQuery<string>({
     queryKey: ['vault-preview', url],
     queryFn: async () => {
+      if (isDirectUrl(url)) return url // public URL usable directly as an <img> src
       const response = await api.get(apiAssetUrl(url), { responseType: 'blob' })
       return URL.createObjectURL(response.data)
     },
@@ -112,8 +134,10 @@ function useAuthenticatedPreview(url: string, enabled: boolean) {
 }
 
 async function downloadAsset(url: string, fileName: string, open = false) {
-  const response = await api.get(apiAssetUrl(url), { responseType: 'blob' })
-  const blobUrl = URL.createObjectURL(response.data)
+  const blob = isDirectUrl(url)
+    ? await fetch(url).then(r => { if (!r.ok) throw new Error('fetch failed'); return r.blob() })
+    : (await api.get(apiAssetUrl(url), { responseType: 'blob' })).data
+  const blobUrl = URL.createObjectURL(blob)
   if (open) window.open(blobUrl, '_blank', 'noopener,noreferrer')
   else {
     const link = document.createElement('a')
@@ -179,6 +203,15 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
     onSuccess: () => toast.success('QA task created'),
     onError: () => toast.error('QA task could not be created'),
   })
+  const openStudioMutation = useMutation({
+    mutationFn: () => api.post(`/artworks/vault/assets/${id}/studio-token`).then(r => r.data.data as { token: string; url: string }),
+    onSuccess: (result) => {
+      const studioWindow = window.open(result.url, '_blank', 'noopener,noreferrer')
+      if (!studioWindow) toast.error('Allow pop-ups to open Design Studio')
+      else toast.success('Opening in Design Studio…')
+    },
+    onError: () => toast.error('Could not open Design Studio'),
+  })
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
@@ -215,6 +248,17 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
           <button onClick={() => setShowVersions(!showVersions)}>View Artwork Chain</button>
         </div>
         {showVersions && <div className="av-version-list">{files.map(file => <button key={file.id} className={file.id === id ? 'is-active' : ''} onClick={() => onSelect(file.id)}><span>{file.lifecycle_code ? `${file.lifecycle_code} · ` : ''}{file.file_name}</span><b>V{file.version_no || 1}</b></button>)}</div>}
+        {showVersions && data.revisions && data.revisions.length > 0 && (
+          <div className="av-version-list av-revision-list" style={{ marginTop: 0 }}>
+            <small className="av-revision-head" style={{ display: 'block', padding: '4px 7px', color: '#64748b', fontWeight: 600 }}>Design Studio history</small>
+            {data.revisions.map(revision => (
+              <button key={revision.id} title={`Saved ${formatDate(revision.created_at)} · open previous version`}
+                onClick={() => downloadAsset(revision.download_url || revision.storage_path, revision.file_name, true).catch(() => toast.error('Preview failed'))}>
+                <span>{revision.file_name}</span><b>V{revision.version_no}</b>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="av-social-actions">
           <button className="av-social-action" onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))} title="Open in OS"><ExternalLink size={18} /><span>Open in OS</span></button>
@@ -226,7 +270,7 @@ function ArtworkDetails({ id, onClose, onSelect }: { id: string; onClose: () => 
 
         <section className="av-quick-section">
           <h3>Quick Actions</h3>
-          <button onClick={() => downloadAsset(data.download_url || '', data.file_name, true).catch(() => toast.error('Preview failed'))}><ExternalLink /> Open in Design Studio</button>
+          <button onClick={() => openStudioMutation.mutate()} disabled={openStudioMutation.isPending}><ExternalLink /> {openStudioMutation.isPending ? 'Opening…' : 'Open in Design Studio'}</button>
           <a className={!facebookHref ? 'is-disabled' : ''} href={facebookHref} target="_blank" rel="noreferrer"><MessageCircle /> Send to Facebook Messenger</a>
           <a className={!emailHref ? 'is-disabled' : ''} href={emailHref}><Mail /> Send by Email</a>
           <button onClick={() => qaTaskMutation.mutate()} disabled={qaTaskMutation.isPending}><ListChecks /> Create QA Task</button>

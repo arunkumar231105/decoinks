@@ -1,6 +1,9 @@
 const service = require('./artworks.service')
 const vault = require('./artwork-vault.service')
+const studio = require('./artwork-studio.service')
 const { success, created, paginated } = require('../../utils/response')
+
+const DESIGN_STUDIO_URL = process.env.DESIGN_STUDIO_URL || 'https://designstudio.decoinkssuite.com'
 
 async function list(req, res, next) {
   try {
@@ -69,4 +72,29 @@ async function vaultExport(req, res, next) {
     return res.send('\ufeff' + lines.map(row => row.map(csvCell).join(',')).join('\n'))
   } catch (err) { next(err) }
 }
-module.exports = { list, getOne, getBoard, create, createTask, updateStatus, remove, vaultList, vaultStats, vaultDetail, vaultSync, vaultSetCover, vaultBulkUpdate, vaultExport }
+// ── Design Studio round-trip ────────────────────────────────────────────────
+async function studioToken(req, res, next) {
+  try {
+    const token = await studio.issueTokenForAsset(req.params.id, req.user?.id || null)
+    return success(res, { token, url: `${DESIGN_STUDIO_URL}/?artwork=${encodeURIComponent(token)}` }, 'Design Studio handoff ready')
+  } catch (err) { next(err) }
+}
+async function studioAsset(req, res, next) {
+  try { return success(res, await studio.assetPayload(req.query.token || '')) } catch (err) { next(err) }
+}
+async function studioContent(req, res, next) {
+  try {
+    const { buffer, mime, file_name } = await studio.assetContent(req.query.token || '')
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Content-Length', String(buffer.length))
+    res.setHeader('Content-Disposition', `inline; filename="${String(file_name || 'artwork').replace(/"/g, '')}"`)
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.send(buffer)
+  } catch (err) { next(err) }
+}
+async function studioSave(req, res, next) {
+  try { return success(res, await studio.saveEditedArtwork(req.body.token || '', req.file, null), 'Artwork version saved') }
+  catch (err) { next(err) }
+}
+
+module.exports = { list, getOne, getBoard, create, createTask, updateStatus, remove, vaultList, vaultStats, vaultDetail, vaultSync, vaultSetCover, vaultBulkUpdate, vaultExport, studioToken, studioAsset, studioContent, studioSave }

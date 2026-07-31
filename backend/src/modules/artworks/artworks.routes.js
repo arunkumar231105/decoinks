@@ -2,10 +2,18 @@ const { Router } = require('express')
 const { z } = require('zod')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
-const { uploadArtwork } = require('../../middleware/upload')
+const { uploadArtwork, uploadStudioArtwork } = require('../../middleware/upload')
 const controller = require('./artworks.controller')
 
 const router = Router()
+
+// ── Design Studio round-trip (artwork-token auth, no Bearer session) ─────────
+// The Design Studio bridge (api/central-artwork.php) calls these server-to-server
+// with a short-lived artwork token, so they must sit ahead of verifyToken.
+router.get('/studio/asset',    controller.studioAsset)
+router.get('/studio/content',  controller.studioContent)
+router.post('/studio/save',    uploadStudioArtwork, controller.studioSave)
+
 router.use(verifyToken)
 
 // Multer populates req.body with text fields before the next middleware runs,
@@ -49,6 +57,7 @@ router.post('/vault/sync',  controller.vaultSync)
 router.patch('/vault/assets/bulk', controller.vaultBulkUpdate)
 router.get('/vault/assets/:id', controller.vaultDetail)
 router.patch('/vault/assets/:id/cover', controller.vaultSetCover)
+router.post('/vault/assets/:id/studio-token', controller.studioToken)
 router.get('/:id',          controller.getOne)
 router.post('/',            uploadArtwork, validate(createSchema), controller.create)
 router.post('/task',        validate(taskSchema), controller.createTask)

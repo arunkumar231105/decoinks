@@ -45,6 +45,18 @@ function inferVersion(name) {
   return match ? Math.max(1, Number(match[1])) : 1
 }
 
+// Preview/download URLs are keyed to a file's current identity so a saved
+// revision (new etag + version) busts the browser's 5-minute preview cache
+// instead of showing the stale image.
+function cacheBust(row) {
+  const stamp = row.etag
+    || (row.source_modified_at ? new Date(row.source_modified_at).getTime() : null)
+    || (row.updated_at ? new Date(row.updated_at).getTime() : null)
+    || row.version_no
+    || ''
+  return encodeURIComponent(String(stamp))
+}
+
 async function sync({ force = false } = {}) {
   const cfg = getConfig()
   if (!cfg.configured) return { configured: false, synced: 0, total: 0 }
@@ -100,7 +112,7 @@ async function sync({ force = false } = {}) {
             production_ready=CASE WHEN artwork_vault_assets.lifecycle_code IS DISTINCT FROM EXCLUDED.lifecycle_code
                                   THEN EXCLUDED.production_ready ELSE artwork_vault_assets.production_ready END,
             order_type=EXCLUDED.order_type,
-            version_no=EXCLUDED.version_no,source_modified_at=EXCLUDED.source_modified_at,last_seen_at=NOW(),
+            version_no=GREATEST(artwork_vault_assets.version_no,EXCLUDED.version_no),source_modified_at=EXCLUDED.source_modified_at,last_seen_at=NOW(),
             updated_at=CASE WHEN artwork_vault_assets.etag IS DISTINCT FROM EXCLUDED.etag THEN NOW() ELSE artwork_vault_assets.updated_at END`,
           [JSON.stringify(chunk)])
       }
@@ -228,8 +240,8 @@ async function list(filters = {}) {
     LIMIT $${params.length - 1} OFFSET $${params.length}`, params)
   const hydrated = rows.map(row => row.source === 'nextcloud' ? {
     ...row,
-    thumbnail_url: `/api/nextcloud/preview?path=${encodeURIComponent(row.path)}&w=320&h=240`,
-    download_url: `/api/nextcloud/download?path=${encodeURIComponent(row.path)}`,
+    thumbnail_url: `/api/nextcloud/preview?path=${encodeURIComponent(row.path)}&w=320&h=240&v=${cacheBust(row)}`,
+    download_url: `/api/nextcloud/download?path=${encodeURIComponent(row.path)}&v=${cacheBust(row)}`,
   } : { ...row, thumbnail_url: row.path, download_url: row.path })
   return { rows: hydrated, total: totalResult.rows[0].total, page, limit }
 }
@@ -273,10 +285,20 @@ async function detail(id) {
              version_no,source_modified_at,file_name`, [rows[0].artwork_code]) : { rows: [] }
   const hydrate = (row, width = 700, height = 500) => row.source === 'nextcloud' ? {
     ...row,
-    thumbnail_url: `/api/nextcloud/preview?path=${encodeURIComponent(row.path)}&w=${width}&h=${height}`,
-    download_url: `/api/nextcloud/download?path=${encodeURIComponent(row.path)}`,
+    thumbnail_url: `/api/nextcloud/preview?path=${encodeURIComponent(row.path)}&w=${width}&h=${height}&v=${cacheBust(row)}`,
+    download_url: `/api/nextcloud/download?path=${encodeURIComponent(row.path)}&v=${cacheBust(row)}`,
   } : { ...row, thumbnail_url: row.path, download_url: row.path }
-  return { ...hydrate(rows[0]), folder_files: siblings.rows.map(row => hydrate(row, 180, 140)), family_files: family.rows.map(row => hydrate(row, 180, 140)) }
+  // Design Studio round-trip history — the bytes each save replaced, newest first.
+  // These stay visible in the drawer even though the live asset now shows the
+  // latest version.
+  const revisions = await query(`SELECT id,version_no,file_name,mime_type,file_size_bytes,storage_path,source_app,created_at
+    FROM artwork_vault_revisions WHERE asset_id=$1 ORDER BY version_no DESC,created_at DESC`, [rows[0].id])
+  return {
+    ...hydrate(rows[0]),
+    folder_files: siblings.rows.map(row => hydrate(row, 180, 140)),
+    family_files: family.rows.map(row => hydrate(row, 180, 140)),
+    revisions: revisions.rows.map(row => ({ ...row, thumbnail_url: row.storage_path, download_url: row.storage_path })),
+  }
 }
 
 async function setCover(id) {

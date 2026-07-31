@@ -14,4 +14,9 @@ const opts = { storage: multer.memoryStorage(), fileFilter, limits: { fileSize: 
 const uploadArtwork    = multer(opts).single('file')
 const uploadAttachment = multer(opts).single('file')
 
-module.exports = { uploadArtwork, uploadAttachment }
+// Design Studio round-trip saves are print-resolution PNGs and routinely exceed
+// the 10 MB upload ceiling, so they get their own, larger limit.
+const studioMaxBytes = parseInt(process.env.STUDIO_MAX_FILE_SIZE_MB || '60', 10) * 1024 * 1024
+const uploadStudioArtwork = multer({ storage: multer.memoryStorage(), fileFilter, limits: { fileSize: studioMaxBytes } }).single('file')
+
+module.exports = { uploadArtwork, uploadAttachment, uploadStudioArtwork }

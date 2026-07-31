@@ -166,6 +166,20 @@ async function uploadFile(file, folder = 'Unsorted') {
   return { path: relPath, name: safeName }
 }
 
+// Overwrites an existing file in place at its exact vault path. The Design
+// Studio round-trip uses this so an edited asset keeps its stable path and
+// identity (unlike uploadFile, which mints a new location).
+async function putFileAtPath(relPath, buffer, mimetype = 'application/octet-stream') {
+  const cfg = getConfig()
+  const result = await ncRequest(cfg, 'PUT', davUrl(cfg, relPath), {
+    headers: { 'Content-Type': mimetype, 'Content-Length': String(buffer.length) },
+    body: buffer,
+    raw: true,
+  })
+  if (![200, 201, 204].includes(result.status)) throw new NextcloudError(`Overwrite failed with status ${result.status}`, 502)
+  return { path: relPath, etag: (result.headers.get('etag') || '').replace(/"/g, '') || null }
+}
+
 // Nextcloud preview (thumbnail) endpoint — proxied so the browser never needs
 // Nextcloud credentials. Falls back to the raw file on preview failure.
 async function getPreview(relPath, { width = 300, height = 300 } = {}) {
@@ -177,4 +191,4 @@ async function getPreview(relPath, { width = 300, height = 300 } = {}) {
   return downloadFile(relPath) // preview unavailable → serve the original
 }
 
-module.exports = { testConnection, listFolder, scanWatched, downloadFile, uploadFile, getPreview }
+module.exports = { testConnection, listFolder, scanWatched, downloadFile, uploadFile, putFileAtPath, getPreview }
