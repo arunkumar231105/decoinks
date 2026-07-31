@@ -40,11 +40,19 @@ const fmtRange = (a: string, b: string) => `${fmtDay(a)} – ${fmtDay(b)}`
 const pctOf = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : '0%')
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-type Tab = 'daily' | 'weekly' | 'monthly' | 'custom'
+type Tab = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'alltime' | 'custom'
+const TAB_LABELS: Record<Tab, string> = {
+  daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
+  quarterly: 'Quarterly', yearly: 'Yearly', alltime: 'All Time', custom: 'Custom',
+}
+const TAB_ORDER: Tab[] = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'alltime', 'custom']
 function tabRange(tab: Tab): { from: string; to: string } {
   const today = new Date()
   if (tab === 'daily') return { from: iso(today), to: iso(today) }
   if (tab === 'weekly') { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: iso(f), to: iso(today) } }
+  if (tab === 'quarterly') { const q = Math.floor(today.getMonth() / 3) * 3; return { from: iso(new Date(today.getFullYear(), q, 1)), to: iso(today) } }
+  if (tab === 'yearly') return { from: iso(new Date(today.getFullYear(), 0, 1)), to: iso(today) }
+  if (tab === 'alltime') return { from: '2000-01-01', to: iso(today) }
   return { from: iso(new Date(today.getFullYear(), today.getMonth(), 1)), to: iso(today) }
 }
 
@@ -198,7 +206,7 @@ function TrendPanel({ trend }: { trend: Overview['trend'] }) {
 // ── Page ────────────────────────────────────────────────────────────────────
 export function DashboardPage() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>('monthly')
+  const [tab, setTab] = useState<Tab>('daily')
   const [custom, setCustom] = useState(tabRange('monthly'))
   const range = useMemo(() => (tab === 'custom' ? custom : tabRange(tab)), [tab, custom])
 
@@ -222,9 +230,9 @@ export function DashboardPage() {
       {/* ── Period controls ── */}
       <div className="dsb-controls">
         <div className="dsb-tabs">
-          {(['daily', 'weekly', 'monthly', 'custom'] as Tab[]).map(t => (
+          {TAB_ORDER.map(t => (
             <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
