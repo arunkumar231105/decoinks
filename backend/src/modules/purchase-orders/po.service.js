@@ -206,6 +206,8 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             COALESCE(NULLIF(o.order_type::text, ''), NULLIF(po.print_type, '')) AS product_type,
             latest_shipment.status AS tracking_status,
             COALESCE(po.tracking_number, latest_shipment.tracking_number) AS display_tracking_number,
+            -- Service level (Ground / 2nd Day Air / …) lives on the shipment, not the PO.
+            latest_shipment.service_type,
             u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s  ON s.id  = po.supplier_id
@@ -214,14 +216,17 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
      LEFT JOIN suppliers os ON os.id = o.supplier_id
      LEFT JOIN users    u  ON u.id  = po.created_by
      LEFT JOIN LATERAL (
-       SELECT sh.status, sh.tracking_number
+       -- Prefer the shipment matching the PO's own tracking number; fall back to
+       -- the order's most recent shipment.
+       SELECT sh.status, sh.tracking_number, sh.service_type
        FROM shipments sh
        WHERE sh.order_id = po.order_id
-       ORDER BY sh.created_at DESC
+          OR (NULLIF(TRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number)
+       ORDER BY (sh.tracking_number = po.tracking_number) DESC, sh.created_at DESC
        LIMIT 1
      ) latest_shipment ON TRUE
      ${where}
-     ORDER BY po.created_at DESC
+     ORDER BY po.order_date ASC, po.created_at ASC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )

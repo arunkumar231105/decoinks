@@ -101,12 +101,14 @@ async function exportCsv(req, res, next) {
     const { status = '', supplier_id = '', search = '' } = req.query
     const { rows } = await service.list({ page: 1, limit: 10000, status, supplier_id, search })
     const columns = [
-    ['PO No', 'po_number'], ['PO Date', 'order_date'], ['Expected Date', 'expected_date'],
+    ['PO No', 'po_number'], ['PO Date', 'order_date'], ['Entry Date', 'entry_date'],
+    ['Expected Date', 'expected_date'],
     ['Status', 'status'], ['PO Type', 'po_type'],
     ['Supplier / Vendor', 'display_vendor_name'], ['Contact Name', 'contact_name'],
     ['Contact Email', 'contact_email'], ['Contact Phone', 'contact_phone'],
     ['Order No', 'order_number'], ['Payment Status', 'payment_status'],
     ['Subtotal', 'subtotal'], ['Tax', 'tax_amt'], ['Total', 'total'], ['Currency', 'currency'],
+    ['Shipping By', 'shipping_method'], ['Service Type', 'service_type'],
     ['Carrier', 'carrier'], ['Tracking No', 'tracking_number'],
     ['Ship Date', 'ship_date'], ['Estimated Delivery', 'estimated_delivery'],
     ['Terms', 'terms_conditions'], ['Notes', 'notes'],

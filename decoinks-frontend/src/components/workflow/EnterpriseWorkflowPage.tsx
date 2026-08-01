@@ -149,6 +149,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'source_po_number', 'po_number')}</strong> },
       { key: 'order_date', label: 'PO Date', render: r => date(r.order_date) },
+      { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
@@ -485,7 +486,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   const instructions = String(pick(row, 'terms_conditions', 'notes') || '').split(/\n|•/).map((text: string) => text.trim().replace(/^[-*]\s*/, '')).filter(Boolean)
   return <>
     <DrawerSection title="PO Details" fields={[
-      { label: 'PO #', value: first(row, 'source_po_number', 'po_number') }, { label: 'PO Issued Date', value: date(row.order_date || row.created_at) },
+      { label: 'PO #', value: first(row, 'source_po_number', 'po_number') }, { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
       { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
       { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
     ]}/>
