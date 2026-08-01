@@ -119,6 +119,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
+      { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
       { key: 'order_type', label: 'Product Type', render: r => titleCase(r.order_type) },
@@ -450,7 +451,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Agent', value: first(row, 'agent_name') }, { label: 'Address', value: first(row, 'shipping_address') === '—' ? [customer.address_line1, customer.city, customer.state, customer.zip, customer.country].filter(Boolean).join(', ') || '—' : first(row, 'shipping_address') },
     ]}/>
     <DrawerSection title="Order Information" fields={[
-      { label: 'Order Date', value: date(row.order_date) }, { label: 'Order Value', value: money(row.total) }, { label: 'Payment Date', value: date(row.payment_date) },
+      { label: 'Order Date', value: date(row.order_date) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Order Value', value: money(row.total) }, { label: 'Payment Date', value: date(row.payment_date) },
       { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Payment Method', value: first(row, 'payment_method') }, { label: 'PO Issuance Date', value: date(row.purchase_orders?.[0]?.created_at || row.po_issued_at) },
     ]}/>
     <DrawerSection title="Order Details" fields={[
