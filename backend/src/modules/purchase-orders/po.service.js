@@ -226,7 +226,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
        LIMIT 1
      ) latest_shipment ON TRUE
      ${where}
-     ORDER BY po.order_date ASC, po.created_at ASC
+     ORDER BY po.order_date DESC, po.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )

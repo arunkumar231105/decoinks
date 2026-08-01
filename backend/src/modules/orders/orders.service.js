@@ -214,7 +214,7 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
        LIMIT 1
      ) latest_shipment ON TRUE
      ${where}
-     ORDER BY o.order_date ASC, o.created_at ASC
+     ORDER BY o.order_date DESC, o.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
