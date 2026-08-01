@@ -25,9 +25,18 @@ const queryClient = new QueryClient({
       // Show the previous data while a new query (filter/pagination) loads,
       // so lists never flash empty.
       placeholderData: keepPreviousData,
-      // Don't hang through 3 retries on a real failure; one quick retry.
-      retry: 1,
-      retryDelay: 800,
+      // Transient failures (a network/proxy blip behind Cloudflare/Authentik, a
+      // token-refresh race that momentarily 401s, or a 5xx/timeout) were surfacing
+      // as an "Unable to load — retry" that a manual reload fixed. Retry those a
+      // few times with exponential backoff so they self-heal before the user ever
+      // sees an error. Deterministic client errors (bad request / forbidden /
+      // not-found / validation) are NOT retried — retrying can't change them.
+      retry: (failureCount, error) => {
+        const status = (error as { response?: { status?: number } })?.response?.status
+        if (status && [400, 403, 404, 422].includes(status)) return false
+        return failureCount < 3
+      },
+      retryDelay: (attempt) => Math.min(600 * 2 ** attempt, 6000),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     },
