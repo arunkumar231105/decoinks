@@ -46,6 +46,7 @@ import { GlobalImportModal } from '../components/GlobalImportModal'
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
   { label: 'Leads', path: '/leads', icon: ClipboardList },
+  { label: 'Artwork Vault', path: '/artwork-library', icon: Image },
   { label: 'Customers', path: '/customers', icon: UserCheck },
   { label: 'Quotes', path: '/quotes', icon: FileText },
   { label: 'Invoices', path: '/invoices', icon: ReceiptText },
@@ -54,10 +55,6 @@ const mainNav = [
   { label: 'Shipments', path: '/shipments', icon: Truck },
   { label: 'Suppliers', path: '/suppliers', icon: Users },
   { label: 'Products', path: '/products', icon: Boxes },
-]
-
-const artworkNav = [
-  { label: 'Artwork Vault', path: '/artwork-library', icon: Image },
 ]
 
 const boardNav = [
@@ -128,7 +125,6 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [sectionsOpen, setSectionsOpen] = useState({
     main: true,
-    artwork: true,
     boards: true,
     system: true,
   })
@@ -189,15 +185,6 @@ export function AppLayout() {
             onNavigate={() => setMobileOpen(false)}
             open={sectionsOpen.main}
             onToggle={() => toggleSection('main')}
-          />
-
-          <NavGroup
-            title="Artwork"
-            items={artworkNav}
-            collapsed={collapsed}
-            onNavigate={() => setMobileOpen(false)}
-            open={sectionsOpen.artwork}
-            onToggle={() => toggleSection('artwork')}
           />
 
           <NavGroup
