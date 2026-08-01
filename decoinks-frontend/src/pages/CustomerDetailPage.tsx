@@ -4,7 +4,7 @@ import { Avatar } from '@mui/material'
 import {
   ChevronRight, Edit2, Save, X,
   MapPin, Phone, Mail, Building2, FileText,
-  ExternalLink, Tag, MessageCircle, FileCheck,
+  ExternalLink, Tag, MessageCircle, FileCheck, UserRound,
 } from 'lucide-react'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -51,6 +51,14 @@ interface Customer {
   lead_source: string | null
   created_at: string
   quotes_count: number
+  addresses?: CustomerAddressRow[]
+}
+
+interface CustomerAddressRow {
+  address_type: string
+  contact_person?: string | null
+  line1?: string | null; line2?: string | null
+  city?: string | null; state?: string | null; zipcode?: string | null; country?: string | null
 }
 
 interface Quote {
@@ -117,6 +125,9 @@ export function CustomerDetailPage() {
 
   const customer: Customer | undefined = customerData
   const quotes: Quote[] = customerData?.quotes ?? []
+  const addressList: CustomerAddressRow[] = customer?.addresses ?? []
+  const shippingContact = addressList.find(a => a.address_type === 'shipping')?.contact_person?.trim() || ''
+  const billingContact = addressList.find(a => a.address_type === 'billing')?.contact_person?.trim() || ''
 
   const populateForm = (c: Customer) => {
     setName(c.name ?? '')
@@ -326,6 +337,12 @@ export function CustomerDetailPage() {
                     <span style={{ fontSize: 13, color: '#334155' }}>{customer.company}</span>
                   </div>
                 )}
+                {shippingContact && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <UserRound size={14} style={{ color: '#94A3B8', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: '#334155' }}>Ship to: {shippingContact}</span>
+                  </div>
+                )}
                 {(customer.city || customer.state) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <MapPin size={14} style={{ color: '#94A3B8', flexShrink: 0 }} />
@@ -524,6 +541,11 @@ export function CustomerDetailPage() {
                 <FileCheck size={15} style={{ color: '#64748B' }} />
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Billing Address</span>
               </div>
+              {(customer.same_as_shipping ? shippingContact : billingContact) && (
+                <p style={{ fontSize: 13, color: '#334155', margin: '0 0 6px', fontWeight: 600 }}>
+                  Attn: {customer.same_as_shipping ? shippingContact : billingContact}
+                </p>
+              )}
               {customer.same_as_shipping ? (
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>
                   Same as shipping address — {[customer.address_line1, customer.city, customer.state, customer.zip, customer.country].filter(Boolean).join(', ') || 'No address on file'}

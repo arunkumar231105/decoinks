@@ -19,6 +19,7 @@ export interface CustomerDetails {
   last_payment?: { amount: number; paid_at: string; payment_method?: string } | null
   last_invoice?: { invoice_number: string; total: number; balance_due: number; status: string; issue_date: string } | null
   activity?: Array<{ description: string; created_at: string; user_name?: string }>
+  addresses?: Array<{ address_type: string; contact_person?: string | null }>
 }
 
 const fmt = (value?: string) => value ? new Date(value).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
@@ -40,6 +41,7 @@ export function CustomerDetailsDrawer({ customerId, onClose }: { customerId: str
   if (!customerId) return null
   const name = customer?.display_name || customer?.company_name || customer?.name || 'Unknown customer'
   const dueBalance = Number(customer?.outstanding_balance || 0)
+  const shipToContact = customer?.addresses?.find(a => a.address_type === 'shipping')?.contact_person?.trim() || ''
   return <>
     <button className="leads-drawer-scrim" aria-label="Close customer details" onClick={onClose} />
     <aside className="leads-drawer" aria-label="Customer details">
@@ -69,6 +71,7 @@ export function CustomerDetailsDrawer({ customerId, onClose }: { customerId: str
           <dt>Company</dt><dd>{customer.company_name || customer.company || '—'}</dd>
           <dt>Website</dt><dd>{customer.website ? <a className="leads-link" href={/^https?:/i.test(customer.website) ? customer.website : `https://${customer.website}`} target="_blank" rel="noreferrer">{customer.website}</a> : '—'}</dd>
           <dt>Address</dt><dd>{[customer.address_line1, customer.city, customer.state, customer.zip, customer.country].filter(Boolean).join(', ') || '—'}</dd>
+          {shipToContact && <><dt>Ship To</dt><dd>{shipToContact}</dd></>}
         </dl></section>
         <section className="leads-drawer-section"><h3>Customer Overview</h3><dl className="leads-info">
           <dt>Customer No</dt><dd>{customer.customer_number || '—'}</dd>

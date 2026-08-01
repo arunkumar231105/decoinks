@@ -323,10 +323,10 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
     for (const a of normalizedAddresses) {
       await client.query(
         `INSERT INTO customer_addresses
-           (customer_id,address_type,line1,line2,city,state,zipcode,country,is_default)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+           (customer_id,address_type,line1,line2,city,state,zipcode,country,contact_person,is_default)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [customer.id, a.address_type, a.line1 || null, a.line2 || null, a.city || null,
-         a.state || null, a.zipcode || null, a.country || null, a.is_default || false]
+         a.state || null, a.zipcode || null, a.country || null, a.contact_person || null, a.is_default || false]
       )
     }
 
@@ -420,13 +420,13 @@ async function update(id, fields, actorId) {
     if (addresses) {
       await client.query(`DELETE FROM customer_addresses WHERE customer_id = $1`, [id])
       for (const a of addresses) {
-        if (!(a.line1 || a.city || a.state || a.zipcode)) continue
+        if (!(a.line1 || a.city || a.state || a.zipcode || a.contact_person)) continue
         await client.query(
           `INSERT INTO customer_addresses
-             (customer_id,address_type,line1,line2,city,state,zipcode,country,is_default)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+             (customer_id,address_type,line1,line2,city,state,zipcode,country,contact_person,is_default)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [id, a.address_type, a.line1 || null, a.line2 || null, a.city || null,
-           a.state || null, a.zipcode || null, a.country || null, a.is_default || false]
+           a.state || null, a.zipcode || null, a.country || null, a.contact_person || null, a.is_default || false]
         )
       }
     }

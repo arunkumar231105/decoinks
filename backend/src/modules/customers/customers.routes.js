@@ -63,6 +63,7 @@ const customerFields = {
     line1: emptyable(z.string().max(100)), line2: emptyable(z.string().max(100)),
     city: emptyable(z.string().max(100)), state: emptyable(z.string().max(100)),
     zipcode: zipField, country: z.string().optional().nullable(),
+    contact_person: emptyable(z.string().max(160)),
     is_default: z.boolean().optional(),
   })).optional(),
 }

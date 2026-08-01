@@ -99,8 +99,10 @@ const EMPTY_FORM = {
   first_name: '', last_name: '', company_name: '', email: '',
   company_phone_number: '', whatsapp_number: '', mobile_number: '',
   preferred_language: 'en', customer_segment: 'retail', tier: 'Standard',
+  shipping_contact_person: '',
   shipping_line1: '', shipping_line2: '', shipping_city: '', shipping_state: '',
   shipping_zipcode: '', shipping_country: 'United States',
+  billing_contact_person: '',
   billing_line1: '', billing_line2: '', billing_city: '', billing_state: '',
   billing_zipcode: '', billing_country: 'United States',
 }
@@ -108,6 +110,7 @@ const EMPTY_FORM = {
 interface CustomerAddress {
   address_type: string; line1?: string | null; line2?: string | null
   city?: string | null; state?: string | null; zipcode?: string | null; country?: string | null
+  contact_person?: string | null
 }
 
 export function NewCustomerPage() {
@@ -153,12 +156,14 @@ export function NewCustomerPage() {
       preferred_language: existing.preferred_language ?? 'en',
       customer_segment: existing.customer_segment ?? existing.buyer_type ?? 'retail',
       tier: existing.tier ?? 'Standard',
+      shipping_contact_person: ship?.contact_person ?? '',
       shipping_line1: ship?.line1 ?? existing.address_line1 ?? '',
       shipping_line2: ship?.line2 ?? '',
       shipping_city: ship?.city ?? existing.city ?? '',
       shipping_state: stateCodeFor(shipCountry, ship?.state ?? existing.state),
       shipping_zipcode: ship?.zipcode ?? existing.zip ?? '',
       shipping_country: shipCountry,
+      billing_contact_person: bill?.contact_person ?? '',
       billing_line1: bill?.line1 ?? '',
       billing_line2: bill?.line2 ?? '',
       billing_city: bill?.city ?? '',
@@ -180,16 +185,17 @@ export function NewCustomerPage() {
     try {
       // When "Same as Shipping" is ticked, billing mirrors the shipping address.
       const billing = sameAsShipping
-        ? { line1: form.shipping_line1, line2: form.shipping_line2, city: form.shipping_city,
-            state: form.shipping_state, zipcode: form.shipping_zipcode, country: form.shipping_country }
-        : { line1: form.billing_line1, line2: form.billing_line2, city: form.billing_city,
-            state: form.billing_state, zipcode: form.billing_zipcode, country: form.billing_country }
+        ? { contact_person: form.shipping_contact_person, line1: form.shipping_line1, line2: form.shipping_line2,
+            city: form.shipping_city, state: form.shipping_state, zipcode: form.shipping_zipcode, country: form.shipping_country }
+        : { contact_person: form.billing_contact_person, line1: form.billing_line1, line2: form.billing_line2,
+            city: form.billing_city, state: form.billing_state, zipcode: form.billing_zipcode, country: form.billing_country }
       const addresses = [
-        { address_type: 'shipping', line1: form.shipping_line1, line2: form.shipping_line2,
+        { address_type: 'shipping', contact_person: form.shipping_contact_person,
+          line1: form.shipping_line1, line2: form.shipping_line2,
           city: form.shipping_city, state: form.shipping_state, zipcode: form.shipping_zipcode,
           country: form.shipping_country, is_default: true },
         { address_type: 'billing', ...billing, is_default: true },
-      ].filter(a => a.line1 || a.city || a.state || a.zipcode)
+      ].filter(a => a.line1 || a.city || a.state || a.zipcode || a.contact_person)
       const payload = {
         name: [form.first_name, form.last_name].filter(Boolean).join(' '),
         first_name: form.first_name, last_name: form.last_name || null,
@@ -310,14 +316,14 @@ export function NewCustomerPage() {
         </div></section>
       </div>
       <div className="ncust-col"><section className="al-panel al-section"><div className="al-section-header"><MapPin size={16}/><h4>Addresses</h4></div><div className="ncust-section-body">
-        <h5>Shipping Address</h5>{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{countrySelect('shipping_country')}</div>
+        <h5>Shipping Address</h5>{field('Contact Person (Ship to / Attn)','shipping_contact_person','text',160)}{field('Address Line 1','shipping_line1')}{field('Address Line 2','shipping_line2')}<div className="al-field-row">{field('City','shipping_city')}{stateSelect('shipping_state')}</div><div className="al-field-row">{field('ZIP Code','shipping_zipcode','text',5,true)}{countrySelect('shipping_country')}</div>
         <h5 style={{marginTop:20}}>Billing Address</h5>
         <label className="ncust-check-opt" style={{ margin: '4px 0 12px' }}>
           <input type="checkbox" checked={sameAsShipping} onChange={e => setSameAsShipping(e.target.checked)} />
           <span className="ncust-check-box" />
           Same as Shipping Address
         </label>
-        {billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
+        {billingField('Contact Person (Bill to / Attn)','billing_contact_person',160)}{billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
       </div></section></div>
     </div>
   </div>
