@@ -5,7 +5,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import { RouterProvider } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { router } from './router'
+import { router, recoverFromStaleChunk } from './router'
 import { theme } from './utils/theme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
@@ -13,6 +13,15 @@ import './styles/theme.css'
 import { installInspectDeterrent } from './utils/deterInspect'
 
 installInspectDeterrent()
+
+// Vite fires this when a preloaded chunk 404s — i.e. a new deploy replaced the
+// files this tab was built against. Reload once to pick up the new build
+// instead of showing an error screen. Unsaved form data survives: drafts are
+// kept in localStorage.
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  recoverFromStaleChunk()
+})
 
 const queryClient = new QueryClient({
   defaultOptions: {

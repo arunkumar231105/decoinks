@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 import { useAuthStore } from '../store/authStore'
 import ArtworkUploader from '../components/ArtworkUploader'
 import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
@@ -1284,6 +1286,7 @@ export function NewQuotationPage() {
       quoteId ? api.put(`/quotations/${quoteId}`, data) : api.post('/quotations', data),
     onSuccess: (res: any) => {
       const q = res.data?.data
+      if (!quoteId) clearDraft()   // saved for real — the draft is no longer needed
       toast.success(quoteId ? 'Quote updated successfully' : `Quote ${q?.quote_number ?? ''} saved!`)
       queryClient.invalidateQueries({ queryKey: ['quotations'] })
       if (quoteId) {
@@ -1378,6 +1381,64 @@ export function NewQuotationPage() {
   const toggleCharge = (key: OtherCharge['key']) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, enabled: !charge.enabled } : charge))
   const updateCharge = (key: OtherCharge['key'], patch: Partial<OtherCharge>) => setOtherCharges(prev => prev.map(charge => charge.key === key ? { ...charge, ...patch } : charge))
 
+  // Draft persistence — keeps a half-filled quotation (including already
+  // uploaded artwork URLs) across a refresh, hard refresh or redeploy, so
+  // nothing has to be re-entered or re-uploaded. Create mode only: edit and
+  // convert-from-lead/customer flows load authoritative data from the server.
+  const { restored, clearDraft } = useFormDraft(
+    'quotation:new',
+    { status, quoteDate, entryDate, validUntil, agent, supplierText, supplierId,
+      billingAddress, shippingAddress, sameAsBilling, activeTab,
+      apparelItems, gangsheetRows, transferRows, otherCharges,
+      supplierNotes, internalNotes, paymentTerms, paymentMethod, productionTime,
+      deliveryMethod, currency, customerId, customerText, customerName, companyName,
+      billingEmail, contactNumber, whatsapp, wechat, customerCategory,
+      shippingCountry, shippingState, shippingCity, zipCode, dueDate,
+      customerReqSummary, quoteEstimate },
+    saved => {
+      const str = (v: unknown) => typeof v === 'string' ? v : undefined
+      if (str(saved.status) !== undefined) setStatus(saved.status as QuoteStatus)
+      if (str(saved.quoteDate) !== undefined) setQuoteDate(saved.quoteDate as string)
+      if (str(saved.entryDate) !== undefined) setEntryDate(saved.entryDate as string)
+      if (str(saved.validUntil) !== undefined) setValidUntil(saved.validUntil as string)
+      if (str(saved.agent) !== undefined) setAgent(saved.agent as string)
+      if (str(saved.supplierText) !== undefined) setSupplierText(saved.supplierText as string)
+      if (str(saved.supplierId) !== undefined) setSupplierId(saved.supplierId as string)
+      if (str(saved.billingAddress) !== undefined) setBillingAddress(saved.billingAddress as string)
+      if (str(saved.shippingAddress) !== undefined) setShippingAddress(saved.shippingAddress as string)
+      if (typeof saved.sameAsBilling === 'boolean') setSameAsBilling(saved.sameAsBilling)
+      if (str(saved.activeTab) !== undefined) setActiveTab(saved.activeTab as QuoteTab)
+      if (Array.isArray(saved.apparelItems)) setApparelItems(saved.apparelItems as ApparelItem[])
+      if (Array.isArray(saved.gangsheetRows)) setGangsheetRows(saved.gangsheetRows as GangsheetRow[])
+      if (Array.isArray(saved.transferRows)) setTransferRows(saved.transferRows as TransferRow[])
+      if (Array.isArray(saved.otherCharges)) setOtherCharges(saved.otherCharges as OtherCharge[])
+      if (str(saved.supplierNotes) !== undefined) setSupplierNotes(saved.supplierNotes as string)
+      if (str(saved.internalNotes) !== undefined) setInternalNotes(saved.internalNotes as string)
+      if (str(saved.paymentTerms) !== undefined) setPaymentTerms(saved.paymentTerms as string)
+      if (str(saved.paymentMethod) !== undefined) setPaymentMethod(saved.paymentMethod as string)
+      if (str(saved.productionTime) !== undefined) setProductionTime(saved.productionTime as string)
+      if (str(saved.deliveryMethod) !== undefined) setDeliveryMethod(saved.deliveryMethod as string)
+      if (str(saved.currency) !== undefined) setCurrency(saved.currency as string)
+      if (saved.customerId !== undefined) setCustomerId(saved.customerId as string | null)
+      if (str(saved.customerText) !== undefined) setCustomerText(saved.customerText as string)
+      if (str(saved.customerName) !== undefined) setCustomerName(saved.customerName as string)
+      if (str(saved.companyName) !== undefined) setCompanyName(saved.companyName as string)
+      if (str(saved.billingEmail) !== undefined) setBillingEmail(saved.billingEmail as string)
+      if (str(saved.contactNumber) !== undefined) setContactNumber(saved.contactNumber as string)
+      if (str(saved.whatsapp) !== undefined) setWhatsapp(saved.whatsapp as string)
+      if (str(saved.wechat) !== undefined) setWechat(saved.wechat as string)
+      if (str(saved.customerCategory) !== undefined) setCustomerCategory(saved.customerCategory as string)
+      if (str(saved.shippingCountry) !== undefined) setShippingCountry(saved.shippingCountry as string)
+      if (str(saved.shippingState) !== undefined) setShippingState(saved.shippingState as string)
+      if (str(saved.shippingCity) !== undefined) setShippingCity(saved.shippingCity as string)
+      if (str(saved.zipCode) !== undefined) setZipCode(saved.zipCode as string)
+      if (str(saved.dueDate) !== undefined) setDueDate(saved.dueDate as string)
+      if (str(saved.customerReqSummary) !== undefined) setCustomerReqSummary(saved.customerReqSummary as string)
+      if (str(saved.quoteEstimate) !== undefined) setQuoteEstimate(saved.quoteEstimate as string)
+    },
+    { enabled: !quoteId && !fromCustomerId },
+  )
+
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
   const uploadItemImage = async (
     rowId: string,
@@ -1386,13 +1447,33 @@ export function NewQuotationPage() {
     updater: (id: string, patch: Record<string, string | null>) => void
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
-    try {
+    const send = async () => {
       const form = new FormData()
       form.append('file', file)
       const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return res
+    }
+    try {
+      let res
+      try {
+        res = await send()
+      } catch (first: any) {
+        // Retry once on a transient failure (network blip / backend restarting).
+        // A real rejection (bad type, too large) comes back as 4xx — don't retry that.
+        if (first?.response?.status && first.response.status < 500) throw first
+        await new Promise(r => setTimeout(r, 800))
+        res = await send()
+      }
       updater(rowId, { [field]: res.data.url })
-    } catch {
-      toast.error('Image upload failed')
+    } catch (error: any) {
+      // Surface the real reason instead of a generic message, so the user knows
+      // whether it was the file type, the size, or the connection.
+      const serverMsg = error?.response?.data?.error
+      toast.error(
+        serverMsg
+          ? `Image upload failed — ${serverMsg}`
+          : 'Image upload failed — check your connection. Allowed: JPG, PNG, WEBP, SVG, PDF up to 10 MB.',
+      )
     } finally {
       setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
     }
@@ -1500,6 +1581,7 @@ export function NewQuotationPage() {
 
   return (
     <div className="nq-page">
+      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
       <header className="nq-header">
         <div className="nq-header-left">
           <h1 className="nq-title">{quoteId ? 'Edit Quotation' : 'New Quotation'}</h1>

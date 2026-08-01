@@ -7,9 +7,42 @@ import { ProtectedRoute } from '../layouts/ProtectedRoute'
 // Pages are code-split: each becomes its own chunk loaded on demand, so the
 // initial download is just the shell + the first page, not all ~45 screens.
 // (React.lazy needs a default export; pages use named exports, hence the map.)
+// A redeploy replaces the hashed chunk files this tab was built against, so an
+// already-open tab that navigates afterwards hits "Failed to fetch dynamically
+// imported module" and used to land on the error screen. Retry once (covers a
+// transient network blip), then reload the page so the browser picks up the new
+// index.html and the new chunk names. A sessionStorage guard makes sure a
+// genuinely broken chunk can never cause a reload loop.
+const RELOAD_GUARD = 'decoinks:chunk-reloaded'
+
+export function recoverFromStaleChunk() {
+  if (sessionStorage.getItem(RELOAD_GUARD)) return false
+  sessionStorage.setItem(RELOAD_GUARD, String(Date.now()))
+  window.location.reload()
+  return true
+}
+
+// Once the app has successfully booted, clear the guard so a future deploy can
+// recover again.
+window.addEventListener('load', () => {
+  setTimeout(() => sessionStorage.removeItem(RELOAD_GUARD), 5_000)
+})
+
 const page = <T extends ComponentType<any> = ComponentType<any>>(
   loader: () => Promise<Record<string, unknown>>, name: string,
-) => lazy(() => loader().then((m) => ({ default: m[name] as T })))
+) => lazy(() =>
+  loader()
+    .catch(async () => {
+      // One quick retry — a momentary network hiccup shouldn't break the route.
+      await new Promise((r) => setTimeout(r, 600))
+      return loader().catch((err) => {
+        // Still failing: the chunk is gone (new deploy). Reload to recover.
+        // In-progress form data is safe — drafts live in localStorage.
+        if (recoverFromStaleChunk()) return new Promise<never>(() => {})
+        throw err
+      })
+    })
+    .then((m) => ({ default: (m as Record<string, unknown>)[name] as T })))
 
 const ArtworkFormPage        = page(() => import('../pages/ArtworkFormPage'), 'ArtworkFormPage')
 const DashboardPage          = page(() => import('../pages/DashboardPage'), 'DashboardPage')
