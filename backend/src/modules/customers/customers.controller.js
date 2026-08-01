@@ -25,7 +25,9 @@ async function exportCsv(req, res, next) {
   try {
     const { rows } = await svc.list({ ...req.query, page: 1, limit: 10000 })
     const columns = [
-      ['Customer No', 'customer_number'], ['Customer', 'display_name'], ['Contact Person', 'contact_person'],
+      ['Customer No', 'customer_number'], ['Customer', 'display_name'],
+      ['First Name', 'first_name'], ['Last Name', 'last_name'],
+      ['Contact Person', 'contact_person'],
       ['Job Title', 'job_title'], ['Email', 'email'], ['Phone', 'primary_phone'], ['WhatsApp', 'whatsapp'],
       ['Type', 'customer_type'], ['Segment', 'segment'], ['Status', 'status'],
       ['City', 'city'], ['State', 'state'], ['Country', 'country'],
