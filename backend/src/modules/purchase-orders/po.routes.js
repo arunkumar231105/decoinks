@@ -129,6 +129,7 @@ const attachmentSchema = z.object({
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get('/',                           controller.list)
+router.get('/export',                     controller.exportCsv)
 router.get('/summary',                    controller.summary)
 router.get('/:id',                        controller.getOne)
 router.post('/',                          validate(createSchema),     controller.create)

@@ -1,4 +1,5 @@
 const service = require('./po.service')
+const { sendCsv } = require('../../utils/csvExport')
 const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
@@ -94,4 +95,24 @@ async function sendToPortal(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, summary, getOne, create, update, updateStatus, remove, bulkRemove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }
+// GET /export — full filtered result set as CSV with readable headers.
+async function exportCsv(req, res, next) {
+  try {
+    const { status = '', supplier_id = '', search = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, supplier_id, search })
+    const columns = [
+    ['PO No', 'po_number'], ['PO Date', 'order_date'], ['Expected Date', 'expected_date'],
+    ['Status', 'status'], ['PO Type', 'po_type'],
+    ['Supplier / Vendor', 'display_vendor_name'], ['Contact Name', 'contact_name'],
+    ['Contact Email', 'contact_email'], ['Contact Phone', 'contact_phone'],
+    ['Order No', 'order_number'], ['Payment Status', 'payment_status'],
+    ['Subtotal', 'subtotal'], ['Tax', 'tax_amt'], ['Total', 'total'], ['Currency', 'currency'],
+    ['Carrier', 'carrier'], ['Tracking No', 'tracking_number'],
+    ['Ship Date', 'ship_date'], ['Estimated Delivery', 'estimated_delivery'],
+    ['Terms', 'terms_conditions'], ['Notes', 'notes'],
+    ]
+    return sendCsv(res, 'purchase-orders', columns, rows)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, exportCsv, summary, getOne, create, update, updateStatus, remove, bulkRemove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }

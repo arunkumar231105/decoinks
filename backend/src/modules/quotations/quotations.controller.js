@@ -1,4 +1,5 @@
 const service = require('./quotations.service')
+const { sendCsv } = require('../../utils/csvExport')
 const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
@@ -110,4 +111,23 @@ async function csvTemplate(_req, res) {
   res.send(csv)
 }
 
-module.exports = { list, getOne, getRevisions, create, update, updateStatus, remove, bulkRemove, convertToInvoice, bulkUpload, csvTemplate }
+// GET /export — full filtered result set as CSV with readable headers.
+async function exportCsv(req, res, next) {
+  try {
+    const { status = '', customer_id = '', supplier_id = '', search = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, supplier_id: supplier_id || customer_id, search })
+    const columns = [
+    ['Quotation No', 'quote_number'], ['Revision', 'revision'], ['Quote Date', 'created_at'],
+    ['Entry Date', 'entry_date'], ['Valid Until', 'valid_until'], ['Status', 'status'],
+    ['Customer Name', 'customer_name'], ['Company', 'company_name'], ['Supplier', 'supplier_name'],
+    ['Email', 'billing_email'], ['Contact Number', 'contact_number'],
+    ['Shipping Address', 'shipping_address'], ['Billing Address', 'billing_address'],
+    ['Total Qty', 'total_qty'], ['Subtotal', 'subtotal'], ['Discount', 'discount_amt'],
+    ['Tax', 'tax_amt'], ['Total', 'total'], ['Currency', 'currency'],
+    ['Payment Terms', 'payment_terms'], ['Sales Agent', 'created_by_name'], ['Notes', 'notes'],
+    ]
+    return sendCsv(res, 'quotations', columns, rows)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, exportCsv, getOne, getRevisions, create, update, updateStatus, remove, bulkRemove, convertToInvoice, bulkUpload, csvTemplate }

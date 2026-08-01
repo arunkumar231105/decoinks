@@ -300,12 +300,32 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     setPeriod('all'); setDateFrom(''); setDateTo(''); setPage(1)
   }
 
+  // Server-side export: downloads the FULL filtered result set as CSV with
+  // readable column headers, not just the rows currently rendered on screen.
+  const exportAll = async () => {
+    try {
+      const res = await api.get(`${config.api}/export`, {
+        params: { search, status: status === 'All' ? '' : status },
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(res.data as Blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${kind}-${new Date().toISOString().slice(0, 10)}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Fall back to exporting what is on screen if the endpoint is unavailable.
+      downloadCsv(`${kind}.csv`, filteredRows)
+    }
+  }
+
   return <div className={`ew-page ${active ? 'ew-with-drawer' : ''}`}>
     <main className="ew-main">
       <div className="ew-actions">
         <label className="ew-search"><Search size={17}/><input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder={config.search}/>{search ? <button onClick={() => setSearch('')} aria-label="Clear search"><X size={15}/></button> : <kbd>Ctrl K</kbd>}</label>
         {(kind === 'quotations' || kind === 'orders') && <button className="ew-btn" onClick={handleImport}><Upload size={15}/>Import {config.title}</button>}
-        <button className="ew-btn" onClick={() => downloadCsv(`${kind}.csv`, filteredRows)}><Download size={15}/>Export</button>
+        <button className="ew-btn" onClick={exportAll}><Download size={15}/>Export</button>
         <button className="ew-btn ew-primary" onClick={() => navigate(config.newPath)}><Plus size={16}/>{config.newLabel}</button>
       </div>
 

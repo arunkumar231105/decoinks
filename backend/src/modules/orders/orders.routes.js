@@ -155,6 +155,7 @@ const statusSchema = z.object({
 })
 
 router.get('/',              controller.list)
+router.get('/export',        controller.exportCsv)
 router.get('/board',         controller.getBoard)
 router.get('/csv-template',  controller.orderCsvTemplate)
 router.post('/bulk-upload',  uploadCsv, controller.bulkUpload)

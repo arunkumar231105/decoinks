@@ -1,4 +1,5 @@
 const service = require('./orders.service')
+const { sendCsv } = require('../../utils/csvExport')
 const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
@@ -104,4 +105,27 @@ async function orderCsvTemplate(_req, res) {
   res.send(csv)
 }
 
-module.exports = { list, getOne, getBoard, create, update, updateStatus, getInvoice, remove, bulkRemove, convertToPO, bulkUpload, orderCsvTemplate }
+// GET /export — full filtered result set as CSV with readable headers.
+async function exportCsv(req, res, next) {
+  try {
+    const { status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id, date_from, date_to, search })
+    const columns = [
+    ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
+    ['Due Date', 'due_date'], ['Status', 'status'], ['Order Type', 'order_type'],
+    ['Customer Name', 'customer_name'], ['Contact Name', 'contact_name'],
+    ['Contact Email', 'contact_email'], ['Contact Phone', 'contact_phone'],
+    ['Shipping Name', 'shipping_name'], ['Shipping Address', 'shipping_address'],
+    ['Supplier', 'supplier_name'], ['Source PO No', 'source_po_number'],
+    ['Subtotal', 'subtotal'], ['Discount', 'discount_amt'], ['Tax', 'tax_amt'],
+    ['Rush Services', 'rush_services'], ['Shipping Charges', 'shipping_charges'],
+    ['Total', 'total'], ['Amount Paid', 'amount_paid'], ['Payment Status', 'payment_status'],
+    ['Payment Method', 'payment_method'], ['Payment Terms', 'payment_terms'],
+    ['Courier', 'courier'], ['Tracking No', 'tracking_number'],
+    ['Agent', 'agent_name'], ['Notes', 'notes'],
+    ]
+    return sendCsv(res, 'sales-orders', columns, rows)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, exportCsv, getOne, getBoard, create, update, updateStatus, getInvoice, remove, bulkRemove, convertToPO, bulkUpload, orderCsvTemplate }

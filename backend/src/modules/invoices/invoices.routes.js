@@ -109,6 +109,7 @@ const paymentSchema = z.object({
 })
 
 router.get('/',                 controller.list)
+router.get('/export',           controller.exportCsv)
 
 // ── Artworks for an invoice (union of quote + order artworks) ─────────────────
 router.get('/:id/artworks', async (req, res) => {

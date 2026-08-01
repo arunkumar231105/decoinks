@@ -1,4 +1,5 @@
 const service = require('./invoices.service')
+const { sendCsv } = require('../../utils/csvExport')
 const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
@@ -71,4 +72,24 @@ async function convertToOrder(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder }
+// GET /export — full filtered result set as CSV with readable headers.
+async function exportCsv(req, res, next) {
+  try {
+    const { status = '', customer_id = '', search = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, customer_id, search })
+    const columns = [
+    ['Invoice No', 'invoice_number'], ['Issue Date', 'issue_date'], ['Due Date', 'due_date'],
+    ['Status', 'status'], ['Customer Name', 'customer_display_name'], ['Email', 'billing_email'],
+    ['Contact Number', 'contact_number'], ['Order No', 'order_number'], ['Quote No', 'quote_number'],
+    ['Billing Address', 'billing_address'], ['Shipping Address', 'shipping_address'],
+    ['Subtotal', 'subtotal'], ['Discount', 'discount_amt'], ['Tax', 'tax_amt'],
+    ['Shipping Charges', 'shipping_charges'], ['Total', 'total'],
+    ['Amount Paid', 'amount_paid'], ['Balance Due', 'balance_due'], ['Currency', 'currency'],
+    ['Payment Terms', 'payment_terms'], ['Payment Method', 'payment_method'],
+    ['Sales Agent', 'sales_agent_display_name'], ['Notes', 'notes'],
+    ]
+    return sendCsv(res, 'invoices', columns, rows)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, exportCsv, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder }

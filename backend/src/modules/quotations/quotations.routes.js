@@ -120,6 +120,7 @@ const statusSchema = z.object({
 })
 
 router.get('/',                       controller.list)
+router.get('/export',                 controller.exportCsv)
 router.get('/csv-template',           controller.csvTemplate)
 router.get('/:id',                    controller.getOne)
 router.get('/:id/revisions',          controller.getRevisions)
