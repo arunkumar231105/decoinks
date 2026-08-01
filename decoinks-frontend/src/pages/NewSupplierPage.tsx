@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, User, Eye, EyeOff } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 
 const COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'India', 'China', 'Japan']
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
@@ -49,6 +51,39 @@ export function NewSupplierPage() {
   const [portalPassword, setPortalPassword] = useState('')
   const [showPortalPw,   setShowPortalPw]   = useState(false)
 
+  // Draft persistence — survives refresh / hard refresh / redeploy.
+  // commPrefs is a Set (not JSON-serialisable) so it is stored as an array.
+  // The portal password is deliberately NOT persisted.
+  const { restored, clearDraft } = useFormDraft(
+    'supplier:new',
+    { firstName, lastName, email, phone, company, addrLine1, addrLine2, city, state, zip, country,
+      commPrefs: Array.from(commPrefs), website, facebookId, instagramId, notes, source, tag,
+      portalEnabled, portalUsername },
+    saved => {
+      const s = (v: unknown) => typeof v === 'string' ? v : undefined
+      if (s(saved.firstName)   !== undefined) setfirstName(saved.firstName as string)
+      if (s(saved.lastName)    !== undefined) setLastName(saved.lastName as string)
+      if (s(saved.email)       !== undefined) setEmail(saved.email as string)
+      if (s(saved.phone)       !== undefined) setPhone(saved.phone as string)
+      if (s(saved.company)     !== undefined) setCompany(saved.company as string)
+      if (s(saved.addrLine1)   !== undefined) setAddrLine1(saved.addrLine1 as string)
+      if (s(saved.addrLine2)   !== undefined) setAddrLine2(saved.addrLine2 as string)
+      if (s(saved.city)        !== undefined) setCity(saved.city as string)
+      if (s(saved.state)       !== undefined) setState(saved.state as string)
+      if (s(saved.zip)         !== undefined) setZip(saved.zip as string)
+      if (s(saved.country)     !== undefined) setCountry(saved.country as string)
+      if (s(saved.website)     !== undefined) setWebsite(saved.website as string)
+      if (s(saved.facebookId)  !== undefined) setFacebookId(saved.facebookId as string)
+      if (s(saved.instagramId) !== undefined) setInstagramId(saved.instagramId as string)
+      if (s(saved.notes)       !== undefined) setNotes(saved.notes as string)
+      if (s(saved.source)      !== undefined) setSource(saved.source as string)
+      if (s(saved.tag)         !== undefined) setTag(saved.tag as string)
+      if (s(saved.portalUsername) !== undefined) setPortalUsername(saved.portalUsername as string)
+      if (typeof saved.portalEnabled === 'boolean') setPortalEnabled(saved.portalEnabled)
+      if (Array.isArray(saved.commPrefs)) setCommPrefs(new Set(saved.commPrefs as string[]))
+    },
+  )
+
   const buildPayload = () => ({
     name: `${firstName.trim()} ${lastName.trim()}`.trim(),
     email: email.trim() || undefined,
@@ -84,6 +119,7 @@ export function NewSupplierPage() {
           password: portalPassword,
         })
       }
+      clearDraft()   // saved for real — the draft is no longer needed
       toast.success('Supplier created')
       navigate('/suppliers')
     } catch (err: any) {
@@ -95,6 +131,7 @@ export function NewSupplierPage() {
 
   return (
     <div className="ncust-page">
+      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
       <div className="ncust-header">
         <div>
           <div className="ns-breadcrumb">

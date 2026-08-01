@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { UserRound, ClipboardCheck } from 'lucide-react'
 import { api } from '../services/api'
 import toast from '../utils/toast'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 
 const SOURCES = ['Facebook Messenger','WhatsApp','Instagram','Email','Walk-in','Phone']
 const CHECKS = [
@@ -17,9 +19,16 @@ export function AddLeadPage() {
   const { data: users=[] } = useQuery<any[]>({queryKey:['users','mini'],queryFn:()=>api.get('/users',{params:{limit:100}}).then(r=>r.data.data.rows)})
   const [f,setF] = useState<any>({customer_name:'',source:'Email',assigned_to:'',priority:'medium',source_campaign:'',instagram_id:'',facebook_id:'',next_followup_date:'',internal_notes:'',payment_method_pref:'',info_completeness_score:0})
   const [checks,setChecks] = useState<Record<string,boolean>>({})
-  const mutation = useMutation({mutationFn:()=>api.post('/leads',{...f,assigned_to:f.assigned_to||null,next_followup_date:f.next_followup_date||null,qualification:{...checks,payment_method_pref:f.payment_method_pref||null,info_completeness_score:Number(f.info_completeness_score)}}),onSuccess:()=>{qc.invalidateQueries({queryKey:['leads']});toast.success('Lead created');navigate('/leads')},onError:(e:any)=>toast.apiError(e)})
+  // Draft persistence — survives refresh / hard refresh / redeploy.
+  const { restored, clearDraft } = useFormDraft('lead:new', { f, checks }, saved => {
+    if (saved.f) setF((prev:any)=>({ ...prev, ...(saved.f as object) }))
+    if (saved.checks) setChecks(prev=>({ ...prev, ...(saved.checks as Record<string,boolean>) }))
+  })
+  const mutation = useMutation({mutationFn:()=>api.post('/leads',{...f,assigned_to:f.assigned_to||null,next_followup_date:f.next_followup_date||null,qualification:{...checks,payment_method_pref:f.payment_method_pref||null,info_completeness_score:Number(f.info_completeness_score)}}),onSuccess:()=>{qc.invalidateQueries({queryKey:['leads']});clearDraft();toast.success('Lead created');navigate('/leads')},onError:(e:any)=>toast.apiError(e)})
   const input=(label:string,key:string,type='text')=><div className="al-field"><label>{label}</label><input className="al-input" type={type} value={f[key]} onChange={e=>setF({...f,[key]:e.target.value})}/></div>
-  return <div className="add-lead-page"><div className="al-body">
+  return <div className="add-lead-page">
+    <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
+    <div className="al-body">
     <aside className="al-left"><section className="al-panel"><div className="al-panel-header"><UserRound size={17}/><h3>Lead</h3></div><div className="al-fields">
       {input('Customer / Prospect Name *','customer_name')}<div className="al-field"><label>Source Platform *</label><select className="al-input" value={f.source} onChange={e=>setF({...f,source:e.target.value})}>{SOURCES.map(x=><option key={x}>{x}</option>)}</select></div>
       <div className="al-field"><label>Priority</label><select className="al-input" value={f.priority} onChange={e=>setF({...f,priority:e.target.value})}>{['low','medium','high','urgent'].map(x=><option key={x}>{x}</option>)}</select></div>

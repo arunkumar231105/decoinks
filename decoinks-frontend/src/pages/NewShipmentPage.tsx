@@ -4,6 +4,8 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { ChevronRight, MapPin, RefreshCw } from 'lucide-react'
 import { api } from '../services/api'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 
 // ─── Shippo tracking preview shape (returned by /shipments/track-preview) ─────
 
@@ -103,6 +105,16 @@ export function NewShipmentPage() {
   const [poId, setPoId] = useState('')
   const [preview, setPreview] = useState<TrackPreview | null>(null)
 
+  // Draft persistence — survives refresh / hard refresh / redeploy.
+  const { restored, clearDraft } = useFormDraft(
+    'shipment:new',
+    { trackingNumber, poId },
+    saved => {
+      if (typeof saved.trackingNumber === 'string') setTrackingNumber(saved.trackingNumber)
+      if (typeof saved.poId === 'string') setPoId(saved.poId)
+    },
+  )
+
   const fetchMutation = useMutation({
     mutationFn: () => api.post('/shipments/track-preview', {
       tracking_number: trackingNumber.trim(),
@@ -128,7 +140,7 @@ export function NewShipmentPage() {
       await api.post(`/shipments/${id}/track`).catch(() => {})
       return id
     },
-    onSuccess: () => { toast.success('Shipment saved'); navigate('/shipments') },
+    onSuccess: () => { clearDraft(); toast.success('Shipment saved'); navigate('/shipments') },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to save shipment'),
   })
 
@@ -137,6 +149,7 @@ export function NewShipmentPage() {
 
   return (
     <div className="ns-page">
+      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
 
       {/* ── HEADER ── */}
       <div className="ns-header">

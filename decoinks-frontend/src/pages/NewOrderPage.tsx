@@ -5,6 +5,8 @@ import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 import { useAuthStore } from '../store/authStore'
 import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 
@@ -221,6 +223,54 @@ export function NewOrderPage() {
 
   // Currency
   const [currency, setCurrency] = useState('USD')
+
+  // Draft persistence — survives refresh / hard refresh / redeploy.
+  // Create mode only: edit and convert-from-quote/invoice flows load their data
+  // from the server, so a stale draft must never overwrite it. Transient UI
+  // state (dropdown open, upload flags) is deliberately not persisted.
+  const { restored, clearDraft } = useFormDraft(
+    'order:new',
+    { customerId, customerText, agentId, orderDate, orderType, quotationId, invoiceId,
+      apparel, gangsheet, gangsheetArtworks, dtf,
+      paymentTerms, paymentMethod, paymentStatus, amountPaid, paymentReference, paymentDate,
+      dueDate, rushServices, shippingCharges, discountPct, taxPct,
+      contactName, contactEmail, contactPhone, shippingName, shippingAddress,
+      orderNotes, currency },
+    saved => {
+      const str = (v: unknown) => typeof v === 'string' ? v : undefined
+      const num = (v: unknown) => typeof v === 'number' ? v : undefined
+      if (saved.customerId !== undefined) setCustomerId(saved.customerId as string | null)
+      if (str(saved.customerText) !== undefined) setCustomerText(saved.customerText as string)
+      if (str(saved.agentId) !== undefined) setAgentId(saved.agentId as string)
+      if (str(saved.orderDate) !== undefined) setOrderDate(saved.orderDate as string)
+      if (str(saved.orderType) !== undefined) setOrderType(saved.orderType as OrderType)
+      if (str(saved.quotationId) !== undefined) setQuotationId(saved.quotationId as string)
+      if (str(saved.invoiceId) !== undefined) setInvoiceId(saved.invoiceId as string)
+      if (Array.isArray(saved.apparel)) setApparel(saved.apparel as ApparelItem[])
+      if (Array.isArray(saved.gangsheet)) setGangsheet(saved.gangsheet as GangsheetItem[])
+      if (Array.isArray(saved.gangsheetArtworks)) setGangsheetArtworks(saved.gangsheetArtworks as GangsheetArtwork[])
+      if (Array.isArray(saved.dtf)) setDtf(saved.dtf as DtfItem[])
+      if (str(saved.paymentTerms) !== undefined) setPaymentTerms(saved.paymentTerms as string)
+      if (str(saved.paymentMethod) !== undefined) setPaymentMethod(saved.paymentMethod as string)
+      if (str(saved.paymentStatus) !== undefined) setPaymentStatus(saved.paymentStatus as PaymentStatus)
+      if (num(saved.amountPaid) !== undefined) setAmountPaid(saved.amountPaid as number)
+      if (str(saved.paymentReference) !== undefined) setPaymentReference(saved.paymentReference as string)
+      if (str(saved.paymentDate) !== undefined) setPaymentDate(saved.paymentDate as string)
+      if (str(saved.dueDate) !== undefined) setDueDate(saved.dueDate as string)
+      if (num(saved.rushServices) !== undefined) setRushServices(saved.rushServices as number)
+      if (num(saved.shippingCharges) !== undefined) setShippingCharges(saved.shippingCharges as number)
+      if (num(saved.discountPct) !== undefined) setDiscountPct(saved.discountPct as number)
+      if (num(saved.taxPct) !== undefined) setTaxPct(saved.taxPct as number)
+      if (str(saved.contactName) !== undefined) setContactName(saved.contactName as string)
+      if (str(saved.contactEmail) !== undefined) setContactEmail(saved.contactEmail as string)
+      if (str(saved.contactPhone) !== undefined) setContactPhone(saved.contactPhone as string)
+      if (str(saved.shippingName) !== undefined) setShippingName(saved.shippingName as string)
+      if (str(saved.shippingAddress) !== undefined) setShippingAddress(saved.shippingAddress as string)
+      if (str(saved.orderNotes) !== undefined) setOrderNotes(saved.orderNotes as string)
+      if (str(saved.currency) !== undefined) setCurrency(saved.currency as string)
+    },
+    { enabled: !editOrderId && !fromInvoiceId },
+  )
 
   // Image uploads
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
@@ -576,6 +626,7 @@ export function NewOrderPage() {
     onSuccess: async (res) => {
       const order = res.data.data
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      clearDraft()   // saved for real — the draft is no longer needed
       toast.success(`Order ${order.order_number ?? ''} created!`)
       navigate('/orders')
     },
@@ -728,6 +779,7 @@ export function NewOrderPage() {
 
   return (
     <div className="no-page">
+      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
 
       {/* â"€â"€ Top action bar â"€â"€ */}
       <div className="no-topbar">

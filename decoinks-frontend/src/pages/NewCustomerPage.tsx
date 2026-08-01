@@ -5,6 +5,8 @@ import { ChevronRight, UserRound, MapPin } from 'lucide-react'
 import { Country, State } from 'country-state-city'
 import { api } from '../services/api'
 import toast from '../utils/toast'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 
 const SEGMENTS = ['retail', 'reseller', 'corporate', 'non-profit', 'individual']
 const TIERS = ['Standard', 'Silver', 'Gold', 'Platinum']
@@ -130,6 +132,21 @@ export function NewCustomerPage() {
     })
   }
 
+  // Draft persistence — keeps typed values across a refresh / hard refresh /
+  // redeploy. Scoped per record so a new-customer draft never leaks into an
+  // edit form (and vice versa).
+  // Only in create mode: an edit form is authoritative from the server, so a
+  // stale draft must never overwrite freshly loaded record data.
+  const { restored, clearDraft } = useFormDraft(
+    'customer:new',
+    { form, sameAsShipping },
+    saved => {
+      if (saved.form) setForm(f => ({ ...f, ...(saved.form as typeof EMPTY_FORM) }))
+      if (typeof saved.sameAsShipping === 'boolean') setSameAsShipping(saved.sameAsShipping)
+    },
+    { enabled: !isEdit },
+  )
+
   // ── Edit mode: load the existing customer and pre-fill the same form ──
   const qc = useQueryClient()
   const { data: existing } = useQuery({
@@ -216,6 +233,7 @@ export function NewCustomerPage() {
       } else {
         const res = await api.post('/customers', payload)
         qc.invalidateQueries({ queryKey: ['customers'] })
+        clearDraft()   // saved for real — the draft is no longer needed
         toast.success('Customer created')
         navigate(`/customers/${res.data.data?.id ?? res.data.id}`)
       }
@@ -303,6 +321,7 @@ export function NewCustomerPage() {
   return <div className="ncust-page">
     <div className="ncust-header"><div><div className="ns-breadcrumb"><span onClick={() => navigate('/customers')}>Customers</span><ChevronRight size={13}/><strong>{title}</strong></div><h2 className="ns-page-title">{title}</h2></div>
       <div className="ns-header-actions"><button className="lb-action-btn" onClick={() => isEdit ? navigate(`/customers/${id}`) : navigate(-1)}>Cancel</button><button className="lb-action-btn lb-action-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Save Customer'}</button></div></div>
+    <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
     <div className="ncust-grid">
       <div className="ncust-col">
         <section className="al-panel al-section"><div className="al-section-header"><UserRound size={16}/><h4>Customer Profile</h4></div><div className="ncust-section-body">

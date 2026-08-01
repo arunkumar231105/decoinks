@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
+import { useFormDraft } from '../hooks/useFormDraft'
+import { DraftBanner } from '../components/DraftBanner'
 import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -278,6 +280,16 @@ export function NewPurchaseOrderPage() {
   const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
 
   const set = (field: keyof POFormState, value: any) => dispatch({ type: 'SET', field, value })
+
+  // Draft persistence — survives refresh / hard refresh / redeploy.
+  // Create mode only: an edit form is authoritative from the server, so a stale
+  // draft must never overwrite freshly loaded PO data.
+  const { restored, clearDraft } = useFormDraft(
+    'purchase-order:new',
+    state as unknown as Record<string, unknown>,
+    saved => dispatch({ type: 'INIT', payload: { ...initialState, ...(saved as Partial<POFormState>) } }),
+    { enabled: !isEdit && !fromOrderId },
+  )
   const selectPOColor = (item: POLineItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)
     const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.catalog_size_id)
@@ -690,6 +702,7 @@ export function NewPurchaseOrderPage() {
     },
     onSuccess: ({ res, thenView }) => {
       const id = editId ?? res.data.data?.id
+      if (!isEdit) clearDraft()   // saved for real — the draft is no longer needed
       toast.success(isEdit ? 'Purchase order updated' : 'Purchase order saved')
       if (thenView && id) navigate(`/purchase-orders/${id}`)
       else if (!isEdit && id) navigate(`/purchase-orders/${id}/edit`, { replace: true })
@@ -780,6 +793,7 @@ export function NewPurchaseOrderPage() {
 
   return (
     <div className="np-page">
+      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
 
       {/* ── HEADER ── */}
       <div className="np-header">
