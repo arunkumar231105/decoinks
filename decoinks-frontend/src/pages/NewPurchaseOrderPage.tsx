@@ -288,7 +288,7 @@ export function NewPurchaseOrderPage() {
     'purchase-order:new',
     state as unknown as Record<string, unknown>,
     saved => dispatch({ type: 'INIT', payload: { ...initialState, ...(saved as Partial<POFormState>) } }),
-    { enabled: !isEdit && !fromOrderId },
+    { enabled: !isEdit },
   )
   const selectPOColor = (item: POLineItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)

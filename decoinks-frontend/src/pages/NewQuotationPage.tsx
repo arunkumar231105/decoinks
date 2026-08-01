@@ -1436,7 +1436,7 @@ export function NewQuotationPage() {
       if (str(saved.customerReqSummary) !== undefined) setCustomerReqSummary(saved.customerReqSummary as string)
       if (str(saved.quoteEstimate) !== undefined) setQuoteEstimate(saved.quoteEstimate as string)
     },
-    { enabled: !quoteId && !fromCustomerId },
+    { enabled: !quoteId },
   )
 
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
