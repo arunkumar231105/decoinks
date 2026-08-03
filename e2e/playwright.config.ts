@@ -11,7 +11,10 @@ if (fs.existsSync(envFile)) {
   })
 }
 
-const BASE_URL = process.env.BASE_URL || 'http://31.97.110.197'
+// Tests run against the app on the server's own ports, which bypasses the
+// Authentik SSO proxy in front of the public hostname — so the normal
+// email/password login works and no SSO round-trip is needed.
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8093'
 
 export default defineConfig({
   testDir: './tests',
