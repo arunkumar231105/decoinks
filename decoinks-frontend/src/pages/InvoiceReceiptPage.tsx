@@ -173,6 +173,15 @@ const CSS = `
   }
 
   /* Footer */
+  /* Bank transfer details */
+  .rc-bank { margin-top: 14px; border: 1px solid #dbe3f1; border-radius: 8px; padding: 10px 12px; background: #f8faff; }
+  .rc-bank-lbl { font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; }
+  .rc-bank-grid div { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px; padding: 2px 0; border-bottom: 1px dotted #d7deea; }
+  .rc-bank-grid div:last-child { border-bottom: none; }
+  .rc-bank-grid span { color: #6b7280; }
+  .rc-bank-grid strong { color: #1a2b5c; font-weight: 700; text-align: right; word-break: break-all; }
+  .rc-bank-note { margin-top: 6px; font-size: 10.5px; color: #6b7280; font-style: italic; }
+
   .rc-footer {
     background: #1a2b5c;
     margin: 32px 0 0;
@@ -468,6 +477,18 @@ export function InvoiceReceiptPage() {
               💳 {(invoice.payments?.[0]?.payment_method ?? invoice.payments?.[0]?.method ?? invoice.payment_method ?? 'Pending').replace(/_/g,' ').replace(/\b\w/g, (l:string) => l.toUpperCase())}
             </div>
           </div>
+        </div>
+
+        {/* ── BANK TRANSFER DETAILS ── */}
+        <div className="rc-bank">
+          <div className="rc-bank-lbl">Bank Transfer Details</div>
+          <div className="rc-bank-grid">
+            <div><span>Bank Name</span><strong>Bank of America</strong></div>
+            <div><span>Account Title</span><strong>Decoinks LLC</strong></div>
+            <div><span>Account Number</span><strong>325207480603</strong></div>
+            <div><span>Routing / ACH · Direct Deposit</span><strong>121000358</strong></div>
+          </div>
+          <div className="rc-bank-note">Please use the invoice number as the payment reference.</div>
         </div>
 
         {/* ── FOOTER ── */}

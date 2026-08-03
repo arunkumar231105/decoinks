@@ -1277,6 +1277,22 @@ export function NewInvoicePage() {
                 />
               </div>
             </div>
+            {/* Bank transfer details — printed on the invoice so the payer knows
+                exactly where to send money. Same values as the print/receipt views. */}
+            <div style={{ marginTop: 14, border: '1px solid #dbe3f1', borderRadius: 10, padding: '12px 14px', background: '#f8faff' }}>
+              <strong style={{ display: 'block', fontSize: 12.5, color: '#1a2b5c', marginBottom: 8 }}>Bank Transfer Details (shown on invoice)</strong>
+              <div style={{ display: 'grid', gap: 4, fontSize: 12.5 }}>
+                {[['Bank Name', 'Bank of America'],
+                  ['Account Title', 'Decoinks LLC'],
+                  ['Account Number', '325207480603'],
+                  ['Routing / ACH · Direct Deposit', '121000358']].map(([label, value]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, borderBottom: '1px dotted #d7deea', padding: '2px 0' }}>
+                    <span style={{ color: '#6b7280' }}>{label}</span>
+                    <strong style={{ color: '#1a2b5c', textAlign: 'right', wordBreak: 'break-all' }}>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="ni-attachment-box">
               <strong>Attachments</strong>
               <span>Proof, receipt ya bank slip invoice save hone ke baad attach ki ja sakti hai.</span>

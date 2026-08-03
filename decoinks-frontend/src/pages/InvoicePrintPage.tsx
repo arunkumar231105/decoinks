@@ -69,6 +69,7 @@ const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
 
 function numberToWords(amount: number): string {
+  if (!Number.isFinite(amount)) amount = 0   // guard: NaN/Infinity would infinite-loop below1000
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
     'Seventeen', 'Eighteen', 'Nineteen']
@@ -136,6 +137,12 @@ const CO = {
   phone: '+1 (714) 790-1460',
   zelle: 'info@decoinks.com',
   paypal: 'info@decoinks.com',
+  // Bank transfer details shown on the invoice so the payer knows exactly
+  // where to send money.
+  bankName: 'Bank of America',
+  accountTitle: 'Decoinks LLC',
+  accountNumber: '325207480603',
+  routingNumber: '121000358',
 }
 
 // ── Simple QR placeholder SVG ─────────────────────────────────────────────────
@@ -288,6 +295,13 @@ const CSS = `
   .la { background: #007bc1; color: #fff; }
   .ld { background: #f76f20; color: #fff; }
   .bank-lbl { font-size: 12px; font-weight: 800; color: #1a2b5c; display: flex; align-items: center; gap: 5px; }
+
+  /* Bank transfer details block */
+  .bank-details { margin-top: 5px; text-align: left; font-size: 9.5px; line-height: 1.5; }
+  .bank-details div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dotted #d7deea; padding: 1px 0; }
+  .bank-details div:last-child { border-bottom: none; }
+  .bank-details span { color: #6b7280; white-space: nowrap; }
+  .bank-details strong { color: #1a2b5c; font-weight: 700; text-align: right; word-break: break-all; }
 
   /* ── Thank you footer ── */
   .ty-footer { background: #1a2b5c; color: #fff; text-align: center; padding: 13px; border-radius: 8px; font-style: italic; font-size: 14px; font-weight: 600; margin-top: 14px; letter-spacing: 1px; }
@@ -942,6 +956,12 @@ export function InvoicePrintPage() {
               <div className="bank-lbl" style={{ justifyContent: 'center', marginTop: 4 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
                 Bank Transfer
+              </div>
+              <div className="bank-details">
+                <div><span>Bank</span><strong>{CO.bankName}</strong></div>
+                <div><span>Account Title</span><strong>{CO.accountTitle}</strong></div>
+                <div><span>Account No</span><strong>{CO.accountNumber}</strong></div>
+                <div><span>Routing / ACH</span><strong>{CO.routingNumber}</strong></div>
               </div>
               <div className="pay-note" style={{ marginTop: 5 }}>
                 Please use invoice number<br />as reference.
