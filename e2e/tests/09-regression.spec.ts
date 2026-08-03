@@ -1,9 +1,24 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { login, gotoAndWait } from './helpers'
 
 // Regression cover for things that have actually broken in production before.
 // Every test here is read-only: no record is created, edited or deleted. The
 // draft test writes to localStorage only, and clears it afterwards.
+//
+// Note: the app keeps its access token in memory, not in a cookie, so a bare
+// fetch() from the page context is unauthenticated. These tests therefore read
+// the app's own API responses instead of issuing their own requests.
+
+/** Rows from the list request the app makes when `path` is opened. */
+async function rowsFromListCall(page: Page, path: string, apiPath: string) {
+  const response = page.waitForResponse(
+    r => r.url().includes(apiPath) && r.request().method() === 'GET' && r.ok(),
+    { timeout: 30_000 },
+  )
+  await gotoAndWait(page, path)
+  const body = await (await response).json()
+  return body?.data?.rows ?? body?.data ?? []
+}
 
 test.describe('Regressions', () => {
   test.beforeEach(async ({ page }) => {
@@ -11,19 +26,10 @@ test.describe('Regressions', () => {
   })
 
   test('invoice preview shows the bank transfer details', async ({ page }) => {
-    await gotoAndWait(page, '/invoices')
+    const rows = await rowsFromListCall(page, '/invoices', '/api/invoices')
+    expect(rows.length, 'no invoices returned by the API').toBeGreaterThan(0)
 
-    // Open the first invoice's print view straight from the API, so the test
-    // does not depend on where the row sits in the table.
-    const id = await page.evaluate(async () => {
-      const res = await fetch('/api/invoices?page=1&limit=1', { credentials: 'include' })
-      const body = await res.json()
-      const rows = body?.data?.rows ?? body?.data ?? []
-      return rows[0]?.id ?? null
-    })
-    test.skip(!id, 'no invoices in this environment')
-
-    await gotoAndWait(page, `/invoices/${id}/print`)
+    await gotoAndWait(page, `/invoices/${rows[0].id}/print`)
 
     // The payer cannot send money without these, so they must always render.
     for (const value of ['Bank of America', 'Decoinks LLC', '325207480603', '121000358']) {
@@ -42,8 +48,7 @@ test.describe('Regressions', () => {
     await gotoAndWait(page, '/purchase-orders/new')
 
     const marker = `E2E-DRAFT-${Date.now()}`
-    const notes = page.locator('textarea').first()
-    await notes.fill(marker)
+    await page.locator('textarea').first().fill(marker)
 
     // The draft is flushed on unload, so a reload must bring the value back.
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -60,18 +65,19 @@ test.describe('Regressions', () => {
     )
   })
 
-  test('sales orders and purchase orders list newest first', async ({ page }) => {
-    for (const path of ['/orders', '/purchase-orders']) {
-      const dates = await page.evaluate(async p => {
-        const api = p === '/orders' ? '/api/orders' : '/api/purchase-orders'
-        const res = await fetch(`${api}?page=1&limit=5`, { credentials: 'include' })
-        const body = await res.json()
-        const rows = body?.data?.rows ?? body?.data ?? []
-        return rows.map((r: Record<string, string>) => r.order_date).filter(Boolean)
-      }, path)
+  test('sales orders list newest first', async ({ page }) => {
+    const rows = await rowsFromListCall(page, '/orders', '/api/orders')
+    const dates = rows.map((r: Record<string, string>) => r.order_date).filter(Boolean)
 
-      const sorted = [...dates].sort().reverse()
-      expect(dates, `${path} is not newest-first`).toEqual(sorted)
-    }
+    expect(dates.length, 'no order dates returned').toBeGreaterThan(1)
+    expect(dates).toEqual([...dates].sort().reverse())
+  })
+
+  test('purchase orders list newest first', async ({ page }) => {
+    const rows = await rowsFromListCall(page, '/purchase-orders', '/api/purchase-orders')
+    const dates = rows.map((r: Record<string, string>) => r.order_date).filter(Boolean)
+
+    expect(dates.length, 'no PO dates returned').toBeGreaterThan(1)
+    expect(dates).toEqual([...dates].sort().reverse())
   })
 })
