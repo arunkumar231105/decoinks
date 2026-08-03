@@ -455,7 +455,7 @@ export function InvoiceReceiptPage() {
             </div>
           ) : (
             <div className="rc-row">
-              <span className="lbl">Pickup</span>
+              <span className="lbl">Shipping</span>
               <span className="val" style={{ color:'#16a34a' }}>$0.00</span>
             </div>
           )}

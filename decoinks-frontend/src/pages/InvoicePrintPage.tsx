@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -146,43 +147,21 @@ const CO = {
 }
 
 // ── Simple QR placeholder SVG ─────────────────────────────────────────────────
-function QrBox() {
-  const cells: JSX.Element[] = []
-  // Deterministic "QR-like" pattern using a fixed seed
-  const pattern = [
-    1,1,1,0,1,0,1, 1,0,1,0,1,1,1, 0,1,1,0,1,0,1, 1,0,1,1,0,1,0,
-    1,1,1,0,0,1,1, 0,1,0,1,0,1,0, 1,1,1,0,1,1,1, 1,0,0,1,0,0,1,
-    0,1,0,1,1,0,0, 1,0,1,1,0,1,1, 0,0,1,0,0,1,0, 1,1,0,1,1,0,1,
-    1,0,1,0,1,0,0, 0,1,1,0,1,0,1, 1,1,0,1,0,1,1, 0,1,0,0,1,1,0,
-  ]
-  for (let r = 0; r < 9; r++) {
-    for (let c2 = 0; c2 < 9; c2++) {
-      let fill = '#f9fafb'
-      // Top-left finder
-      if (r < 3 && c2 < 3) fill = '#111827'
-      else if (r >= 1 && r <= 2 && c2 >= 1 && c2 <= 2 && !(r===2&&c2===2)) fill = '#fff'
-      else if (r === 1 && c2 === 1) fill = '#111827'
-      // Top-right finder
-      else if (r < 3 && c2 > 5) fill = '#111827'
-      else if (r >= 1 && r <= 2 && c2 >= 6 && c2 <= 7) fill = '#fff'
-      else if (r === 1 && c2 === 7) fill = '#111827'
-      // Bottom-left finder
-      else if (r > 5 && c2 < 3) fill = '#111827'
-      else if (r >= 6 && r <= 7 && c2 >= 1 && c2 <= 2) fill = '#fff'
-      else if (r === 7 && c2 === 1) fill = '#111827'
-      // Data cells
-      else fill = pattern[(r * 9 + c2) % pattern.length] ? '#111827' : '#f9fafb'
-      cells.push(
-        <rect key={`${r}-${c2}`} x={c2 * 6 + 1} y={r * 6 + 1} width={5} height={5} fill={fill} />
-      )
-    }
+function QrBox({ src, alt }: { src: string; alt: string }) {
+  // Real payment QR images live in /public. If one is missing the box stays
+  // empty rather than showing a decorative pattern that cannot be scanned.
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <div style={{
+        width: 74, height: 74, margin: '0 auto', border: '1px dashed #cbd5e1',
+        borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 7.5, color: '#94a3b8', textAlign: 'center', padding: 4, lineHeight: 1.3,
+      }}>QR image not uploaded</div>
+    )
   }
-  return (
-    <svg width="56" height="56" viewBox="0 0 56 56" style={{ display: 'block', margin: '0 auto' }}>
-      <rect width="56" height="56" fill="#fff" rx="3"/>
-      {cells}
-    </svg>
-  )
+  return <img src={src} alt={alt} onError={() => setFailed(true)}
+    style={{ width: 74, height: 74, objectFit: 'contain', display: 'block', margin: '0 auto' }} />
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -923,7 +902,7 @@ export function InvoicePrintPage() {
                 Payment Methods
               </div>
               <div className="zelle-txt">Zelle</div>
-              <div style={{ marginTop: 4 }}><QrBox /></div>
+              <div style={{ marginTop: 4 }}><QrBox src="/zelle-qr.png" alt="Zelle QR code — DECOINKS, LLC" /></div>
               <div className="pay-email">{CO.zelle}</div>
             </div>
 
@@ -931,7 +910,7 @@ export function InvoicePrintPage() {
             <div className="pay-box" style={{ textAlign: 'center' }}>
               <div className="pay-lbl" style={{ justifyContent: 'center', opacity: 0 }}>‎</div>
               <div className="paypal-txt"><span>P</span>ay<span>P</span>al</div>
-              <div style={{ marginTop: 4 }}><QrBox /></div>
+              <div style={{ marginTop: 4 }}><QrBox src="/paypal-qr.png" alt="PayPal QR code — Decoinks" /></div>
               <div className="pay-email">{CO.paypal}</div>
             </div>
 
