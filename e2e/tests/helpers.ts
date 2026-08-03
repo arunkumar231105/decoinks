@@ -9,13 +9,24 @@ export const CREDS = {
  * Log in via the login form.
  * Waits until the URL leaves /login (SPA redirect to /dashboard).
  */
-export async function login(page: Page) {
-  if (!CREDS.email || !CREDS.password) {
+const PLACEHOLDERS = [
+  'your-admin-email@example.com', 'you@example.com', 'your-password',
+  'your-email@example.com', '',
+]
+
+/** Fails fast with an actionable message rather than 21 identical timeouts. */
+export function assertCredentials() {
+  if (PLACEHOLDERS.includes(CREDS.email) || PLACEHOLDERS.includes(CREDS.password)) {
     throw new Error(
-      'TEST_EMAIL and TEST_PASSWORD must be set in e2e/.env\n' +
-      'Copy e2e/.env.example → e2e/.env and fill in your credentials.'
+      'e2e/.env still holds the example values.\n' +
+      '  Edit e2e/.env and set TEST_EMAIL and TEST_PASSWORD to a real account,\n' +
+      '  then re-run. (The file is git-ignored.)'
     )
   }
+}
+
+export async function login(page: Page) {
+  assertCredentials()
 
   await page.goto('/login')
   await page.waitForSelector('input[type="email"]', { timeout: 15_000 })
@@ -24,11 +35,25 @@ export async function login(page: Page) {
   await page.fill('input[type="password"]', CREDS.password)
   await page.click('button[type="submit"]')
 
-  // Wait until we leave the /login page (React Router SPA nav to /dashboard)
-  await page.waitForFunction(
+  // Either we land past /login, or the app reports why the sign-in failed.
+  // Surfacing that message beats waiting out a bare timeout.
+  const left = page.waitForFunction(
     () => !window.location.pathname.startsWith('/login'),
-    { timeout: 15_000 }
-  )
+    { timeout: 15_000 },
+  ).then(() => 'ok' as const)
+
+  const rejected = page
+    .getByText(/invalid|incorrect|failed|unauthor/i)
+    .first()
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => 'rejected' as const)
+    .catch(() => new Promise<never>(() => {}))
+
+  const outcome = await Promise.race([left, rejected])
+  if (outcome === 'rejected') {
+    const message = await page.getByText(/invalid|incorrect|failed|unauthor/i).first().innerText()
+    throw new Error(`Login rejected for "${CREDS.email}": ${message.trim()}`)
+  }
 }
 
 /**
