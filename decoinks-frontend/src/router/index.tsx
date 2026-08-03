@@ -58,6 +58,7 @@ const NewOrderPage           = page(() => import('../pages/NewOrderPage'), 'NewO
 const OrderDetailPage        = page(() => import('../pages/OrderDetailPage'), 'OrderDetailPage')
 const NewShipmentPage        = page(() => import('../pages/NewShipmentPage'), 'NewShipmentPage')
 const NewPurchaseOrderPage   = page(() => import('../pages/NewPurchaseOrderPage'), 'NewPurchaseOrderPage')
+const NewPaymentPage         = page(() => import('../pages/NewPaymentPage'), 'NewPaymentPage')
 const PurchaseOrderDetailPage= page(() => import('../pages/PurchaseOrderDetailPage'), 'PurchaseOrderDetailPage')
 const ProductsPage           = page(() => import('../pages/ProductsPage'), 'ProductsPage')
 const ResetPasswordPage      = page(() => import('../pages/ResetPasswordPage'), 'ResetPasswordPage')
@@ -209,6 +210,21 @@ export const router = createBrowserRouter([
                 path: '/orders/:id',
                 element: <OrderDetailPage />,
                 handle: { title: 'Order Details', subtitle: 'View and manage order details.' },
+              },
+              {
+                path: '/payments',
+                element: <WorkflowListPage kind="payments" />,
+                handle: { title: 'Payments', subtitle: 'Record and track customer payments.' },
+              },
+              {
+                path: '/payments/new',
+                element: <NewPaymentPage />,
+                handle: { title: 'New Payment', subtitle: 'Record a customer payment.' },
+              },
+              {
+                path: '/payments/:id',
+                element: <NewPaymentPage />,
+                handle: { title: 'Edit Payment', subtitle: 'Update a recorded payment.' },
               },
               {
                 path: '/purchase-orders',

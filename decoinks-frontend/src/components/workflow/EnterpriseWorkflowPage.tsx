@@ -13,7 +13,7 @@ import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
 
-export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders'
+export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
 type AnyRow = Record<string, any>
 type Column = { key: string; label: string; numeric?: boolean; render?: (row: AnyRow) => React.ReactNode }
@@ -161,6 +161,30 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'delivery', label: 'Est. Delivery', render: r => date(r.expected_date) },
     ],
   },
+  payments: {
+    title: 'Payments', subtitle: 'Record and track customer payments against orders and invoices.', api: '/payments', newPath: '/payments/new', newLabel: 'New Payment',
+    search: 'Search by payment ID, customer, reference, order or invoice…', numberKey: 'payment_number', dateKey: 'payment_date',
+    statuses: ['Completed', 'Pending', 'Failed', 'Refunded'],
+    kpis: [
+      { label: 'Payments', icon: FileText, value: (_, t) => t, tone: 'blue' },
+      { label: 'Total Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.amount || 0), 0)), tone: 'green' },
+      { label: 'Completed', icon: BadgeCheck, value: r => countStatus(r, 'completed'), tone: 'green' },
+      { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending'), tone: 'amber' },
+      { label: 'Average Payment', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.amount || 0), 0) / r.length : 0), tone: 'purple' },
+    ],
+    columns: [
+      { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
+      { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
+      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
+      { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
+      { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
+      { key: 'status', label: 'Status', render: common.status },
+      { key: 'reference_no', label: 'Reference No', render: r => common.empty(r, 'reference_no') },
+      { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
+      { key: 'invoice_number', label: 'Invoice ID', render: r => common.empty(r, 'invoice_number') },
+      { key: 'recorded_by_name', label: 'Recorded By', render: r => common.empty(r, 'recorded_by_name') },
+    ],
+  },
 }
 
 const PAGE_SIZE = 10
@@ -180,7 +204,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [customer, setCustomer] = useState('All')
   const [product, setProduct] = useState('All')
   const [source, setSource] = useState('All')
-  const [period, setPeriod] = useState<PeriodKey>('month')
+  const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -378,7 +402,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
       <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
-      <div className="ew-drawer-actions"><button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button><button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
+      <div className="ew-drawer-actions">{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
       </aside>
@@ -422,6 +446,26 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   const quotationQty = sum(items, 'qty')
   const quotationItemsTotal = items.reduce((total: number, item: AnyRow) =>
     total + Number(item.amount ?? (Number(item.unit_price || 0) * Number(item.qty || 0))), 0)
+  if (kind === 'payments') return <>
+    <DrawerSection title="Payment Details" fields={[
+      { label: 'Payment ID', value: first(row, 'payment_number') },
+      { label: 'Payment Date', value: date(pick(row, 'payment_date', 'paid_at')) },
+      { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
+      { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
+      { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Reference No', value: first(row, 'reference_no') },
+    ]}/>
+    <DrawerSection title="Customer" fields={[
+      { label: 'Customer Name', value: first(row, 'customer_name') },
+      { label: 'Order ID', value: first(row, 'order_number') },
+      { label: 'Invoice ID', value: first(row, 'invoice_number') },
+    ]}/>
+    <DrawerSection title="Record" fields={[
+      { label: 'Recorded By', value: first(row, 'recorded_by_name') },
+      { label: 'Created At', value: date(row.created_at) },
+    ]}/>
+    <NotesSection row={row}/>
+  </>
   if (kind === 'quotations') return <>
     <DrawerSection title="Overview" fields={[
       { label: 'Quote Date', value: date(row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
