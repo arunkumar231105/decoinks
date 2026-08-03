@@ -154,14 +154,14 @@ function QrBox({ src, alt }: { src: string; alt: string }) {
   if (failed) {
     return (
       <div style={{
-        width: 74, height: 74, margin: '0 auto', border: '1px dashed #cbd5e1',
+        width: 86, height: 86, margin: '0 auto', border: '1px dashed #cbd5e1',
         borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 7.5, color: '#94a3b8', textAlign: 'center', padding: 4, lineHeight: 1.3,
       }}>QR image not uploaded</div>
     )
   }
   return <img src={src} alt={alt} onError={() => setFailed(true)}
-    style={{ width: 74, height: 74, objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+    style={{ width: 86, height: 86, objectFit: 'contain', display: 'block', margin: '0 auto', imageRendering: 'crisp-edges' }} />
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -902,7 +902,7 @@ export function InvoicePrintPage() {
                 Payment Methods
               </div>
               <div className="zelle-txt">Zelle</div>
-              <div style={{ marginTop: 4 }}><QrBox src="/zelle-qr.png" alt="Zelle QR code — DECOINKS, LLC" /></div>
+              <div style={{ marginTop: 4 }}><QrBox src="/zelle-qr.jpg" alt="Zelle QR code — DECOINKS, LLC" /></div>
               <div className="pay-email">{CO.zelle}</div>
             </div>
 
@@ -910,7 +910,7 @@ export function InvoicePrintPage() {
             <div className="pay-box" style={{ textAlign: 'center' }}>
               <div className="pay-lbl" style={{ justifyContent: 'center', opacity: 0 }}>‎</div>
               <div className="paypal-txt"><span>P</span>ay<span>P</span>al</div>
-              <div style={{ marginTop: 4 }}><QrBox src="/paypal-qr.png" alt="PayPal QR code — Decoinks" /></div>
+              <div style={{ marginTop: 4 }}><QrBox src="/paypal-qr.jpg" alt="PayPal QR code — Decoinks" /></div>
               <div className="pay-email">{CO.paypal}</div>
             </div>
 
