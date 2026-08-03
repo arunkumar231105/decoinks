@@ -19,6 +19,10 @@ export default defineConfig({
           // Heavy, single-page libs split out so they cache separately and
           // don't bloat the page chunk that uses them.
           'charts-vendor': ['recharts'],
+          // The full country/state dataset is ~500 kB and only the customer
+          // form needs it. On its own chunk it survives a redeploy in cache,
+          // so users re-download only the small page chunk that changed.
+          'geo-vendor': ['country-state-city'],
         },
       },
     },
