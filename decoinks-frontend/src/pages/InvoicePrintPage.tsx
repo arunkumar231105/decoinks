@@ -279,7 +279,7 @@ const CSS = `
 
   /* ── Payment footer ── */
   .pay-section { margin-top: 16px; }
-  .pay-footer { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr 1fr; gap: 10px; }
+  .pay-footer { display: grid; grid-template-columns: 1.45fr 0.85fr 0.85fr 0.9fr 1.5fr; gap: 10px; }
   .pay-box { border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
   .pay-lbl { font-size: 8.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
   .pay-words { font-size: 12px; color: #111827; font-weight: 600; line-height: 1.55; }
@@ -297,11 +297,11 @@ const CSS = `
   .bank-lbl { font-size: 12px; font-weight: 800; color: #1a2b5c; display: flex; align-items: center; gap: 5px; }
 
   /* Bank transfer details block */
-  .bank-details { margin-top: 5px; text-align: left; font-size: 9.5px; line-height: 1.5; }
-  .bank-details div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dotted #d7deea; padding: 1px 0; }
+  .bank-details { margin-top: 6px; text-align: left; font-size: 9px; line-height: 1.45; }
+  .bank-details div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 1px dotted #d7deea; padding: 2px 0; }
   .bank-details div:last-child { border-bottom: none; }
-  .bank-details span { color: #6b7280; white-space: nowrap; }
-  .bank-details strong { color: #1a2b5c; font-weight: 700; text-align: right; word-break: break-all; }
+  .bank-details span { color: #6b7280; white-space: nowrap; flex-shrink: 0; }
+  .bank-details strong { color: #1a2b5c; font-weight: 800; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* ── Thank you footer ── */
   .ty-footer { background: #1a2b5c; color: #fff; text-align: center; padding: 13px; border-radius: 8px; font-style: italic; font-size: 14px; font-weight: 600; margin-top: 14px; letter-spacing: 1px; }
@@ -951,10 +951,6 @@ export function InvoicePrintPage() {
             <div className="pay-box" style={{ textAlign: 'center' }}>
               <div className="pay-lbl" style={{ justifyContent: 'center' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
-                Bank Transfer
-              </div>
-              <div className="bank-lbl" style={{ justifyContent: 'center', marginTop: 4 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a2b5c" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
                 Bank Transfer
               </div>
               <div className="bank-details">

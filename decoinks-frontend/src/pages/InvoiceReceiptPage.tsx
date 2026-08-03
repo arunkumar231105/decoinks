@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -213,10 +214,21 @@ const CSS = `
     z-index: 999; display: flex; align-items: center; gap: 6px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
+  .dl-btn {
+    position: fixed; top: 68px; right: 20px; z-index: 10;
+    background: #0d9488; color: #fff; border: none; border-radius: 8px;
+    padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .dl-btn:disabled { opacity: .6; cursor: progress; }
   @media print {
-    .print-btn { display: none; }
+    .print-btn, .dl-btn { display: none; }
     body { background: #fff; }
-    @page { margin: 4mm; size: 88mm auto; }
+    /* The sheet is 480px wide (~127mm). Match the page to it exactly so there
+       is no A4 side margin, and let the height run so it stays on one page. */
+    @page { margin: 0; size: 127mm auto; }
+    .receipt-wrap { min-height: 0; max-width: 100%; width: 100%; padding-bottom: 8mm; box-shadow: none; }
+    .rc-bank, .rc-footer { break-inside: avoid; page-break-inside: avoid; }
   }
 `
 
@@ -240,6 +252,30 @@ export function InvoiceReceiptPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { authReady, authFailed } = usePrintAuth()
+  const [downloading, setDownloading] = useState(false)
+
+  // Download exactly what is on screen: rasterise the receipt sheet and wrap it
+  // in a PDF page of the same aspect ratio, so the file matches the preview.
+  const downloadPdf = async () => {
+    const sheet = document.querySelector('.receipt-wrap') as HTMLElement | null
+    if (!sheet) return
+    setDownloading(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(sheet, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
+      const image = canvas.toDataURL('image/png')
+      const widthMm = 127
+      const heightMm = (canvas.height / canvas.width) * widthMm
+      const pdf = new jsPDF({ orientation: heightMm > widthMm ? 'portrait' : 'landscape', unit: 'mm', format: [widthMm, heightMm] })
+      pdf.addImage(image, 'PNG', 0, 0, widthMm, heightMm)
+      pdf.save(`${invoice?.invoice_number ?? 'receipt'}.pdf`)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const { data: invoice, isLoading } = useQuery<Invoice>({
     queryKey: ['invoice-receipt', id],
@@ -327,6 +363,9 @@ export function InvoiceReceiptPage() {
       </button>
       <button className="print-btn" onClick={() => window.print()}>
         🖨️ Print / Save PDF
+      </button>
+      <button className="dl-btn" onClick={downloadPdf} disabled={downloading}>
+        {downloading ? 'Preparing…' : '⬇️ Download PDF'}
       </button>
 
       <div className="receipt-wrap">
