@@ -30,7 +30,10 @@ const DATABASE_URL =
 
 // tracking → { orders it covers, ship date, customer as supplied }
 const LINKS = [
-  { trk: '1Z2B14J80231351138', ship: '2026-07-20', customer: 'Robert Farrar',     orders: ['ORD-260720-53'] },
+  // Robert Farrar placed the 20-Jul order, then added the 23-Jul one before it
+  // shipped, so both went out in a single parcel under one tracking number.
+  { trk: '1Z2B14J80231351138', ship: '2026-07-20', customer: 'Robert Farrar',
+    orders: ['ORD-260720-53', 'ORD-260723-57'] },
   { trk: '1Z2B14J80227839745', ship: '2026-07-20', customer: 'Victor Spates',     orders: ['ORD-260720-54'] },
   { trk: '1Z2B14J80310186131', ship: '2026-07-22', customer: 'Alex M Cabrera',    orders: ['ORD-260722-55'] },
   { trk: '1Z199GG60300002419', ship: '2026-07-22', customer: 'Leisha Rogers',     orders: ['ORD-260723-56'] },
