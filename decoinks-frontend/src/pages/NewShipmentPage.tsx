@@ -105,13 +105,39 @@ export function NewShipmentPage() {
   const [poId, setPoId] = useState('')
   const [preview, setPreview] = useState<TrackPreview | null>(null)
 
+  // A parcel can carry several orders (combined billing). One empty row is
+  // shown by default; single-order shipments just fill that row.
+  const [orderIds, setOrderIds] = useState<string[]>([''])
+  const setOrderAt = (i: number, id: string) =>
+    setOrderIds(prev => prev.map((x, idx) => idx === i ? id : x))
+
+  // Shipping cost + parcel weight — Shippo's /tracks endpoint does not return
+  // these, so they are entered by hand (from the Shippo billing sheet).
+  const [shippingCost, setShippingCost] = useState('')
+  const [weightLbs, setWeightLbs] = useState('')
+  const [isReturn, setIsReturn] = useState(false)
+
+  // Load orders once so the user can pick which order(s) the parcel covers.
+  const { data: ordersList = [] } = useQuery<Array<{ id: string; label: string }>>({
+    queryKey: ['shipment-orders'],
+    queryFn: () => api.get('/orders', { params: { page: 1, limit: 1000 } })
+      .then(r => (r.data.data?.rows ?? r.data.data ?? []).map((o: Record<string, unknown>) => ({
+        id: String(o.id),
+        label: `${o.order_number} — ${o.shipping_name || o.customer_name || ''}`.trim(),
+      }))),
+  })
+
   // Draft persistence — survives refresh / hard refresh / redeploy.
   const { restored, clearDraft } = useFormDraft(
     'shipment:new',
-    { trackingNumber, poId },
+    { trackingNumber, poId, orderIds, shippingCost, weightLbs, isReturn },
     saved => {
       if (typeof saved.trackingNumber === 'string') setTrackingNumber(saved.trackingNumber)
       if (typeof saved.poId === 'string') setPoId(saved.poId)
+      if (Array.isArray(saved.orderIds)) setOrderIds(saved.orderIds as string[])
+      if (typeof saved.shippingCost === 'string') setShippingCost(saved.shippingCost)
+      if (typeof saved.weightLbs === 'string') setWeightLbs(saved.weightLbs)
+      if (typeof saved.isReturn === 'boolean') setIsReturn(saved.isReturn)
     },
   )
 
@@ -128,12 +154,22 @@ export function NewShipmentPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const cleanOrderIds = orderIds.filter(Boolean)
       const res = await api.post('/shipments', {
         carrier: preview?.carrier ?? null,
         tracking_number: trackingNumber.trim(),
         service_type: preview?.service_type ?? null,
-        po_id: poId || null,
-        status: 'In Transit',
+        po_id: cleanOrderIds.length ? null : (poId || null),   // XOR — never both
+        order_ids: cleanOrderIds,
+        shipping_cost: shippingCost ? Number(shippingCost) : null,
+        weight_lbs:    weightLbs    ? Number(weightLbs)    : null,
+        is_return: isReturn,
+        // Ship-to fields we already got from Shippo — persist so the list shows them
+        ship_to_city: preview?.ship_to_city ?? null,
+        ship_to_state: preview?.ship_to_state ?? null,
+        ship_to_postal_code: preview?.ship_to_postal_code ?? null,
+        tracking_status: preview?.tracking_status ?? null,
+        status: preview?.tracking_status?.match(/deliver/i) ? 'Delivered' : 'In Transit',
       })
       const id = res.data.data.id
       // Best-effort: pull full live tracking (status, addresses, timeline) onto the row.
@@ -243,19 +279,78 @@ export function NewShipmentPage() {
           </div>
         </div>
 
-        {/* SECTION 2 — Link to Purchase Order (optional) */}
+        {/* SECTION 2 — Applied To (orders it covers) */}
         <div className="al-panel al-section">
           <div className="al-section-header">
             <span className="al-section-num">2</span>
-            <h4>Link to Purchase Order <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span></h4>
+            <h4>Applied To <span style={{ color: '#94a3b8', fontWeight: 400 }}>(orders this parcel covers)</span></h4>
           </div>
           <div className="ns-section-body">
-            <div className="al-field">
-              <label>Purchase Order</label>
-              <PoCombobox onSelect={po => setPoId(po?.id ?? '')} />
-            </div>
+            {orderIds.map((id, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 32px', gap: 8, marginBottom: 6 }}>
+                <select className="al-input" value={id} onChange={e => setOrderAt(i, e.target.value)}>
+                  <option value="">— Select order —</option>
+                  {ordersList.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                <button type="button" aria-label="Remove"
+                        onClick={() => setOrderIds(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)}
+                        style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 6, cursor: 'pointer', color: '#dc2626' }}>×</button>
+              </div>
+            ))}
+            <button type="button" className="lb-action-btn" style={{ fontSize: 12, padding: '5px 10px' }}
+                    onClick={() => setOrderIds(rows => [...rows, ''])}>
+              + Add another order
+            </button>
+            <p style={{ fontSize: 11.5, color: '#6b7280', margin: '8px 0 0' }}>
+              Combined-billing parcels (one label covering several orders) go here — leave blank and pick a PO below if this is a supplier shipment.
+            </p>
           </div>
         </div>
+
+        {/* SECTION 3 — Cost, weight, return */}
+        <div className="al-panel al-section">
+          <div className="al-section-header">
+            <span className="al-section-num">3</span>
+            <h4>Cost &amp; Weight <span style={{ color: '#94a3b8', fontWeight: 400 }}>(from Shippo billing)</span></h4>
+          </div>
+          <div className="ns-section-body">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="al-field">
+                <label>Shipping Cost (USD)</label>
+                <input type="number" step="0.01" className="al-input" value={shippingCost}
+                       onChange={e => setShippingCost(e.target.value)} placeholder="0.00" />
+              </div>
+              <div className="al-field">
+                <label>Weight (lbs)</label>
+                <input type="number" step="0.01" className="al-input" value={weightLbs}
+                       onChange={e => setWeightLbs(e.target.value)} placeholder="0.00" />
+              </div>
+            </div>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginTop: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={isReturn} onChange={e => setIsReturn(e.target.checked)} />
+              Return / mistaken label (kept for the record, marked as not a customer shipment)
+            </label>
+          </div>
+        </div>
+
+        {/* SECTION 4 — Link to Purchase Order (only when no order is applied) */}
+        {!orderIds.some(Boolean) && (
+          <div className="al-panel al-section">
+            <div className="al-section-header">
+              <span className="al-section-num">4</span>
+              <h4>Link to Purchase Order <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span></h4>
+            </div>
+            <div className="ns-section-body">
+              <div className="al-field">
+                <label>Purchase Order</label>
+                <PoCombobox onSelect={po => setPoId(po?.id ?? '')} />
+              </div>
+              <p style={{ fontSize: 11.5, color: '#6b7280', margin: '8px 0 0' }}>
+                A shipment fulfils either an order or a PO — never both.
+              </p>
+            </div>
+          </div>
+        )}
 
       </div>{/* end ns-content */}
 

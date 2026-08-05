@@ -32,8 +32,13 @@ const bodyFields = {
   tracking_number:    z.string().optional().nullable(),
   ship_date:          z.string().optional().nullable(),
   estimated_delivery: z.string().optional().nullable(),
-  weight_lbs:         z.number().nonnegative().optional().nullable(),
-  shipping_cost:      z.number().nonnegative().optional().nullable(),
+  weight_lbs:         z.coerce.number().nonnegative().optional().nullable(),
+  shipping_cost:      z.coerce.number().nonnegative().optional().nullable(),
+  // Return / mistaken labels stay in the system, marked, rather than deleted.
+  is_return:          z.boolean().optional(),
+  // A parcel can cover several orders (combined billing). If order_id is set
+  // it becomes the primary; every id lands in the shipment_orders join.
+  order_ids:          z.array(z.string().uuid()).optional(),
   recipient_name:     z.string().optional().nullable(),
   address:            z.string().optional().nullable(),
   notes:              z.string().optional().nullable(),

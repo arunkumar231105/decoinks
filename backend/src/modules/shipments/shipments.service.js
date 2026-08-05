@@ -5,9 +5,11 @@ const shippo = require('../../utils/shippo')
 async function list({ page = 1, limit = 10, status = '' }) {
   const offset = (page - 1) * limit
   const params = []
-  const conditions = []
+  // Soft-deleted shipments never appear in the list; hard delete stays possible
+  // through the remove() path but is now discouraged.
+  const conditions = ['s.deleted_at IS NULL']
   if (status) { params.push(status); conditions.push(`s.status = $${params.length}`) }
-  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+  const where = 'WHERE ' + conditions.join(' AND ')
 
   const countRes = await query(`SELECT COUNT(*) FROM shipments s ${where}`, params)
   const total = parseInt(countRes.rows[0].count, 10)
@@ -16,12 +18,17 @@ async function list({ page = 1, limit = 10, status = '' }) {
   const { rows } = await query(
     `SELECT s.*, c.name AS supplier_name, o.order_number,
             po.po_number, po.shipping_address AS po_shipping_address,
+            alloc.allocated_count,
             COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name
      FROM shipments s
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
      LEFT JOIN purchase_orders po ON po.id = s.po_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*)::INT AS allocated_count
+       FROM shipment_orders so WHERE so.shipment_id = s.id
+     ) alloc ON TRUE
      ${where}
      ORDER BY s.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -63,16 +70,31 @@ async function getById(id) {
      LEFT JOIN orders o ON o.id = s.order_id
      LEFT JOIN purchase_orders po ON po.id = s.po_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
-     WHERE s.id = $1`,
+     WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 })
-  return rows[0]
+  const { rows: allocations } = await query(
+    `SELECT so.order_id, so.is_primary, o.order_number, o.shipping_name AS order_customer
+       FROM shipment_orders so LEFT JOIN orders o ON o.id = so.order_id
+      WHERE so.shipment_id = $1
+      ORDER BY so.is_primary DESC, o.order_number`, [id])
+  return { ...rows[0], allocations }
 }
 
 async function create({ order_id, supplier_id, po_id, ship_source, supplier_name_text, agent_name, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by, status,
-  customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date }) {
+  customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date,
+  is_return, order_ids }) {
   const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
+
+  // Normalise the covered-orders list. A parcel can carry several orders
+  // (combined billing). The first entry becomes the primary and lands in
+  // shipments.order_id; every entry is written to shipment_orders.
+  const orders = Array.isArray(order_ids) ? [...new Set(order_ids.filter(Boolean))] : []
+  const primaryOrder = order_id || orders[0] || null
+  const allOrders = primaryOrder
+    ? [primaryOrder, ...orders.filter(o => o !== primaryOrder)]
+    : []
   // Use free-text customer name as recipient_name if no explicit recipient_name given
   const resolvedRecipient = recipient_name || supplier_name_text || null
   // Append agent_name to notes if provided
@@ -81,15 +103,25 @@ async function create({ order_id, supplier_id, po_id, ship_source, supplier_name
     : (notes || null)
   const { rows } = await query(
     `INSERT INTO shipments (shipment_number, order_id, supplier_id, po_id, ship_source, carrier, tracking_number, ship_date, estimated_delivery, weight_lbs, shipping_cost, recipient_name, address, notes, created_by, status,
-       customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16,'Pending')::shipment_status,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
-    [shipment_number, order_id || null, supplier_id || null, po_id || null, ship_source || null, carrier || null, tracking_number || null,
+       customer_name, service_type, ship_to_city, ship_to_state, ship_to_postal_code, tracking_status, last_scan_city, last_scan_state, delivered_date, is_return)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16,'Pending')::shipment_status,$17,$18,$19,$20,$21,$22,$23,$24,$25,COALESCE($26,FALSE)) RETURNING *`,
+    [shipment_number, primaryOrder, supplier_id || null, po_id || null, ship_source || null, carrier || null, tracking_number || null,
      ship_date || null, estimated_delivery || null, weight_lbs || null, shipping_cost || null,
      resolvedRecipient, address || null, resolvedNotes, created_by, status || null,
      customer_name || null, service_type || null, ship_to_city || null, ship_to_state || null,
      ship_to_postal_code || null, tracking_status || null, last_scan_city || null, last_scan_state || null,
-     delivered_date || null]
+     delivered_date || null, is_return || false]
   )
+
+  // Populate the join table so the shipment agrees with itself for both
+  // single-order and combined-parcel cases.
+  for (let i = 0; i < allOrders.length; i++) {
+    await query(
+      `INSERT INTO shipment_orders (shipment_id, order_id, is_primary)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (shipment_id, order_id) DO NOTHING`,
+      [rows[0].id, allOrders[i], i === 0])
+  }
   return rows[0]
 }
 
@@ -140,8 +172,12 @@ async function update(id, fields) {
 }
 
 async function remove(id) {
+  // Soft delete: shipment history is money and audit trail. The row stays for
+  // reporting; list() filters it out. Hard delete stays possible via SQL if
+  // something ever truly has to be purged, but the app never does it.
   const { rows } = await query(
-    `DELETE FROM shipments WHERE id = $1 RETURNING id`, [id]
+    `UPDATE shipments SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 })
 }
