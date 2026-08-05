@@ -42,7 +42,7 @@ async function exportCsv(req, res, next) {
   try {
     const { rows } = await service.list({ ...req.query, page: 1, limit: 10000 })
     const columns = [
-      ['Payment ID', 'payment_number'], ['Payment Date', 'payment_date'],
+      ['Payment ID', 'payment_number'], ['Transaction ID', 'transaction_id'], ['Payment Date', 'payment_date'],
       ['Customer Name', 'customer_name'], ['Received From', 'received_from_name'],
       ['Amount', 'amount'],
       ['Processor Fee', 'fee_amount'], ['Net Received', 'net_amount'],

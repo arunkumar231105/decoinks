@@ -15,6 +15,7 @@ const paymentFields = {
   amount:         z.coerce.number().positive('Amount must be greater than zero').optional(),
   // What the processor kept; net_amount is derived by the database.
   fee_amount:     z.coerce.number().min(0, 'Fee cannot be negative').optional(),
+  transaction_id: z.string().max(64).optional().nullable(),
   payment_method: z.string().max(50).optional().nullable(),
   reference_no:   z.string().max(100).optional().nullable(),
   notes:          z.string().optional().nullable(),

@@ -175,6 +175,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     ],
     columns: [
       { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
+      { key: 'transaction_id', label: 'Transaction ID', render: r => common.empty(r, 'transaction_id') },
       { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
       { key: 'received_from_name', label: 'Received From', render: r => common.empty(r, 'received_from_name', 'customer_name') },
@@ -455,6 +456,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   if (kind === 'payments') return <>
     <DrawerSection title="Payment Details" fields={[
       { label: 'Payment ID', value: first(row, 'payment_number') },
+      { label: 'Transaction ID', value: first(row, 'transaction_id') },
       { label: 'Payment Date', value: date(pick(row, 'payment_date', 'paid_at')) },
       { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
       { label: 'Processor Fee', value: money(row.fee_amount) },

@@ -20,6 +20,7 @@ const EMPTY = {
   fee_amount: '',
   payment_method: 'Bank Transfer',
   status: 'Completed',
+  transaction_id: '',
   reference_no: '',
   customer_id: '',
   order_id: '',
@@ -76,6 +77,7 @@ export function NewPaymentPage() {
       payment_date: String(existing.payment_date ?? existing.paid_at ?? today()).slice(0, 10),
       amount: String(existing.amount ?? ''),
       fee_amount: String(existing.fee_amount ?? ''),
+      transaction_id: String(existing.transaction_id ?? ''),
       received_from_name: String(existing.received_from_name ?? ''),
       received_into_account_id: String(existing.received_into_account_id ?? ''),
       sender_bank_name: String(existing.sender_bank_name ?? ''),
@@ -122,6 +124,7 @@ export function NewPaymentPage() {
         payment_date: form.payment_date || null,
         amount: totalAmount,
         fee_amount: feeAmount,
+        transaction_id: form.transaction_id || null,
         payment_method: form.payment_method,
         status: form.status,
         reference_no: form.reference_no || null,
@@ -204,7 +207,10 @@ export function NewPaymentPage() {
                 </select>
               </div>
             </div>
-            {field('Reference No', 'reference_no', 'text', 'Transaction / cheque reference')}
+            <div className="al-field-row">
+              {field('Transaction ID', 'transaction_id', 'text', 'PayPal / Zelle txn id')}
+              {field('Reference No', 'reference_no', 'text', 'Cheque / internal reference')}
+            </div>
           </div>
         </section>
 

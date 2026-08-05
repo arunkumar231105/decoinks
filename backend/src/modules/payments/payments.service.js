@@ -6,7 +6,7 @@ const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 // One SELECT list shared by list/getById so both views agree.
 const COLUMNS = `
   p.id, p.payment_number, p.payment_date, p.paid_at, p.amount, p.payment_method,
-  p.fee_amount, p.net_amount,
+  p.fee_amount, p.net_amount, p.transaction_id,
   p.received_from_name, p.received_into_account_id,
   p.sender_bank_name, p.sender_account_name, p.sender_account_last4, p.sender_reference,
   p.reference_no, p.status, p.notes, p.invoice_id, p.order_id, p.customer_id,
@@ -40,6 +40,7 @@ function buildWhere(f = {}) {
         OR COALESCE(p.customer_name, '') ILIKE $${n} OR COALESCE(c.name, '') ILIKE $${n}
         OR COALESCE(i.invoice_number, '') ILIKE $${n} OR COALESCE(o.order_number, '') ILIKE $${n}
         OR COALESCE(p.received_from_name, '') ILIKE $${n} OR COALESCE(p.sender_bank_name, '') ILIKE $${n}
+        OR COALESCE(p.transaction_id, '') ILIKE $${n}
         OR COALESCE(acc.account_name, '') ILIKE $${n})`)
   }
   if (f.status && f.status !== 'All') add(f.status, n => `p.status = $${n}`)
@@ -100,7 +101,7 @@ async function create(data) {
   const {
     payment_date, payment_method, reference_no, notes, status,
     customer_id, order_id, invoice_id, customer_name, recorded_by,
-    received_from_name, received_into_account_id,
+    received_from_name, received_into_account_id, transaction_id,
     sender_bank_name, sender_account_name, sender_account_last4, sender_reference,
     allocations,
   } = data
@@ -130,15 +131,15 @@ async function create(data) {
     }
     const { rows } = await client.query(
       `INSERT INTO payments
-         (payment_number, payment_date, paid_at, amount, fee_amount,
+         (payment_number, payment_date, paid_at, amount, fee_amount, transaction_id,
           payment_method, reference_no, notes, status,
           customer_id, order_id, invoice_id, customer_name, recorded_by,
           received_from_name, received_into_account_id,
           sender_bank_name, sender_account_name, sender_account_last4, sender_reference)
-       VALUES ($1, $2, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, $8,
-               $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       VALUES ($1, $2, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, $8, $9,
+               $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
-      [payment_number, payment_date || null, amount, fee,
+      [payment_number, payment_date || null, amount, fee, transaction_id || null,
        payment_method || 'Bank Transfer', reference_no || null, notes || null, status || 'Completed',
        customer_id || null, order_id || null, invoice_id || null, name, recorded_by || null,
        received_from_name || name || null, received_into_account_id || null,
@@ -183,7 +184,7 @@ async function getAllocations(paymentId) {
 async function update(id, fields) {
   const allowed = ['payment_date', 'payment_method', 'reference_no', 'notes',
                    'status', 'customer_id', 'order_id', 'invoice_id', 'customer_name',
-                   'amount', 'fee_amount',
+                   'amount', 'fee_amount', 'transaction_id',
                    'received_from_name', 'received_into_account_id',
                    'sender_bank_name', 'sender_account_name', 'sender_account_last4', 'sender_reference']
 
