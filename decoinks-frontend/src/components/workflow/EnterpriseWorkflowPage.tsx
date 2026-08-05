@@ -168,6 +168,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     kpis: [
       { label: 'Payments', icon: FileText, value: (_, t) => t, tone: 'blue' },
       { label: 'Total Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.amount || 0), 0)), tone: 'green' },
+      { label: 'Item Cost', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.item_amount || 0), 0)), tone: 'blue' },
+      { label: 'Shipping Cost', icon: Truck, value: r => money(r.reduce((a, x) => a + Number(x.shipping_amount || 0), 0)), tone: 'purple' },
       { label: 'Completed', icon: BadgeCheck, value: r => countStatus(r, 'completed'), tone: 'green' },
       { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending'), tone: 'amber' },
       { label: 'Average Payment', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.amount || 0), 0) / r.length : 0), tone: 'purple' },
@@ -176,8 +178,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
       { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
-      { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
+      { key: 'received_from_name', label: 'Received From', render: r => common.empty(r, 'received_from_name', 'customer_name') },
+      { key: 'item_amount', label: 'Item Cost', numeric: true, render: r => money(r.item_amount) },
+      { key: 'shipping_amount', label: 'Shipping Cost', numeric: true, render: r => money(r.shipping_amount) },
+      { key: 'amount', label: 'Total Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
+      { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'reference_no', label: 'Reference No', render: r => common.empty(r, 'reference_no') },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
@@ -450,10 +456,23 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
     <DrawerSection title="Payment Details" fields={[
       { label: 'Payment ID', value: first(row, 'payment_number') },
       { label: 'Payment Date', value: date(pick(row, 'payment_date', 'paid_at')) },
-      { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
+      { label: 'Item Cost', value: money(row.item_amount) },
+      { label: 'Shipping Cost', value: money(row.shipping_amount) },
+      { label: 'Total Amount', value: <strong>{money(row.amount)}</strong> },
       { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
       { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
       { label: 'Reference No', value: first(row, 'reference_no') },
+    ]}/>
+    <DrawerSection title="Received" fields={[
+      { label: 'Received From', value: first(row, 'received_from_name', 'customer_name') },
+      { label: 'Received Into', value: first(row, 'received_into_account') },
+      { label: 'Account Type', value: titleCase(first(row, 'received_into_type')) },
+    ]}/>
+    <DrawerSection title="Sender / Payer Bank" fields={[
+      { label: 'Bank', value: first(row, 'sender_bank_name') },
+      { label: 'Account Name', value: first(row, 'sender_account_name') },
+      { label: 'Account (last 4)', value: row.sender_account_last4 ? `••••${row.sender_account_last4}` : '—' },
+      { label: 'Sender Reference', value: first(row, 'sender_reference') },
     ]}/>
     <DrawerSection title="Customer" fields={[
       { label: 'Customer Name', value: first(row, 'customer_name') },

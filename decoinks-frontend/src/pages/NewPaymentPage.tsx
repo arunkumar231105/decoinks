@@ -16,12 +16,19 @@ interface Option { id: string; label: string }
 
 const EMPTY = {
   payment_date: today(),
-  amount: '',
+  item_amount: '',
+  shipping_amount: '',
   payment_method: 'Bank Transfer',
   status: 'Completed',
   reference_no: '',
   customer_id: '',
   order_id: '',
+  received_from_name: '',
+  received_into_account_id: '',
+  sender_bank_name: '',
+  sender_account_name: '',
+  sender_account_last4: '',
+  sender_reference: '',
   notes: '',
 }
 
@@ -50,6 +57,13 @@ export function NewPaymentPage() {
       }))),
   })
 
+  // The company's own receiving accounts — a lookup, so a renamed account
+  // updates everywhere at once.
+  const { data: accounts = [] } = useQuery<Array<{ value: string; label: string }>>({
+    queryKey: ['payment-accounts'],
+    queryFn: () => api.get('/payments/filters').then(r => r.data.data?.accounts ?? []),
+  })
+
   const { data: existing } = useQuery<Record<string, unknown>>({
     queryKey: ['payment', id],
     queryFn: () => api.get(`/payments/${id}`).then(r => r.data.data),
@@ -60,7 +74,14 @@ export function NewPaymentPage() {
     if (!existing) return
     setForm({
       payment_date: String(existing.payment_date ?? existing.paid_at ?? today()).slice(0, 10),
-      amount: String(existing.amount ?? ''),
+      item_amount: String(existing.item_amount ?? ''),
+      shipping_amount: String(existing.shipping_amount ?? ''),
+      received_from_name: String(existing.received_from_name ?? ''),
+      received_into_account_id: String(existing.received_into_account_id ?? ''),
+      sender_bank_name: String(existing.sender_bank_name ?? ''),
+      sender_account_name: String(existing.sender_account_name ?? ''),
+      sender_account_last4: String(existing.sender_account_last4 ?? ''),
+      sender_reference: String(existing.sender_reference ?? ''),
       payment_method: String(existing.payment_method ?? 'Bank Transfer'),
       status: String(existing.status ?? 'Completed'),
       reference_no: String(existing.reference_no ?? ''),
@@ -77,18 +98,30 @@ export function NewPaymentPage() {
     { enabled: !isEdit },
   )
 
+  const itemAmount = Number(form.item_amount) || 0
+  const shippingAmount = Number(form.shipping_amount) || 0
+  const totalAmount = +(itemAmount + shippingAmount).toFixed(2)
+
   const save = async () => {
-    if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than zero')
+    if (!(totalAmount > 0)) return toast.error('Enter an item or shipping amount greater than zero')
     setSaving(true)
     try {
       const payload = {
         payment_date: form.payment_date || null,
-        amount: Number(form.amount),
+        // The server re-derives the total from these two; it is never sent.
+        item_amount: itemAmount,
+        shipping_amount: shippingAmount,
         payment_method: form.payment_method,
         status: form.status,
         reference_no: form.reference_no || null,
         customer_id: form.customer_id || null,
         order_id: form.order_id || null,
+        received_from_name: form.received_from_name || null,
+        received_into_account_id: form.received_into_account_id || null,
+        sender_bank_name: form.sender_bank_name || null,
+        sender_account_name: form.sender_account_name || null,
+        sender_account_last4: form.sender_account_last4 || null,
+        sender_reference: form.sender_reference || null,
         notes: form.notes || null,
       }
       if (isEdit) {
@@ -136,9 +169,18 @@ export function NewPaymentPage() {
         <section className="al-panel al-section">
           <div className="al-section-header"><CircleDollarSign size={16}/><h4>Payment Details</h4></div>
           <div className="ncust-section-body">
+            {field('Payment Date', 'payment_date', 'date')}
             <div className="al-field-row">
-              {field('Payment Date', 'payment_date', 'date')}
-              {field('Amount *', 'amount', 'number', '0.00')}
+              {field('Item Cost', 'item_amount', 'number', '0.00')}
+              {field('Shipping Cost', 'shipping_amount', 'number', '0.00')}
+            </div>
+            {/* The total is always the two above added up — the server and the
+                database enforce the same rule, so it is shown, never typed. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          background: '#f8faff', border: '1px solid #dbe3f1', borderRadius: 8,
+                          padding: '10px 14px', margin: '4px 0 10px' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total Amount</span>
+              <strong style={{ fontSize: 18, color: '#1a2b5c' }}>${totalAmount.toFixed(2)}</strong>
             </div>
             <div className="al-field-row">
               <div className="al-field"><label>Payment Method</label>
@@ -155,12 +197,36 @@ export function NewPaymentPage() {
             {field('Reference No', 'reference_no', 'text', 'Transaction / cheque reference')}
           </div>
         </section>
+
+        <section className="al-panel al-section" style={{ marginTop: 14 }}>
+          <div className="al-section-header"><CircleDollarSign size={16}/><h4>Sender / Payer Bank</h4></div>
+          <div className="ncust-section-body">
+            {field('Sender Bank', 'sender_bank_name', 'text', 'e.g. Chase, Wells Fargo')}
+            {field('Account Name', 'sender_account_name', 'text', 'Name on the sending account')}
+            <div className="al-field-row">
+              {field('Account (last 4)', 'sender_account_last4', 'text', '1234')}
+              {field('Sender Reference', 'sender_reference', 'text', 'Their transaction ref')}
+            </div>
+            <p style={{ fontSize: 11.5, color: '#6b7280', margin: '2px 0 0', lineHeight: 1.5 }}>
+              Only the last four digits are stored — a payer's full account number is
+              sensitive and this system has no need to hold it.
+            </p>
+          </div>
+        </section>
       </div>
 
       <div className="ncust-col">
         <section className="al-panel al-section">
           <div className="al-section-header"><CircleDollarSign size={16}/><h4>Linked To</h4></div>
           <div className="ncust-section-body">
+            {field('Received From', 'received_from_name', 'text', 'Who actually sent the money')}
+            <div className="al-field"><label>Received Into (our account)</label>
+              <select className="al-input" value={form.received_into_account_id}
+                      onChange={e => set('received_into_account_id', e.target.value)}>
+                <option value="">— Select account —</option>
+                {accounts.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+              </select>
+            </div>
             <div className="al-field"><label>Customer</label>
               <select className="al-input" value={form.customer_id} onChange={e => set('customer_id', e.target.value)}>
                 <option value="">— Select customer —</option>
