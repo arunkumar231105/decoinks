@@ -88,7 +88,7 @@ const headerFields = {
   order_date:       z.string().optional().nullable(),
   due_date:         z.string().optional().nullable(),
   payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']).optional(),
-  payment_method:   z.enum(['cashapp', 'zelle', 'paypal', 'bank_transfer', 'cash', 'other']).optional().nullable(),
+  payment_method:   z.string().max(50).optional().nullable(),
   payment_status:   z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
   amount_paid:      z.number().nonnegative().optional(),
   payment_reference: z.string().max(150).optional().nullable(),
