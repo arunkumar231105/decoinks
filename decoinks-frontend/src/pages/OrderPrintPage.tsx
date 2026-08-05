@@ -90,6 +90,7 @@ const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
 
 function numberToWords(amount: number): string {
+  if (!Number.isFinite(amount)) amount = 0   // guard: NaN/Infinity would infinite-loop below1000
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
     'Seventeen', 'Eighteen', 'Nineteen']
@@ -127,7 +128,17 @@ function colorHex(c: string | null): string {
 }
 
 // Parse "S-3, M-8, L-10, XL-3, 2XL-1, 3XL-0" → { S:3, M:8, L:10, XL:3, 2XL:1, 3XL:0 }
-const SIZE_COLS = ['S', 'M', 'L', 'XL', '2XL', '3XL']
+const SIZE_COLS = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL']
+
+// Users type XXL and 2XL for the same size — collapse them to the column key
+// so both spellings land in the same bucket. Anything with N Xs before L is
+// "NXL"; a lone X stays XL.
+function normaliseSize(raw: string): string {
+  const s = raw.trim().toUpperCase().replace(/\s+/g, '')
+  const m = /^(X+)L$/.exec(s)
+  if (m) return m[1].length === 1 ? 'XL' : `${m[1].length}XL`
+  return s
+}
 
 function parseSizes(sizeStr: string | null, totalQty: number): Record<string, number> {
   const r: Record<string, number> = {}
@@ -135,14 +146,14 @@ function parseSizes(sizeStr: string | null, totalQty: number): Record<string, nu
   if (!sizeStr) return r
   if (sizeStr.includes('-')) {
     sizeStr.split(/[,;]/).forEach(part => {
-      const m = part.trim().match(/^(S|M|L|XL|2XL|3XL|4XL|5XL)-(\d+)$/i)
-      if (m && SIZE_COLS.includes(m[1].toUpperCase())) {
-        r[m[1].toUpperCase()] = parseInt(m[2])
-      }
+      const m = /^([A-Za-z0-9]+)-(\d+)$/.exec(part.trim())
+      if (!m) return
+      const key = normaliseSize(m[1])
+      if (SIZE_COLS.includes(key)) r[key] = parseInt(m[2])
     })
   } else {
-    const sz = sizeStr.trim().toUpperCase()
-    if (SIZE_COLS.includes(sz)) r[sz] = totalQty
+    const key = normaliseSize(sizeStr)
+    if (SIZE_COLS.includes(key)) r[key] = totalQty
   }
   return r
 }
