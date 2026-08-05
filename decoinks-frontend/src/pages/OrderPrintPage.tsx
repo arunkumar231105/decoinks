@@ -376,7 +376,8 @@ export function OrderPrintPage() {
   // Mockup columns only render when at least one item actually has a mockup
   const hasFrontMockup = apparelItems.some(i => i.front_mockup)
   const hasBackMockup  = apparelItems.some(i => i.back_mockup)
-  const apparelCols = 14 + (hasFrontMockup ? 1 : 0) + (hasBackMockup ? 1 : 0)
+  // 4 fixed cols (#, item, color, qty) + N size cols + 4 tail (front/back art, unit, total)
+  const apparelCols = 8 + SIZE_COLS.length + (hasFrontMockup ? 1 : 0) + (hasBackMockup ? 1 : 0)
   const dtfItems     = isDtf     ? (allItems as DtfItem[])     : []
   const gsItems      = isGangsheet ? (allItems as GangsheetItem[]) : []
 
@@ -618,7 +619,7 @@ export function OrderPrintPage() {
                   <th rowSpan={2} className="th-l" style={{ minWidth: 130 }}>Item Description</th>
                   <th rowSpan={2} style={{ width: 84 }}>Color</th>
                   <th rowSpan={2} style={{ width: 62 }}>Qty<br />(Pcs)</th>
-                  <th colSpan={6} style={{ borderBottom: '1px solid rgba(255,255,255,0.25)' }}>Size Breakdown</th>
+                  <th colSpan={SIZE_COLS.length} style={{ borderBottom: '1px solid rgba(255,255,255,0.25)' }}>Size Breakdown</th>
                   <th rowSpan={2} style={{ width: 74 }}>Front Artwork<br />(Thumbnail)</th>
                   <th rowSpan={2} style={{ width: 74 }}>Back Artwork<br />(Thumbnail)</th>
                   {hasFrontMockup && <th rowSpan={2} style={{ width: 74 }}>Front Mockup</th>}
