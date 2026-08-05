@@ -16,8 +16,7 @@ interface Option { id: string; label: string }
 
 const EMPTY = {
   payment_date: today(),
-  item_amount: '',
-  shipping_amount: '',
+  amount: '',
   fee_amount: '',
   payment_method: 'Bank Transfer',
   status: 'Completed',
@@ -75,8 +74,7 @@ export function NewPaymentPage() {
     if (!existing) return
     setForm({
       payment_date: String(existing.payment_date ?? existing.paid_at ?? today()).slice(0, 10),
-      item_amount: String(existing.item_amount ?? ''),
-      shipping_amount: String(existing.shipping_amount ?? ''),
+      amount: String(existing.amount ?? ''),
       fee_amount: String(existing.fee_amount ?? ''),
       received_from_name: String(existing.received_from_name ?? ''),
       received_into_account_id: String(existing.received_into_account_id ?? ''),
@@ -100,9 +98,7 @@ export function NewPaymentPage() {
     { enabled: !isEdit },
   )
 
-  const itemAmount = Number(form.item_amount) || 0
-  const shippingAmount = Number(form.shipping_amount) || 0
-  const totalAmount = +(itemAmount + shippingAmount).toFixed(2)
+  const totalAmount = +Number(form.amount || 0).toFixed(2)
   const feeAmount = Number(form.fee_amount) || 0
   const netAmount = +(totalAmount - feeAmount).toFixed(2)
 
@@ -116,7 +112,7 @@ export function NewPaymentPage() {
     setAllocations(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
 
   const save = async () => {
-    if (!(totalAmount > 0)) return toast.error('Enter an item or shipping amount greater than zero')
+    if (!(totalAmount > 0)) return toast.error('Enter an amount greater than zero')
     if (feeAmount < 0 || feeAmount > totalAmount) return toast.error('Fee cannot be negative or exceed the total')
     const lines = allocations.filter(a => a.order_id && Number(a.allocated_amount) > 0)
     if (allocatedTotal > totalAmount) return toast.error('Applied amounts exceed the payment total')
@@ -124,9 +120,7 @@ export function NewPaymentPage() {
     try {
       const payload = {
         payment_date: form.payment_date || null,
-        // The server re-derives the total from these two; it is never sent.
-        item_amount: itemAmount,
-        shipping_amount: shippingAmount,
+        amount: totalAmount,
         fee_amount: feeAmount,
         payment_method: form.payment_method,
         status: form.status,
@@ -189,17 +183,8 @@ export function NewPaymentPage() {
           <div className="ncust-section-body">
             {field('Payment Date', 'payment_date', 'date')}
             <div className="al-field-row">
-              {field('Item Cost', 'item_amount', 'number', '0.00')}
-              {field('Shipping Cost', 'shipping_amount', 'number', '0.00')}
-            </div>
-            {field('Processor Fee', 'fee_amount', 'number', 'PayPal / card cut — 0.00')}
-            {/* The total is always the two above added up — the server and the
-                database enforce the same rule, so it is shown, never typed. */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          background: '#f8faff', border: '1px solid #dbe3f1', borderRadius: 8,
-                          padding: '10px 14px', margin: '4px 0 10px' }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total Amount</span>
-              <strong style={{ fontSize: 18, color: '#1a2b5c' }}>${totalAmount.toFixed(2)}</strong>
+              {field('Amount', 'amount', 'number', '0.00')}
+              {field('Processor Fee', 'fee_amount', 'number', 'PayPal / card cut — 0.00')}
             </div>
             {feeAmount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5,

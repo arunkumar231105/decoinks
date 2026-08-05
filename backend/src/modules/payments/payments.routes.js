@@ -11,11 +11,10 @@ const STATUS = ['Completed', 'Pending', 'Failed', 'Refunded']
 
 const paymentFields = {
   payment_date:   z.string().optional().nullable(),
-  // The total is derived from these two, never sent by the client.
-  item_amount:     z.coerce.number().min(0, 'Item amount cannot be negative').optional(),
-  shipping_amount: z.coerce.number().min(0, 'Shipping amount cannot be negative').optional(),
+  // Total money in from the customer. Shipping cost lives on the shipment now.
+  amount:         z.coerce.number().positive('Amount must be greater than zero').optional(),
   // What the processor kept; net_amount is derived by the database.
-  fee_amount:      z.coerce.number().min(0, 'Fee cannot be negative').optional(),
+  fee_amount:     z.coerce.number().min(0, 'Fee cannot be negative').optional(),
   payment_method: z.string().max(50).optional().nullable(),
   reference_no:   z.string().max(100).optional().nullable(),
   notes:          z.string().optional().nullable(),
