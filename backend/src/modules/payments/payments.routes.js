@@ -14,6 +14,8 @@ const paymentFields = {
   // The total is derived from these two, never sent by the client.
   item_amount:     z.coerce.number().min(0, 'Item amount cannot be negative').optional(),
   shipping_amount: z.coerce.number().min(0, 'Shipping amount cannot be negative').optional(),
+  // What the processor kept; net_amount is derived by the database.
+  fee_amount:      z.coerce.number().min(0, 'Fee cannot be negative').optional(),
   payment_method: z.string().max(50).optional().nullable(),
   reference_no:   z.string().max(100).optional().nullable(),
   notes:          z.string().optional().nullable(),
@@ -28,6 +30,13 @@ const paymentFields = {
   sender_account_name:      z.string().max(160).optional().nullable(),
   sender_account_last4:     z.string().regex(/^[0-9]{1,4}$/, 'Last 4 digits only').optional().nullable(),
   sender_reference:         z.string().max(120).optional().nullable(),
+  // A payment may cover several orders — e.g. combined billing.
+  allocations: z.array(z.object({
+    order_id:         z.string().uuid().optional().nullable(),
+    invoice_id:       z.string().uuid().optional().nullable(),
+    allocated_amount: z.coerce.number().positive('Allocated amount must be greater than zero'),
+    notes:            z.string().optional().nullable(),
+  })).optional(),
 }
 
 const createSchema = z.object(paymentFields)

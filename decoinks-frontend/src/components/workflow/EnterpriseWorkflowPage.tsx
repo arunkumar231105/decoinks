@@ -170,6 +170,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Total Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.amount || 0), 0)), tone: 'green' },
       { label: 'Item Cost', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.item_amount || 0), 0)), tone: 'blue' },
       { label: 'Shipping Cost', icon: Truck, value: r => money(r.reduce((a, x) => a + Number(x.shipping_amount || 0), 0)), tone: 'purple' },
+      { label: 'Net Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.net_amount ?? x.amount ?? 0), 0)), tone: 'green' },
       { label: 'Completed', icon: BadgeCheck, value: r => countStatus(r, 'completed'), tone: 'green' },
       { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending'), tone: 'amber' },
       { label: 'Average Payment', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.amount || 0), 0) / r.length : 0), tone: 'purple' },
@@ -182,8 +183,11 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'item_amount', label: 'Item Cost', numeric: true, render: r => money(r.item_amount) },
       { key: 'shipping_amount', label: 'Shipping Cost', numeric: true, render: r => money(r.shipping_amount) },
       { key: 'amount', label: 'Total Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
+      { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
+      { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
+      { key: 'allocated_count', label: 'Applied To', render: r => Number(r.allocated_count || 0) > 1 ? `${r.allocated_count} orders` : common.empty(r, 'order_number') },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'reference_no', label: 'Reference No', render: r => common.empty(r, 'reference_no') },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
@@ -459,6 +463,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Item Cost', value: money(row.item_amount) },
       { label: 'Shipping Cost', value: money(row.shipping_amount) },
       { label: 'Total Amount', value: <strong>{money(row.amount)}</strong> },
+      { label: 'Processor Fee', value: money(row.fee_amount) },
+      { label: 'Net Received', value: <strong>{money(row.net_amount ?? row.amount)}</strong> },
       { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
       { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
       { label: 'Reference No', value: first(row, 'reference_no') },
@@ -479,6 +485,20 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Order ID', value: first(row, 'order_number') },
       { label: 'Invoice ID', value: first(row, 'invoice_number') },
     ]}/>
+    {Array.isArray(row.allocations) && row.allocations.length > 0 && (
+      <DrawerSection title={`Applied To (${row.allocations.length})`}>
+        <div className="ew-detail-items-head"><span>Order</span><span/><span>Amount</span></div>
+        <div className="ew-detail-items">
+          {row.allocations.map((a: AnyRow, index: number) => (
+            <div key={a.id || index}>
+              <span><b>{a.order_number || a.invoice_number || '—'}</b><small>{a.order_customer || ''}</small></span>
+              <strong/>
+              <strong>{money(a.allocated_amount)}</strong>
+            </div>
+          ))}
+        </div>
+      </DrawerSection>
+    )}
     <DrawerSection title="Record" fields={[
       { label: 'Recorded By', value: first(row, 'recorded_by_name') },
       { label: 'Created At', value: date(row.created_at) },

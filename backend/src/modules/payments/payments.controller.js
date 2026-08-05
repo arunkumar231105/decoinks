@@ -45,6 +45,8 @@ async function exportCsv(req, res, next) {
       ['Payment ID', 'payment_number'], ['Payment Date', 'payment_date'],
       ['Customer Name', 'customer_name'], ['Received From', 'received_from_name'],
       ['Item Cost', 'item_amount'], ['Shipping Cost', 'shipping_amount'], ['Total Amount', 'amount'],
+      ['Processor Fee', 'fee_amount'], ['Net Received', 'net_amount'],
+      ['Allocated To (orders)', 'allocated_count'], ['Allocated Amount', 'allocated_total'],
       ['Payment Method', 'payment_method'], ['Status', 'status'],
       ['Received Into Account', 'received_into_account'],
       ['Sender Bank', 'sender_bank_name'], ['Sender Account Name', 'sender_account_name'],

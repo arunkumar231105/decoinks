@@ -6,12 +6,13 @@ const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 // One SELECT list shared by list/getById so both views agree.
 const COLUMNS = `
   p.id, p.payment_number, p.payment_date, p.paid_at, p.amount, p.payment_method,
-  p.item_amount, p.shipping_amount,
+  p.item_amount, p.shipping_amount, p.fee_amount, p.net_amount,
   p.received_from_name, p.received_into_account_id,
   p.sender_bank_name, p.sender_account_name, p.sender_account_last4, p.sender_reference,
   p.reference_no, p.status, p.notes, p.invoice_id, p.order_id, p.customer_id,
   p.created_at, p.updated_at,
   acc.account_name AS received_into_account, acc.account_type AS received_into_type,
+  alloc.allocated_total, alloc.allocated_count,
   COALESCE(NULLIF(TRIM(p.customer_name), ''), c.name, i.customer_name, o.shipping_name) AS customer_name,
   i.invoice_number, o.order_number, u.name AS recorded_by_name`
 
@@ -21,7 +22,12 @@ const FROM = `
   LEFT JOIN invoices  i ON i.id = p.invoice_id
   LEFT JOIN orders    o ON o.id = p.order_id
   LEFT JOIN users     u ON u.id = p.recorded_by
-  LEFT JOIN payment_accounts acc ON acc.id = p.received_into_account_id`
+  LEFT JOIN payment_accounts acc ON acc.id = p.received_into_account_id
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(a.allocated_amount), 0)::NUMERIC(12,2) AS allocated_total,
+           COUNT(*)::INT AS allocated_count
+    FROM payment_allocations a WHERE a.payment_id = p.id
+  ) alloc ON TRUE`
 
 function buildWhere(f = {}) {
   const conditions = []
@@ -73,6 +79,8 @@ async function getStats(filters = {}) {
             COALESCE(SUM(p.amount), 0)::NUMERIC(14,2) AS total_amount,
             COALESCE(SUM(p.item_amount), 0)::NUMERIC(14,2) AS total_item,
             COALESCE(SUM(p.shipping_amount), 0)::NUMERIC(14,2) AS total_shipping,
+            COALESCE(SUM(p.fee_amount), 0)::NUMERIC(14,2) AS total_fees,
+            COALESCE(SUM(p.net_amount), 0)::NUMERIC(14,2) AS total_net,
             COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'Completed'), 0)::NUMERIC(14,2) AS completed_amount,
             COUNT(*) FILTER (WHERE p.status = 'Pending')::INT AS pending_count,
             COALESCE(AVG(p.amount), 0)::NUMERIC(14,2) AS average_payment,
@@ -87,7 +95,7 @@ async function getById(id) {
   }
   const { rows } = await query(`SELECT ${COLUMNS} ${FROM} WHERE p.id = $1`, [id])
   if (!rows[0]) throw Object.assign(new Error('Payment not found'), { statusCode: 404 })
-  return rows[0]
+  return { ...rows[0], allocations: await getAllocations(id) }
 }
 
 async function create(data) {
@@ -96,6 +104,7 @@ async function create(data) {
     customer_id, order_id, invoice_id, customer_name, recorded_by,
     received_from_name, received_into_account_id,
     sender_bank_name, sender_account_name, sender_account_last4, sender_reference,
+    allocations,
   } = data
 
   // The total is always the two components added up — the database enforces
@@ -103,12 +112,16 @@ async function create(data) {
   const item = Number(data.item_amount ?? 0)
   const shipping = Number(data.shipping_amount ?? 0)
   const amount = +(item + shipping).toFixed(2)
+  const fee = Number(data.fee_amount ?? 0)
 
   if (!(item >= 0 && shipping >= 0)) {
     throw Object.assign(new Error('Item and shipping amounts cannot be negative'), { statusCode: 400 })
   }
   if (!(amount > 0)) {
     throw Object.assign(new Error('Item + shipping must be greater than zero'), { statusCode: 400 })
+  }
+  if (fee < 0 || fee > amount) {
+    throw Object.assign(new Error('Fee cannot be negative or exceed the payment amount'), { statusCode: 400 })
   }
   const payment_number = await getNextNumber('PAY', 'payments', 'payment_number')
 
@@ -124,21 +137,33 @@ async function create(data) {
     }
     const { rows } = await client.query(
       `INSERT INTO payments
-         (payment_number, payment_date, paid_at, amount, item_amount, shipping_amount,
+         (payment_number, payment_date, paid_at, amount, item_amount, shipping_amount, fee_amount,
           payment_method, reference_no, notes, status,
           customer_id, order_id, invoice_id, customer_name, recorded_by,
           received_from_name, received_into_account_id,
           sender_bank_name, sender_account_name, sender_account_last4, sender_reference)
-       VALUES ($1, $2, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, $8, $9,
-               $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+       VALUES ($1, $2, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
-      [payment_number, payment_date || null, amount, item, shipping,
+      [payment_number, payment_date || null, amount, item, shipping, fee,
        payment_method || 'Bank Transfer', reference_no || null, notes || null, status || 'Completed',
        customer_id || null, order_id || null, invoice_id || null, name, recorded_by || null,
        received_from_name || name || null, received_into_account_id || null,
        sender_bank_name || null, sender_account_name || null,
        sender_account_last4 || null, sender_reference || null]
     )
+    // Split the payment across the orders it covers. The deferred trigger on
+    // payment_allocations rejects the whole transaction if they overrun the
+    // payment, so no partial write can survive.
+    const lines = Array.isArray(allocations) ? allocations.filter(a => Number(a?.allocated_amount) > 0) : []
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO payment_allocations (payment_id, order_id, invoice_id, allocated_amount, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [rows[0].id, line.order_id || null, line.invoice_id || null,
+         Number(line.allocated_amount), line.notes || null])
+    }
+
     await client.query('COMMIT')
     return rows[0]
   } catch (err) {
@@ -149,10 +174,24 @@ async function create(data) {
   }
 }
 
+/** The orders/invoices a payment was split across. */
+async function getAllocations(paymentId) {
+  const { rows } = await query(
+    `SELECT a.id, a.allocated_amount, a.notes, a.order_id, a.invoice_id,
+            o.order_number, o.shipping_name AS order_customer, i.invoice_number
+       FROM payment_allocations a
+       LEFT JOIN orders   o ON o.id = a.order_id
+       LEFT JOIN invoices i ON i.id = a.invoice_id
+      WHERE a.payment_id = $1
+      ORDER BY a.created_at`, [paymentId])
+  return rows
+}
+
 async function update(id, fields) {
   const allowed = ['payment_date', 'payment_method', 'reference_no', 'notes',
                    'status', 'customer_id', 'order_id', 'invoice_id', 'customer_name',
-                   'item_amount', 'shipping_amount', 'received_from_name', 'received_into_account_id',
+                   'item_amount', 'shipping_amount', 'fee_amount',
+                   'received_from_name', 'received_into_account_id',
                    'sender_bank_name', 'sender_account_name', 'sender_account_last4', 'sender_reference']
 
   // Editing either component re-derives the total, so the stored amount can
@@ -203,4 +242,4 @@ async function getFilterOptions() {
   }
 }
 
-module.exports = { list, getStats, getById, create, update, remove, getFilterOptions, STATUSES }
+module.exports = { list, getStats, getById, create, update, remove, getFilterOptions, getAllocations, STATUSES }
