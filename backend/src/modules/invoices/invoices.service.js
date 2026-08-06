@@ -32,7 +32,7 @@ async function logActivity(actorId, invoiceId, action, description) {
 
 async function list({ page = 1, limit = 10, status = '', customer_id = '', supplier_id = '', search = '' }) {
   const offset = (page - 1) * limit
-  const conditions = []
+  const conditions = ['i.deleted_at IS NULL']
   const params = []
 
   const supplierId = supplier_id

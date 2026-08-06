@@ -13,7 +13,7 @@ function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushS
 
 async function list({ page = 1, limit = 10, status = '', supplier_id = '', search = '' }) {
   const offset = (page - 1) * limit
-  const conditions = []
+  const conditions = ['q.deleted_at IS NULL']
   const params = []
 
   if (status)      { params.push(status);      conditions.push(`q.status = $${params.length}`) }
