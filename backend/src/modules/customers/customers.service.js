@@ -5,6 +5,9 @@ const { getNextNumber } = require('../../utils/counter')
 // not soft-deleted and not Draft/Cancelled; an invoice balance counts when it
 // is positive and the invoice is not Void.
 const ELIGIBLE_ORDERS = `ord.deleted_at IS NULL AND ord.status NOT IN ('Draft', 'Cancelled')`
+// Revenue-bearing orders only — free samples and $0 draft rows should not
+// drag the average order value down; they represent activity, not revenue.
+const REVENUE_ORDERS = `${ELIGIBLE_ORDERS} AND ord.total > 0`
 const OPEN_INVOICES = `inv.customer_id = c.id AND inv.status <> 'Void' AND COALESCE(inv.balance_due, 0) > 0`
 
 const STATUSES = ['prospect', 'active', 'inactive', 'blocked', 'archived']
@@ -185,7 +188,11 @@ async function getStats(filters = {}) {
         COUNT(*) FILTER (WHERE status = 'active')::INT AS active_customers
       FROM customers c WHERE ${customerPredicate}`, params),
     query(`WITH per_customer AS (
-        SELECT ord.customer_id, COUNT(*) AS order_count, SUM(ord.total) AS spent
+        SELECT ord.customer_id,
+               COUNT(*) AS order_count,
+               SUM(ord.total) AS spent,
+               COUNT(*) FILTER (WHERE ord.total > 0) AS paid_order_count,
+               SUM(ord.total) FILTER (WHERE ord.total > 0) AS paid_spent
         FROM orders ord
         JOIN customers c ON c.id = ord.customer_id AND ${customerPredicate}
         WHERE ${ELIGIBLE_ORDERS}
@@ -193,7 +200,9 @@ async function getStats(filters = {}) {
       )
       SELECT
         COUNT(*) FILTER (WHERE order_count > 1)::INT AS repeat_customers,
-        COALESCE(ROUND(SUM(spent) / NULLIF(SUM(order_count), 0), 2), 0) AS avg_order_value,
+        -- Average revenue per order, ignoring free/sample rows so the KPI
+        -- reflects real order value, not activity.
+        COALESCE(ROUND(SUM(paid_spent) / NULLIF(SUM(paid_order_count), 0), 2), 0) AS avg_order_value,
         COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value
       FROM per_customer`, params),
     query(`SELECT COALESCE(SUM(inv.balance_due), 0)::NUMERIC(14,2) AS outstanding_balance
