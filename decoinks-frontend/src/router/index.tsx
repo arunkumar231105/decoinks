@@ -7,42 +7,51 @@ import { ProtectedRoute } from '../layouts/ProtectedRoute'
 // Pages are code-split: each becomes its own chunk loaded on demand, so the
 // initial download is just the shell + the first page, not all ~45 screens.
 // (React.lazy needs a default export; pages use named exports, hence the map.)
-// A redeploy replaces the hashed chunk files this tab was built against, so an
-// already-open tab that navigates afterwards hits "Failed to fetch dynamically
-// imported module" and used to land on the error screen. Retry once (covers a
-// transient network blip), then reload the page so the browser picks up the new
-// index.html and the new chunk names. A sessionStorage guard makes sure a
-// genuinely broken chunk can never cause a reload loop.
-const RELOAD_GUARD = 'decoinks:chunk-reloaded'
+//
+// A redeploy replaces the hashed chunk files this tab was built against, so
+// this tab can hit two flavours of failure when it later navigates:
+//   1. loader() rejects — "Failed to fetch dynamically imported module"
+//   2. loader() resolves but the named export is gone — m[name] === undefined
+//      (usually a rename or the module map ending up mismatched)
+// Both mean "our JS is out of date". Reload once so the browser pulls the new
+// index.html + new chunk names. A per-chunk timestamped guard prevents a
+// reload loop when the failure is real (not a stale build).
+const RELOAD_KEY = 'decoinks:chunk-reload:'
+const RELOAD_COOLDOWN_MS = 30_000
 
-export function recoverFromStaleChunk() {
-  if (sessionStorage.getItem(RELOAD_GUARD)) return false
-  sessionStorage.setItem(RELOAD_GUARD, String(Date.now()))
+export function recoverFromStaleChunk(name = 'unknown') {
+  const key = RELOAD_KEY + name
+  const now = Date.now()
+  const last = Number(sessionStorage.getItem(key) || 0)
+  if (now - last < RELOAD_COOLDOWN_MS) return false
+  sessionStorage.setItem(key, String(now))
   window.location.reload()
   return true
 }
 
-// Once the app has successfully booted, clear the guard so a future deploy can
-// recover again.
-window.addEventListener('load', () => {
-  setTimeout(() => sessionStorage.removeItem(RELOAD_GUARD), 5_000)
-})
-
 const page = <T extends ComponentType<any> = ComponentType<any>>(
   loader: () => Promise<Record<string, unknown>>, name: string,
-) => lazy(() =>
-  loader()
-    .catch(async () => {
-      // One quick retry — a momentary network hiccup shouldn't break the route.
-      await new Promise((r) => setTimeout(r, 600))
-      return loader().catch((err) => {
-        // Still failing: the chunk is gone (new deploy). Reload to recover.
-        // In-progress form data is safe — drafts live in localStorage.
-        if (recoverFromStaleChunk()) return new Promise<never>(() => {})
-        throw err
-      })
-    })
-    .then((m) => ({ default: (m as Record<string, unknown>)[name] as T })))
+) => lazy(async () => {
+  const load = async () => {
+    const m = await loader()
+    const Component = (m as Record<string, unknown>)[name] as T | undefined
+    if (!Component) throw new Error(`Route module "${name}" has no matching export — likely a stale chunk after a redeploy`)
+    return { default: Component }
+  }
+  try {
+    return await load()
+  } catch (err) {
+    // One quick retry covers a momentary network hiccup.
+    await new Promise((r) => setTimeout(r, 600))
+    try { return await load() } catch (err2) {
+      // Still failing: chunk is genuinely gone. Reload once per cooldown so
+      // the browser picks up the new build. Drafts live in localStorage, so
+      // in-progress form data survives the reload.
+      if (recoverFromStaleChunk(name)) return new Promise<never>(() => {})
+      throw err2
+    }
+  }
+})
 
 const ArtworkFormPage        = page(() => import('../pages/ArtworkFormPage'), 'ArtworkFormPage')
 const DashboardPage          = page(() => import('../pages/DashboardPage'), 'DashboardPage')

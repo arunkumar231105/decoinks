@@ -22,6 +22,15 @@ interface State {
  *     <MyPage />
  *   </ErrorBoundary>
  */
+// A failure that means "our JS bundle is out of sync with what the server
+// serves" — the only real fix is to reload so the browser fetches the new
+// index.html + new chunk file names. Match generously: browsers word these
+// errors differently (Chrome, Firefox, Safari, Edge all use different text).
+const STALE_CHUNK_RE = /(loading chunk|failed to fetch dynamically imported module|importing a module script failed|failed to import|stale chunk|has no matching export)/i
+
+const RELOAD_KEY_PREFIX = 'decoinks:chunk-reload:'
+const RELOAD_COOLDOWN_MS = 30_000
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, message: '' }
 
@@ -31,13 +40,35 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(err: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', err, info.componentStack)
+    // Auto-recover from a stale chunk once per 30s — the user should never
+    // have to see the error UI for something a page reload fixes.
+    if (STALE_CHUNK_RE.test(err?.message || '')) {
+      const key = RELOAD_KEY_PREFIX + 'boundary'
+      const now = Date.now()
+      const last = Number(sessionStorage.getItem(key) || 0)
+      if (now - last > RELOAD_COOLDOWN_MS) {
+        sessionStorage.setItem(key, String(now))
+        // A tiny delay lets React finish the render pass so the UI does not
+        // flicker on its way out.
+        setTimeout(() => window.location.reload(), 100)
+      }
+    }
   }
 
   handleReload = () => {
+    // Clear all reload cooldowns so a manual reload always gets one more try.
+    Object.keys(sessionStorage)
+      .filter(k => k.startsWith(RELOAD_KEY_PREFIX))
+      .forEach(k => sessionStorage.removeItem(k))
     window.location.reload()
   }
 
   handleReset = () => {
+    // Clearing cooldowns here too lets the next lazy-load attempt reload if
+    // the failure was truly stale-chunk-related.
+    Object.keys(sessionStorage)
+      .filter(k => k.startsWith(RELOAD_KEY_PREFIX))
+      .forEach(k => sessionStorage.removeItem(k))
     this.setState({ hasError: false, message: '' })
   }
 
