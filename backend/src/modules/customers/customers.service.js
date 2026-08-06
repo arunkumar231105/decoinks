@@ -169,14 +169,18 @@ async function getStats(filters = {}) {
   // filters (order/spend thresholds) are intentionally handled by the list;
   // the quick period presets and ordinary customer filters are applied here.
   const customerPredicate = where.replace(/^WHERE\s+/i, '')
+  // A "new customer" is one who came in through a lead conversion — a manual
+  // add or a bulk import is not new business, it is just data entry. The
+  // lead_id link is set only by the lead→customer conversion service.
   const newCustomersSql = filters.date_from || filters.date_to
-    ? 'COUNT(*)::INT'
-    : "COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE))::INT"
+    ? 'COUNT(*) FILTER (WHERE lead_id IS NOT NULL)::INT'
+    : "COUNT(*) FILTER (WHERE lead_id IS NOT NULL AND created_at >= date_trunc('month', CURRENT_DATE))::INT"
   const [customers, orders, balance] = await Promise.all([
     query(`SELECT
         COUNT(*)::INT AS total_customers,
         ${newCustomersSql} AS new_customers,
-        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+        COUNT(*) FILTER (WHERE lead_id IS NOT NULL
+                           AND created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
                            AND created_at < date_trunc('month', CURRENT_DATE))::INT AS new_customers_prev,
         COUNT(*) FILTER (WHERE status = 'active')::INT AS active_customers
       FROM customers c WHERE ${customerPredicate}`, params),
