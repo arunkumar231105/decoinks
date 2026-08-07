@@ -46,7 +46,9 @@ const customerFields = {
   internal_notes:   z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
   first_name:       nameField,
+  middle_name:      nameField,
   last_name:        nameField,
+  external_customer_number: emptyable(z.string().max(50)),
   company_name:     emptyable(z.string().min(2, 'Company name must be 2–100 characters').max(100, 'Company name must be 2–100 characters')),
   company_phone_number: phoneField,
   mobile_number:    phoneField,
@@ -65,6 +67,13 @@ const customerFields = {
     zipcode: zipField, country: z.string().optional().nullable(),
     contact_person: emptyable(z.string().max(160)),
     is_default: z.boolean().optional(),
+  })).optional(),
+  contacts: z.array(z.object({
+    first_name: nameField, middle_name: nameField, last_name: nameField,
+    job_title: emptyable(z.string().max(120)),
+    email: emailField, phone: phoneField, mobile_number: phoneField, whatsapp: phoneField,
+    is_primary: z.boolean().optional(),
+    notes: emptyable(z.string().max(2000)),
   })).optional(),
 }
 

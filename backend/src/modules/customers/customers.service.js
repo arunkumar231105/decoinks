@@ -44,10 +44,10 @@ function buildFilters(f) {
 
   if (f.search) {
     add(`%${f.search}%`, n =>
-      `(c.name ILIKE $${n} OR CONCAT_WS(' ', c.first_name, c.last_name) ILIKE $${n}
+      `(c.name ILIKE $${n} OR CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name) ILIKE $${n}
         OR c.company_name ILIKE $${n} OR c.company ILIKE $${n} OR c.email ILIKE $${n}
         OR c.phone ILIKE $${n} OR c.company_phone_number ILIKE $${n} OR c.mobile_number ILIKE $${n}
-        OR c.whatsapp ILIKE $${n} OR c.customer_number ILIKE $${n})`)
+        OR c.whatsapp ILIKE $${n} OR c.customer_number ILIKE $${n} OR c.external_customer_number ILIKE $${n})`)
   }
   if (f.customer_type) add(f.customer_type, n => `c.customer_type = $${n}`)
   if (f.segment) add(f.segment, n => `COALESCE(c.customer_segment, c.buyer_type) ILIKE $${n}`)
@@ -89,7 +89,7 @@ function buildFilters(f) {
 // lifetime_value / last_order_at columns (migration 047) that are not
 // maintained — the live aggregates below are authoritative.
 const CUSTOMER_COLUMNS = `
-  c.id, c.customer_number, c.lead_id, c.name, c.first_name, c.last_name,
+  c.id, c.customer_number, c.external_customer_number, c.lead_id, c.name, c.first_name, c.middle_name, c.last_name,
   c.email, c.phone, c.whatsapp, c.company, c.company_name, c.website,
   c.facebook_id, c.instagram_id, c.address_line1, c.city, c.state, c.zip,
   c.country, c.billing_address, c.same_as_shipping, c.buyer_type,
@@ -104,7 +104,7 @@ function baseCte(where) {
       SELECT ${CUSTOMER_COLUMNS},
         u.name AS agent_name,
         COALESCE(NULLIF(TRIM(c.company_name), ''), NULLIF(TRIM(c.company), ''), c.name) AS display_name,
-        COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.name) AS contact_person,
+        COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name)), ''), c.name) AS contact_person,
         COALESCE(NULLIF(c.company_phone_number, ''), NULLIF(c.phone, ''), NULLIF(c.mobile_number, '')) AS primary_phone,
         COALESCE(NULLIF(c.customer_segment, ''), NULLIF(c.buyer_type, '')) AS segment,
         o.total_orders, o.total_spent, o.avg_order_value,
@@ -244,9 +244,13 @@ async function getById(id) {
   if (!rows[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
   const customer = rows[0]
 
-  const [addresses, quotes, lastPayment, lastInvoice, activity] = await Promise.all([
+  const [addresses, contacts, quotes, lastPayment, lastInvoice, activity] = await Promise.all([
     query(`SELECT * FROM customer_addresses WHERE customer_id = $1
            ORDER BY is_default DESC, address_type, created_at`, [id]),
+    query(`SELECT id, first_name, middle_name, last_name, job_title, email, phone,
+                  mobile_number, whatsapp, is_primary, notes, created_at
+           FROM customer_contacts WHERE customer_id = $1 AND deleted_at IS NULL
+           ORDER BY is_primary DESC, created_at`, [id]),
     query(`SELECT id, quote_number, status, total, created_at FROM quotations
            WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 20`, [id]),
     query(`SELECT p.amount, p.paid_at, p.payment_method FROM payments p
@@ -279,6 +283,7 @@ async function getById(id) {
     ...customer,
     customer_no: customer.customer_number,
     addresses: addresses.rows,
+    contacts: contacts.rows,
     quotes: quotes.rows,
     quotes_count: quotes.rows.length,
     last_payment: lastPayment.rows[0] || null,
@@ -290,12 +295,36 @@ async function getById(id) {
   }
 }
 
+// Insert a customer's contact people. The single-primary guard mirrors the
+// partial-unique index (uq_customer_contacts_one_primary): only the first
+// is_primary=true survives, so a mis-formed payload can never violate it.
+async function insertContacts(client, customerId, contacts, createdBy) {
+  let primaryTaken = false
+  for (const ct of contacts || []) {
+    const filled = ct.first_name || ct.middle_name || ct.last_name || ct.job_title
+      || ct.email || ct.phone || ct.mobile_number || ct.whatsapp || ct.notes
+    if (!filled) continue                       // skip blank rows
+    const isPrimary = !!ct.is_primary && !primaryTaken
+    if (isPrimary) primaryTaken = true
+    await client.query(
+      `INSERT INTO customer_contacts
+         (customer_id, first_name, middle_name, last_name, job_title, email,
+          phone, mobile_number, whatsapp, is_primary, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [customerId, ct.first_name || null, ct.middle_name || null, ct.last_name || null,
+       ct.job_title || null, ct.email || null, ct.phone || null, ct.mobile_number || null,
+       ct.whatsapp || null, isPrimary, ct.notes || null, createdBy || null]
+    )
+  }
+}
+
 async function create({ lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,
   address_line1, city, state, zip, country, billing_address, same_as_shipping,
   buyer_type, internal_notes, source, created_by,
-  first_name, last_name, company_name, company_phone_number, mobile_number,
+  first_name, middle_name, last_name, company_name, company_phone_number, mobile_number,
   preferred_language, customer_segment, tier, status,
-  customer_type, job_title, payment_terms, credit_limit, assigned_agent_id, addresses = [] }) {
+  customer_type, job_title, payment_terms, credit_limit, assigned_agent_id,
+  external_customer_number, addresses = [], contacts = [] }) {
   const displayName = name || [first_name, last_name].filter(Boolean).join(' ')
   if (!displayName) throw Object.assign(new Error('First name is required'), { statusCode: 400 })
   const customer_number = await getNextNumber('CUST', 'customers', 'customer_number')
@@ -308,9 +337,10 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
           address_line1, city, state, zip, country, billing_address, same_as_shipping,
           buyer_type, internal_notes, source, created_by, first_name, last_name, company_name,
           company_phone_number, mobile_number, preferred_language, customer_segment, tier,
-          customer_type, job_title, payment_terms, credit_limit, assigned_agent_id, status)
+          customer_type, job_title, payment_terms, credit_limit, assigned_agent_id, status,
+          middle_name, external_customer_number)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-               $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+               $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
        RETURNING *`,
       [
         customer_number, lead_id || null, displayName,
@@ -325,6 +355,7 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
         customer_type || null, job_title || null, payment_terms || null,
         credit_limit ?? null, assigned_agent_id || null,
         normalizeStatus(status) || 'prospect',
+        middle_name || null, external_customer_number || null,
       ]
     )
     const customer = rows[0]
@@ -342,6 +373,8 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
          a.state || null, a.zipcode || null, a.country || null, a.contact_person || null, a.is_default || false]
       )
     }
+
+    await insertContacts(client, customer.id, contacts, created_by)
 
     // Link lead to this customer
     if (lead_id) {
@@ -377,12 +410,14 @@ async function update(id, fields, actorId) {
     'company_name', 'company_phone_number', 'mobile_number', 'preferred_language',
     'customer_segment', 'tier',
     'customer_type', 'job_title', 'payment_terms', 'credit_limit', 'assigned_agent_id',
+    'middle_name', 'external_customer_number',
   ]
   // Structured addresses (from the New/Edit Customer form) live in the
   // customer_addresses table. When supplied, keep the denormalised flat
   // columns (read by the list + detail views) in sync with the shipping
   // address so both representations agree.
   const addresses = Array.isArray(fields.addresses) ? fields.addresses : null
+  const contacts = Array.isArray(fields.contacts) ? fields.contacts : null
   if (addresses) {
     const ship = addresses.find(a => a.address_type === 'shipping') || {}
     const bill = addresses.find(a => a.address_type === 'billing')
@@ -405,7 +440,7 @@ async function update(id, fields, actorId) {
       sets.push(`${key} = $${params.length}`)
     }
   }
-  if (!sets.length && !addresses) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
+  if (!sets.length && !addresses && !contacts) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
   const client = await getClient()
   try {
@@ -442,6 +477,12 @@ async function update(id, fields, actorId) {
            a.state || null, a.zipcode || null, a.country || null, a.contact_person || null, a.is_default || false]
         )
       }
+    }
+
+    // Replace the contacts (people) rows.
+    if (contacts) {
+      await client.query(`DELETE FROM customer_contacts WHERE customer_id = $1`, [id])
+      await insertContacts(client, id, contacts, actorId)
     }
 
     if (fields.status !== undefined) {

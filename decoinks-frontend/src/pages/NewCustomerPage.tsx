@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, UserRound, MapPin } from 'lucide-react'
+import { ChevronRight, UserRound, MapPin, Users } from 'lucide-react'
 import { Country, State } from 'country-state-city'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
+import { CustomerContactsEditor, contactIsBlank, type ContactDraft } from '../components/customers/CustomerContactsEditor'
 
 const SEGMENTS = ['retail', 'reseller', 'corporate', 'non-profit', 'individual']
 const TIERS = ['Standard', 'Silver', 'Gold', 'Platinum']
@@ -98,7 +99,8 @@ function validateCustomer(form: typeof EMPTY_FORM, sameAsShipping: boolean) {
 }
 
 const EMPTY_FORM = {
-  first_name: '', last_name: '', company_name: '', email: '',
+  first_name: '', middle_name: '', last_name: '', external_customer_number: '',
+  company_name: '', email: '',
   company_phone_number: '', whatsapp_number: '', mobile_number: '',
   preferred_language: 'en', customer_segment: 'retail', tier: 'Standard',
   shipping_contact_person: '',
@@ -122,6 +124,7 @@ export function NewCustomerPage() {
   const [saving, setSaving] = useState(false)
   const [sameAsShipping, setSameAsShipping] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
+  const [contacts, setContacts] = useState<ContactDraft[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const set = (key: keyof typeof form, value: string) => {
     setForm(v => ({ ...v, [key]: value }))
@@ -139,10 +142,11 @@ export function NewCustomerPage() {
   // stale draft must never overwrite freshly loaded record data.
   const { restored, clearDraft } = useFormDraft(
     'customer:new',
-    { form, sameAsShipping },
+    { form, sameAsShipping, contacts },
     saved => {
       if (saved.form) setForm(f => ({ ...f, ...(saved.form as typeof EMPTY_FORM) }))
       if (typeof saved.sameAsShipping === 'boolean') setSameAsShipping(saved.sameAsShipping)
+      if (Array.isArray(saved.contacts)) setContacts(saved.contacts as ContactDraft[])
     },
     { enabled: !isEdit },
   )
@@ -164,7 +168,9 @@ export function NewCustomerPage() {
     const billCountry = resolveCountry(bill?.country) || 'United States'
     setForm({
       first_name: existing.first_name ?? (existing.name?.split(' ')[0] ?? ''),
+      middle_name: existing.middle_name ?? '',
       last_name: existing.last_name ?? (existing.name?.split(' ').slice(1).join(' ') ?? ''),
+      external_customer_number: existing.external_customer_number ?? '',
       company_name: existing.company_name ?? existing.company ?? '',
       email: existing.email ?? '',
       company_phone_number: existing.company_phone_number ?? existing.phone ?? '',
@@ -189,6 +195,12 @@ export function NewCustomerPage() {
       billing_country: billCountry,
     })
     setSameAsShipping(!!existing.same_as_shipping)
+    setContacts(Array.isArray(existing.contacts) ? existing.contacts.map((c: any) => ({
+      first_name: c.first_name ?? '', middle_name: c.middle_name ?? '', last_name: c.last_name ?? '',
+      job_title: c.job_title ?? '', email: c.email ?? '', phone: c.phone ?? '',
+      mobile_number: c.mobile_number ?? '', whatsapp: c.whatsapp ?? '',
+      is_primary: !!c.is_primary, notes: c.notes ?? '',
+    })) : [])
   }, [existing])
 
   const save = async () => {
@@ -214,8 +226,15 @@ export function NewCustomerPage() {
         { address_type: 'billing', ...billing, is_default: true },
       ].filter(a => a.line1 || a.city || a.state || a.zipcode || a.contact_person)
       const payload = {
-        name: [form.first_name, form.last_name].filter(Boolean).join(' '),
-        first_name: form.first_name, last_name: form.last_name || null,
+        name: [form.first_name, form.middle_name, form.last_name].filter(Boolean).join(' '),
+        first_name: form.first_name, middle_name: form.middle_name || null, last_name: form.last_name || null,
+        external_customer_number: form.external_customer_number || null,
+        contacts: contacts.filter(c => !contactIsBlank(c)).map(c => ({
+          first_name: c.first_name || null, middle_name: c.middle_name || null, last_name: c.last_name || null,
+          job_title: c.job_title || null, email: c.email || null, phone: c.phone || null,
+          mobile_number: c.mobile_number || null, whatsapp: c.whatsapp || null,
+          is_primary: c.is_primary, notes: c.notes || null,
+        })),
         company_name: form.company_name || null, email: form.email || null,
         company_phone_number: form.company_phone_number || null,
         phone: form.company_phone_number || null, whatsapp: form.whatsapp_number || null,
@@ -325,8 +344,9 @@ export function NewCustomerPage() {
     <div className="ncust-grid">
       <div className="ncust-col">
         <section className="al-panel al-section"><div className="al-section-header"><UserRound size={16}/><h4>Customer Profile</h4></div><div className="ncust-section-body">
-          <div className="al-field-row">{field('First Name *','first_name')}{field('Last Name','last_name')}</div>
-          {field('Company Name','company_name')}{field('Email Address','email','email')}
+          <div className="al-field-row">{field('First Name *','first_name')}{field('Middle Name','middle_name')}{field('Last Name','last_name')}</div>
+          <div className="al-field-row">{field('Company Name','company_name')}{field('External Customer Number','external_customer_number','text',50)}</div>
+          {field('Email Address','email','email')}
           <div className="al-field-row">{field('Company Phone','company_phone_number','tel')}{field('Mobile Number','mobile_number','tel')}</div>
           {field('WhatsApp Number','whatsapp_number','tel')}
           <div className="al-field-row"><div className="al-field"><label>Preferred Language</label><select className="al-input" value={form.preferred_language} onChange={e=>set('preferred_language',e.target.value)}><option value="en">English</option><option value="es">Spanish</option></select></div>
@@ -345,5 +365,9 @@ export function NewCustomerPage() {
         {billingField('Contact Person (Bill to / Attn)','billing_contact_person',160)}{billingField('Address Line 1','billing_line1')}{billingField('Address Line 2','billing_line2')}<div className="al-field-row">{billingField('City','billing_city')}{stateSelect('billing_state')}</div><div className="al-field-row">{billingField('ZIP Code','billing_zipcode',5,true)}{countrySelect('billing_country')}</div>
       </div></section></div>
     </div>
+    <section className="al-panel al-section" style={{ marginTop: 20 }}>
+      <div className="al-section-header"><Users size={16}/><h4>Contacts</h4></div>
+      <CustomerContactsEditor value={contacts} onChange={setContacts} />
+    </section>
   </div>
 }

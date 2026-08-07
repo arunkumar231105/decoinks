@@ -27,7 +27,9 @@ function initials(name: string) {
 interface Customer {
   id: string
   customer_number?: string
+  external_customer_number?: string | null
   name: string
+  middle_name?: string | null
   company: string | null
   email: string | null
   phone: string | null
@@ -52,6 +54,15 @@ interface Customer {
   created_at: string
   quotes_count: number
   addresses?: CustomerAddressRow[]
+  contacts?: CustomerContactRow[]
+}
+
+interface CustomerContactRow {
+  id: string
+  first_name?: string | null; middle_name?: string | null; last_name?: string | null
+  job_title?: string | null; email?: string | null
+  phone?: string | null; mobile_number?: string | null; whatsapp?: string | null
+  is_primary?: boolean; notes?: string | null
 }
 
 interface CustomerAddressRow {
@@ -512,6 +523,40 @@ export function CustomerDetailPage() {
             )}
           </div>
 
+          {/* Contacts */}
+          {(customer.contacts?.length ?? 0) > 0 && (
+            <div className="al-panel" style={{ padding: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <UserRound size={15} style={{ color: '#64748B' }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Contacts</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 999, background: '#F1F5F9', color: '#64748B' }}>
+                  {customer.contacts!.length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {customer.contacts!.map(ct => {
+                  const fullName = [ct.first_name, ct.middle_name, ct.last_name].filter(Boolean).join(' ') || '—'
+                  return (
+                    <div key={ct.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{fullName}</span>
+                        {ct.is_primary && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#CCFBF1', color: '#0D9488' }}>PRIMARY</span>}
+                        {ct.job_title && <span style={{ fontSize: 12, color: '#64748B' }}>· {ct.job_title}</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#475569' }}>
+                        {ct.email && <span>{ct.email}</span>}
+                        {ct.phone && <span>{ct.phone}</span>}
+                        {ct.mobile_number && <span>M: {ct.mobile_number}</span>}
+                        {ct.whatsapp && <span>WA: {ct.whatsapp}</span>}
+                      </div>
+                      {ct.notes && <div style={{ fontSize: 12, color: '#94A3B8' }}>{ct.notes}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Internal Notes */}
           <div className="al-panel" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -627,6 +672,7 @@ export function CustomerDetailPage() {
             </div>
             {[
               { label: 'Customer Since', value: fmtDate(customer.created_at) },
+              ...(customer.external_customer_number ? [{ label: 'External #', value: customer.external_customer_number }] : []),
               { label: 'Total Quotes', value: String(customer.quotes_count ?? quotes.length) },
               { label: 'Source Channel', value: customer.source ?? customer.lead_source ?? 'Not set' },
               { label: 'Buyer Type', value: customer.buyer_type ?? 'Not set' },
