@@ -203,7 +203,9 @@ function calculateQuotationTotals({
     .reduce((sum, charge) => sum + charge.quotedCost, 0)
   const discount = enabled.find(charge => charge.key === 'discount')?.quotedCost ?? 0
   const subtotal = itemsTotal + shipping + nonTaxCharges
-  const finalTotal = +(Math.max(subtotal + discount, 0)).toFixed(2)
+  // Discount always REDUCES the total. On a new quote its quotedCost is entered
+  // positive (only negated on edit-load), so subtract the magnitude either way.
+  const finalTotal = +(Math.max(subtotal - Math.abs(discount), 0)).toFixed(2)
 
   return { itemsTotal, shipping, subtotal, discount, finalTotal }
 }
@@ -1538,11 +1540,15 @@ export function NewQuotationPage() {
     const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
     const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
     const packagingCharge = otherCharges.find(c => c.key === 'packaging')
-    const subtotalVal     = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
-    const discountPct     = discountCharge?.enabled && subtotalVal > 0
-      ? +((Math.abs(discountCharge.quotedCost) / subtotalVal) * 100).toFixed(4)
-      : 0
+    const itemsSubtotal   = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
     const estimatedShipping = shippingCharge?.enabled ? (shippingCharge.quotedCost || 0) : 0
+    // The discount is entered as a quoted $ amount. Convert it to a % of the SAME
+    // base the backend applies it to (items + shipping), so the entered $ is the $
+    // actually taken off — otherwise a flat $ drifts (e.g. $10 became $11.20).
+    const discountBase    = itemsSubtotal + estimatedShipping
+    const discountPct     = discountCharge?.enabled && discountBase > 0
+      ? +((Math.abs(discountCharge.quotedCost) / discountBase) * 100).toFixed(4)
+      : 0
     const rushServices = (artworkCharge?.enabled ? (artworkCharge.quotedCost || 0) : 0)
       + (packagingCharge?.enabled ? (packagingCharge.quotedCost || 0) : 0)
 
