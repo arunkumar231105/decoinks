@@ -1436,7 +1436,10 @@ export function NewQuotationPage() {
       if (str(saved.customerReqSummary) !== undefined) setCustomerReqSummary(saved.customerReqSummary as string)
       if (str(saved.quoteEstimate) !== undefined) setQuoteEstimate(saved.quoteEstimate as string)
     },
-    { enabled: !quoteId },
+    // Convert-from-customer (fromCustomerId) must load the authoritative customer
+    // from the server — never a stale shared draft, which previously restored a
+    // PREVIOUS customer onto the new quote (wrong customer_id saved).
+    { enabled: !quoteId && !fromCustomerId },
   )
 
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
