@@ -45,6 +45,17 @@ async function vaultList(req, res, next) {
 async function vaultStats(req, res, next) {
   try { return success(res, await vault.stats(req.query)) } catch (err) { next(err) }
 }
+async function vaultFacets(req, res, next) {
+  try { return success(res, await vault.facets(req.query)) } catch (err) { next(err) }
+}
+// Polled by the vault screens every couple of seconds. It must stay cheap and
+// must never trigger a Nextcloud walk — the background watcher owns that.
+async function vaultRevision(req, res, next) {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store')
+    return success(res, await vault.revision(req.query))
+  } catch (err) { next(err) }
+}
 async function vaultDetail(req, res, next) {
   try { return success(res, await vault.detail(req.params.id)) } catch (err) { next(err) }
 }
@@ -56,6 +67,9 @@ async function vaultSetCover(req, res, next) {
 }
 async function vaultBulkUpdate(req, res, next) {
   try { return success(res, await vault.bulkUpdate(req.body.ids, req.body), 'Artwork assets updated') } catch (err) { next(err) }
+}
+async function vaultLinkAsset(req, res, next) {
+  try { return success(res, await vault.linkAsset(req.params.id, req.body), 'Artwork asset linked') } catch (err) { next(err) }
 }
 function csvCell(value) {
   let text = value == null ? '' : String(value)
@@ -92,9 +106,55 @@ async function studioContent(req, res, next) {
     return res.send(buffer)
   } catch (err) { next(err) }
 }
+async function studioVault(req, res, next) {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store')
+    return success(res, await studio.vaultPayload(req.query.token || '', req.query))
+  } catch (err) { next(err) }
+}
+async function studioVaultFacets(req, res, next) {
+  try { return success(res, await studio.vaultFacets(req.query.token || '', req.query)) } catch (err) { next(err) }
+}
+async function studioVaultRevision(req, res, next) {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store')
+    return success(res, await studio.vaultRevision(req.query.token || '', req.query))
+  } catch (err) { next(err) }
+}
+async function studioPreview(req, res, next) {
+  try {
+    const { buffer, mime, etag } = await studio.assetPreview(req.query.token || '', req.query.id || '', {
+      width: Number(req.query.w) || 320,
+      height: Number(req.query.h) || 240,
+    })
+    // Safe to cache hard: the URL carries the file's etag, so new bytes mean a
+    // new URL rather than a stale image. The validator turns a revisit into a
+    // 304 with no body at all.
+    const validator = `"${etag}"`
+    res.setHeader('ETag', validator)
+    res.setHeader('Cache-Control', 'private, max-age=604800, immutable')
+    if (req.headers['if-none-match'] === validator) return res.status(304).end()
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.send(buffer)
+  } catch (err) { next(err) }
+}
+async function studioHandoff(req, res, next) {
+  try { return success(res, await studio.handoffToken(req.query.token || '', req.query.id || '')) } catch (err) { next(err) }
+}
+// `kind` decides which stage folder and type code the save lands on:
+// WRK (Artwork Editor), MU (Mockup) or GS (Gang Sheet).
 async function studioSave(req, res, next) {
-  try { return success(res, await studio.saveEditedArtwork(req.body.token || '', req.file, null), 'Artwork version saved') }
-  catch (err) { next(err) }
+  try {
+    const saved = await studio.saveEditedArtwork(req.body.token || '', req.file, null, req.body.kind || req.query.kind || 'WRK')
+    return success(res, saved, `${saved.file_name} saved to Nextcloud`)
+  } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, getBoard, create, createTask, updateStatus, remove, vaultList, vaultStats, vaultDetail, vaultSync, vaultSetCover, vaultBulkUpdate, vaultExport, studioToken, studioAsset, studioContent, studioSave }
+module.exports = {
+  list, getOne, getBoard, create, createTask, updateStatus, remove,
+  vaultList, vaultStats, vaultFacets, vaultRevision, vaultDetail, vaultSync, vaultSetCover,
+  vaultBulkUpdate, vaultLinkAsset, vaultExport,
+  studioToken, studioVault, studioVaultFacets, studioVaultRevision, studioPreview, studioHandoff,
+  studioAsset, studioContent, studioSave,
+}

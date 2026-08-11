@@ -73,8 +73,7 @@ async function upload(req, res, next) {
 }
 
 // Receives Nextcloud file events. Authenticated by a shared secret (NOT JWT),
-// because Nextcloud — not a logged-in user — is the caller. UI/DB sync wiring
-// is added in the next phase; for now the event is validated and logged.
+// because Nextcloud — not a logged-in user — is the caller.
 async function webhook(req, res, next) {
   try {
     const cfg = getConfig()
@@ -82,12 +81,14 @@ async function webhook(req, res, next) {
     if (!cfg.webhookSecret || provided !== cfg.webhookSecret) {
       return res.status(401).json({ success: false, message: 'Invalid webhook secret' })
     }
-    logger.info({ event: req.body?.event, path: req.body?.node?.path || req.body?.path }, 'Nextcloud webhook received')
-    // Keep the searchable vault index current. The full scan is de-duplicated
-    // by the vault service, so webhook bursts cannot start parallel scans.
+    const event = req.body || {}
+    const path = event.node?.path || event.path || event.file?.path || null
+    logger.info({ event: event.event, path }, 'Nextcloud webhook received')
+    // A webhook must acknowledge quickly. Full recursive scans made uploads
+    // appear late; the event path now reconciles only its parent folder.
     const vault = require('../artworks/artwork-vault.service')
-    await vault.sync({ force: true })
-    return res.status(200).json({ success: true })
+    setImmediate(() => vault.syncEvent(event).catch(err => logger.warn({ err: err.message, path }, 'Nextcloud event indexing failed')))
+    return res.status(202).json({ success: true, accepted: true, path })
   } catch (err) { next(err) }
 }
 
