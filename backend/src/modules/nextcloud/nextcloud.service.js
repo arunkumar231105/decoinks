@@ -19,6 +19,11 @@ function tag(block, name) {
   return m ? unescapeXml(m[1].trim()) : null
 }
 
+// Nextcloud answers a SEARCH with hrefs keyed to the *user id* (".../files/adil/…")
+// even when we authenticate with the e-mail alias, so an exact-prefix match is
+// not always possible. This is the generic fallback.
+const DAV_FILES_PREFIX = /^.*?\/remote\.php\/dav\/files\/[^/]+\//
+
 function parsePropfind(xml, davRootPath) {
   const entries = []
   const responseBlocks = xml.match(/<[^>]*:response[\s>][\s\S]*?<\/[^>]*:response>/gi) || []
@@ -31,8 +36,9 @@ function parsePropfind(xml, davRootPath) {
     const isCollection = /<[^>]*:collection\s*\/?>/i.test(block)
     // Path relative to the bot user's WebDAV root
     let rel = href
-    const idx = href.indexOf(davRootPath)
+    const idx = davRootPath ? href.indexOf(davRootPath) : -1
     if (idx !== -1) rel = href.slice(idx + davRootPath.length)
+    else if (DAV_FILES_PREFIX.test(href)) rel = href.replace(DAV_FILES_PREFIX, '')
     rel = rel.replace(/^\/+|\/+$/g, '')
 
     const name = rel.split('/').filter(Boolean).pop() || rel
@@ -109,9 +115,11 @@ async function listFolder(relPath = '') {
 }
 
 // Recursively walk the watched folders, returning every file (not dirs).
-async function scanWatched(maxDepth = 4) {
+async function scanWatched(maxDepth = 4, rootsOverride = null) {
   const cfg = getConfig()
-  const roots = cfg.watchFolders.length ? cfg.watchFolders : ['']
+  const roots = Array.isArray(rootsOverride) && rootsOverride.length
+    ? rootsOverride
+    : (cfg.watchFolders.length ? cfg.watchFolders : [''])
   const files = []
   let directories = roots
   // Process one depth at a time with bounded concurrency. This avoids the old
@@ -135,6 +143,44 @@ async function scanWatched(maxDepth = 4) {
     directories = next
   }
   return files
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
+// ── Change feed ─────────────────────────────────────────────────────────────
+// Nextcloud's webhook_listeners app is registered on this server but its
+// callbacks never reach us (verified: a WebDAV PUT produces no delivery), so
+// push alone cannot be trusted. WebDAV SEARCH gives the same information as a
+// pull: every file under a root modified after a cursor, newest first, in ONE
+// request. That is what makes the vault feel live without re-walking 5 800
+// files. Webhooks still short-circuit this when they do arrive.
+async function searchModifiedSince(relRoot, since, limit = 500) {
+  const cfg = getConfig()
+  const scope = ['/files', cfg.user, String(relRoot || '').replace(/^\/+|\/+$/g, '')]
+    .filter(Boolean).join('/')
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getlastmodified/><d:getetag/><d:getcontenttype/><d:getcontentlength/><d:resourcetype/><oc:fileid/></d:prop></d:select>
+    <d:from><d:scope><d:href>${escapeXml(scope)}</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where><d:gt><d:prop><d:getlastmodified/></d:prop><d:literal>${escapeXml(new Date(since).toISOString().replace(/\.\d{3}Z$/, 'Z'))}</d:literal></d:gt></d:where>
+    <d:orderby><d:order><d:prop><d:getlastmodified/></d:prop><d:ascending/></d:order></d:orderby>
+    <d:limit><d:nresults>${Math.max(1, Math.min(2000, Number(limit) || 500))}</d:nresults></d:limit>
+  </d:basicsearch>
+</d:searchrequest>`
+  const res = await ncRequest(cfg, 'SEARCH', `${cfg.baseUrl}/remote.php/dav/`, {
+    headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+    body,
+  })
+  if (res.status !== 207 && res.status !== 200) {
+    throw new NextcloudError(`Change search failed with status ${res.status}`, 502)
+  }
+  // Directories carry a propagated mtime too; only real files are indexable.
+  return parsePropfind(res.text, '').filter(entry => !entry.is_dir && entry.path)
 }
 
 // Streams a file's bytes (returns the raw fetch Response for piping).
@@ -180,15 +226,53 @@ async function putFileAtPath(relPath, buffer, mimetype = 'application/octet-stre
   return { path: relPath, etag: (result.headers.get('etag') || '').replace(/"/g, '') || null }
 }
 
+// Create a file only if that exact path is still free. WebDAV's If-None-Match:*
+// makes this atomic, so two designers saving a new version at the same moment
+// cannot silently overwrite each other — the loser gets 412 and takes the next
+// number instead.
+async function putFileIfAbsent(relPath, buffer, mimetype = 'application/octet-stream') {
+  const cfg = getConfig()
+  const result = await ncRequest(cfg, 'PUT', davUrl(cfg, relPath), {
+    headers: { 'Content-Type': mimetype, 'Content-Length': String(buffer.length), 'If-None-Match': '*' },
+    body: buffer,
+    raw: true,
+  })
+  if (result.status === 412) return { taken: true }
+  if (![200, 201, 204].includes(result.status)) throw new NextcloudError(`Upload failed with status ${result.status}`, 502)
+  return { taken: false, path: relPath, etag: (result.headers.get('etag') || '').replace(/"/g, '') || null }
+}
+
+async function ensureFolder(relPath) {
+  const cfg = getConfig()
+  const parts = String(relPath || '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
+  let current = ''
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part
+    const result = await ncRequest(cfg, 'MKCOL', davUrl(cfg, current), { raw: true })
+    if (![201, 405].includes(result.status)) throw new NextcloudError(`Could not create folder (${result.status})`, 502)
+  }
+  return current
+}
+
 // Nextcloud preview (thumbnail) endpoint — proxied so the browser never needs
 // Nextcloud credentials. Falls back to the raw file on preview failure.
+//
+// Retries are disabled here on purpose. Nextcloud's preview generator answers
+// 500 when several thumbnails are requested at once, and the generic retry
+// ladder turned that into a 30-second wait per tile. A failed preview is not
+// worth waiting for: dropping straight to the original file is both faster and
+// always succeeds.
 async function getPreview(relPath, { width = 300, height = 300 } = {}) {
   const cfg = getConfig()
   const enc = encodeURIComponent(`/${relPath.replace(/^\/+/, '')}`)
   const url = `${cfg.baseUrl}/index.php/core/preview.png?file=${enc}&x=${width}&y=${height}&a=1&mode=cover`
-  const res = await ncRequest(cfg, 'GET', url, { raw: true })
-  if (res.ok && (res.headers.get('content-type') || '').startsWith('image/')) return res
-  return downloadFile(relPath) // preview unavailable → serve the original
+  try {
+    const res = await ncRequest({ ...cfg, retries: 0, timeoutMs: Math.min(cfg.timeoutMs, 10000) }, 'GET', url, { raw: true })
+    if (res.ok && (res.headers.get('content-type') || '').startsWith('image/')) return res
+  } catch (err) {
+    logger.warn({ err: err.message, path: relPath }, 'Nextcloud preview unavailable — serving the original file')
+  }
+  return downloadFile(relPath)
 }
 
-module.exports = { testConnection, listFolder, scanWatched, downloadFile, uploadFile, putFileAtPath, getPreview }
+module.exports = { testConnection, listFolder, scanWatched, searchModifiedSince, downloadFile, uploadFile, putFileAtPath, putFileIfAbsent, ensureFolder, getPreview }

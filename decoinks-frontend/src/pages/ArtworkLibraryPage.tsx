@@ -338,13 +338,31 @@ export function ArtworkLibraryPage() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['artwork-vault-assets', params],
     queryFn: () => api.get('/artworks/vault/assets', { params }).then(r => r.data.data),
-    refetchInterval: 30000,
   })
   const { data: stats = EMPTY_STATS } = useQuery<VaultStats>({
     queryKey: ['artwork-vault-stats', { from, to, scope }],
     queryFn: () => api.get('/artworks/vault/stats', { params: { from: from || undefined, to: to || undefined, scope } }).then(r => r.data.data),
-    refetchInterval: 30000,
   })
+
+  // Live vault. A background watcher keeps the index level with Nextcloud, so
+  // the screen only has to notice that it moved: this cursor is a few dozen
+  // bytes and decides when the two real (join-heavy) queries re-run. Polling
+  // those directly every few seconds was the expensive way to stay stale.
+  const { data: cursor } = useQuery<{ revision: string; total: number; watching: boolean }>({
+    queryKey: ['artwork-vault-revision'],
+    queryFn: () => api.get('/artworks/vault/revision').then(r => r.data.data),
+    refetchInterval: 3000,
+  })
+  const revisionRef = useRef('')
+  useEffect(() => {
+    if (!cursor) return
+    const stamp = `${cursor.revision}/${cursor.total}`
+    if (revisionRef.current && revisionRef.current !== stamp) {
+      queryClient.invalidateQueries({ queryKey: ['artwork-vault-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['artwork-vault-stats'] })
+    }
+    revisionRef.current = stamp
+  }, [cursor, queryClient])
   const rows: VaultAsset[] = data?.rows ?? []
   const total = Number(data?.total || 0)
   const totalPages = Math.max(1, Number(data?.totalPages || 1))
@@ -450,7 +468,7 @@ export function ArtworkLibraryPage() {
       <input ref={newArtworkRef} type="file" hidden accept="image/*,.pdf,.ai,.psd,.eps" onChange={handleFiles} />
       <div className="av-commandbar">
         <label className="av-search"><Search size={19} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search artwork by name, ID, lead, customer, type or status…" />{search && <button onClick={() => setSearch('')}><X size={16} /></button>}</label>
-        <span className={cn('av-cloud-state', connected ? 'is-online' : 'is-offline')}><span />{connected === null ? 'Checking cloud' : connected ? 'Nextcloud live' : 'Nextcloud not configured'}</span>
+        <span className={cn('av-cloud-state', connected && cursor?.watching ? 'is-online' : 'is-offline')}><span />{connected === null ? 'Checking cloud' : !connected ? 'Nextcloud not configured' : cursor?.watching ? 'Nextcloud live' : 'Nextcloud connected'}</span>
         <button className="av-btn" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}><RefreshCw size={17} className={syncMutation.isPending ? 'spin' : ''} /> Sync</button>
         <button className="av-btn" onClick={exportCsv}><Download size={17} /> Export</button>
         <button className="av-btn" onClick={() => importRef.current?.click()} disabled={uploadMutation.isPending}><Upload size={17} /> Import Files</button>

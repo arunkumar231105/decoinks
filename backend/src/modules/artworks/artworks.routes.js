@@ -4,17 +4,27 @@ const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const { uploadArtwork, uploadStudioArtwork } = require('../../middleware/upload')
 const controller = require('./artworks.controller')
+const designTasksRoutes = require('./design-tasks.routes')
+const productionArtworkRoutes = require('./production-artwork.routes')
 
 const router = Router()
 
 // ── Design Studio round-trip (artwork-token auth, no Bearer session) ─────────
 // The Design Studio bridge (api/central-artwork.php) calls these server-to-server
 // with a short-lived artwork token, so they must sit ahead of verifyToken.
-router.get('/studio/asset',    controller.studioAsset)
-router.get('/studio/content',  controller.studioContent)
-router.post('/studio/save',    uploadStudioArtwork, controller.studioSave)
+router.get('/studio/asset',           controller.studioAsset)
+router.get('/studio/content',         controller.studioContent)
+router.get('/studio/vault',           controller.studioVault)          // one filtered page
+router.get('/studio/vault/facets',    controller.studioVaultFacets)    // customer + folder tabs
+router.get('/studio/vault/revision',  controller.studioVaultRevision)  // live change cursor
+router.get('/studio/thumb',           controller.studioPreview)        // Nextcloud thumbnail
+router.get('/studio/handoff',         controller.studioHandoff)        // vault token → asset token
+router.post('/studio/save',           uploadStudioArtwork, controller.studioSave)
 
 router.use(verifyToken)
+
+router.use('/design-tasks', designTasksRoutes)
+router.use('/', productionArtworkRoutes)
 
 // Multer populates req.body with text fields before the next middleware runs,
 // so standard zod validation works for multipart form submissions.
@@ -48,13 +58,23 @@ const taskSchema = z.object({
   artwork_type: z.enum(['custom','template','logo','photo']).optional().nullable(),
 })
 
+const vaultLinkSchema = z.object({
+  artwork_id: z.string().uuid().optional().nullable(),
+  artwork_version_id: z.string().uuid().optional().nullable(),
+}).refine(value => value.artwork_id || value.artwork_version_id, {
+  message: 'artwork_id or artwork_version_id is required',
+})
+
 router.get('/',             controller.list)
 router.get('/board',        controller.getBoard)
 router.get('/vault/assets', controller.vaultList)
 router.get('/vault/stats',  controller.vaultStats)
+router.get('/vault/facets', controller.vaultFacets)
+router.get('/vault/revision', controller.vaultRevision)
 router.get('/vault/export', controller.vaultExport)
 router.post('/vault/sync',  controller.vaultSync)
 router.patch('/vault/assets/bulk', controller.vaultBulkUpdate)
+router.patch('/vault/assets/:id/link', validate(vaultLinkSchema), controller.vaultLinkAsset)
 router.get('/vault/assets/:id', controller.vaultDetail)
 router.patch('/vault/assets/:id/cover', controller.vaultSetCover)
 router.post('/vault/assets/:id/studio-token', controller.studioToken)
