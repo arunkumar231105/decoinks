@@ -98,6 +98,22 @@ router.get('/',        controller.list)
 router.get('/stats',   controller.stats)
 router.get('/filters', controller.filters)
 router.get('/export',  controller.exportCsv)
+// Must stay above '/:id' — otherwise Express reads "portal-accounts" as an id.
+router.get('/portal-accounts', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT cpu.id, cpu.customer_id, cpu.username, cpu.email, cpu.is_active,
+              cpu.last_login, cpu.created_at,
+              c.name AS customer_name, c.customer_number
+         FROM customer_portal_users cpu
+         JOIN customers c ON c.id = cpu.customer_id
+        WHERE c.deleted_at IS NULL
+        ORDER BY cpu.is_active DESC, c.name`
+    )
+    res.json({ accounts: rows })
+  } catch (e) { next(e) }
+})
+
 router.get('/:id',     controller.getOne)
 router.post('/',   validate(createSchema), controller.create)
 router.put('/:id', validate(updateSchema), controller.update)
@@ -149,6 +165,17 @@ router.post('/:id/portal-access', requireRole('Admin', 'Manager'), async (req, r
              updated_at = NOW()`,
       [req.params.id, username, email, hash, req.user?.id]
     )
+    res.json({ success: true })
+  } catch (e) { next(e) }
+})
+
+router.patch('/:id/portal-access/enable', requireRole('Admin', 'Manager'), async (req, res, next) => {
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE customer_portal_users SET is_active = TRUE, updated_at = NOW() WHERE customer_id = $1`,
+      [req.params.id]
+    )
+    if (!rowCount) return res.status(404).json({ error: 'No portal account for this customer' })
     res.json({ success: true })
   } catch (e) { next(e) }
 })

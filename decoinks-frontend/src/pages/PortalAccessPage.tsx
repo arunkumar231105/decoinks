@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Eye, EyeOff, KeyRound, RefreshCw, ShieldOff, UserRound } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, ShieldOff, UserRound } from 'lucide-react'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 
@@ -13,6 +13,17 @@ import toast from '../utils/toast'
  */
 
 interface CustomerRow { id: string; name: string; customer_number?: string; email?: string | null }
+interface AccountRow {
+  id: string
+  customer_id: string
+  customer_name: string
+  customer_number: string | null
+  username: string
+  email: string | null
+  is_active: boolean
+  last_login: string | null
+}
+
 interface PortalAccess {
   id: string
   username: string
@@ -43,6 +54,11 @@ export function PortalAccessPage() {
       .then(r => (r.data?.data?.rows ?? []) as CustomerRow[]),
   })
 
+  const accounts = useQuery({
+    queryKey: ['portal-accounts'],
+    queryFn: () => api.get('/customers/portal-accounts').then(r => (r.data?.accounts ?? []) as AccountRow[]),
+  })
+
   const access = useQuery({
     queryKey: ['portal-access', customerId],
     queryFn: () => api.get(`/customers/${customerId}/portal-access`).then(r => r.data.portalAccess as PortalAccess | null),
@@ -71,9 +87,20 @@ export function PortalAccessPage() {
     onSuccess: () => {
       toast.success(access.data ? 'Password updated' : 'Portal access created')
       qc.invalidateQueries({ queryKey: ['portal-access', customerId] })
+      qc.invalidateQueries({ queryKey: ['portal-accounts'] })
       setPassword('')
     },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'Could not save portal access'),
+  })
+
+  const enable = useMutation({
+    mutationFn: (id: string) => api.patch(`/customers/${id}/portal-access/enable`),
+    onSuccess: () => {
+      toast.success('Portal access re-enabled')
+      qc.invalidateQueries({ queryKey: ['portal-accounts'] })
+      qc.invalidateQueries({ queryKey: ['portal-access', customerId] })
+    },
+    onError: () => toast.error('Could not re-enable access'),
   })
 
   const disable = useMutation({
@@ -81,6 +108,7 @@ export function PortalAccessPage() {
     onSuccess: () => {
       toast.success('Portal access disabled')
       qc.invalidateQueries({ queryKey: ['portal-access', customerId] })
+      qc.invalidateQueries({ queryKey: ['portal-accounts'] })
     },
     onError: () => toast.error('Could not disable portal access'),
   })
@@ -190,6 +218,82 @@ export function PortalAccessPage() {
               )}
             </div>
           </>
+        )}
+      </div>
+
+      {/* Who already has access */}
+      <div className="al-panel" style={{ padding: 24, marginTop: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            Customers with portal access ({accounts.data?.length ?? 0})
+          </h3>
+          <button className="lb-action-btn" onClick={() => accounts.refetch()} disabled={accounts.isFetching}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
+
+        {accounts.isLoading ? (
+          <p style={{ fontSize: 13, color: '#64748B' }}>Loading…</p>
+        ) : (accounts.data ?? []).length === 0 ? (
+          <p style={{ fontSize: 13, color: '#94A3B8' }}>
+            No customer has portal access yet. Create the first one above.
+          </p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                  {['Customer', 'Username', 'Status', 'Last sign-in', 'Actions'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(accounts.data ?? []).map(a => (
+                  <tr key={a.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '10px' }}>
+                      <div style={{ fontWeight: 600, color: '#0F172A' }}>{a.customer_name}</div>
+                      <div style={{ fontSize: 11, color: '#94A3B8' }}>{a.customer_number}</div>
+                    </td>
+                    <td style={{ padding: '10px', color: '#334155' }}>{a.username}</td>
+                    <td style={{ padding: '10px' }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+                        background: a.is_active ? '#DCFCE7' : '#FEE2E2',
+                        color: a.is_active ? '#16A34A' : '#DC2626',
+                      }}>
+                        {a.is_active ? 'Active' : 'Disabled'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px', color: '#64748B' }}>
+                      {a.last_login ? new Date(a.last_login).toLocaleString() : 'Never'}
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button className="lb-action-btn" style={{ fontSize: 12 }}
+                          onClick={() => { setCustomerId(a.customer_id); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                          <KeyRound size={13} /> Reset password
+                        </button>
+                        {a.is_active ? (
+                          <button className="lb-action-btn" style={{ fontSize: 12, color: '#DC2626' }}
+                            disabled={disable.isPending}
+                            onClick={() => { if (window.confirm(`Disable portal sign-in for ${a.customer_name}?`)) { setCustomerId(a.customer_id); disable.mutate() } }}>
+                            <ShieldOff size={13} /> Disable
+                          </button>
+                        ) : (
+                          <button className="lb-action-btn" style={{ fontSize: 12, color: '#16A34A' }}
+                            disabled={enable.isPending}
+                            onClick={() => enable.mutate(a.customer_id)}>
+                            <ShieldCheck size={13} /> Enable
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
