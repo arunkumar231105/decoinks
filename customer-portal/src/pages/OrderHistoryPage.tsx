@@ -11,7 +11,7 @@ import { endpoints, money, num, dash } from '../services/api'
 import type { Order, Summary } from '../types'
 import { cn } from '../utils/cn'
 
-const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'Artworks', 'Transfers Qty', 'Order Value', 'Payment', 'Status', '']
+const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'Tracking ID', 'Artworks', 'Transfers Qty', 'Order Value', 'Payment', 'Status', '']
 
 export default function OrderHistoryPage() {
   const summary = useResource<Summary>(endpoints.summary)
@@ -83,7 +83,7 @@ export default function OrderHistoryPage() {
       {/* Table — full width; the drawer floats above it */}
       <div className="cp-card mt-4 overflow-hidden">
         <div className="cp-table-wrap">
-          <table className="w-full min-w-[880px] border-collapse">
+          <table className="w-full min-w-[980px] border-collapse">
             <thead>
               <tr>{COLUMNS.map((h, i) => <th key={h || i} className="cp-th">{h}</th>)}</tr>
             </thead>
@@ -107,6 +107,11 @@ export default function OrderHistoryPage() {
                   <td className="cp-td">
                     <div>{dash(o.shipmentDate)}</div>
                     {o.shipmentTime && <div className="text-xs text-muted">{o.shipmentTime}</div>}
+                  </td>
+                  <td className="cp-td">
+                    {o.trackingNo
+                      ? <span className="font-medium tabular-nums text-ink">{o.trackingNo}</span>
+                      : <span className="text-muted">—</span>}
                   </td>
                   <td className="cp-td">{o.artworkCount}</td>
                   <td className="cp-td">{o.transfersQty}</td>
