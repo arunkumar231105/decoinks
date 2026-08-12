@@ -45,7 +45,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="space-y-1.5 border-t border-white/10 px-3 py-4">
-        <NavLink to="/profile" onClick={onNavigate} className={linkClass}>
+        <NavLink to="/settings" onClick={onNavigate} className={linkClass}>
           <Settings size={20} />
           <span>Settings</span>
         </NavLink>
