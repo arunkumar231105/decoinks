@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+}
+
+@layer components {
+  /* Surfaces */
+  .cp-card {
+    @apply rounded-2xl border border-line bg-white shadow-card;
+  }
+
+  /* Form controls — used by filters and the profile form */
+  .cp-input {
+    @apply h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink
+           outline-none transition placeholder:text-slate-400
+           focus:border-brand focus:ring-2 focus:ring-brand/15;
+  }
+  .cp-label {
+    @apply mb-1.5 block text-[13px] font-medium text-muted;
+  }
+
+  /* Buttons */
+  .cp-btn {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line
+           bg-white px-4 text-sm font-medium text-ink transition
+           hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand/20
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .cp-btn-primary {
+    @apply border-transparent bg-brand text-white hover:bg-brandDark;
+  }
+
+  /* Table shell — every table scrolls horizontally instead of breaking the page */
+  .cp-table-wrap {
+    @apply -mx-1 overflow-x-auto px-1;
+  }
+  .cp-th {
+    @apply whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted;
+  }
+  .cp-td {
+    @apply whitespace-nowrap px-4 py-3.5 text-sm text-ink;
+  }
+}
