@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ClipboardList, CalendarDays, LayoutGrid, Shirt, Hourglass, PlayCircle, Factory,
+  ClipboardList, CalendarDays, LayoutGrid, Shirt, Hourglass, Factory,
   Truck, CheckCircle2, XCircle, PauseCircle, ArrowRight,
 } from 'lucide-react'
 import {
@@ -11,13 +11,18 @@ import { PageHeader } from '../components/Layout'
 import { Panel, Pill, StatCard, TableStates, fmtDate, num } from '../components/ui'
 import api from '../services/api'
 
+/** Exactly what GET /api/supplier/dashboard returns. */
 interface Dashboard {
-  counts: Record<string, number>
-  trend: { date: string; orders: number }[]
-  recent: { id: string; order_number: string; status: string; order_type: string; order_date: string }[]
-  byType: { order_type: string; count: number }[]
-  weekChange: number
-  thisWeek: number
+  totalOrders: number
+  inProduction: number
+  shipped: number
+  completed: number
+  weekDelta: number
+  ordersByStatus: { name: string; value: number; color?: string }[]
+  ordersByType: { name: string; value: number; color?: string }[]
+  trendData: { date?: string; label?: string; orders?: number; count?: number }[]
+  recentOrders: { id: string; order_number: string; status: string; order_type: string; order_date: string }[]
+  productionSnapshot: { label: string; count: number; color?: string; pct?: number }[]
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -48,32 +53,43 @@ export default function DashboardPage() {
     return () => { alive = false }
   }, [])
 
-  const counts = data?.counts ?? {}
-  const total = Object.values(counts).reduce((a, b) => a + b, 0)
-  const get = (k: string) => counts[k] ?? 0
+  const statusData = (data?.ordersByStatus ?? []).filter(x => x.value > 0)
+  const total = data?.totalOrders ?? 0
 
-  const statusData = Object.entries(counts)
-    .filter(([, v]) => v > 0)
-    .map(([name, value]) => ({ name, value }))
+  const typeLabel = (t: string) =>
+    t === 'gangsheet' ? 'Gangsheet Orders'
+    : t === 'apparel' ? 'Custom T-Shirts'
+    : t === 'dtf' ? 'DTF Transfers' : t
+  const typeData = (data?.ordersByType ?? []).map(t => ({ ...t, name: typeLabel(t.name) }))
+  const byType = (name: string) => typeData.find(t => t.name === name)?.value ?? 0
 
-  const typeData = (data?.byType ?? []).map(t => ({
-    name: t.order_type === 'gangsheet' ? 'Gangsheet Orders'
-      : t.order_type === 'apparel' ? 'Custom T-Shirts'
-      : t.order_type === 'dtf' ? 'DTF Transfers' : t.order_type,
-    value: Number(t.count),
+  const trend = (data?.trendData ?? []).map(t => ({
+    label: t.label ?? (t.date ? fmtDate(t.date).replace(/, \d{4}$/, '') : ''),
+    orders: Number(t.orders ?? t.count ?? 0),
   }))
 
-  const trend = (data?.trend ?? []).map(t => ({
-    label: fmtDate(t.date).replace(/, \d{4}$/, ''),
-    orders: Number(t.orders),
+  const production = (data?.productionSnapshot ?? []).map(p => ({
+    label: p.label,
+    value: p.count,
+    color: p.color,
+    pct: p.pct ?? (total ? (p.count / total) * 100 : 0),
   }))
 
-  const production = [
-    { label: 'Yet to Start', value: get('Draft') + get('Confirmed'), icon: PlayCircle, color: 'bg-slate-500' },
-    { label: 'In Production', value: get('In Production'), icon: Factory, color: 'bg-amber-500' },
-    { label: 'Shipped', value: get('Shipped'), icon: Truck, color: 'bg-emerald-500' },
-    { label: 'Completed', value: get('Completed') + get('Delivered'), icon: CheckCircle2, color: 'bg-brand' },
-  ]
+  // ordersByStatus is the authoritative breakdown. The endpoint's `completed`
+  // scalar only counts the literal 'Completed' status, so a set of Delivered
+  // orders was landing in "Pending" — derive every tile from the status list
+  // and fall back to the scalars only when the list is missing.
+  const byStatus = (...names: string[]) =>
+    statusData.filter(x => names.includes(x.name)).reduce((sum, x) => sum + x.value, 0)
+
+  const counts = {
+    pending: statusData.length ? byStatus('Draft', 'Confirmed', 'Pending', 'Not Started') : 0,
+    inProduction: statusData.length ? byStatus('In Production') : (data?.inProduction ?? 0),
+    shipped: statusData.length ? byStatus('Shipped', 'Ready to Ship') : (data?.shipped ?? 0),
+    completed: statusData.length ? byStatus('Completed', 'Delivered') : (data?.completed ?? 0),
+    cancelled: byStatus('Cancelled'),
+    onHold: byStatus('On Hold'),
+  }
 
   return (
     <>
@@ -81,23 +97,21 @@ export default function DashboardPage() {
 
       {/* Headline row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={ClipboardList} label="Orders This Week" value={num(data?.thisWeek)} loading={loading}
-          tone="bg-brand" trend={data ? { value: data.weekChange, note: 'vs last week' } : null} />
-        <StatCard icon={CalendarDays} label="Total Orders" value={num(total)} loading={loading} tone="bg-emerald-600" />
-        <StatCard icon={LayoutGrid} label="Gangsheet Orders" loading={loading} tone="bg-violet-600"
-          value={num(typeData.find(t => t.name === 'Gangsheet Orders')?.value)} />
-        <StatCard icon={Shirt} label="Custom T-Shirts" loading={loading} tone="bg-cyan-600"
-          value={num(typeData.find(t => t.name === 'Custom T-Shirts')?.value)} />
+        <StatCard icon={CalendarDays} label="Total Orders" value={num(total)} loading={loading}
+          tone="bg-brand" trend={data ? { value: data.weekDelta, note: 'vs last week' } : null} />
+        <StatCard icon={LayoutGrid} label="Gangsheet Orders" value={num(byType('Gangsheet Orders'))} loading={loading} tone="bg-violet-600" />
+        <StatCard icon={Shirt} label="Custom T-Shirts" value={num(byType('Custom T-Shirts'))} loading={loading} tone="bg-cyan-600" />
+        <StatCard icon={ClipboardList} label="DTF Transfers" value={num(byType('DTF Transfers'))} loading={loading} tone="bg-emerald-600" />
       </div>
 
       {/* Status row */}
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-6">
-        <StatCard icon={Hourglass} label="Pending" value={num(get('Draft') + get('Confirmed'))} loading={loading} tone="bg-amber-500" />
-        <StatCard icon={Factory} label="In Production" value={num(get('In Production'))} loading={loading} tone="bg-orange-500" />
-        <StatCard icon={Truck} label="Shipped" value={num(get('Shipped'))} loading={loading} tone="bg-emerald-600" />
-        <StatCard icon={CheckCircle2} label="Completed" value={num(get('Completed') + get('Delivered'))} loading={loading} tone="bg-brand" />
-        <StatCard icon={XCircle} label="Cancelled" value={num(get('Cancelled'))} loading={loading} tone="bg-rose-600" />
-        <StatCard icon={PauseCircle} label="On Hold" value={num(get('On Hold'))} loading={loading} tone="bg-violet-600" />
+        <StatCard icon={Hourglass} label="Pending" value={num(counts.pending)} loading={loading} tone="bg-amber-500" />
+        <StatCard icon={Factory} label="In Production" value={num(counts.inProduction)} loading={loading} tone="bg-orange-500" />
+        <StatCard icon={Truck} label="Shipped" value={num(counts.shipped)} loading={loading} tone="bg-emerald-600" />
+        <StatCard icon={CheckCircle2} label="Completed" value={num(counts.completed)} loading={loading} tone="bg-brand" />
+        <StatCard icon={XCircle} label="Cancelled" value={num(counts.cancelled)} loading={loading} tone="bg-rose-600" />
+        <StatCard icon={PauseCircle} label="On Hold" value={num(counts.onHold)} loading={loading} tone="bg-violet-600" />
       </div>
 
       {/* Charts */}
@@ -112,7 +126,7 @@ export default function DashboardPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={statusData} dataKey="value" innerRadius={62} outerRadius={88} paddingAngle={2} stroke="none">
-                          {statusData.map(s => <Cell key={s.name} fill={STATUS_COLORS[s.name] ?? '#94A3B8'} />)}
+                          {statusData.map(x => <Cell key={x.name} fill={STATUS_COLORS[x.name] ?? x.color ?? '#94A3B8'} />)}
                         </Pie>
                         <Tooltip />
                       </PieChart>
@@ -127,7 +141,7 @@ export default function DashboardPage() {
                   <ul className="mt-4 space-y-2">
                     {statusData.map(s => (
                       <li key={s.name} className="flex items-center gap-2 text-[13px]">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_COLORS[s.name] ?? '#94A3B8' }} />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_COLORS[s.name] ?? s.color ?? '#94A3B8' }} />
                         <span className="flex-1 text-ink">{s.name}</span>
                         <span className="font-semibold text-ink">{s.value}</span>
                         <span className="text-muted">({total ? ((s.value / total) * 100).toFixed(1) : '0.0'}%)</span>
@@ -172,7 +186,7 @@ export default function DashboardPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={typeData} dataKey="value" innerRadius={62} outerRadius={88} paddingAngle={2} stroke="none">
-                          {typeData.map((t, i) => <Cell key={t.name} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />)}
+                          {typeData.map((t, i) => <Cell key={t.name} fill={t.color ?? TYPE_COLORS[i % TYPE_COLORS.length]} />)}
                         </Pie>
                         <Tooltip />
                       </PieChart>
@@ -187,7 +201,7 @@ export default function DashboardPage() {
                   <ul className="mt-4 space-y-2">
                     {typeData.map((t, i) => (
                       <li key={t.name} className="flex items-center gap-2 text-[13px]">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: TYPE_COLORS[i % TYPE_COLORS.length] }} />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color ?? TYPE_COLORS[i % TYPE_COLORS.length] }} />
                         <span className="flex-1 text-ink">{t.name}</span>
                         <span className="font-semibold text-ink">{t.value}</span>
                       </li>
@@ -210,9 +224,9 @@ export default function DashboardPage() {
               <thead><tr>{['Order ID', 'Type', 'Order Date', 'Status'].map(h => <th key={h} className="fp-th">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-line">
                 <TableStates colSpan={4} loading={loading} error={error} rows={5}
-                  empty={(data?.recent ?? []).length === 0}
+                  empty={(data?.recentOrders ?? []).length === 0}
                   emptyMessage="Orders assigned to you will appear here." />
-                {!loading && !error && (data?.recent ?? []).map(o => (
+                {!loading && !error && (data?.recentOrders ?? []).map(o => (
                   <tr key={o.id} className="transition-colors hover:bg-brand/[0.04]">
                     <td className="fp-td"><Link to={`/orders/${o.id}`} className="fp-link">{o.order_number}</Link></td>
                     <td className="fp-td capitalize">{o.order_type}</td>
@@ -227,18 +241,17 @@ export default function DashboardPage() {
 
         <Panel title="Production Snapshot">
           <div className="space-y-4 p-5">
-            {production.map(({ label, value, icon: Icon, color }) => {
-              const pct = total ? (value / total) * 100 : 0
+            {production.map(({ label, value, color, pct }) => {
               return (
                 <div key={label}>
                   <div className="mb-1.5 flex items-center gap-2.5">
-                    <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white ${color}`}><Icon size={16} /></span>
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: color ?? '#94A3B8' }} />
                     <span className="flex-1 text-[13px] font-medium text-ink">{label}</span>
                     <span className="text-[13px] font-bold text-ink">{value}</span>
                     <span className="w-12 text-right text-xs text-muted">{pct.toFixed(1)}%</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color ?? '#94A3B8' }} />
                   </div>
                 </div>
               )
