@@ -12,6 +12,7 @@ import PurchaseOrderDetailPage from '../pages/PurchaseOrderDetailPage'
 import ArtworksPage from '../pages/ArtworksPage'
 import ProfilePage from '../pages/ProfilePage'
 import ProductionStatusPage from '../pages/ProductionStatusPage'
+import ReportsPage from '../pages/ReportsPage'
 
 function PrivateRoute({ children }: { children: ReactNode }) {
   const token       = useAuthStore((s) => s.token)
@@ -38,6 +39,8 @@ export const router = createBrowserRouter([
       { path: 'orders/:id/status-updates', element: <ProductionStatusPage /> },
       { path: 'purchase-orders',     element: <PurchaseOrdersPage /> },
       { path: 'purchase-orders/:id', element: <PurchaseOrderDetailPage /> },
+      { path: 'status-update',   element: <OrdersPage /> },
+      { path: 'reports',         element: <ReportsPage /> },
       { path: 'artworks',        element: <ArtworksPage /> },
       { path: 'profile',         element: <ProfilePage /> },
     ],
