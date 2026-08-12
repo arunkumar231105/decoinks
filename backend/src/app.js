@@ -21,6 +21,7 @@ const productRoutes = require('./modules/products/products.routes')
 const artworkRoutes = require('./modules/artworks/artworks.routes')
 const dashRoutes    = require('./modules/dashboard/dashboard.routes')
 const supplierPortalRoutes = require('./modules/supplier-portal/portal.routes')
+const customerPortalRoutes = require('./modules/customer-portal/portal.routes')
 const uploadRoutes         = require('./modules/upload/upload.routes')
 const settingsRoutes       = require('./modules/settings/settings.routes')
 const customerRoutes       = require('./modules/customers/customers.routes')
@@ -29,6 +30,10 @@ const importRoutes         = require('./modules/import/import.routes')
 const nextcloudRoutes      = require('./modules/nextcloud/nextcloud.routes')
 
 const app = express()
+
+// Behind nginx — trust one hop so req.ip is the real client IP (used for
+// rate-limits, audit logs, and refresh_tokens.ip_address).
+app.set('trust proxy', 1)
 
 app.use(helmet())
 const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean)
@@ -63,6 +68,7 @@ app.use('/api/products',       productRoutes)
 app.use('/api/artworks',       artworkRoutes)
 app.use('/api/dashboard',      dashRoutes)
 app.use('/api/supplier',       supplierPortalRoutes)
+app.use('/api/portal',         customerPortalRoutes)
 app.use('/api/upload',       uploadRoutes)
 app.use('/api/settings',     settingsRoutes)
 app.use('/api/customers',    customerRoutes)

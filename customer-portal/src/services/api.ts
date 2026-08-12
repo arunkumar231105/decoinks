@@ -6,6 +6,8 @@
  * rest of the suite uses.
  */
 
+import { auth } from '../store/auth'
+
 const BASE = '/api/portal'
 
 export class ApiError extends Error {
@@ -21,7 +23,10 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     res = await fetch(`${BASE}${path}`, {
       signal,
       credentials: 'include',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(auth.getToken() ? { Authorization: `Bearer ${auth.getToken()}` } : {}),
+      },
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
@@ -29,6 +34,8 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   }
 
   if (res.status === 401 || res.status === 403) {
+    // The session is gone — drop it so the app falls back to the login screen.
+    auth.signOut()
     throw new ApiError('Your session has expired. Please sign in again.', res.status)
   }
   if (!res.ok) {
@@ -38,6 +45,19 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const body = await res.json().catch(() => null)
   if (body === null) throw new ApiError('The server returned an unreadable response.', res.status)
   return (body?.data ?? body) as T
+}
+
+/** Signs the customer in and stores the session. */
+export async function login(username: string, password: string) {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) throw new ApiError(body?.error || 'Invalid username or password', res.status)
+  auth.signIn(body.token, body.customer)
+  return body
 }
 
 export const endpoints = {
@@ -56,3 +76,21 @@ export const num = (n: number | null | undefined) => Number(n ?? 0).toLocaleStri
 
 export const dash = (v: string | number | null | undefined) =>
   v === null || v === undefined || v === '' ? '—' : String(v)
+
+/** ISO timestamp → "Aug 04, 2026". Anything unparseable passes through. */
+export const fmtDate = (v: string | null | undefined) => {
+  if (!v) return '—'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime())
+    ? String(v)
+    : d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+}
+
+/** ISO timestamp → "09:20 AM", or null when there is no meaningful time. */
+export const fmtTime = (v: string | null | undefined) => {
+  if (!v) return null
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return null
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return null   // date-only value
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+}

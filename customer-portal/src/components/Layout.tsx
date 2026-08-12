@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bell, ChevronDown, Menu, Search, UserRound, X } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu, Search, UserRound, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { useResource } from '../hooks/useResource'
 import { endpoints } from '../services/api'
 import type { Profile } from '../types'
+import { auth, useAuth } from '../store/auth'
 
 /**
  * App shell: fixed navy rail on desktop, off-canvas drawer below lg.
@@ -23,7 +24,9 @@ export function Layout({
   const { pathname } = useLocation()
   // The signed-in customer, shown in the top bar on every page.
   const { data: profile } = useResource<Profile>(endpoints.profile)
-  const name = profile?.name ?? ''
+  const { customer } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const name = profile?.name ?? customer?.name ?? ''
   const initials = name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 
   // Close the mobile nav whenever the route changes.
@@ -86,13 +89,38 @@ export function Layout({
               <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">3</span>
             </button>
 
-            <button className="flex shrink-0 items-center gap-2 rounded-xl px-1.5 py-1.5 transition hover:bg-slate-100">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-brand text-xs font-bold text-white">
-                {initials || <UserRound size={16} />}
-              </span>
-              <span className="hidden text-sm font-semibold text-ink lg:inline">{name || 'My Account'}</span>
-              <ChevronDown size={16} className="hidden text-muted lg:inline" />
-            </button>
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setMenuOpen(o => !o)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                className="flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition hover:bg-slate-100"
+              >
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-brand text-xs font-bold text-white">
+                  {initials || <UserRound size={16} />}
+                </span>
+                <span className="hidden text-sm font-semibold text-ink lg:inline">{name || 'My Account'}</span>
+                <ChevronDown size={16} className="hidden text-muted lg:inline" />
+              </button>
+
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} aria-hidden />
+                  <div role="menu" className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-line bg-white shadow-lg">
+                    <div className="border-b border-line px-4 py-3">
+                      <div className="truncate text-sm font-semibold text-ink">{name || 'My Account'}</div>
+                      {customer?.username && <div className="truncate text-xs text-muted">{customer.username}</div>}
+                    </div>
+                    <button
+                      onClick={() => { setMenuOpen(false); auth.signOut() }}
+                      className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <LogOut size={16} /> Sign out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </header>
 

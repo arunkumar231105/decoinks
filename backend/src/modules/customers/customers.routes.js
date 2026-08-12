@@ -1,7 +1,9 @@
 const { Router } = require('express')
 const { z } = require('zod')
-const { verifyToken } = require('../../middleware/auth')
+const bcrypt = require('bcryptjs')
+const { verifyToken, requireRole } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
+const db = require('../../config/db')
 const controller = require('./customers.controller')
 
 const router = Router()
@@ -101,5 +103,64 @@ router.post('/',   validate(createSchema), controller.create)
 router.put('/:id', validate(updateSchema), controller.update)
 router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id', controller.remove)
+
+// ── Customer Portal Access Management ────────────────────────────────────────
+// Staff create the customer's portal login here; the customer then signs in to
+// the Customer Portal with it. Mirrors the supplier portal-access endpoints.
+
+router.get('/:id/portal-access', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, username, email, is_active, last_login, must_change_pw, created_at
+       FROM customer_portal_users WHERE customer_id = $1`,
+      [req.params.id]
+    )
+    res.json({ portalAccess: rows[0] ?? null })
+  } catch (e) { next(e) }
+})
+
+router.post('/:id/portal-access', requireRole('Admin', 'Manager'), async (req, res, next) => {
+  try {
+    const username = String(req.body.username || '').trim()
+    const email = String(req.body.email || '').trim() || null
+    const { password } = req.body
+    if (!username || !password)
+      return res.status(400).json({ error: 'Username and password are required' })
+    if (String(password).length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+    // The username is the login key across the whole portal, so reject one that
+    // already belongs to a different customer instead of silently moving it.
+    const { rows: taken } = await db.query(
+      `SELECT 1 FROM customer_portal_users WHERE lower(username) = lower($1) AND customer_id <> $2`,
+      [username, req.params.id]
+    )
+    if (taken.length) return res.status(409).json({ error: 'That username is already in use' })
+
+    const hash = await bcrypt.hash(password, 12)
+    await db.query(
+      `INSERT INTO customer_portal_users (customer_id, username, email, password_hash, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (customer_id) DO UPDATE
+         SET username = EXCLUDED.username,
+             email = EXCLUDED.email,
+             password_hash = EXCLUDED.password_hash,
+             is_active = TRUE,
+             updated_at = NOW()`,
+      [req.params.id, username, email, hash, req.user?.id]
+    )
+    res.json({ success: true })
+  } catch (e) { next(e) }
+})
+
+router.delete('/:id/portal-access', requireRole('Admin', 'Manager'), async (req, res, next) => {
+  try {
+    await db.query(
+      `UPDATE customer_portal_users SET is_active = FALSE, updated_at = NOW() WHERE customer_id = $1`,
+      [req.params.id]
+    )
+    res.json({ success: true })
+  } catch (e) { next(e) }
+})
 
 module.exports = router

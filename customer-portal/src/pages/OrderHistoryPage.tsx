@@ -7,7 +7,7 @@ import { Layout } from '../components/Layout'
 import { Drawer, DrawerSection, Field } from '../components/SidePanel'
 import { OrderStatusBadge, Pagination, PaymentBadge, StatCard, TableStates } from '../components/ui'
 import { useResource } from '../hooks/useResource'
-import { endpoints, money, num, dash } from '../services/api'
+import { endpoints, money, num, dash, fmtDate, fmtTime } from '../services/api'
 import type { Order, Summary } from '../types'
 import { cn } from '../utils/cn'
 
@@ -101,12 +101,12 @@ export default function OrderHistoryPage() {
                   className={cn('cp-row', selected?.id === o.id && 'cp-row-active')}>
                   <td className="cp-td font-semibold text-brand">{o.number}</td>
                   <td className="cp-td">
-                    <div>{dash(o.orderDate)}</div>
-                    {o.orderTime && <div className="text-xs text-muted">{o.orderTime}</div>}
+                    <div>{fmtDate(o.orderDate)}</div>
+                    {fmtTime(o.orderDate) && <div className="text-xs text-muted">{fmtTime(o.orderDate)}</div>}
                   </td>
                   <td className="cp-td">
-                    <div>{dash(o.shipmentDate)}</div>
-                    {o.shipmentTime && <div className="text-xs text-muted">{o.shipmentTime}</div>}
+                    <div>{fmtDate(o.shipmentDate)}</div>
+                    {fmtTime(o.shipmentDate) && <div className="text-xs text-muted">{fmtTime(o.shipmentDate)}</div>}
                   </td>
                   <td className="cp-td">
                     {o.trackingNo
@@ -149,9 +149,9 @@ export default function OrderHistoryPage() {
           <>
             <DrawerSection title="Overview">
               <Field label="Order Type" value={dash(selected.orderType)} />
-              <Field label="Order Date" value={dash([selected.orderDate, selected.orderTime].filter(Boolean).join(', '))} />
-              <Field label="Shipment Date" value={dash([selected.shipmentDate, selected.shipmentTime].filter(Boolean).join(', '))} />
-              <Field label="Delivered On" value={dash(selected.deliveredOn)} />
+              <Field label="Order Date" value={fmtDate(selected.orderDate)} />
+              <Field label="Shipment Date" value={fmtDate(selected.shipmentDate)} />
+              <Field label="Delivered On" value={fmtDate(selected.deliveredOn)} />
             </DrawerSection>
 
             <DrawerSection title="Payment & Shipping">
