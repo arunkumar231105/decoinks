@@ -5,7 +5,7 @@ import {
 import { Layout } from '../components/Layout'
 import { OrderStatusBadge, PaymentBadge, StatCard, TableStates, Thumb } from '../components/ui'
 import { useResource } from '../hooks/useResource'
-import { endpoints, money, num, dash } from '../services/api'
+import { endpoints, money, num, fmtDate, assetUrl } from '../services/api'
 import type { Artwork, Order, Summary } from '../types'
 
 const COLUMNS = ['Order #', 'Order Date', 'Value', 'Payment', 'Status']
@@ -58,7 +58,7 @@ export default function DashboardPage() {
                 {!orders.loading && !orders.error && recent.map(o => (
                   <tr key={o.id} className="transition-colors hover:bg-brand/[0.04]">
                     <td className="cp-td font-semibold text-brand">{o.number}</td>
-                    <td className="cp-td">{dash(o.orderDate)}</td>
+                    <td className="cp-td">{fmtDate(o.orderDate)}</td>
                     <td className="cp-td font-semibold">{money(o.value)}</td>
                     <td className="cp-td"><PaymentBadge status={o.paymentStatus} /></td>
                     <td className="cp-td"><OrderStatusBadge status={o.status} /></td>
@@ -87,12 +87,12 @@ export default function DashboardPage() {
           <ul className="divide-y divide-line">
             {!artworks.loading && latest.map(a => (
               <li key={a.id} className="flex items-center gap-3 px-5 py-3">
-                <Thumb name={a.name} src={a.previewUrl} />
+                <Thumb name={a.name} src={assetUrl(a.previewUrl)} className="h-11 w-11 rounded-lg object-cover text-xs" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-ink">{a.name}</div>
-                  <div className="truncate text-xs text-muted">{dash(a.size)} · {a.transfersQty} transfers</div>
+                  <div className="truncate text-[13px] font-medium text-ink" title={a.fileName}>{a.name}</div>
+                  <div className="truncate text-xs text-muted">{a.stage ?? a.fileType ?? '—'}</div>
                 </div>
-                <span className="shrink-0 text-xs text-muted">{dash(a.dateAdded)}</span>
+                <span className="shrink-0 text-xs text-muted">{fmtDate(a.dateAdded)}</span>
               </li>
             ))}
           </ul>

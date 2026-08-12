@@ -66,10 +66,33 @@ const streamAsset = (kind) => wrap(async (req, res) => {
     ? await nc.getPreview(asset.path, { width: Number(req.query.w) || 600, height: Number(req.query.h) || 600 })
     : await nc.downloadFile(asset.path)
 
-  res.setHeader('Content-Type', ncRes.headers.get('content-type') || asset.mime_type || 'application/octet-stream')
-  if (kind === 'file') res.setHeader('Content-Disposition', `attachment; filename="${asset.file_name}"`)
-  res.setHeader('Cache-Control', 'private, max-age=300')
-  res.send(Buffer.from(await ncRes.arrayBuffer()))
+  const raw = Buffer.from(await ncRes.arrayBuffer())
+
+  if (kind === 'file') {
+    res.setHeader('Content-Type', ncRes.headers.get('content-type') || asset.mime_type || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${asset.file_name}"`)
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    return res.send(raw)
+  }
+
+  // Nextcloud falls back to the original file when its preview generator is
+  // unavailable, which meant a list of thumbnails pulled several MB each.
+  // Resize here so a thumbnail costs kilobytes; on any failure serve what we got.
+  const size = Math.min(Number(req.query.w) || 600, 1600)
+  try {
+    const thumb = await require('sharp')(raw)
+      .rotate()
+      .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 78 })
+      .toBuffer()
+    res.setHeader('Content-Type', 'image/webp')
+    res.setHeader('Cache-Control', 'private, max-age=86400')
+    return res.send(thumb)
+  } catch {
+    res.setHeader('Content-Type', ncRes.headers.get('content-type') || asset.mime_type || 'image/png')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    return res.send(raw)
+  }
 })
 
 router.get('/artworks/:id/preview', streamAsset('preview'))

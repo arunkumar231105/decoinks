@@ -6,7 +6,7 @@ import {
 import { Layout } from '../components/Layout'
 import { Badge } from '../components/ui'
 import { useResource } from '../hooks/useResource'
-import { endpoints, money, num, dash } from '../services/api'
+import { endpoints, money, num, dash, fmtDate } from '../services/api'
 import type { Address, Profile } from '../types'
 
 const CHANNELS = [
@@ -61,7 +61,7 @@ export default function ProfilePage() {
                   <p className="truncate text-[13px] text-muted">{dash(p.phone)}</p>
                   {p.customerSince && (
                     <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted sm:justify-start">
-                      <CalendarDays size={13} /> Customer since {p.customerSince}
+                      <CalendarDays size={13} /> Customer since {fmtDate(p.customerSince)}
                     </p>
                   )}
                 </div>
