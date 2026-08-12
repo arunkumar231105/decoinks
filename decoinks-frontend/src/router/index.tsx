@@ -73,6 +73,7 @@ const ProductsPage           = page(() => import('../pages/ProductsPage'), 'Prod
 const ResetPasswordPage      = page(() => import('../pages/ResetPasswordPage'), 'ResetPasswordPage')
 const SettingsGeneralPage    = page(() => import('../pages/SettingsGeneralPage'), 'SettingsGeneralPage')
 const SettingsUsersPage      = page(() => import('../pages/SettingsUsersPage'), 'SettingsUsersPage')
+const PortalAccessPage       = page(() => import('../pages/PortalAccessPage'), 'PortalAccessPage')
 const UserEditPage           = page(() => import('../pages/UserEditPage'), 'UserEditPage')
 const WorkflowListPage       = page(() => import('../pages/WorkflowListPage'), 'WorkflowListPage')
 const QuotesListPage         = page(() => import('../pages/QuotesListPage'), 'QuotesListPage')
@@ -294,6 +295,11 @@ export const router = createBrowserRouter([
                 path: '/settings/general',
                 element: <SettingsGeneralPage />,
                 handle: { title: 'General Settings', subtitle: 'Configure company and workflow defaults.' },
+              },
+              {
+                path: '/settings/portal-access',
+                element: <PortalAccessPage />,
+                handle: { title: 'Customer Portal Access', subtitle: 'Create and manage customer sign-in credentials for the Customer Portal.' },
               },
               {
                 path: '/settings/users',

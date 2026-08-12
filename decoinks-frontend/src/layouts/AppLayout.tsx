@@ -35,6 +35,7 @@ import {
   User,
   UserCheck,
   Users,
+  KeyRound,
 } from 'lucide-react'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useAuthStore } from '../store/authStore'
@@ -65,6 +66,7 @@ const boardNav = [
 
 const systemNav = [
   { label: 'Users & Roles', path: '/settings/users', icon: Users },
+  { label: 'Portal Access', path: '/settings/portal-access', icon: KeyRound },
   { label: 'Settings', path: '/settings/general', icon: Settings },
 ]
 

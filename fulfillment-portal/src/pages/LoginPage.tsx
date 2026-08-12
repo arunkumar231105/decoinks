@@ -1,7 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { Eye, EyeOff, Loader2, Lock, Share2, User } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 
@@ -12,90 +11,103 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!username.trim() || !password.trim()) {
-      toast.error('Please enter username and password')
-      return
-    }
+    setError(null)
     setLoading(true)
     try {
       const { data } = await api.post('/auth/login', { username: username.trim(), password })
       login(data.token, data.supplier, data.mustChangePw)
       navigate(data.mustChangePw ? '/change-password' : '/')
     } catch {
-      toast.error('Invalid username or password')
-    } finally {
+      setError('Invalid username or password')
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-accent rounded-2xl mb-4">
-            <span className="text-white font-bold text-2xl">D</span>
+    <div className="grid min-h-screen lg:grid-cols-2">
+      {/* Brand side */}
+      <div className="relative hidden flex-col justify-between bg-sidebar p-12 lg:flex">
+        <div className="flex items-center gap-3">
+          <span className="grid h-12 w-12 place-items-center rounded-xl bg-logo text-white">
+            <Share2 size={24} />
+          </span>
+          <div>
+            <div className="text-xl font-bold leading-tight text-white">Decoinks</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Printshop CPS</div>
           </div>
-          <h1 className="text-2xl font-bold text-white">Decoinks</h1>
-          <p className="text-white/50 text-sm mt-1">PRINTSHOP CPS – Supplier Portal</p>
         </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-gray-900 mb-1">Welcome back</h2>
-          <p className="text-gray-500 text-sm mb-6">Sign in to view your orders and artworks</p>
+        <div className="max-w-md">
+          <h2 className="text-3xl font-bold leading-tight text-white">
+            Fulfillment Portal
+          </h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-slate-400">
+            Review the purchase orders assigned to you, download artwork and gangsheets, and keep
+            production, hold and shipment status up to date — all in one place.
+          </p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-xs text-slate-500">© 2026 Decoinks LLC. All rights reserved.</p>
+      </div>
+
+      {/* Form side */}
+      <div className="flex items-center justify-center bg-canvas px-5 py-12">
+        <div className="w-full max-w-[400px]">
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-logo text-white">
+              <Share2 size={22} />
+            </span>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Username or Email</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="input"
-                placeholder="Enter your username or email"
-                autoFocus
-                autoComplete="username"
-              />
+              <div className="text-lg font-bold leading-tight text-ink">Decoinks</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Printshop CPS</div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+          <h1 className="text-[26px] font-bold text-ink">Sign in</h1>
+          <p className="mt-1 text-sm text-muted">Use the credentials Decoinks provided for your account.</p>
+
+          <form onSubmit={handleSubmit} className="mt-7 space-y-4" noValidate>
+            {error && (
+              <div role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-[13px] text-rose-800 ring-1 ring-inset ring-rose-600/20">
+                {error}
+              </div>
+            )}
+
+            <label className="block">
+              <span className="fp-label">Username</span>
               <div className="relative">
-                <input
-                  type={showPw ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input pr-10"
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
+                <User size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input className="fp-input pl-10" value={username} onChange={e => setUsername(e.target.value)}
+                  autoComplete="username" autoFocus required />
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="fp-label">Password</span>
+              <div className="relative">
+                <Lock size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input className="fp-input pl-10 pr-11" type={showPw ? 'text' : 'password'} value={password}
+                  onChange={e => setPassword(e.target.value)} autoComplete="current-password" required />
+                <button type="button" onClick={() => setShowPw(s => !s)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                  className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted hover:bg-slate-100 hover:text-ink">
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </div>
+            </label>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full py-2.5 flex items-center justify-center gap-2 mt-2"
-            >
-              {loading && <Loader2 size={16} className="animate-spin" />}
-              {loading ? 'Signing in...' : 'Log In'}
+            <button type="submit" className="fp-btn fp-btn-primary w-full" disabled={loading || !username || !password}>
+              {loading ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Sign in'}
             </button>
           </form>
 
-          <p className="text-center text-xs text-gray-400 mt-6">
-            Forgot password?{' '}
-            <span className="text-gray-600">Contact your administrator</span>
+          <p className="mt-6 text-center text-[13px] text-muted">
+            Trouble signing in?{' '}
+            <a href="mailto:support@decoinks.com" className="font-medium text-brand hover:underline">Contact Decoinks</a>
           </p>
         </div>
       </div>
