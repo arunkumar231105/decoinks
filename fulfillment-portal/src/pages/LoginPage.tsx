@@ -21,8 +21,18 @@ export default function LoginPage() {
       const { data } = await api.post('/auth/login', { username: username.trim(), password })
       login(data.token, data.supplier, data.mustChangePw)
       navigate(data.mustChangePw ? '/change-password' : '/')
-    } catch {
-      setError('Invalid username or password')
+    } catch (err) {
+      // Only a 401 means the credentials are wrong. Anything else (the API being
+      // unreachable, a 502 from the proxy, a server error) has to say so —
+      // showing "invalid password" for an outage sends people hunting for a
+      // typo that isn't there.
+      const status = (err as { response?: { status?: number } })?.response?.status
+      setError(
+        status === 401 || status === 403 ? 'Invalid username or password'
+        : status === 502 || status === 503 || status === 504 || status === undefined
+          ? 'Cannot reach the server right now. Please try again in a moment.'
+          : `Sign-in failed (error ${status}). Please try again.`,
+      )
       setLoading(false)
     }
   }
