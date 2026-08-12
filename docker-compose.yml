@@ -68,11 +68,16 @@ services:
       - ./backend/.env
     environment:
       NODE_ENV: production
-      COOKIE_SECURE: "false"
+      # Refresh cookie is only sent over HTTPS. Nginx redirects the plain-HTTP
+      # IP endpoint to https://printshop.decoinkssuite.com so this is safe.
+      COOKIE_SECURE: "true"
       DATABASE_URL: postgresql://postgres:decoinks_pass@postgres:5432/decoinks_db
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: http://31.97.110.197,http://31.97.110.197:8093,http://31.97.110.197:8094,http://31.97.110.197:3001,https://printshop.decoinkssuite.com
-      JWT_SECRET: Decoinks2026SecretKeyPOSSoftwarePrintShop123XYZ
+      # JWT_SECRET is loaded from backend/.env (env_file above). The old weak
+      # hardcoded value that used to live here has been rotated. The Design
+      # Studio bridge continues to verify its artwork-handoff tokens using
+      # PRINTSHOP_JWT_SECRET, which is also loaded from backend/.env.
       # Leave empty to keep SSO disabled until Authentik is configured.
       SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:-}
       UPLOAD_DIR: uploads
@@ -120,6 +125,17 @@ services:
     restart: unless-stopped
     ports:
       - '3001:80'
+    depends_on: [backend]
+    networks: [decoinks_net]
+
+  customer_portal:
+    build:
+      context: ./customer-portal
+      dockerfile: Dockerfile.portal
+    container_name: decoinks_customer_portal
+    restart: unless-stopped
+    ports:
+      - '3002:80'
     depends_on: [backend]
     networks: [decoinks_net]
 

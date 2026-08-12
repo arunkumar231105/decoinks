@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bell, ChevronDown, Menu, Search, X } from 'lucide-react'
+import { Bell, ChevronDown, Menu, Search, UserRound, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
-import { CUSTOMER } from '../data/mock'
+import { useResource } from '../hooks/useResource'
+import { endpoints } from '../services/api'
+import type { Profile } from '../types'
 
 /**
  * App shell: fixed navy rail on desktop, off-canvas drawer below lg.
@@ -19,6 +21,10 @@ export function Layout({
 }) {
   const [navOpen, setNavOpen] = useState(false)
   const { pathname } = useLocation()
+  // The signed-in customer, shown in the top bar on every page.
+  const { data: profile } = useResource<Profile>(endpoints.profile)
+  const name = profile?.name ?? ''
+  const initials = name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 
   // Close the mobile nav whenever the route changes.
   useEffect(() => { setNavOpen(false) }, [pathname])
@@ -82,9 +88,9 @@ export function Layout({
 
             <button className="flex shrink-0 items-center gap-2 rounded-xl px-1.5 py-1.5 transition hover:bg-slate-100">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-brand text-xs font-bold text-white">
-                {CUSTOMER.initials}
+                {initials || <UserRound size={16} />}
               </span>
-              <span className="hidden text-sm font-semibold text-ink lg:inline">{CUSTOMER.name}</span>
+              <span className="hidden text-sm font-semibold text-ink lg:inline">{name || 'My Account'}</span>
               <ChevronDown size={16} className="hidden text-muted lg:inline" />
             </button>
           </div>

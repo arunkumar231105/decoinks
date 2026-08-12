@@ -12,15 +12,53 @@
   body {
     @apply bg-canvas font-sans text-ink antialiased;
   }
+
+  /* Consistent focus ring for keyboard users across the whole portal. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand/40 ring-offset-1 ring-offset-white;
+  }
 }
 
 @layer components {
-  /* Surfaces */
+  /* ── Surfaces ─────────────────────────────────────────────── */
   .cp-card {
     @apply rounded-2xl border border-line bg-white shadow-card;
   }
 
-  /* Form controls — used by filters and the profile form */
+  /* ── Record drawer (mirrors the admin app's ew-drawer) ─────── */
+  .cp-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    border: 0;
+    background: rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(1px);
+    cursor: default;
+    animation: cpFade 0.15s ease-out;
+  }
+
+  .cp-drawer {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 81;
+    width: min(440px, 94vw);
+    background: #fff;
+    border-left: 1px solid theme('colors.line');
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: -18px 0 48px rgba(15, 23, 42, 0.16);
+    animation: cpDrawerIn 0.2s ease-out;
+  }
+
+  @media (max-width: 640px) {
+    .cp-drawer {
+      width: 100vw;
+    }
+  }
+
+  /* ── Form controls ────────────────────────────────────────── */
   .cp-input {
     @apply h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink
            outline-none transition placeholder:text-slate-400
@@ -29,26 +67,58 @@
   .cp-label {
     @apply mb-1.5 block text-[13px] font-medium text-muted;
   }
+  .cp-check {
+    @apply h-4 w-4 cursor-pointer rounded border-slate-300 text-brand focus:ring-brand;
+  }
 
-  /* Buttons */
+  /* ── Buttons ──────────────────────────────────────────────── */
   .cp-btn {
     @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line
            bg-white px-4 text-sm font-medium text-ink transition
-           hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand/20
-           disabled:cursor-not-allowed disabled:opacity-50;
+           hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99]
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white;
   }
   .cp-btn-primary {
-    @apply border-transparent bg-brand text-white hover:bg-brandDark;
+    @apply border-transparent bg-brand text-white shadow-sm hover:border-transparent hover:bg-brandDark;
+  }
+  .cp-btn-sm {
+    @apply h-9 rounded-lg px-3 text-[13px];
+  }
+  .cp-icon-btn {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-white
+           text-muted transition hover:border-slate-300 hover:bg-slate-50 hover:text-ink;
   }
 
-  /* Table shell — every table scrolls horizontally instead of breaking the page */
+  /* ── Tables ───────────────────────────────────────────────── */
   .cp-table-wrap {
-    @apply -mx-1 overflow-x-auto px-1;
+    @apply overflow-x-auto;
   }
   .cp-th {
-    @apply whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted;
+    @apply whitespace-nowrap bg-slate-50/60 px-4 py-3 text-left text-[11px] font-semibold
+           uppercase tracking-wider text-muted;
   }
   .cp-td {
     @apply whitespace-nowrap px-4 py-3.5 text-sm text-ink;
   }
+  .cp-row {
+    @apply cursor-pointer transition-colors hover:bg-brand/[0.04];
+  }
+  .cp-row-active {
+    @apply bg-brand/[0.07];
+  }
+
+  /* ── Skeleton loading ─────────────────────────────────────── */
+  .cp-skeleton {
+    @apply animate-pulse rounded-md bg-slate-200/70;
+  }
+}
+
+@keyframes cpDrawerIn {
+  from { transform: translateX(24px); opacity: 0.4; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes cpFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
