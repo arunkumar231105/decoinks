@@ -69,12 +69,30 @@ async function getSummary(customerId) {
      WHERE o.customer_id = $1 AND o.deleted_at IS NULL`,
     [customerId]
   )
-  const art = await db.query(
+  // Artwork counts come from the Nextcloud vault mirror, the same source the
+  // portal's Artworks screen lists.
+  const { rows: artRows } = await db.query(
     `SELECT COUNT(*)::int AS artworks,
-            COALESCE(SUM(a.transfers_qty), 0)::int AS transfers_qty
-       FROM artworks a WHERE a.customer_id = $1`,
+            COUNT(*) FILTER (
+              WHERE status IN ('Approved','Production Ready','Sent to Customer')
+                 OR asset_type IN ('gangsheet','artwork','sent')
+            )::int AS used
+       FROM artwork_vault_assets
+      WHERE customer_id = $1 AND mime_type LIKE 'image/%'`,
     [customerId]
-  ).catch(() => ({ rows: [{ artworks: 0, transfers_qty: 0 }] }))
+  )
+  // Transfers actually ordered, across every order-item type.
+  const { rows: qtyRows } = await db.query(
+    `SELECT COALESCE(SUM(q), 0)::int AS transfers_qty FROM (
+       SELECT COALESCE(SUM(d.qty), 0) AS q FROM order_items_dtf d
+         JOIN orders o ON o.id = d.order_id WHERE o.customer_id = $1 AND o.deleted_at IS NULL
+       UNION ALL
+       SELECT COALESCE(SUM(g.qty), 0) FROM order_items_gangsheet g
+         JOIN orders o ON o.id = g.order_id WHERE o.customer_id = $1 AND o.deleted_at IS NULL
+     ) t`,
+    [customerId]
+  ).catch(() => ({ rows: [{ transfers_qty: 0 }] }))
+  const art = { rows: [{ artworks: artRows[0].artworks, transfers_qty: qtyRows[0].transfers_qty, used: artRows[0].used }] }
 
   const s = rows[0]
   return {
@@ -85,7 +103,7 @@ async function getSummary(customerId) {
     delivered: s.delivered,
     artworks: art.rows[0].artworks,
     transfersQty: art.rows[0].transfers_qty,
-    artworksUsedInOrders: art.rows[0].artworks,
+    artworksUsedInOrders: art.rows[0].used,
   }
 }
 
@@ -96,7 +114,9 @@ async function getOrders(customerId) {
     `SELECT o.id, o.order_number, o.order_date, o.due_date, o.status, o.payment_status,
             o.order_type, o.total, o.payment_method, o.tracking_number,
             i.invoice_number, q.quote_number,
-            s.ship_date, s.tracking_number AS shipment_tracking, s.carrier
+            s.ship_date, s.tracking_number AS shipment_tracking, s.carrier,
+            COALESCE(it.lines, 0)::int AS artwork_count,
+            COALESCE(it.qty, 0)::int   AS transfers_qty
        FROM orders o
        LEFT JOIN invoices   i ON i.order_id = o.id
        LEFT JOIN quotations q ON q.id = o.quotation_id
@@ -104,6 +124,18 @@ async function getOrders(customerId) {
          SELECT ship_date, tracking_number, carrier FROM shipments
           WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1
        ) s ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT SUM(lines)::int AS lines, SUM(qty)::int AS qty FROM (
+           SELECT COUNT(*) AS lines, COALESCE(SUM(qty), 0) AS qty
+             FROM order_items_dtf WHERE order_id = o.id
+           UNION ALL
+           SELECT COUNT(*), COALESCE(SUM(qty), 0)
+             FROM order_items_gangsheet WHERE order_id = o.id
+           UNION ALL
+           SELECT COUNT(*), COALESCE(SUM(qty), 0)
+             FROM order_items_apparel WHERE order_id = o.id
+         ) x
+       ) it ON TRUE
       WHERE o.customer_id = $1 AND o.deleted_at IS NULL
       ORDER BY o.order_date DESC NULLS LAST, o.created_at DESC`,
     [customerId]
@@ -117,8 +149,8 @@ async function getOrders(customerId) {
     shipmentDate: D(r.ship_date),
     shipmentTime: null,
     deliveredOn: r.status === 'Delivered' ? D(r.ship_date) : null,
-    artworkCount: 0,
-    transfersQty: 0,
+    artworkCount: r.artwork_count,
+    transfersQty: r.transfers_qty,
     value: Number(r.total || 0),
     paymentStatus: r.payment_status || 'Unpaid',
     status: r.status,
@@ -132,29 +164,66 @@ async function getOrders(customerId) {
   }))
 }
 
+/**
+ * Artwork the customer can see, straight from the Nextcloud vault mirror.
+ *
+ * `artwork_vault_assets` is the synced view of Nextcloud, so this is the same
+ * source the admin Artwork Vault reads. Assets carry no order_id in the data
+ * today, so "used in production" is derived from the asset's own lifecycle —
+ * a gangsheet, or an asset that reached Approved / Production Ready / Sent to
+ * Customer, has been worked on; anything still at Source Received / In Design
+ * has not. This is stated in the API rather than invented per order.
+ */
+const USED_STATUSES = ['Approved', 'Production Ready', 'Sent to Customer']
+const USED_TYPES = ['gangsheet', 'artwork', 'sent']
+
 async function getArtworks(customerId) {
   const { rows } = await db.query(
-    `SELECT a.id, a.artwork_no, a.name, a.file_url, a.width_in, a.height_in, a.created_at
-       FROM artworks a WHERE a.customer_id = $1 ORDER BY a.created_at DESC`,
+    `SELECT id, file_name, path, mime_type, file_size_bytes, asset_type, status,
+            version_no, artwork_code, asset_number, created_at, source_modified_at
+       FROM artwork_vault_assets
+      WHERE customer_id = $1
+        AND mime_type LIKE 'image/%'
+      ORDER BY COALESCE(source_modified_at, created_at) DESC`,
     [customerId]
-  ).catch(() => ({ rows: [] }))
+  )
 
-  return rows.map(r => ({
-    id: r.id,
-    artworkId: r.artwork_no,
-    name: r.name || r.artwork_no,
-    fileName: r.name,
-    previewUrl: r.file_url,
-    downloadUrl: r.file_url,
-    size: r.width_in && r.height_in ? `${r.width_in}" × ${r.height_in}"` : null,
-    transfersQty: 0,
-    fileType: null,
-    fileSize: null,
-    dateAdded: D(r.created_at),
-    timeAdded: null,
-    createdBy: null,
-    usedInOrders: [],
-  }))
+  const kb = n => (n == null ? null : n < 1024 * 1024
+    ? `${(n / 1024).toFixed(0)} KB`
+    : `${(n / 1024 / 1024).toFixed(2)} MB`)
+
+  return rows.map(r => {
+    const used = USED_STATUSES.includes(r.status) || USED_TYPES.includes(r.asset_type)
+    return {
+      id: r.id,
+      artworkId: r.artwork_code || r.asset_number || null,
+      name: r.file_name.replace(/\.[^.]+$/, ''),
+      fileName: r.file_name,
+      previewUrl: `/api/portal/artworks/${r.id}/preview`,
+      downloadUrl: `/api/portal/artworks/${r.id}/file`,
+      size: null,
+      transfersQty: 0,
+      fileType: (r.mime_type || '').split('/')[1]?.toUpperCase() || null,
+      fileSize: kb(Number(r.file_size_bytes)),
+      dateAdded: D(r.source_modified_at || r.created_at),
+      timeAdded: null,
+      createdBy: null,
+      stage: r.status,
+      assetType: r.asset_type,
+      version: r.version_no,
+      used,
+      usedInOrders: [],
+    }
+  })
+}
+
+/** The stored Nextcloud path for one asset — only if it belongs to this customer. */
+async function getAssetPath(customerId, assetId) {
+  const { rows } = await db.query(
+    'SELECT path, file_name, mime_type FROM artwork_vault_assets WHERE id = $1 AND customer_id = $2',
+    [assetId, customerId]
+  )
+  return rows[0] || null
 }
 
 async function getProfile(customerId) {
@@ -210,4 +279,4 @@ async function getProfile(customerId) {
   }
 }
 
-module.exports = { login, changePassword, getSummary, getOrders, getArtworks, getProfile }
+module.exports = { login, changePassword, getSummary, getOrders, getArtworks, getAssetPath, getProfile }

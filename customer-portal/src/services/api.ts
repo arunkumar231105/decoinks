@@ -60,6 +60,13 @@ export async function login(username: string, password: string) {
   return body
 }
 
+/** Asset URLs carry the token as ?t= because <img>/<a> cannot set headers. */
+export const assetUrl = (path: string | null | undefined) => {
+  if (!path) return null
+  const token = auth.getToken()
+  return token ? `${path}${path.includes('?') ? '&' : '?'}t=${encodeURIComponent(token)}` : path
+}
+
 export const endpoints = {
   summary: '/summary',
   orders: '/orders',

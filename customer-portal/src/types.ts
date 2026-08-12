@@ -53,6 +53,13 @@ export interface Artwork {
   dateAdded: string | null
   timeAdded: string | null
   createdBy: string | null
+  /** Lifecycle stage from the artwork vault, e.g. "Production Ready". */
+  stage?: string | null
+  /** reference | artwork | sent | gangsheet | mockup */
+  assetType?: string | null
+  version?: number | null
+  /** True once the artwork reached production/customer — see the API for how. */
+  used?: boolean
   usedInOrders: ArtworkUsage[]
 }
 
