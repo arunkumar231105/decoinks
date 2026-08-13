@@ -28,12 +28,40 @@
  * Usage:
  *   node backend/scripts/fix-dates-and-renumber.js            (dry-run)
  *   node backend/scripts/fix-dates-and-renumber.js --apply
+ *
+ * Flags:
+ *   --numbers-only     skip parts 1–4 and only renumber. Use when the dates are
+ *                      already right and deleted rows have left holes in the
+ *                      sequence — re-running the date parts would restamp every
+ *                      entry date for no reason.
+ *   --skip-customers   leave customer_number alone. Customer numbers are quoted
+ *                      to people outside the shop, so they are only renumbered
+ *                      when that is explicitly wanted.
  */
 const { Pool } = require('pg')
 
 const APPLY = process.argv.includes('--apply')
+const NUMBERS_ONLY = process.argv.includes('--numbers-only')
+const SKIP_CUSTOMERS = process.argv.includes('--skip-customers')
 const DATABASE_URL = process.env.DATABASE_URL
   || 'postgresql://postgres:decoinks_pass@localhost:5435/decoinks_db'
+
+// What each row's number will become, so a dry run can be checked before it is
+// committed. Same ordering the renumber pass uses.
+async function preview(client, table, col, orderBySql, prefix) {
+  const { rows } = await client.query(
+    `SELECT ${col} AS current, EXTRACT(YEAR FROM COALESCE(${orderBySql}))::int AS yr
+       FROM ${table} WHERE deleted_at IS NULL ORDER BY ${orderBySql}, created_at`)
+  const counter = {}
+  const changes = []
+  for (const r of rows) {
+    counter[r.yr] = (counter[r.yr] || 0) + 1
+    const next = `${prefix}-${r.yr}-${String(counter[r.yr]).padStart(4, '0')}`
+    if (next !== r.current) changes.push(`${r.current} → ${next}`)
+  }
+  console.log(`  ${table}: ${rows.length} rows, ${changes.length} would change`)
+  changes.forEach(c => console.log(`      ${c}`))
+}
 
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
@@ -41,7 +69,10 @@ async function main() {
   try {
     if (APPLY) await client.query('BEGIN')
 
+    if (NUMBERS_ONLY) console.log('  --numbers-only: leaving all dates exactly as they are')
+
     // ─── 1. Quotation sent_at follows the order it belongs to ─────────
+    if (!NUMBERS_ONLY) {
     const q1 = await client.query(`
       UPDATE quotations q SET sent_at = o.order_date::timestamptz, updated_at = NOW()
         FROM invoices i JOIN orders o ON o.id = i.order_id
@@ -83,6 +114,7 @@ async function main() {
       UPDATE orders SET entry_date = CURRENT_DATE, updated_at = NOW()
        WHERE deleted_at IS NULL`).catch(err => (APPLY ? Promise.reject(err) : { rowCount: 0 }))
     console.log(`  order.entry_date set to today: ${q4.rowCount} rows`)
+    }
 
     // ─── 5. Renumber everything sequentially ──────────────────────────
     const renumber = async (table, col, orderBySql, prefix, colWidth) => {
@@ -113,22 +145,21 @@ async function main() {
       console.log(`  renumbered ${rows.length} ${table} as ${prefix}-YYYY-NNNN`)
     }
 
+    // Column widths per schema — the parking/temp names must fit.
+    const series = [
+      ['customers',       'customer_number', 'created_at, created_at', 'CUST', 20],
+      ['orders',          'order_number',    'order_date, created_at', 'ORD',  30],
+      ['quotations',      'quote_number',    'sent_at, created_at',    'Q',    30],
+      ['invoices',        'invoice_number',  'issue_date, created_at', 'INV',  30],
+      ['purchase_orders', 'po_number',       'order_date, created_at', 'PO',   30],
+    ].filter(([table]) => !(SKIP_CUSTOMERS && table === 'customers'))
+
     if (APPLY) {
-      // Column widths per schema — the parking/temp names must fit.
-      await renumber('customers',       'customer_number', 'created_at, created_at', 'CUST', 20)
-      await renumber('orders',          'order_number',    'order_date, created_at', 'ORD',  30)
-      await renumber('quotations',      'quote_number',    'sent_at, created_at',    'Q',    30)
-      await renumber('invoices',        'invoice_number',  'issue_date, created_at', 'INV',  30)
-      await renumber('purchase_orders', 'po_number',       'order_date, created_at', 'PO',   30)
+      for (const args of series) await renumber(...args)
     } else {
-      const cnt = (await client.query(`
-        SELECT
-          (SELECT COUNT(*) FROM customers  WHERE deleted_at IS NULL)       AS c,
-          (SELECT COUNT(*) FROM orders     WHERE deleted_at IS NULL)       AS o,
-          (SELECT COUNT(*) FROM quotations WHERE deleted_at IS NULL)       AS q,
-          (SELECT COUNT(*) FROM invoices   WHERE deleted_at IS NULL)       AS i,
-          (SELECT COUNT(*) FROM purchase_orders WHERE deleted_at IS NULL)  AS p`)).rows[0]
-      console.log(`  would renumber: ${cnt.c} customers, ${cnt.o} orders, ${cnt.q} quotations, ${cnt.i} invoices, ${cnt.p} POs`)
+      for (const [table, col, orderBySql, prefix] of series) {
+        await preview(client, table, col, orderBySql, prefix)
+      }
     }
 
     if (APPLY) await client.query('COMMIT')
