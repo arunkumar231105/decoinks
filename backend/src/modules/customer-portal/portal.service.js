@@ -203,7 +203,8 @@ async function getArtworks(customerId) {
   const { rows } = await db.query(
     `WITH items AS (
        SELECT d.artwork_name AS name, d.size, d.width_inches AS w, d.height_inches AS h,
-              d.qty, d.artwork_no, o.id AS order_id, o.order_number, o.order_date
+              d.qty, d.artwork_no, COALESCE(d.artwork_image, d.front_image) AS image,
+              o.id AS order_id, o.order_number, o.order_date
          FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND d.artwork_name NOT ILIKE $2
        UNION ALL
@@ -211,6 +212,7 @@ async function getArtworks(customerId) {
        -- {artwork_no, size, qty, image}; expand it so each design is its own row.
        SELECT NULLIF(el->>'artwork_no', ''), NULLIF(el->>'size', ''), NULL, NULL,
               COALESCE(NULLIF(el->>'qty','')::int, g.qty), el->>'artwork_no',
+              NULLIF(el->>'image', ''),
               o.id, o.order_number, o.order_date
          FROM orders o
          JOIN order_items_gangsheet g ON g.order_id = o.id
@@ -218,13 +220,15 @@ async function getArtworks(customerId) {
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL
        UNION ALL
        SELECT a.item, a.artwork_size, NULL, NULL,
-              a.qty, a.artwork_no, o.id, o.order_number, o.order_date
+              a.qty, a.artwork_no, COALESCE(a.front_image, a.product_image),
+              o.id, o.order_number, o.order_date
          FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND COALESCE(a.item,'') NOT ILIKE $2
      )
      SELECT lower(btrim(name)) AS key,
             min(name)                     AS name,
             min(artwork_no)               AS artwork_no,
+            (array_agg(image) FILTER (WHERE image IS NOT NULL))[1] AS image,
             (array_agg(size ORDER BY size) FILTER (WHERE size IS NOT NULL))[1] AS size,
             max(w) AS w, max(h) AS h,
             SUM(qty)::int                 AS transfers_qty,
@@ -241,22 +245,30 @@ async function getArtworks(customerId) {
     [customerId, AGGREGATE]
   )
 
-  // Thumbnails live in the Nextcloud vault; match on the artwork code in the
-  // file name when there is one. No match simply means no preview.
+  // A thumbnail can come from two places, in order of reliability:
+  //   1. the artwork code on the order line, matched to the vault's artwork_code
+  //      or file name — this is an actual identifier, not a guess;
+  //   2. an image stored on the order line itself (MinIO), used as-is.
+  // Where the line carries neither — which is the case for artwork captured as
+  // free text like "AW#01 - Map" — there is nothing in the data linking it to a
+  // vault file, so no preview is shown rather than a wrong one.
   const { rows: assets } = await db.query(
-    `SELECT id, file_name, mime_type, file_size_bytes
+    `SELECT id, file_name, mime_type, file_size_bytes, artwork_code
        FROM artwork_vault_assets
       WHERE customer_id = $1 AND mime_type LIKE 'image/%'`,
     [customerId]
   )
   const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-  const findAsset = (name) => {
-    const key = norm(name)
+  const byCode = new Map()
+  for (const a of assets) {
+    if (a.artwork_code) byCode.set(norm(a.artwork_code), a)
+  }
+  const findAsset = (code) => {
+    const key = norm(code)
     if (!key) return null
-    return assets.find(a => {
-      const f = norm(a.file_name.replace(/\.[^.]+$/, ''))
-      return f && (f.includes(key) || key.includes(f))
-    }) || null
+    if (byCode.has(key)) return byCode.get(key)
+    return assets.find(a => norm(a.file_name.replace(/\.[^.]+$/, '')) === key)
+        || assets.find(a => norm(a.file_name).includes(key)) || null
   }
 
   const kb = n => (n == null ? null : n < 1024 * 1024
@@ -264,14 +276,15 @@ async function getArtworks(customerId) {
     : `${(n / 1024 / 1024).toFixed(2)} MB`)
 
   return rows.map(r => {
-    const asset = findAsset(r.name)
+    const asset = findAsset(r.artwork_no)
+    const preview = asset ? `/api/portal/artworks/${asset.id}/preview` : (r.image || null)
     return {
       id: asset?.id ?? `item:${r.key}`,
       artworkId: r.artwork_no || null,
       name: r.name,
       fileName: asset?.file_name ?? r.name,
-      previewUrl: asset ? `/api/portal/artworks/${asset.id}/preview` : null,
-      downloadUrl: asset ? `/api/portal/artworks/${asset.id}/file` : null,
+      previewUrl: preview,
+      downloadUrl: asset ? `/api/portal/artworks/${asset.id}/file` : (r.image || null),
       size: prettySize(r.size, r.w, r.h),
       transfersQty: r.transfers_qty,
       fileType: asset ? (asset.mime_type || '').split('/')[1]?.toUpperCase() : null,
