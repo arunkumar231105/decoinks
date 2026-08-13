@@ -50,7 +50,7 @@ export default function ArtworksPage() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard icon={ImageIcon} loading={summary.loading} value={num(s?.artworks)} label="Total Artworks" hint="Total uploaded" />
         <StatCard icon={Repeat} loading={summary.loading} value={num(s?.transfersQty)} label="Total Transfers Qty" hint="Across all orders" tone="bg-emerald-50 text-emerald-600" />
-        <StatCard icon={ShoppingBag} loading={summary.loading} value={num(s?.artworksUsedInOrders)} label="Used in Orders" hint="Across all orders" tone="bg-amber-50 text-amber-600" />
+        <StatCard icon={ShoppingBag} loading={summary.loading} value={num(s?.orders)} label="Orders" hint="Containing these artworks" tone="bg-amber-50 text-amber-600" />
       </div>
 
       <div className="cp-card mt-4 p-4">

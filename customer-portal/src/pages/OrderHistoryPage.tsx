@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ClipboardList, Image as ImageIcon, Repeat, Wallet, Settings2, Truck, CheckCircle2,
+  ClipboardList, Image as ImageIcon, Wallet, Settings2, Truck, CheckCircle2,
   Eye, RotateCcw, FileText, Download, Printer,
 } from 'lucide-react'
 import { Layout } from '../components/Layout'
@@ -11,7 +11,7 @@ import { endpoints, money, num, dash, fmtDate, fmtTime } from '../services/api'
 import type { Order, Summary } from '../types'
 import { cn } from '../utils/cn'
 
-const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'No. of Artworks', 'Gangsheets', 'Transfers Qty', 'Order Value', 'Payment', 'Status', 'Tracking ID', '']
+const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'No. of Artworks', 'Gangsheets', 'Order Value', 'Payment', 'Status', 'Tracking ID', '']
 
 export default function OrderHistoryPage() {
   const summary = useResource<Summary>(endpoints.summary)
@@ -41,10 +41,9 @@ export default function OrderHistoryPage() {
 
   return (
     <Layout title="Order History" subtitle="View and track all your DTF transfer orders." searchPlaceholder="Search by order #, artwork, date…">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
         <StatCard icon={ClipboardList} loading={summary.loading} value={num(s?.orders)} label="Orders" />
         <StatCard icon={ImageIcon} loading={summary.loading} value={num(s?.artworks)} label="Artworks" tone="bg-violet-50 text-violet-600" />
-        <StatCard icon={Repeat} loading={summary.loading} value={num(s?.transfersQty)} label="Transfers Qty" tone="bg-emerald-50 text-emerald-600" />
         <StatCard icon={Wallet} loading={summary.loading} value={money(s?.orderValue)} label="Order Value" tone="bg-amber-50 text-amber-600" />
         <StatCard icon={Settings2} loading={summary.loading} value={num(s?.inProduction)} label="In Production" tone="bg-sky-50 text-sky-600" />
         <StatCard icon={Truck} loading={summary.loading} value={num(s?.shipped)} label="Shipped" tone="bg-indigo-50 text-brand" />
@@ -110,7 +109,6 @@ export default function OrderHistoryPage() {
                   </td>
                   <td className="cp-td tabular-nums">{o.artworkCount}</td>
                   <td className="cp-td tabular-nums">{o.gangsheets ? o.gangsheets : '—'}</td>
-                  <td className="cp-td tabular-nums">{o.transfersQty}</td>
                   <td className="cp-td font-semibold">{money(o.value)}</td>
                   <td className="cp-td"><PaymentBadge status={o.paymentStatus} /></td>
                   <td className="cp-td"><OrderStatusBadge status={o.status} /></td>
@@ -184,7 +182,6 @@ export default function OrderHistoryPage() {
             <DrawerSection title="Order Summary">
               <Field label="No. of Artworks" value={selected.artworkCount} />
               <Field label="Gangsheets" value={selected.gangsheets || '—'} />
-              <Field label="Transfers Qty" value={selected.transfersQty} />
               <Field label="Total Amount" value={<span className="text-base">{money(selected.value)}</span>} />
             </DrawerSection>
           </>
