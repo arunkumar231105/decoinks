@@ -11,7 +11,7 @@ import { endpoints, money, num, dash, fmtDate, fmtTime } from '../services/api'
 import type { Order, Summary } from '../types'
 import { cn } from '../utils/cn'
 
-const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'Tracking ID', 'Artworks', 'Transfers Qty', 'Order Value', 'Payment', 'Status', '']
+const COLUMNS = ['Order #', 'Order Date', 'Shipment Date', 'No. of Artworks', 'Gangsheets', 'Transfers Qty', 'Order Value', 'Payment', 'Status', 'Tracking ID', '']
 
 export default function OrderHistoryPage() {
   const summary = useResource<Summary>(endpoints.summary)
@@ -108,16 +108,17 @@ export default function OrderHistoryPage() {
                     <div>{fmtDate(o.shipmentDate)}</div>
                     {fmtTime(o.shipmentDate) && <div className="text-xs text-muted">{fmtTime(o.shipmentDate)}</div>}
                   </td>
+                  <td className="cp-td tabular-nums">{o.artworkCount}</td>
+                  <td className="cp-td tabular-nums">{o.gangsheets ? o.gangsheets : '—'}</td>
+                  <td className="cp-td tabular-nums">{o.transfersQty}</td>
+                  <td className="cp-td font-semibold">{money(o.value)}</td>
+                  <td className="cp-td"><PaymentBadge status={o.paymentStatus} /></td>
+                  <td className="cp-td"><OrderStatusBadge status={o.status} /></td>
                   <td className="cp-td">
                     {o.trackingNo
                       ? <span className="font-medium tabular-nums text-ink">{o.trackingNo}</span>
                       : <span className="text-muted">—</span>}
                   </td>
-                  <td className="cp-td">{o.artworkCount}</td>
-                  <td className="cp-td">{o.transfersQty}</td>
-                  <td className="cp-td font-semibold">{money(o.value)}</td>
-                  <td className="cp-td"><PaymentBadge status={o.paymentStatus} /></td>
-                  <td className="cp-td"><OrderStatusBadge status={o.status} /></td>
                   <td className="cp-td">
                     <button onClick={e => { e.stopPropagation(); setSelected(o) }} aria-label={`View ${o.number}`} className="cp-icon-btn text-brand">
                       <Eye size={15} />
@@ -182,6 +183,7 @@ export default function OrderHistoryPage() {
 
             <DrawerSection title="Order Summary">
               <Field label="No. of Artworks" value={selected.artworkCount} />
+              <Field label="Gangsheets" value={selected.gangsheets || '—'} />
               <Field label="Transfers Qty" value={selected.transfersQty} />
               <Field label="Total Amount" value={<span className="text-base">{money(selected.value)}</span>} />
             </DrawerSection>

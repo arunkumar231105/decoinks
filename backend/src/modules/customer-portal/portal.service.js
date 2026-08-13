@@ -115,8 +115,13 @@ async function getOrders(customerId) {
             o.order_type, o.total, o.payment_method, o.tracking_number,
             i.invoice_number, q.quote_number,
             s.ship_date, s.tracking_number AS shipment_tracking, s.carrier,
-            COALESCE(it.lines, 0)::int AS artwork_count,
-            COALESCE(it.qty, 0)::int   AS transfers_qty
+            -- The purchase order carries the authoritative artwork / gangsheet
+            -- counts from the production sheet. Counting order-item rows was
+            -- wrong: a DTF order is often stored as ONE aggregate line, so every
+            -- order reported "1 artwork" no matter how many it really had.
+            COALESCE(pu.total_artworks, it.qty, 0)::int    AS artwork_count,
+            COALESCE(pu.total_gangsheets, 0)::int          AS gangsheets,
+            COALESCE(it.qty, pu.total_artworks, 0)::int    AS transfers_qty
        FROM orders o
        LEFT JOIN invoices   i ON i.order_id = o.id
        LEFT JOIN quotations q ON q.id = o.quotation_id
@@ -136,6 +141,7 @@ async function getOrders(customerId) {
              FROM order_items_apparel WHERE order_id = o.id
          ) x
        ) it ON TRUE
+       LEFT JOIN purchase_orders pu ON pu.order_id = o.id
       WHERE o.customer_id = $1 AND o.deleted_at IS NULL
       ORDER BY o.order_date DESC NULLS LAST, o.created_at DESC`,
     [customerId]
@@ -150,6 +156,7 @@ async function getOrders(customerId) {
     shipmentTime: null,
     deliveredOn: r.status === 'Delivered' ? D(r.ship_date) : null,
     artworkCount: r.artwork_count,
+    gangsheets: r.gangsheets,
     transfersQty: r.transfers_qty,
     value: Number(r.total || 0),
     paymentStatus: r.payment_status || 'Unpaid',

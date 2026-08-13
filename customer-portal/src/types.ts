@@ -20,6 +20,8 @@ export interface Order {
   shipmentTime: string | null
   deliveredOn: string | null
   artworkCount: number
+  /** Gangsheets produced for this order, from its purchase order. */
+  gangsheets?: number
   transfersQty: number
   value: number
   paymentStatus: PaymentStatus
