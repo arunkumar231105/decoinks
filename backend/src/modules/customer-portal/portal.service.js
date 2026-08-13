@@ -133,8 +133,17 @@ async function getOrders(customerId) {
        LEFT JOIN invoices   i ON i.order_id = o.id
        LEFT JOIN quotations q ON q.id = o.quotation_id
        LEFT JOIN LATERAL (
-         SELECT ship_date, tracking_number, carrier FROM shipments
-          WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1
+         -- One parcel can carry several orders (ORD-2026-0061 and ORD-2026-0064
+         -- went in the same box). Only the primary order sits on
+         -- shipments.order_id; the rest are in shipment_orders. Look through
+         -- both, or the other orders in the box show the customer no shipment.
+         SELECT sh.ship_date, sh.tracking_number, sh.carrier
+           FROM shipments sh
+          WHERE sh.deleted_at IS NULL
+            AND (sh.order_id = o.id
+                 OR EXISTS (SELECT 1 FROM shipment_orders so
+                             WHERE so.shipment_id = sh.id AND so.order_id = o.id))
+          ORDER BY sh.created_at DESC LIMIT 1
        ) s ON TRUE
        LEFT JOIN LATERAL (
          SELECT SUM(lines)::int AS lines, SUM(qty)::int AS qty FROM (
