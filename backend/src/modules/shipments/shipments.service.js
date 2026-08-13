@@ -193,6 +193,19 @@ const TRACKING_COLUMNS = new Set([
 ])
 const JSONB_COLUMNS = new Set(['tracking_history', 'tracking_messages'])
 
+// Carrier status → internal shipments.status. A refresh used to write only
+// tracking_status, so the internal enum drifted: 16 shipments the carrier had
+// DELIVERED were still 'In Transit', and every screen reading shipments.status
+// (the Orders list, the portals) showed them as in transit. Anything not listed
+// here is treated as "no opinion" and leaves the internal status alone.
+const TRACKING_TO_STATUS = {
+  DELIVERED:   'Delivered',
+  TRANSIT:     'In Transit',
+  PRE_TRANSIT: 'Label Created',
+  FAILURE:     'Exception',
+  RETURNED:    'Exception',
+}
+
 // Pull the latest tracking from Shippo for this shipment and persist it.
 // Only the fields Shippo returned are written (never clobbering manual data
 // with blanks); tracking_synced_at is always stamped.
@@ -211,6 +224,15 @@ async function refreshTracking(id) {
       params.push(value)
       sets.push(`${key} = $${params.length}`)
     }
+  }
+
+  // Keep the internal status in step with the carrier. Delivery is terminal, so
+  // a shipment already Delivered is never moved back to a lesser state (it may
+  // have been confirmed by a human while the carrier feed was silent).
+  const nextStatus = TRACKING_TO_STATUS[String(mapped.tracking_status || '').toUpperCase()]
+  if (nextStatus && existing.status !== 'Delivered' && nextStatus !== existing.status) {
+    params.push(nextStatus)
+    sets.push(`status = $${params.length}::shipment_status`)
   }
 
   params.push(id)
