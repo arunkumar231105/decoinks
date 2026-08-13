@@ -71,14 +71,21 @@ async function getSummary(customerId) {
   )
   // Artwork counts come from the Nextcloud vault mirror, the same source the
   // portal's Artworks screen lists.
+  // Count the same artwork the Artworks screen lists: distinct designs used in
+  // this customer's orders, not every file sitting in the vault.
   const { rows: artRows } = await db.query(
-    `SELECT COUNT(*)::int AS artworks,
-            COUNT(*) FILTER (
-              WHERE status IN ('Approved','Production Ready','Sent to Customer')
-                 OR asset_type IN ('gangsheet','artwork','sent')
-            )::int AS used
-       FROM artwork_vault_assets
-      WHERE customer_id = $1 AND mime_type LIKE 'image/%'`,
+    `SELECT count(DISTINCT lower(btrim(name)))::int AS artworks FROM (
+       SELECT d.artwork_name AS name FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND d.artwork_name NOT ILIKE '%AGGREGATE%'
+       UNION ALL
+       SELECT el->>'artwork_no' FROM orders o
+         JOIN order_items_gangsheet g ON g.order_id = o.id
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(g.artworks, '[]'::jsonb)) el
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL
+       UNION ALL
+       SELECT a.item FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND COALESCE(a.item,'') NOT ILIKE '%AGGREGATE%'
+     ) t WHERE name IS NOT NULL AND btrim(name) <> ''`,
     [customerId]
   )
   // Transfers actually ordered, across every order-item type.
@@ -92,7 +99,7 @@ async function getSummary(customerId) {
      ) t`,
     [customerId]
   ).catch(() => ({ rows: [{ transfers_qty: 0 }] }))
-  const art = { rows: [{ artworks: artRows[0].artworks, transfers_qty: qtyRows[0].transfers_qty, used: artRows[0].used }] }
+  const art = { rows: [{ artworks: artRows[0].artworks, transfers_qty: qtyRows[0].transfers_qty }] }
 
   const s = rows[0]
   return {
@@ -103,7 +110,7 @@ async function getSummary(customerId) {
     delivered: s.delivered,
     artworks: art.rows[0].artworks,
     transfersQty: art.rows[0].transfers_qty,
-    artworksUsedInOrders: art.rows[0].used,
+    artworksUsedInOrders: art.rows[0].artworks,
   }
 }
 
@@ -172,54 +179,111 @@ async function getOrders(customerId) {
 }
 
 /**
- * Artwork the customer can see, straight from the Nextcloud vault mirror.
+ * Artwork the customer can see: the artwork actually used in their orders.
  *
- * `artwork_vault_assets` is the synced view of Nextcloud, so this is the same
- * source the admin Artwork Vault reads. Assets carry no order_id in the data
- * today, so "used in production" is derived from the asset's own lifecycle —
- * a gangsheet, or an asset that reached Approved / Production Ready / Sent to
- * Customer, has been worked on; anything still at Source Received / In Design
- * has not. This is stated in the API rather than invented per order.
+ * The order-item tables are the only place that records, per artwork, its size,
+ * how many transfers were printed and which order it belongs to — the Nextcloud
+ * vault mirror carries no order link at all. Rows are grouped by artwork name so
+ * one design used across several orders appears once, with each order listed.
+ *
+ * "AGGREGATE …" rows are skipped: those orders were imported as a single summary
+ * line with no per-artwork breakdown, so they describe an order, not an artwork.
  */
-const USED_STATUSES = ['Approved', 'Production Ready', 'Sent to Customer']
-const USED_TYPES = ['gangsheet', 'artwork', 'sent']
+const AGGREGATE = '%AGGREGATE%'
+
+/** "W10.5/H13.7" or "10.75x13.9" → '10.5" × 13.7"'. Unknown shapes pass through. */
+function prettySize(size, w, h) {
+  if (w && h) return `${+w}" × ${+h}"`
+  if (!size) return null
+  const m = /W\s*([\d.]+)\s*\/\s*H\s*([\d.]+)/i.exec(size) || /([\d.]+)\s*[x×]\s*([\d.]+)/i.exec(size)
+  return m ? `${+m[1]}" × ${+m[2]}"` : size
+}
 
 async function getArtworks(customerId) {
   const { rows } = await db.query(
-    `SELECT id, file_name, path, mime_type, file_size_bytes, asset_type, status,
-            version_no, artwork_code, asset_number, created_at, source_modified_at
+    `WITH items AS (
+       SELECT d.artwork_name AS name, d.size, d.width_inches AS w, d.height_inches AS h,
+              d.qty, d.artwork_no, o.id AS order_id, o.order_number, o.order_date
+         FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND d.artwork_name NOT ILIKE $2
+       UNION ALL
+       -- A gangsheet line carries its artworks as a jsonb array of
+       -- {artwork_no, size, qty, image}; expand it so each design is its own row.
+       SELECT NULLIF(el->>'artwork_no', ''), NULLIF(el->>'size', ''), NULL, NULL,
+              COALESCE(NULLIF(el->>'qty','')::int, g.qty), el->>'artwork_no',
+              o.id, o.order_number, o.order_date
+         FROM orders o
+         JOIN order_items_gangsheet g ON g.order_id = o.id
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(g.artworks, '[]'::jsonb)) el
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL
+       UNION ALL
+       SELECT a.item, a.artwork_size, NULL, NULL,
+              a.qty, a.artwork_no, o.id, o.order_number, o.order_date
+         FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
+        WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND COALESCE(a.item,'') NOT ILIKE $2
+     )
+     SELECT lower(btrim(name)) AS key,
+            min(name)                     AS name,
+            min(artwork_no)               AS artwork_no,
+            (array_agg(size ORDER BY size) FILTER (WHERE size IS NOT NULL))[1] AS size,
+            max(w) AS w, max(h) AS h,
+            SUM(qty)::int                 AS transfers_qty,
+            count(DISTINCT order_id)::int AS order_count,
+            min(order_date)               AS first_used,
+            max(order_date)               AS last_used,
+            json_agg(json_build_object(
+              'orderNo', order_number, 'orderDate', order_date, 'transfersQty', qty
+            ) ORDER BY order_date DESC)   AS orders
+       FROM items
+      WHERE name IS NOT NULL AND btrim(name) <> ''
+      GROUP BY lower(btrim(name))
+      ORDER BY max(order_date) DESC NULLS LAST`,
+    [customerId, AGGREGATE]
+  )
+
+  // Thumbnails live in the Nextcloud vault; match on the artwork code in the
+  // file name when there is one. No match simply means no preview.
+  const { rows: assets } = await db.query(
+    `SELECT id, file_name, mime_type, file_size_bytes
        FROM artwork_vault_assets
-      WHERE customer_id = $1
-        AND mime_type LIKE 'image/%'
-      ORDER BY COALESCE(source_modified_at, created_at) DESC`,
+      WHERE customer_id = $1 AND mime_type LIKE 'image/%'`,
     [customerId]
   )
+  const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const findAsset = (name) => {
+    const key = norm(name)
+    if (!key) return null
+    return assets.find(a => {
+      const f = norm(a.file_name.replace(/\.[^.]+$/, ''))
+      return f && (f.includes(key) || key.includes(f))
+    }) || null
+  }
 
   const kb = n => (n == null ? null : n < 1024 * 1024
     ? `${(n / 1024).toFixed(0)} KB`
     : `${(n / 1024 / 1024).toFixed(2)} MB`)
 
   return rows.map(r => {
-    const used = USED_STATUSES.includes(r.status) || USED_TYPES.includes(r.asset_type)
+    const asset = findAsset(r.name)
     return {
-      id: r.id,
-      artworkId: r.artwork_code || r.asset_number || null,
-      name: r.file_name.replace(/\.[^.]+$/, ''),
-      fileName: r.file_name,
-      previewUrl: `/api/portal/artworks/${r.id}/preview`,
-      downloadUrl: `/api/portal/artworks/${r.id}/file`,
-      size: null,
-      transfersQty: 0,
-      fileType: (r.mime_type || '').split('/')[1]?.toUpperCase() || null,
-      fileSize: kb(Number(r.file_size_bytes)),
-      dateAdded: D(r.source_modified_at || r.created_at),
+      id: asset?.id ?? `item:${r.key}`,
+      artworkId: r.artwork_no || null,
+      name: r.name,
+      fileName: asset?.file_name ?? r.name,
+      previewUrl: asset ? `/api/portal/artworks/${asset.id}/preview` : null,
+      downloadUrl: asset ? `/api/portal/artworks/${asset.id}/file` : null,
+      size: prettySize(r.size, r.w, r.h),
+      transfersQty: r.transfers_qty,
+      fileType: asset ? (asset.mime_type || '').split('/')[1]?.toUpperCase() : null,
+      fileSize: asset ? kb(Number(asset.file_size_bytes)) : null,
+      dateAdded: D(r.last_used),
       timeAdded: null,
       createdBy: null,
-      stage: r.status,
-      assetType: r.asset_type,
-      version: r.version_no,
-      used,
-      usedInOrders: [],
+      usedInOrders: (r.orders || []).map(o => ({
+        orderNo: o.orderNo,
+        orderDate: D(o.orderDate),
+        transfersQty: o.transfersQty,
+      })),
     }
   })
 }

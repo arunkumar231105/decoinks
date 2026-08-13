@@ -8,7 +8,7 @@ import { endpoints, num, dash, fmtDate, assetUrl } from '../services/api'
 import type { Artwork, Summary } from '../types'
 import { cn } from '../utils/cn'
 
-const COLUMNS = ['', 'Date Added', 'Thumbnail', 'Artwork Name', 'Stage', 'File Type', 'File Size', 'Usage', '']
+const COLUMNS = ['', 'Date Added', 'Thumbnail', 'Artwork Name', 'Size', 'Transfers Qty', 'File Type', 'File Size', 'Used In Orders', '']
 
 export default function ArtworksPage() {
   const summary = useResource<Summary>(endpoints.summary)
@@ -16,20 +16,17 @@ export default function ArtworksPage() {
 
   const [selected, setSelected] = useState<Artwork | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
-  const [usage, setUsage] = useState('All')
   const [type, setType] = useState('All')
   const [size, setSize] = useState('All')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState(10)
 
   const list = artworks.data ?? []
-  const sizes = useMemo(() => ['All', ...Array.from(new Set(list.map(a => a.stage).filter(Boolean) as string[]))], [list])
+  const sizes = useMemo(() => ['All', ...Array.from(new Set(list.map(a => a.size).filter(Boolean) as string[]))], [list])
   const types = useMemo(() => ['All', ...Array.from(new Set(list.map(a => a.fileType).filter(Boolean) as string[]))], [list])
 
   const filtered = useMemo(() => list.filter(a =>
-    (type === 'All' || a.fileType === type)
-    && (size === 'All' || a.stage === size)
-    && (usage === 'All' || (usage === 'Used in orders' ? a.used : !a.used))), [list, type, size, usage])
+    (type === 'All' || a.fileType === type) && (size === 'All' || a.size === size)), [list, type, size])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rows))
   const current = Math.min(page, pageCount)
@@ -65,19 +62,13 @@ export default function ArtworksPage() {
             </select>
           </label>
           <label className="block">
-            <span className="cp-label">Production Stage</span>
+            <span className="cp-label">Size</span>
             <select className="cp-input" value={size} onChange={e => { setSize(e.target.value); setPage(1) }}>
               {sizes.map(v => <option key={v}>{v}</option>)}
             </select>
           </label>
-          <label className="block">
-            <span className="cp-label">Usage</span>
-            <select className="cp-input" value={usage} onChange={e => { setUsage(e.target.value); setPage(1) }}>
-              {['All', 'Used in orders', 'Not used yet'].map(v => <option key={v}>{v}</option>)}
-            </select>
-          </label>
           <div className="flex items-end sm:col-span-2 xl:col-span-2">
-            <button className="cp-btn w-full sm:w-auto" onClick={() => { setType('All'); setSize('All'); setUsage('All'); setPage(1) }}>
+            <button className="cp-btn w-full sm:w-auto" onClick={() => { setType('All'); setSize('All'); setPage(1) }}>
               <RotateCcw size={15} /> Clear Filters
             </button>
             {checked.size > 0 && (
@@ -116,13 +107,12 @@ export default function ArtworksPage() {
                   <td className="cp-td">{fmtDate(a.dateAdded)}</td>
                   <td className="cp-td"><Thumb name={a.name} src={assetUrl(a.previewUrl)} /></td>
                   <td className="cp-td max-w-[280px] truncate font-medium" title={a.fileName}>{a.name}</td>
-                  <td className="cp-td">{dash(a.stage)}</td>
+                  <td className="cp-td">{dash(a.size)}</td>
+                  <td className="cp-td tabular-nums">{a.transfersQty}</td>
                   <td className="cp-td">{dash(a.fileType)}</td>
                   <td className="cp-td">{dash(a.fileSize)}</td>
-                  <td className="cp-td">
-                    {a.used
-                      ? <Badge tone="bg-emerald-50 text-emerald-700 ring-emerald-600/20">Used in orders</Badge>
-                      : <Badge tone="bg-slate-100 text-slate-600 ring-slate-500/20">Not used yet</Badge>}
+                  <td className="cp-td text-brand">
+                    {a.usedInOrders.length} Order{a.usedInOrders.length === 1 ? '' : 's'}
                   </td>
                   <td className="cp-td">
                     <button onClick={e => { e.stopPropagation(); setSelected(a) }} aria-label={`View ${a.name}`} className="cp-icon-btn text-brand">
@@ -145,12 +135,9 @@ export default function ArtworksPage() {
         caption="Artwork Details"
         title={selected?.name ?? ''}
         badges={selected && (
-          <>
-            {selected.used
-              ? <Badge tone="bg-emerald-50 text-emerald-700 ring-emerald-600/20">Used in orders</Badge>
-              : <Badge tone="bg-slate-100 text-slate-600 ring-slate-500/20">Not used yet</Badge>}
-            {selected.stage && <Badge>{selected.stage}</Badge>}
-          </>
+          <Badge tone="bg-emerald-50 text-emerald-700 ring-emerald-600/20">
+            Used in {selected.usedInOrders.length} Order{selected.usedInOrders.length === 1 ? '' : 's'}
+          </Badge>
         )}
         actions={selected?.downloadUrl
           ? <a className="cp-btn cp-btn-sm cp-btn-primary" href={assetUrl(selected.downloadUrl) ?? '#'} download><Download size={15} /> Download File</a>
@@ -166,14 +153,32 @@ export default function ArtworksPage() {
             <DrawerSection title="File Information">
               <Field label="Artwork ID" value={dash(selected.artworkId)} />
               <Field label="File Name" value={dash(selected.fileName)} />
-              <Field label="Production Stage" value={dash(selected.stage)} />
-              <Field label="Asset Type" value={dash(selected.assetType)} />
-              <Field label="Version" value={dash(selected.version)} />
+              <Field label="Size" value={dash(selected.size)} />
+              <Field label="No. of Transfers" value={selected.transfersQty} />
               <Field label="File Type" value={dash(selected.fileType)} />
               <Field label="File Size" value={dash(selected.fileSize)} />
               <Field label="Date Added" value={fmtDate(selected.dateAdded)} />
 
 
+            </DrawerSection>
+
+            <DrawerSection title={`Used In Orders (${selected.usedInOrders.length})`}>
+              {selected.usedInOrders.length === 0
+                ? <p className="text-[13px] text-muted">Not used in any order yet.</p>
+                : (
+                  <div className="divide-y divide-line">
+                    <div className="flex items-center justify-between gap-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      <span>Order No.</span><span>Order Date</span><span>Transfers Qty</span>
+                    </div>
+                    {selected.usedInOrders.map(u => (
+                      <div key={u.orderNo} className="flex items-center justify-between gap-3 py-2.5">
+                        <span className="text-[13px] font-semibold text-brand">{u.orderNo}</span>
+                        <span className="text-[13px] text-muted">{fmtDate(u.orderDate)}</span>
+                        <span className="text-[13px] font-medium tabular-nums text-ink">{u.transfersQty}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
             </DrawerSection>
 
 
