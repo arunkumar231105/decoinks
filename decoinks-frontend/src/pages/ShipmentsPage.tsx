@@ -95,9 +95,9 @@ export function ShipmentsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('All')
-  // Default is the SHP series itself so the list stays in sequence; ship date
-  // is there for when the question is about timing rather than order.
-  const [sortBy, setSortBy] = useState<'num_desc' | 'num_asc' | 'date_desc' | 'date_asc'>('num_desc')
+  // Newest ship date first by default, matching the other modules; the SHP
+  // series is one pick away for reading the list in sequence.
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'>('date_desc')
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -245,10 +245,10 @@ export function ShipmentsPage() {
         </button>
         <select className="sh-per-page" aria-label="Sort shipments"
                 value={sortBy} onChange={e => { setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
-          <option value="num_desc">Number: high to low</option>
-          <option value="num_asc">Number: low to high</option>
           <option value="date_desc">Ship date: newest first</option>
           <option value="date_asc">Ship date: oldest first</option>
+          <option value="num_desc">Number: high to low</option>
+          <option value="num_asc">Number: low to high</option>
         </select>
         <button className="lb-action-btn" onClick={() => setShowLabel(true)}>
           <Tag size={13} /> Create Label

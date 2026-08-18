@@ -214,10 +214,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  // Default is the document series itself, so the list reads 101, 100, 99…
-  // rather than jumping around as it does when ordered purely by date.
-  type SortKey = 'num_desc' | 'num_asc' | 'date_desc' | 'date_asc'
-  const [sortBy, setSortBy] = useState<SortKey>('num_desc')
+  // Newest first by date is the default the owner asked for; ordering by the
+  // document series is one pick away for when the list should read 101, 100, 99…
+  type SortKey = 'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'
+  const [sortBy, setSortBy] = useState<SortKey>('date_desc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<AnyRow | null>(null)
   const [detail, setDetail] = useState<AnyRow | null>(null)
@@ -358,7 +358,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
-    setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('num_desc'); setPage(1)
+    setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setPage(1)
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
@@ -407,10 +407,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
         <label><span>Sort By</span><select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}>
-          <option value="num_desc">Number: high to low</option>
-          <option value="num_asc">Number: low to high</option>
           <option value="date_desc">Date: newest first</option>
           <option value="date_asc">Date: oldest first</option>
+          <option value="num_desc">Number: high to low</option>
+          <option value="num_asc">Number: low to high</option>
         </select></label>
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
