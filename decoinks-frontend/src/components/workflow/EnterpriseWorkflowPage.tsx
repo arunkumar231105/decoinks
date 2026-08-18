@@ -214,7 +214,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [dateSort, setDateSort] = useState<'desc' | 'asc'>('desc')
+  // Default is the document series itself, so the list reads 101, 100, 99…
+  // rather than jumping around as it does when ordered purely by date.
+  type SortKey = 'num_desc' | 'num_asc' | 'date_desc' | 'date_asc'
+  const [sortBy, setSortBy] = useState<SortKey>('num_desc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<AnyRow | null>(null)
   const [detail, setDetail] = useState<AnyRow | null>(null)
@@ -271,13 +274,26 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     const raw = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
     return raw ? String(raw).slice(0, 10) : ''
   }
+  // The sequence number is the digits at the end of the document number, so
+  // ORD-2026-0099 sorts before ORD-2026-0100 instead of after it.
+  const seqOf = (row: AnyRow) => {
+    const m = String(row[config.numberKey] ?? '').match(/(\d+)\s*$/)
+    return m ? Number(m[1]) : null
+  }
   const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
+    if (sortBy === 'num_desc' || sortBy === 'num_asc') {
+      const x = seqOf(a), y = seqOf(b)
+      if (x === null && y === null) return 0
+      if (x === null) return 1                // unnumbered rows sit at the bottom
+      if (y === null) return -1
+      return sortBy === 'num_asc' ? x - y : y - x
+    }
     const x = dateOf(a), y = dateOf(b)
     if (!x && !y) return 0
     if (!x) return 1                          // undated rows sit at the bottom either way
     if (!y) return -1
-    return dateSort === 'asc' ? x.localeCompare(y) : y.localeCompare(x)
-  }), [filteredRows, dateSort, config.dateKey])
+    return sortBy === 'date_asc' ? x.localeCompare(y) : y.localeCompare(x)
+  }), [filteredRows, sortBy, config.dateKey, config.numberKey])
 
   const total = sortedRows.length
   const pages = Math.max(1, Math.ceil(total / pageSize))
@@ -287,7 +303,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
   const sources = useMemo(() => unique(allRows.map(sourceOf)), [allRows])
-  useEffect(() => { setPage(1) }, [search, status, customer, product, source, period, dateFrom, dateTo, dateSort])
+  useEffect(() => { setPage(1) }, [search, status, customer, product, source, period, dateFrom, dateTo, sortBy])
   useEffect(() => { if (page > pages) setPage(pages) }, [page, pages])
 
   const openDetail = async (row: AnyRow) => {
@@ -342,7 +358,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
-    setPeriod('all'); setDateFrom(''); setDateTo(''); setDateSort('desc'); setPage(1)
+    setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('num_desc'); setPage(1)
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
@@ -390,9 +406,11 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
-        <label><span>Sort by Date</span><select value={dateSort} onChange={e => setDateSort(e.target.value as 'desc' | 'asc')}>
-          <option value="desc">Newest first</option>
-          <option value="asc">Oldest first</option>
+        <label><span>Sort By</span><select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}>
+          <option value="num_desc">Number: high to low</option>
+          <option value="num_asc">Number: low to high</option>
+          <option value="date_desc">Date: newest first</option>
+          <option value="date_asc">Date: oldest first</option>
         </select></label>
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
