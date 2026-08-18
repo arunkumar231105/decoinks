@@ -165,7 +165,7 @@ function resolvePeriod(date_from, date_to) {
 
 async function getOverview({ date_from, date_to } = {}) {
   const p = resolvePeriod(date_from, date_to)
-  const cacheKey = `dashboard:overview:v1:${p.from}:${p.to}`
+  const cacheKey = `dashboard:overview:v3:${p.from}:${p.to}`
   const cached = await cacheGet(cacheKey)
   if (cached) return cached
 
@@ -209,61 +209,72 @@ async function getOverview({ date_from, date_to } = {}) {
           ${CUR('COALESCE(q.sent_at, q.created_at)')} AS cur,
           ${PREV('COALESCE(q.sent_at, q.created_at)')} AS prev
         FROM quotations q
-        WHERE (q.sent_at IS NOT NULL OR q.status::text NOT IN ('Draft'))
+        -- Count what the Quotations list shows: every live quotation. Restricting
+        -- this to "already sent" made the dashboard disagree with the module.
+        WHERE q.deleted_at IS NULL AND q.status::text <> 'Cancelled'
       ) x`, params),
 
     // Payments received (real ledger) with type + new/existing customer splits
     query(`SELECT
-        COUNT(DISTINCT inv_id) FILTER (WHERE cur)::int AS cnt,
-        COUNT(DISTINCT inv_id) FILTER (WHERE prev)::int AS prev,
+        COUNT(*) FILTER (WHERE cur)::int AS cnt,
+        COUNT(*) FILTER (WHERE prev)::int AS prev,
         COALESCE(SUM(amount) FILTER (WHERE cur),0)::numeric(14,2) AS val,
         COALESCE(SUM(amount) FILTER (WHERE prev),0)::numeric(14,2) AS val_prev,
-        COUNT(DISTINCT inv_id) FILTER (WHERE cur AND dtfish)::int AS dtf,
-        COUNT(DISTINCT inv_id) FILTER (WHERE cur AND NOT dtfish)::int AS shirt,
-        COUNT(DISTINCT inv_id) FILTER (WHERE cur AND newcust)::int AS ncust,
-        COUNT(DISTINCT inv_id) FILTER (WHERE cur AND NOT newcust)::int AS ecust,
+        COUNT(*) FILTER (WHERE cur AND dtfish)::int AS dtf,
+        COUNT(*) FILTER (WHERE cur AND NOT dtfish)::int AS shirt,
+        COUNT(*) FILTER (WHERE cur AND newcust)::int AS ncust,
+        COUNT(*) FILTER (WHERE cur AND NOT newcust)::int AS ecust,
         COALESCE(SUM(amount) FILTER (WHERE cur AND newcust),0)::numeric(14,2) AS ncust_val,
         COALESCE(SUM(amount) FILTER (WHERE cur AND NOT newcust),0)::numeric(14,2) AS ecust_val
       FROM (
-        SELECT pay.invoice_id AS inv_id, pay.amount,
-          ${CUR('pay.paid_at')} AS cur, ${PREV('pay.paid_at')} AS prev,
-          COALESCE(i.order_type,'') IN ('dtf','gangsheet') AS dtfish,
+        SELECT pay.amount,
+          ${CUR('COALESCE(pay.paid_at, pay.payment_date, pay.created_at)')} AS cur,
+          ${PREV('COALESCE(pay.paid_at, pay.payment_date, pay.created_at)')} AS prev,
+          COALESCE(i.order_type, o.order_type::text, '') IN ('dtf','gangsheet') AS dtfish,
           COALESCE(${CUR('fo.first_order')}, FALSE) AS newcust
         FROM payments pay
-        JOIN invoices i ON i.id = pay.invoice_id AND i.status::text <> 'Void'
+        -- Most of the ledger is booked straight against an order, with no
+        -- invoice row, so the invoice is a hint about the product type here,
+        -- not a condition for the money to exist.
+        LEFT JOIN invoices i ON i.id = pay.invoice_id
+        LEFT JOIN orders   o ON o.id = pay.order_id AND o.deleted_at IS NULL
         LEFT JOIN LATERAL (
           SELECT MIN(o2.order_date) AS first_order FROM orders o2
-          WHERE o2.customer_id = i.customer_id AND o2.deleted_at IS NULL
+          WHERE o2.customer_id = COALESCE(i.customer_id, o.customer_id, pay.customer_id)
+            AND o2.deleted_at IS NULL
             AND o2.status::text NOT IN ('Draft','Cancelled')
-        ) fo ON i.customer_id IS NOT NULL
+        ) fo ON TRUE
+        WHERE COALESCE(i.status::text, '') <> 'Void'
       ) x`, params),
 
     // Orders: issued counts/values, reached-stage funnel, pendings, splits
     query(`SELECT
-        COUNT(*)                FILTER (WHERE cur AND issued)::int AS so_cnt,
-        COUNT(*)                FILTER (WHERE prev AND issued)::int AS so_prev,
-        COALESCE(SUM(total)     FILTER (WHERE cur AND issued),0)::numeric(14,2) AS so_val,
-        COALESCE(SUM(total)     FILTER (WHERE prev AND issued),0)::numeric(14,2) AS so_val_prev,
-        COUNT(*)                FILTER (WHERE cur AND issued AND dtfish)::int AS so_dtf,
-        COUNT(*)                FILTER (WHERE cur AND issued AND NOT dtfish)::int AS so_shirt,
-        COUNT(*)                FILTER (WHERE cur AND issued AND newcust)::int AS so_ncust,
-        COUNT(*)                FILTER (WHERE cur AND issued AND NOT newcust)::int AS so_ecust,
-        COALESCE(SUM(total)     FILTER (WHERE cur AND issued AND dtfish),0)::numeric(14,2) AS so_dtf_val,
-        COALESCE(SUM(total)     FILTER (WHERE cur AND issued AND NOT dtfish),0)::numeric(14,2) AS so_shirt_val,
-        COALESCE(SUM(total)     FILTER (WHERE cur AND issued AND newcust),0)::numeric(14,2) AS so_ncust_val,
-        COALESCE(SUM(total)     FILTER (WHERE cur AND issued AND NOT newcust),0)::numeric(14,2) AS so_ecust_val,
-        COUNT(*) FILTER (WHERE cur AND st_prod)::int AS pr_cnt,
-        COUNT(*) FILTER (WHERE prev AND st_prod)::int AS pr_prev,
-        COUNT(*) FILTER (WHERE cur AND st_prod AND dtfish)::int AS pr_dtf,
-        COUNT(*) FILTER (WHERE cur AND st_prod AND NOT dtfish)::int AS pr_shirt,
-        COUNT(*) FILTER (WHERE cur AND st_prod AND newcust)::int AS pr_ncust,
-        COUNT(*) FILTER (WHERE cur AND st_prod AND NOT newcust)::int AS pr_ecust,
-        COUNT(*) FILTER (WHERE cur AND st_ship)::int AS sh_cnt,
-        COUNT(*) FILTER (WHERE prev AND st_ship)::int AS sh_prev,
-        COUNT(*) FILTER (WHERE cur AND st_ship AND dtfish)::int AS sh_dtf,
-        COUNT(*) FILTER (WHERE cur AND st_ship AND NOT dtfish)::int AS sh_shirt,
-        COUNT(*) FILTER (WHERE cur AND st_ship AND newcust)::int AS sh_ncust,
-        COUNT(*) FILTER (WHERE cur AND st_ship AND NOT newcust)::int AS sh_ecust,
+        COUNT(*)                FILTER (WHERE cur)::int AS so_cnt,
+        COUNT(*)                FILTER (WHERE prev)::int AS so_prev,
+        COALESCE(SUM(total)     FILTER (WHERE cur),0)::numeric(14,2) AS so_val,
+        COALESCE(SUM(total)     FILTER (WHERE prev),0)::numeric(14,2) AS so_val_prev,
+        COUNT(*)                FILTER (WHERE cur AND dtfish)::int AS so_dtf,
+        COUNT(*)                FILTER (WHERE cur AND NOT dtfish)::int AS so_shirt,
+        COUNT(*)                FILTER (WHERE cur AND newcust)::int AS so_ncust,
+        COUNT(*)                FILTER (WHERE cur AND NOT newcust)::int AS so_ecust,
+        COALESCE(SUM(total)     FILTER (WHERE cur AND dtfish),0)::numeric(14,2) AS so_dtf_val,
+        COALESCE(SUM(total)     FILTER (WHERE cur AND NOT dtfish),0)::numeric(14,2) AS so_shirt_val,
+        COALESCE(SUM(total)     FILTER (WHERE cur AND newcust),0)::numeric(14,2) AS so_ncust_val,
+        COALESCE(SUM(total)     FILTER (WHERE cur AND NOT newcust),0)::numeric(14,2) AS so_ecust_val,
+        COUNT(*) FILTER (WHERE cur AND cur_prod)::int AS pr_cnt,
+        COUNT(*) FILTER (WHERE prev AND cur_prod)::int AS pr_prev,
+        COUNT(*) FILTER (WHERE cur AND cur_prod AND dtfish)::int AS pr_dtf,
+        COUNT(*) FILTER (WHERE cur AND cur_prod AND NOT dtfish)::int AS pr_shirt,
+        COUNT(*) FILTER (WHERE cur AND cur_prod AND newcust)::int AS pr_ncust,
+        COUNT(*) FILTER (WHERE cur AND cur_prod AND NOT newcust)::int AS pr_ecust,
+        COUNT(*) FILTER (WHERE cur AND st_prod)::int AS pr_reached,
+        COUNT(*) FILTER (WHERE cur AND cur_ship)::int AS sh_cnt,
+        COUNT(*) FILTER (WHERE prev AND cur_ship)::int AS sh_prev,
+        COUNT(*) FILTER (WHERE cur AND cur_ship AND dtfish)::int AS sh_dtf,
+        COUNT(*) FILTER (WHERE cur AND cur_ship AND NOT dtfish)::int AS sh_shirt,
+        COUNT(*) FILTER (WHERE cur AND cur_ship AND newcust)::int AS sh_ncust,
+        COUNT(*) FILTER (WHERE cur AND cur_ship AND NOT newcust)::int AS sh_ecust,
+        COUNT(*) FILTER (WHERE cur AND st_ship)::int AS sh_reached,
         COUNT(*) FILTER (WHERE cur AND st_del)::int AS de_cnt,
         COUNT(*) FILTER (WHERE prev AND st_del)::int AS de_prev,
         COUNT(*) FILTER (WHERE cur AND st_del AND dtfish)::int AS de_dtf,
@@ -271,26 +282,37 @@ async function getOverview({ date_from, date_to } = {}) {
         COUNT(*) FILTER (WHERE cur AND st_del AND newcust)::int AS de_ncust,
         COUNT(*) FILTER (WHERE cur AND st_del AND NOT newcust)::int AS de_ecust,
         COUNT(*) FILTER (WHERE cur AND status = 'Draft')::int AS so_pending,
-        COUNT(*) FILTER (WHERE cur AND issued AND has_po)::int AS po_orders_cnt,
-        COUNT(*) FILTER (WHERE cur AND issued AND NOT has_po)::int AS po_pending,
+        COUNT(*) FILTER (WHERE cur AND has_po)::int AS po_orders_cnt,
+        COUNT(*) FILTER (WHERE cur AND NOT has_po)::int AS po_pending,
         COUNT(*) FILTER (WHERE cur AND status = 'Confirmed')::int AS pr_pending,
-        COUNT(*) FILTER (WHERE cur AND status IN ('In Production','Ready to Ship'))::int AS sh_pending,
+        COUNT(*) FILTER (WHERE cur AND status IN ('In Production','Ready to Ship','QC'))::int AS sh_pending,
         COUNT(*) FILTER (WHERE cur AND status = 'Shipped')::int AS de_pending
       FROM (
         SELECT o.total, o.status::text AS status,
           o.order_type::text IN ('dtf','gangsheet') AS dtfish,
           (o.status::text <> 'Draft') AS issued,
-          o.status::text IN ('In Production','Ready to Ship','Shipped','Delivered') AS st_prod,
+          -- Cumulative "reached this stage or beyond" — powers the Order Status Funnel.
+          o.status::text IN ('In Production','Ready to Ship','QC','Shipped','Delivered') AS st_prod,
           o.status::text IN ('Shipped','Delivered') AS st_ship,
           (o.status::text = 'Delivered') AS st_del,
+          -- Current-status buckets — power the KPI cards so each order counts in
+          -- exactly one card (an order still In Production is not also "Shipped").
+          o.status::text IN ('In Production','Ready to Ship','QC') AS cur_prod,
+          (o.status::text = 'Shipped') AS cur_ship,
           -- "New customer" = this customer's FIRST eligible order falls inside
           -- the period (not the customer record's creation date, which is
           -- meaningless for imported customer books).
           COALESCE(${CUR('fo.first_order')}, FALSE) AS newcust,
           ${CUR('o.order_date')} AS cur, ${PREV('o.order_date')} AS prev,
-          EXISTS (SELECT 1 FROM po_orders poo
-                  JOIN purchase_orders po2 ON po2.id = poo.po_id AND po2.deleted_at IS NULL
-                  WHERE poo.order_id = o.id) AS has_po
+          -- A PO reaches its order two ways: directly on purchase_orders.order_id,
+          -- or through po_orders when one PO covers several orders. Checking only
+          -- the join table reported 39 orders as still needing a PO when every
+          -- one of them already had one.
+          (EXISTS (SELECT 1 FROM purchase_orders po1
+                    WHERE po1.order_id = o.id AND po1.deleted_at IS NULL)
+           OR EXISTS (SELECT 1 FROM po_orders poo
+                      JOIN purchase_orders po2 ON po2.id = poo.po_id AND po2.deleted_at IS NULL
+                      WHERE poo.order_id = o.id)) AS has_po
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT MIN(o2.order_date) AS first_order FROM orders o2
@@ -384,9 +406,9 @@ async function getOverview({ date_from, date_to } = {}) {
       payments:    { count: n(P2.cnt), prev: n(P2.prev), dtf: n(P2.dtf), shirt: n(P2.shirt), value: n(P2.val), value_prev: n(P2.val_prev) },
       sales_orders:{ count: n(O.so_cnt), prev: n(O.so_prev), dtf: n(O.so_dtf), shirt: n(O.so_shirt), value: n(O.so_val), value_prev: n(O.so_val_prev), pending: n(O.so_pending) },
       po:          { count: n(PO.cnt), prev: n(PO.prev), dtf: n(PO.dtf), shirt: n(PO.shirt), pending: n(O.po_pending), orders_covered: n(O.po_orders_cnt) },
-      production:  { count: n(O.pr_cnt), prev: n(O.pr_prev), dtf: n(O.pr_dtf), shirt: n(O.pr_shirt), pending: n(O.pr_pending) },
-      shipped:     { count: n(O.sh_cnt), prev: n(O.sh_prev), dtf: n(O.sh_dtf), shirt: n(O.sh_shirt), pending: n(O.sh_pending) },
-      delivered:   { count: n(O.de_cnt), prev: n(O.de_prev), dtf: n(O.de_dtf), shirt: n(O.de_shirt), pending: n(O.de_pending) },
+      production:  { count: n(O.pr_cnt), prev: n(O.pr_prev), dtf: n(O.pr_dtf), shirt: n(O.pr_shirt), pending: n(O.pr_pending), reached: n(O.pr_reached) },
+      shipped:     { count: n(O.sh_cnt), prev: n(O.sh_prev), dtf: n(O.sh_dtf), shirt: n(O.sh_shirt), pending: n(O.sh_pending), reached: n(O.sh_reached) },
+      delivered:   { count: n(O.de_cnt), prev: n(O.de_prev), dtf: n(O.de_dtf), shirt: n(O.de_shirt), pending: n(O.de_pending), reached: n(O.de_cnt) },
     },
     customers: {
       total: n(C.total), new: n(C.new_cnt), existing: n(C.total) - n(C.new_cnt), new_prev: n(C.new_prev),
