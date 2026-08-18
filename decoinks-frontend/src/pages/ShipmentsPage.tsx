@@ -95,6 +95,7 @@ export function ShipmentsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('All')
+  const [dateSort, setDateSort] = useState<'desc' | 'asc'>('desc')
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -123,6 +124,16 @@ export function ShipmentsPage() {
       (s.customer_name ?? '').toLowerCase().includes(q) ||
       (s.tracking_number ?? '').toLowerCase().includes(q)
     return matchesStatus && matchesSearch
+  })
+
+  // Ship date, newest or oldest first. Shipments with no date stay at the
+  // bottom either way rather than jumping to the top of an ascending list.
+  const rowsToShow = [...filtered].sort((a, b) => {
+    const x = (a.ship_date ?? '').slice(0, 10), y = (b.ship_date ?? '').slice(0, 10)
+    if (!x && !y) return 0
+    if (!x) return 1
+    if (!y) return -1
+    return dateSort === 'asc' ? x.localeCompare(y) : y.localeCompare(x)
   })
 
   const selectedShipment = allShipments.find(s => s.id === menuAnchor?.id)
@@ -219,6 +230,11 @@ export function ShipmentsPage() {
         <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'In Transit' : 'All')}>
           <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
         </button>
+        <select className="sh-per-page" aria-label="Sort by ship date"
+                value={dateSort} onChange={e => { setDateSort(e.target.value as 'desc' | 'asc'); setPage(1) }}>
+          <option value="desc">Ship date: newest first</option>
+          <option value="asc">Ship date: oldest first</option>
+        </select>
         <button className="lb-action-btn" onClick={() => setShowLabel(true)}>
           <Tag size={13} /> Create Label
         </button>
@@ -331,12 +347,12 @@ export function ShipmentsPage() {
                 <td colSpan={16} className="sh-empty">Loading…</td>
               </tr>
             )}
-            {!isLoading && filtered.length === 0 && (
+            {!isLoading && rowsToShow.length === 0 && (
               <tr>
                 <td colSpan={16} className="sh-empty">No shipments found.</td>
               </tr>
             )}
-            {!isLoading && filtered.map(s => (
+            {!isLoading && rowsToShow.map(s => (
               <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
                 <td className="sh-muted">{s.ship_date ?? '-'}</td>
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>

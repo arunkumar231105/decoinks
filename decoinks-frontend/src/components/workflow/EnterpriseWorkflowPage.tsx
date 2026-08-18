@@ -214,6 +214,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [dateSort, setDateSort] = useState<'desc' | 'asc'>('desc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<AnyRow | null>(null)
   const [detail, setDetail] = useState<AnyRow | null>(null)
@@ -266,15 +267,27 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     return true
   }), [allRows, search, status, customer, product, source, periodRangeMemo, config.dateKey])
 
-  const total = filteredRows.length
+  const dateOf = (row: AnyRow) => {
+    const raw = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
+    return raw ? String(raw).slice(0, 10) : ''
+  }
+  const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
+    const x = dateOf(a), y = dateOf(b)
+    if (!x && !y) return 0
+    if (!x) return 1                          // undated rows sit at the bottom either way
+    if (!y) return -1
+    return dateSort === 'asc' ? x.localeCompare(y) : y.localeCompare(x)
+  }), [filteredRows, dateSort, config.dateKey])
+
+  const total = sortedRows.length
   const pages = Math.max(1, Math.ceil(total / pageSize))
-  const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
+  const rows = sortedRows.slice((page - 1) * pageSize, page * pageSize)
   const shownColumns = config.columns.filter(c => visibleColumns.has(c.key))
   const unique = (values: string[]) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
   const sources = useMemo(() => unique(allRows.map(sourceOf)), [allRows])
-  useEffect(() => { setPage(1) }, [search, status, customer, product, source, period, dateFrom, dateTo])
+  useEffect(() => { setPage(1) }, [search, status, customer, product, source, period, dateFrom, dateTo, dateSort])
   useEffect(() => { if (page > pages) setPage(pages) }, [page, pages])
 
   const openDetail = async (row: AnyRow) => {
@@ -329,7 +342,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
-    setPeriod('all'); setDateFrom(''); setDateTo(''); setPage(1)
+    setPeriod('all'); setDateFrom(''); setDateTo(''); setDateSort('desc'); setPage(1)
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
@@ -377,6 +390,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
+        <label><span>Sort by Date</span><select value={dateSort} onChange={e => setDateSort(e.target.value as 'desc' | 'asc')}>
+          <option value="desc">Newest first</option>
+          <option value="asc">Oldest first</option>
+        </select></label>
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
 
