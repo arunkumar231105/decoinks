@@ -16,7 +16,8 @@
  *   - the recipient surname matches the order's customer/contact/ship-to name,
  *   - the ship-to postcode matches (first 5 digits),
  *   - the label was bought within MATCH_WINDOW_DAYS of the order date,
- *   - and exactly one order qualifies.
+ *   - and exactly one order qualifies, or exactly one of them was raised on the
+ *     very day the label was bought.
  * Anything else is reported as UNMATCHED for a human to decide.
  *
  * Unmatched labels are still recorded as order-less shipments (allowed by
@@ -167,11 +168,21 @@ async function main() {
               (SELECT p.id FROM purchase_orders p WHERE p.order_id = o.id AND p.deleted_at IS NULL
                 ORDER BY p.created_at LIMIT 1) AS po_id,
               (SELECT p.po_number FROM purchase_orders p WHERE p.order_id = o.id AND p.deleted_at IS NULL
-                ORDER BY p.created_at LIMIT 1) AS po_number
+                ORDER BY p.created_at LIMIT 1) AS po_number,
+              -- A shipment raised ahead of the label: fill this one in rather
+              -- than adding a second parcel row for the same delivery.
+              (SELECT s.id FROM shipments s WHERE s.order_id = o.id AND s.deleted_at IS NULL
+                 AND NULLIF(TRIM(COALESCE(s.tracking_number, '')), '') IS NULL
+                ORDER BY s.created_at LIMIT 1) AS empty_shipment_id,
+              (SELECT s.shipment_number FROM shipments s WHERE s.order_id = o.id AND s.deleted_at IS NULL
+                 AND NULLIF(TRIM(COALESCE(s.tracking_number, '')), '') IS NULL
+                ORDER BY s.created_at LIMIT 1) AS empty_shipment_no
          FROM orders o
          LEFT JOIN customers cust ON cust.id = o.customer_id
         WHERE o.deleted_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id AND s.deleted_at IS NULL)`)
+          AND NOT EXISTS (SELECT 1 FROM shipments s
+                           WHERE s.order_id = o.id AND s.deleted_at IS NULL
+                             AND NULLIF(TRIM(COALESCE(s.tracking_number, '')), '') IS NOT NULL)`)
 
     // How many unattached labels share a recipient? Robert Farrar has four, so
     // "a Farrar order near this date" is not evidence for any one of them.
@@ -208,9 +219,18 @@ async function main() {
         return true
       })
 
+      // Several orders can sit inside the window for a customer who orders every
+      // few days. A label bought on the order's own date beats one bought two or
+      // three days away, so an unambiguous same-day order wins; anything less
+      // clear-cut is still reported rather than guessed.
+      let match = hits.length === 1 ? hits[0] : null
+      if (!match && hits.length > 1 && labelDate) {
+        const sameDay = hits.filter(c => c.order_date && dayDiff(labelDate, c.order_date) === 0)
+        if (sameDay.length === 1) match = sameDay[0]
+      }
+
       plan.push({
-        label: l, live, labelDate, hits,
-        match: hits.length === 1 ? hits[0] : null,
+        label: l, live, labelDate, hits, match,
         competing: perRecipient.get(recipientKey(l)) > 1,
       })
     }
@@ -223,7 +243,8 @@ async function main() {
       console.log(`  ${p.label.tracking}  ${p.labelDate}  ${String(p.label.name).padEnd(22)} ` +
         `${p.label.city}, ${p.label.state} ${p.label.zip}`)
       console.log(`      → ${p.match.order_number} (${p.match.status}, ${p.match.order_date.toISOString().slice(0, 10)}, ` +
-        `${p.match.customer})${p.match.po_number ? ` + ${p.match.po_number}` : ' — no PO'}   carrier: ${p.live.tracking_status || '?'}`)
+        `${p.match.customer})${p.match.po_number ? ` + ${p.match.po_number}` : ' — no PO'}   carrier: ${p.live.tracking_status || '?'}` +
+        `   ${p.match.empty_shipment_no ? `fills ${p.match.empty_shipment_no}` : 'new shipment'}`)
     }
 
     console.log(`\nUNMATCHED — no sales order in Decoinks (${unmatched.length}):`)
@@ -256,6 +277,21 @@ async function main() {
         ? `Label imported from Shippo and matched to ${p.match.order_number} by ship-to address + date.`
         : 'Label imported from Shippo. No Decoinks sales order matched this recipient/date — link it once the order is entered.'
 
+      if (p.match?.empty_shipment_id) {
+        await client.query(
+          `UPDATE shipments SET tracking_number = $2, carrier = 'UPS', status = $3::shipment_status,
+             ship_date = COALESCE($4::date, ship_date), service_type = $5, tracking_status = $6,
+             status_details = $7, last_scan_city = $8, last_scan_state = $9, delivered_date = $10::date,
+             estimated_delivery = $11::date, original_eta = $12::date,
+             shippo_transaction_id = $13, label_url = $14, tracking_synced_at = NOW(),
+             notes = $15, updated_at = NOW()
+            WHERE id = $1`,
+          [p.match.empty_shipment_id, l.tracking, status, live.ship_date || p.labelDate,
+           live.service_type, live.tracking_status, live.status_details,
+           live.last_scan_city, live.last_scan_state, live.delivered_date,
+           live.estimated_delivery, live.original_eta, l.txId, l.labelUrl,
+           `Label bought in Shippo and matched to ${p.match.order_number} by ship-to address + date.`])
+      } else {
       await client.query(
         `INSERT INTO shipments (shipment_number, order_id, status, carrier, tracking_number,
            ship_date, recipient_name, customer_name, address, ship_to_city, ship_to_state, ship_to_postal_code,
@@ -269,6 +305,7 @@ async function main() {
          live.service_type, live.tracking_status, live.status_details, live.last_scan_city, live.last_scan_state,
          live.delivered_date, live.estimated_delivery, live.original_eta,
          l.txId, l.labelUrl, note, actor?.id || null])
+      }
 
       if (p.match) {
         // Mirror the tracking onto the sales order and, when there is one, the PO —
@@ -282,6 +319,16 @@ async function main() {
             `UPDATE purchase_orders SET tracking_number = $1, updated_at = NOW()
               WHERE id = $2 AND NULLIF(TRIM(COALESCE(tracking_number,'')),'') IS NULL`,
             [l.tracking, p.match.po_id])
+        }
+        const carrier = String(live.tracking_status || '').toUpperCase()
+        const orderStatus = carrier === 'DELIVERED' ? 'Delivered'
+          : ['TRANSIT', 'PRE_TRANSIT'].includes(carrier) ? 'Shipped' : null
+        if (orderStatus) {
+          await client.query(
+            `UPDATE orders SET status = $1::order_status, shipped_at = COALESCE(shipped_at, $3::timestamptz),
+                    updated_at = NOW()
+              WHERE id = $2 AND status::text NOT IN ('Delivered', 'Cancelled')`,
+            [orderStatus, p.match.id, live.ship_date || p.labelDate])
         }
         attached++
       } else recorded++
