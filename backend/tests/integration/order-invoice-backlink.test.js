@@ -23,11 +23,12 @@ async function reset() {
   userId = rows[0].id
 }
 
-async function seedInvoice(number) {
+async function seedInvoice(number, status = 'Paid') {
+  const paid = status === 'Paid' ? 100 : 0
   const { rows } = await pool.query(
     `INSERT INTO invoices (invoice_number, status, subtotal, discount_amt, tax_amt, total, amount_paid, balance_due, customer_name, order_type)
-     VALUES ($1, 'Draft', 100, 0, 0, 100, 0, 100, 'Test Customer', 'apparel')
-     RETURNING id`, [number])
+     VALUES ($1, $2, 100, 0, 0, 100, $3, $4, 'Test Customer', 'apparel')
+     RETURNING id`, [number, status, paid, 100 - paid])
   const invId = rows[0].id
   await pool.query(
     `INSERT INTO invoice_items (invoice_id, description, qty, unit_price, amount, colors, sizes)
@@ -50,13 +51,23 @@ test('creating an order from an invoice sets invoices.order_id back-link', async
   expect(await invoiceOrderId(invId)).toBe(order.id)   // back-link now set → UI guard activates
 })
 
-test('back-link is idempotent — a second order never overwrites the first link', async () => {
+test('an unpaid invoice cannot create a sales order', async () => {
+  const invId = await seedInvoice('INV-BL-UNPAID', 'Draft')
+  await expect(
+    orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
+  ).rejects.toMatchObject({ statusCode: 409 })
+  expect(await invoiceOrderId(invId)).toBeNull()
+})
+
+test('a second order cannot be created from the same paid invoice', async () => {
   const invId = await seedInvoice('INV-BL-0002')
   const first  = await orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
-  const second = await orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
+  await expect(
+    orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
+  ).rejects.toMatchObject({ statusCode: 409 })
 
-  // The invoice stays linked to the FIRST order; the second create cannot steal
-  // or overwrite the link (AND order_id IS NULL), so no data is lost.
+  // The invoice stays linked to the first order and no duplicate is inserted.
   expect(await invoiceOrderId(invId)).toBe(first.id)
-  expect(second.id).not.toBe(first.id)
+  const { rows } = await pool.query(`SELECT id FROM orders WHERE invoice_id = $1`, [invId])
+  expect(rows).toHaveLength(1)
 })

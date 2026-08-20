@@ -20,6 +20,33 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
   return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
 
+// Order addresses are snapshots, so keep their wording but remove the repeated
+// comma-separated components produced by legacy imports (for example
+// "Lawrenceville, GA 30045, Lawrenceville, GA 30045").
+function normalizeShippingAddress(value) {
+  if (value == null) return null
+  const parts = String(value).split(',').map(part => part.trim()).filter(Boolean)
+  const seen = new Set()
+  const unique = []
+  for (const part of parts) {
+    const key = part.toLowerCase().replace(/\s+/g, ' ')
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(part.replace(/\s+/g, ' '))
+  }
+  return unique.join(', ') || null
+}
+
+function customerAddress(customer) {
+  if (!customer) return null
+  return normalizeShippingAddress([
+    customer.address_line1,
+    customer.city,
+    [customer.state, customer.zip].filter(Boolean).join(' '),
+    customer.country,
+  ].filter(Boolean).join(', '))
+}
+
 // Mirror an order's "payment received" onto its linked invoice's payment
 // ledger — the single source of truth the dashboard and invoice balance read.
 // `targetPaid` is the TOTAL amount received for the order. We only ever add the
@@ -215,32 +242,83 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
             c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
             COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
             latest_shipment.status AS tracking_status,
-            COALESCE(o.tracking_number, latest_shipment.tracking_number) AS display_tracking_number
+            COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) AS display_tracking_number,
+            COALESCE(NULLIF(BTRIM(o.contact_name), ''), cust.name) AS export_contact_name,
+            COALESCE(NULLIF(BTRIM(o.contact_email), ''), cust.email) AS export_contact_email,
+            COALESCE(NULLIF(BTRIM(o.contact_phone), ''), cust.mobile_number, cust.company_phone_number, cust.phone) AS export_contact_phone,
+            COALESCE(NULLIF(BTRIM(o.shipping_name), ''), cust.company_name, cust.company, cust.name) AS export_shipping_name,
+            COALESCE(
+              NULLIF(BTRIM(o.shipping_address), ''),
+              NULLIF(BTRIM(CONCAT_WS(', ', cust.address_line1, cust.city,
+                NULLIF(CONCAT_WS(' ', cust.state, cust.zip), ''), cust.country)), '')
+            ) AS export_shipping_address,
+            COALESCE(NULLIF(BTRIM(o.source_po_number), ''), latest_po.source_po_number, latest_po.po_number) AS export_source_po_number,
+            COALESCE(NULLIF(o.subtotal, 0), NULLIF(i.subtotal, 0), NULLIF(item_totals.item_amount, 0)) AS export_subtotal,
+            CASE WHEN i.status = 'Paid' THEN i.total ELSE o.total END AS export_total,
+            CASE WHEN i.status = 'Paid' THEN i.amount_paid ELSE o.amount_paid END AS export_amount_paid,
+            CASE
+              WHEN i.status = 'Paid' THEN 'Paid'
+              WHEN i.status = 'Partially Paid' THEN 'Partial'
+              WHEN i.id IS NOT NULL THEN 'Unpaid'
+              ELSE o.payment_status::text
+            END AS export_payment_status,
+            CASE
+              WHEN latest_shipment.status = 'Delivered' OR o.status = 'Delivered' THEN 'Delivered'
+              WHEN COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) IS NOT NULL THEN 'Shipped'
+              WHEN o.status = 'Draft' AND i.status = 'Paid' THEN 'Confirmed'
+              ELSE o.status::text
+            END AS export_status,
+            COALESCE(
+              NULLIF(BTRIM(o.courier), ''), latest_shipment.carrier,
+              CASE
+                WHEN COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) ILIKE '1Z%' THEN 'UPS'
+                WHEN COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) ~ '^[0-9]{20,22}$' THEN 'USPS'
+              END
+            ) AS export_courier,
+            COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) AS export_tracking_number,
+            COALESCE(u.name, customer_agent.name, creator.name) AS export_agent_name
      FROM orders o
      LEFT JOIN suppliers c ON c.id = o.supplier_id
      LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN users u ON u.id = o.assigned_to
+     LEFT JOIN users customer_agent ON customer_agent.id = cust.assigned_agent_id
+     LEFT JOIN users creator ON creator.id = o.created_by
+     LEFT JOIN invoices i ON i.id = o.invoice_id
      LEFT JOIN LATERAL (
-       SELECT COALESCE(SUM(qty), 0) AS total_qty
+       SELECT COALESCE(SUM(qty), 0) AS total_qty, COALESCE(SUM(amount), 0) AS item_amount
        FROM (
-         SELECT qty FROM order_items_apparel WHERE order_id = o.id
-         UNION ALL SELECT qty FROM order_items_dtf WHERE order_id = o.id
-         UNION ALL SELECT qty FROM order_items_gangsheet WHERE order_id = o.id
+         SELECT qty, amount FROM order_items_apparel WHERE order_id = o.id
+         UNION ALL SELECT qty, amount FROM order_items_dtf WHERE order_id = o.id
+         UNION ALL SELECT qty, amount FROM order_items_gangsheet WHERE order_id = o.id
        ) order_quantities
      ) item_totals ON TRUE
      LEFT JOIN LATERAL (
-       SELECT status, tracking_number
+       SELECT status, carrier, tracking_number
        FROM shipments
-       WHERE order_id = o.id
+       WHERE order_id = o.id AND deleted_at IS NULL
        ORDER BY created_at DESC
        LIMIT 1
      ) latest_shipment ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT po.po_number, NULLIF(BTRIM(po.source_po_number), '') AS source_po_number
+       FROM purchase_orders po
+       LEFT JOIN po_orders poo ON poo.po_id = po.id
+       WHERE (po.order_id = o.id OR poo.order_id = o.id) AND po.deleted_at IS NULL
+       ORDER BY po.created_at DESC
+       LIMIT 1
+     ) latest_po ON TRUE
      ${where}
      ORDER BY o.order_date DESC, o.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
-  return { rows, total }
+  return {
+    rows: rows.map(row => ({
+      ...row,
+      export_shipping_address: normalizeShippingAddress(row.export_shipping_address),
+    })),
+    total,
+  }
 }
 
 async function getById(id) {
@@ -294,32 +372,75 @@ async function create(data) {
   let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
   let resolvedCustomerId = customer_id || null
   let resolvedSupplierId = supplier_id || null
+  let invoice = null
+
+  if (invoice_id) {
+    const { rows: invRows } = await query(
+      `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.customer_id, i.supplier_id,
+              i.customer_name, i.billing_email, i.contact_number, i.shipping_address,
+              existing_order.id AS existing_order_id
+       FROM invoices i
+       LEFT JOIN LATERAL (
+         SELECT id FROM orders WHERE invoice_id = i.id AND deleted_at IS NULL ORDER BY created_at LIMIT 1
+       ) existing_order ON TRUE
+       WHERE i.id = $1`,
+      [invoice_id]
+    )
+    invoice = invRows[0]
+    if (!invoice) throw Object.assign(new Error('Linked invoice not found'), { statusCode: 404 })
+    if (invoice.status !== 'Paid') {
+      throw Object.assign(new Error('Sales orders can only be created from a fully paid invoice'), { statusCode: 409 })
+    }
+    if (invoice.existing_order_id) {
+      throw Object.assign(new Error('A sales order already exists for this invoice'), { statusCode: 409 })
+    }
+  }
 
   // Pull totals from invoice when converting invoice → order
   if (invoice_id && items.length === 0) {
-    const { rows: invRows } = await query(
-      `SELECT subtotal, discount_amt, tax_amt, total, customer_id, supplier_id FROM invoices WHERE id = $1`,
-      [invoice_id]
-    )
-    if (!invRows[0]) throw Object.assign(new Error('Linked invoice not found'), { statusCode: 404 })
-    const inv = invRows[0]
     totals = {
-      subtotal:     Number(inv.subtotal),
-      discount_amt: Number(inv.discount_amt),
-      tax_amt:      Number(inv.tax_amt),
-      total:        Number(inv.total),
-      items_total:  Number(inv.subtotal),
+      subtotal:     Number(invoice.subtotal),
+      discount_amt: Number(invoice.discount_amt),
+      tax_amt:      Number(invoice.tax_amt),
+      total:        Number(invoice.total),
+      items_total:  Number(invoice.subtotal),
     }
-    if (!resolvedCustomerId) resolvedCustomerId = inv.customer_id
-    if (!resolvedSupplierId) resolvedSupplierId = inv.supplier_id
+    if (!resolvedCustomerId) resolvedCustomerId = invoice.customer_id
+    if (!resolvedSupplierId) resolvedSupplierId = invoice.supplier_id
   }
+
+  if (totals.subtotal <= 0 || totals.total <= 0) {
+    throw Object.assign(new Error('Sales order subtotal and total must be greater than zero'), { statusCode: 422 })
+  }
+
+  let customer = null
+  if (resolvedCustomerId) {
+    const { rows: customerRows } = await query(
+      `SELECT name, email, phone, mobile_number, company_phone_number, company, company_name,
+              address_line1, city, state, zip, country, assigned_agent_id
+       FROM customers WHERE id = $1 AND deleted_at IS NULL`,
+      [resolvedCustomerId]
+    )
+    customer = customerRows[0] || null
+  }
+
+  const resolvedContactName = contact_name || invoice?.customer_name || customer?.name || supplier_name_text || null
+  const resolvedContactEmail = contact_email || invoice?.billing_email || customer?.email || null
+  const resolvedContactPhone = contact_phone || invoice?.contact_number || customer?.mobile_number || customer?.company_phone_number || customer?.phone || null
+  const resolvedShippingName = shipping_name || customer?.company_name || customer?.company || resolvedContactName
+  const resolvedShippingAddress = normalizeShippingAddress(shipping_address || invoice?.shipping_address || customerAddress(customer))
+  const resolvedAssignedTo = assigned_to || customer?.assigned_agent_id || created_by || null
 
   // Resolve the amount received + effective payment status.
   const paidProvided  = amount_paid !== undefined && amount_paid !== null
-  const effectivePaid = paidProvided
+  const effectivePaid = invoice
+    ? totals.total
+    : paidProvided
     ? +Math.max(0, Math.min(Number(amount_paid), totals.total)).toFixed(2)
     : (payment_status === 'Paid' ? totals.total : 0)
-  const effectiveStatus = paidProvided
+  const effectiveStatus = invoice
+    ? 'Paid'
+    : paidProvided
     ? derivePaymentStatus(effectivePaid, totals.total, payment_status)
     : payment_status
 
@@ -328,7 +449,7 @@ async function create(data) {
     await client.query('BEGIN')
     const { rows } = await client.query(
       `INSERT INTO orders (
-         order_number, quotation_id, invoice_id, customer_id, supplier_id, order_type, order_date, entry_date, due_date,
+         order_number, quotation_id, invoice_id, customer_id, supplier_id, order_type, order_date, status, entry_date, due_date,
          payment_terms, payment_method, payment_status, currency,
          amount_paid, payment_reference, payment_date,
          rush_services, shipping_charges, subtotal, discount_pct, discount_amt,
@@ -336,7 +457,7 @@ async function create(data) {
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
        RETURNING *`,
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
@@ -345,9 +466,9 @@ async function create(data) {
         effectivePaid, payment_reference || null, payment_date || null,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
-        contact_name || supplier_name_text || null, contact_email || null, contact_phone || null,
-        shipping_name  || supplier_name_text || null, shipping_address || null,
-        assigned_to || null, created_by,
+        resolvedContactName, resolvedContactEmail, resolvedContactPhone,
+        resolvedShippingName, resolvedShippingAddress,
+        resolvedAssignedTo, created_by,
       ]
     )
     const order = rows[0]
@@ -513,9 +634,20 @@ async function updateStatus(id, status, actor) {
   const actorUser = typeof actor === 'string' ? null   : actor
 
   const { rows: cur } = await query(
-    `SELECT status FROM orders WHERE id = $1 AND deleted_at IS NULL`, [id]
+    `SELECT o.status,
+            COALESCE(NULLIF(BTRIM(o.courier), ''), sh.carrier) AS courier,
+            COALESCE(NULLIF(BTRIM(o.tracking_number), ''), sh.tracking_number) AS tracking_number
+     FROM orders o
+     LEFT JOIN LATERAL (
+       SELECT carrier, tracking_number FROM shipments
+       WHERE order_id = o.id AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1
+     ) sh ON TRUE
+     WHERE o.id = $1 AND o.deleted_at IS NULL`, [id]
   )
   if (!cur[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+  if (status === 'Shipped' && (!cur[0].courier || !cur[0].tracking_number)) {
+    throw Object.assign(new Error('Courier and tracking number are required before an order can be marked Shipped'), { statusCode: 422 })
+  }
   if (actorUser) validateTransition('order', cur[0].status, status, actorUser)
 
   const { rows } = await query(

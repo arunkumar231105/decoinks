@@ -139,7 +139,9 @@ describe('Pipeline: invoice_paid → auto-order', () => {
     expect(ord.supplier_id).toBe(supplierId)
     expect(ord.order_type).toBe('apparel')
     expect(+ord.total).toBeCloseTo(+quote.total, 2)
-    expect(ord.status).toBe('Draft')
+    expect(ord.status).toBe('Confirmed')
+    expect(ord.payment_status).toBe('Paid')
+    expect(+ord.amount_paid).toBeCloseTo(+ord.total, 2)
   })
 
   test('idempotency: re-paying a Paid invoice returns 422 (state machine guard)', async () => {

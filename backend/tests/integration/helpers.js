@@ -17,6 +17,7 @@ const MIGRATION_FILES = [
   '018_gangsheet.sql',
   '019_custom_field_values.sql',
   '020_lead_quote_intake.sql',
+  '081_orders_entry_date.sql',
 ]
 
 async function runMigrations() {

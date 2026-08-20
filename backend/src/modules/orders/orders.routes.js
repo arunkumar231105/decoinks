@@ -25,6 +25,16 @@ const artworksSvc  = require('../artworks/artworks.service')
 const router = Router()
 router.use(verifyToken)
 
+const isoDate = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid date in YYYY-MM-DD format')
+  .refine((value) => {
+    const [year, month, day] = value.split('-').map(Number)
+    const parsed = new Date(Date.UTC(year, month - 1, day))
+    return parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+  }, 'Must be a valid calendar date')
+
 // ── Item schemas (per type) ───────────────────────────────────────────────────
 const apparelItemSchema = z.object({
   category:     z.string().max(100).optional().nullable(),
@@ -34,7 +44,7 @@ const apparelItemSchema = z.object({
   qty:          z.number().int().positive(),
   artwork_no:   z.string().optional().nullable(),
   artwork_size: z.string().optional().nullable(),
-  unit_price:   z.number().nonnegative(),
+  unit_price:   z.number().positive('Unit price must be greater than zero'),
   front_image:  z.string().optional().nullable(),
   back_image:   z.string().optional().nullable(),
   catalog_style_id: z.string().uuid().optional().nullable(),
@@ -53,7 +63,7 @@ const gangsheetItemSchema = z.object({
   size:            z.string().min(1),
   no_artworks:     z.number().int().positive().default(1),
   qty:             z.number().int().positive(),
-  price_per_sheet: z.number().nonnegative(),
+  price_per_sheet: z.number().positive('Price per sheet must be greater than zero'),
   front_image:     z.string().optional().nullable(),
   artworks:        z.array(z.object({
     artwork_no: z.string().max(100).optional().nullable(),
@@ -69,7 +79,7 @@ const dtfItemSchema = z.object({
   width_inches:  z.number().positive().optional().nullable(),
   height_inches: z.number().positive().optional().nullable(),
   qty:           z.number().int().positive(),
-  unit_price:    z.number().nonnegative(),
+  unit_price:    z.number().positive('Unit price must be greater than zero'),
   artwork_image: z.string().optional().nullable(),
   artwork_no:    z.string().max(100).optional().nullable(),
   front_image:   z.string().optional().nullable(),
@@ -85,8 +95,8 @@ const headerFields = {
   supplier_name_text: z.string().optional().nullable(),
   quotation_id:       z.string().uuid().optional().nullable(),
   invoice_id:         z.string().uuid().optional().nullable(),
-  order_date:       z.string().optional().nullable(),
-  due_date:         z.string().optional().nullable(),
+  order_date:       isoDate.optional().nullable(),
+  due_date:         isoDate.optional().nullable(),
   payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']).optional(),
   payment_method:   z.string().max(50).optional().nullable(),
   payment_status:   z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
@@ -99,11 +109,11 @@ const headerFields = {
   discount_pct:     z.number().min(0).max(100).default(0),
   tax_pct:          z.number().min(0).max(100).default(0),
   notes:            z.string().optional().nullable(),
-  contact_name:     z.string().optional().nullable(),
+  contact_name:     z.string().trim().min(1).optional().nullable(),
   contact_email:    z.string().email().optional().nullable(),
   contact_phone:    z.string().optional().nullable(),
-  shipping_name:    z.string().optional().nullable(),
-  shipping_address: z.string().optional().nullable(),
+  shipping_name:    z.string().trim().min(1).optional().nullable(),
+  shipping_address: z.string().trim().min(5, 'Shipping address is too short').optional().nullable(),
   assigned_to:      z.string().uuid().optional().nullable(),
   production_notes: z.string().optional().nullable(),
   packing_instructions: z.string().optional().nullable(),

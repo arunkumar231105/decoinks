@@ -112,17 +112,17 @@ async function exportCsv(req, res, next) {
     const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id, date_from, date_to, search })
     const columns = [
     ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
-    ['Due Date', 'due_date'], ['Status', 'status'], ['Order Type', 'order_type'],
-    ['Customer Name', 'customer_name'], ['Contact Name', 'contact_name'],
-    ['Contact Email', 'contact_email'], ['Contact Phone', 'contact_phone'],
-    ['Shipping Name', 'shipping_name'], ['Shipping Address', 'shipping_address'],
-    ['Supplier', 'supplier_name'], ['Source PO No', 'source_po_number'],
-    ['Subtotal', 'subtotal'], ['Discount', 'discount_amt'], ['Tax', 'tax_amt'],
+    ['Due Date', 'due_date'], ['Status', 'export_status'], ['Order Type', 'order_type'],
+    ['Customer Name', 'customer_name'], ['Contact Name', 'export_contact_name'],
+    ['Contact Email', 'export_contact_email'], ['Contact Phone', 'export_contact_phone'],
+    ['Shipping Name', 'export_shipping_name'], ['Shipping Address', 'export_shipping_address'],
+    ['Source PO No', 'export_source_po_number'],
+    ['Subtotal', 'export_subtotal'], ['Discount', 'discount_amt'], ['Tax', 'tax_amt'],
     ['Rush Services', 'rush_services'], ['Shipping Charges', 'shipping_charges'],
-    ['Total', 'total'], ['Amount Paid', 'amount_paid'], ['Payment Status', 'payment_status'],
+    ['Total', 'export_total'], ['Amount Paid', 'export_amount_paid'], ['Payment Status', 'export_payment_status'],
     ['Payment Method', 'payment_method'], ['Payment Terms', 'payment_terms'],
-    ['Courier', 'courier'], ['Tracking No', 'tracking_number'],
-    ['Agent', 'agent_name'], ['Notes', 'notes'],
+    ['Courier', 'export_courier'], ['Tracking No', 'export_tracking_number'],
+    ['Agent', 'export_agent_name'], ['Notes', 'notes'],
     ]
     return sendCsv(res, 'sales-orders', columns, rows)
   } catch (err) { next(err) }

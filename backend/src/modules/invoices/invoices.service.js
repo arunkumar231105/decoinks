@@ -800,10 +800,11 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
        (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
+        status, payment_status, amount_paid,
         subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
         payment_terms, payment_method, currency, contact_name, contact_email,
         contact_phone, shipping_name, shipping_address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
@@ -878,10 +879,11 @@ async function updateStatus(id, status, actor) {
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
                (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
+                status, payment_status, amount_paid,
                 subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
                 payment_terms, payment_method, currency, contact_name, contact_email,
                 contact_phone, shipping_name, shipping_address, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
               ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
