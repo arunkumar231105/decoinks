@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bell, ChevronDown, LogOut, Menu, Search, UserRound, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
+import { cn } from '../utils/cn'
 import { useResource } from '../hooks/useResource'
 import { endpoints } from '../services/api'
 import type { Profile } from '../types'
@@ -21,6 +22,8 @@ export function Layout({
   children: ReactNode
 }) {
   const [navOpen, setNavOpen] = useState(false)
+  // Desktop rail collapse (mobile uses the off-canvas drawer via navOpen).
+  const [collapsed, setCollapsed] = useState(false)
   const { pathname } = useLocation()
   // The signed-in customer, shown in the top bar on every page.
   const { data: profile } = useResource<Profile>(endpoints.profile)
@@ -34,8 +37,8 @@ export function Layout({
 
   return (
     <div className="flex min-h-full bg-canvas">
-      {/* Desktop rail */}
-      <aside className="sticky top-0 hidden h-screen shrink-0 lg:block">
+      {/* Desktop rail — collapsible */}
+      <aside className={cn('sticky top-0 hidden h-screen shrink-0', collapsed ? 'lg:hidden' : 'lg:block')}>
         <Sidebar />
       </aside>
 
@@ -63,9 +66,13 @@ export function Layout({
         <header className="sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
           <div className="flex items-center gap-3 px-4 py-3.5 sm:px-6">
             <button
-              onClick={() => setNavOpen(true)}
-              aria-label="Open menu"
-              className="cp-btn h-10 w-10 px-0 lg:hidden"
+              onClick={() =>
+                window.matchMedia('(min-width: 1024px)').matches
+                  ? setCollapsed((c) => !c)
+                  : setNavOpen(true)
+              }
+              aria-label="Toggle menu"
+              className="cp-btn h-10 w-10 px-0"
             >
               <Menu size={18} />
             </button>

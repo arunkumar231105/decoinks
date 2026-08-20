@@ -65,10 +65,30 @@ async function getById(id) {
   )
   if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
+  // Apparel weight is read-only and derived live from the BlankTex per-size
+  // garment weight via the line's existing catalog_size_id. No weight is stored
+  // on the line and nothing in the write/convert path changes.
   const items = await query(
-    `SELECT * FROM quotation_items WHERE quotation_id = $1 ORDER BY sort_order`, [id]
+    `SELECT qi.*,
+            wsp.garment_weight_g AS unit_weight_g,
+            ROUND(wsp.garment_weight_g / 453.59237, 2) AS unit_weight_lbs,
+            ROUND(wsp.garment_weight_g * qi.qty / 453.59237, 2) AS line_weight_lbs
+       FROM quotation_items qi
+       LEFT JOIN blanktex.style_size_specs wsp ON wsp.style_size_id = qi.catalog_size_id
+      WHERE qi.quotation_id = $1
+      ORDER BY qi.sort_order`,
+    [id]
   )
-  return { ...rows[0], items: items.rows }
+  const totalWeightG = items.rows.reduce(
+    (sum, i) => sum + (Number(i.unit_weight_g) || 0) * (Number(i.qty) || 0),
+    0
+  )
+  return {
+    ...rows[0],
+    items: items.rows,
+    total_weight_g: Math.round(totalWeightG),
+    total_weight_lbs: +(totalWeightG / 453.59237).toFixed(2),
+  }
 }
 
 async function create({

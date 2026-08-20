@@ -13,7 +13,7 @@ import { cn } from '../utils/cn'
 
 interface Order {
   id: string; order_number: string; status: string; order_type: 'apparel'|'dtf'|'gangsheet'
-  order_date: string; due_date: string|null; required_ship_date?: string|null
+  order_date: string; entry_date?: string|null; created_at?: string; due_date: string|null; required_ship_date?: string|null
   total: number; subtotal: number; rush_services: number; shipping_charges: number
   supplier_id: string|null; supplier_name: string|null; customer_name: string|null
   contact_name: string|null; contact_email: string|null; contact_phone: string|null
@@ -25,6 +25,7 @@ interface Order {
   production_facility?: string|null; assigned_team?: string|null; estimated_production_time?: string|null
   total_print_locations?: number; items: any[]; artworks?: any[]; purchase_orders?: any[]
   shipments?: any[]; activities?: any[]
+  total_weight_lbs?: number; total_weight_g?: number
 }
 
 const fmt = (value: unknown) => Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -56,7 +57,7 @@ export function OrderDetailPage() {
 
   const statusMutation = useMutation({
     mutationFn: (status: string) => api.patch(`/orders/${id}/status`, { status }),
-    onSuccess: () => { toast.success('Order released to production'); queryClient.invalidateQueries({ queryKey: ['order', id] }) },
+    onSuccess: (_data, status) => { toast.success(`Order moved to ${status}`); queryClient.invalidateQueries({ queryKey: ['order', id] }) },
     onError: err => toast.apiError(err),
   })
 
@@ -105,6 +106,7 @@ export function OrderDetailPage() {
         <div><small>Quote</small>{order.quote_id ? <Link to={`/quotes/${order.quote_id}`}>{order.quote_number || 'View Quote'}</Link> : <strong>—</strong>}</div>
         <div><small>Invoice</small>{order.invoice_id ? <Link to={`/invoices/${order.invoice_id}`}>{order.invoice_number || 'View Invoice'}</Link> : <strong>—</strong>}</div>
         <div><small>Order Date</small><strong>{date(order.order_date)}</strong></div>
+        <div><small>Entry Date</small><strong>{date(order.entry_date || order.created_at)}</strong></div>
         <div><small>Required Ship Date</small><strong>{date(requiredDate)}</strong></div>
         <div><small>Customer</small><strong>{order.customer_name || order.contact_name || order.supplier_name || '—'}</strong></div>
         <div><small>Sales Agent</small><strong>{order.agent_name || '—'}</strong></div>
@@ -133,21 +135,21 @@ export function OrderDetailPage() {
           <section className="so-card so-items-card">
             <div className="so-section-head"><h3>{order.order_type === 'dtf' ? <><Wrench size={15}/> DTF Transfer Items</> : <><Package size={15}/> Order Items</>}</h3><span>Artwork is view-only on Sales Orders</span></div>
             <div className="so-table-wrap"><table className="so-table">
-              <thead><tr><th>#</th>{order.order_type === 'apparel' ? <><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th>Artwork Location</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Prod. Status</th></> : order.order_type === 'dtf' ? <><th>Artwork No.</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Rate (USD)</th><th>Amount (USD)</th></> : <><th>Gangsheet Size</th><th>Artworks</th><th>Qty</th><th>Preview</th><th>Amount</th><th>Prod. Status</th></>}</tr></thead>
+              <thead><tr><th>#</th>{order.order_type === 'apparel' ? <><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th>Artwork Location</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th>Prod. Status</th></> : order.order_type === 'dtf' ? <><th>Artwork No.</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Rate (USD)</th><th>Amount (USD)</th></> : <><th>Gangsheet Size</th><th>Artworks</th><th>Qty</th><th>Preview</th><th>Amount</th><th>Prod. Status</th></>}</tr></thead>
               <tbody>{items.map((item, index) => <tr key={item.id || index}>
                 <td>{index + 1}</td>
                 {order.order_type === 'apparel' && <>
                   <td><div className="so-product">{item.product_image ? <img src={item.product_image} alt=""/> : <Package size={22}/>}<div><strong>{item.item}</strong><small>{[item.brand,item.model,item.catalog_sku].filter(Boolean).join(' · ')}</small></div></div></td>
                   <td>{item.color || '—'}</td><td>{item.size || '—'}</td><td>{item.qty}</td><td>{item.artwork_no ? 'Front / Back' : '—'}</td>
                   <td><div className="so-art-pair">{[item.front_image,item.back_image].filter(Boolean).map((src:string,i:number)=><a href={src} target="_blank" rel="noreferrer" key={src}><img src={src} alt={i ? 'back' : 'front'}/></a>)}{!item.front_image && !item.back_image && <ImageIcon size={18}/>}</div></td>
-                  <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
+                  <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td>{item.line_weight_lbs != null ? `${Number(item.line_weight_lbs).toFixed(2)} lbs` : '—'}</td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
                 </>}
                 {order.order_type === 'dtf' && <>
                   <td><strong>{item.artwork_no || (!dtfDimensions(item).width && item.artwork_name !== 'DTF Transfer' ? item.artwork_name : null) || `AW-TF-${String(index + 1).padStart(3, '0')}`}</strong></td>
                   <td>{dtfDimensions(item).width ?? '—'}</td>
                   <td>{dtfDimensions(item).height ?? '—'}</td>
                   <td>{item.qty}</td>
-                  <td>{item.front_image || item.artwork_image ? <a href={item.front_image || item.artwork_image} target="_blank" rel="noreferrer"><img className="so-art" src={item.front_image || item.artwork_image} alt={item.artwork_no || 'Artwork'}/></a> : '—'}</td>
+                  <td>{(() => { const aw = artworks[index]; const awUrl = aw && !['pdf','ai','psd'].includes(String(aw.file_type||'').toLowerCase()) ? aw.file_url : null; const src = item.front_image || item.artwork_image || awUrl; return src ? <a href={src} target="_blank" rel="noreferrer"><img className="so-art" src={src} alt={item.artwork_no || 'Artwork'}/></a> : '—' })()}</td>
                   <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td>
                 </>}
                 {order.order_type === 'gangsheet' && <><td>{item.size}</td><td>{item.no_artworks}</td><td>{item.qty}</td><td>{item.front_image ? <img className="so-art" src={item.front_image} alt="gangsheet"/> : '—'}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td></>}
@@ -165,13 +167,13 @@ export function OrderDetailPage() {
             {!['Production Information','Artwork','Shipments','Activity Timeline'].includes(activeTab) && !activeTab.startsWith('Purchase Orders') && <p className="so-empty">This stage will populate automatically when its workflow starts.</p>}
           </section>
 
-          <section className="so-stats"><div><CalendarDays/><span>Total Pieces<strong>{totalQty} pcs</strong></span></div><div><Wrench/><span>Total Print Locations<strong>{order.total_print_locations || itemArtworkCount || '—'}</strong></span></div><div><ImageIcon/><span>Total Artwork<strong>{totalArtwork}</strong></span></div><div><Factory/><span>Estimated Production Time<strong>{order.estimated_production_time || '1 - 2 Days'}</strong></span></div><div><Truck/><span>Estimated Ship Date<strong>{date(requiredDate)}</strong></span></div></section>
+          <section className="so-stats"><div><CalendarDays/><span>Total Pieces<strong>{totalQty} pcs</strong></span></div>{order.order_type === 'apparel' && <div><Box/><span>Total Weight<strong>{order.total_weight_lbs ? `${order.total_weight_lbs} lbs` : '—'}</strong></span></div>}<div><Wrench/><span>Total Print Locations<strong>{order.total_print_locations || itemArtworkCount || '—'}</strong></span></div><div><ImageIcon/><span>Total Artwork<strong>{totalArtwork}</strong></span></div><div><Factory/><span>Estimated Production Time<strong>{order.estimated_production_time || '1 - 2 Days'}</strong></span></div><div><Truck/><span>Estimated Ship Date<strong>{date(requiredDate)}</strong></span></div></section>
         </main>
 
         <aside className="so-sidebar">
           <section className="so-card"><h3>Commercial Summary</h3><div className="so-kv"><span>Quote</span><strong>{order.quote_number || '—'}</strong></div><div className="so-kv"><span>Invoice</span><strong>{order.invoice_number || '—'}</strong></div><div className="so-kv"><span>Order Value</span><strong>${fmt(order.total)}</strong></div><div className="so-kv"><span>Rush Services</span><strong>${fmt(order.rush_services)}</strong></div><div className="so-kv"><span>Shipping Method</span><strong>{order.shipping_method || 'Standard'}</strong></div><div className="so-kv"><span>Required Ship Date</span><strong>{date(requiredDate)}</strong></div></section>
           <section className="so-card"><h3>Production Summary</h3><div className="so-kv"><span>Artwork Status</span><b className={artworkApproved?'ok':''}>{artworkApproved?'Approved':'Pending'}</b></div><div className="so-kv"><span>PO Status</span><b>{pos.length ? pos[pos.length-1].status : 'Not Created'}</b></div><div className="so-kv"><span>Production Status</span><b>{order.status}</b></div><div className="so-kv"><span>QC Status</span><b>{workflowDone[4]?'Completed':'Not Started'}</b></div><div className="so-kv"><span>Shipment Status</span><b>{shipment?.status || 'Not Started'}</b></div></section>
-          <section className="so-card"><h3>Key Dates</h3><div className="so-kv"><span>Order Date</span><strong>{date(order.order_date)}</strong></div><div className="so-kv"><span>Artwork Approved</span><strong>{artworkApproved ? date(order.order_date) : '—'}</strong></div><div className="so-kv"><span>PO Created</span><strong>{pos.length ? date(pos[0].created_at) : '—'}</strong></div><div className="so-kv"><span>Required Ship Date</span><strong>{date(requiredDate)}</strong></div></section>
+          <section className="so-card"><h3>Key Dates</h3><div className="so-kv"><span>Order Date</span><strong>{date(order.order_date)}</strong></div><div className="so-kv"><span>Entry Date</span><strong>{date(order.entry_date || order.created_at)}</strong></div><div className="so-kv"><span>Artwork Approved</span><strong>{artworkApproved ? date(order.order_date) : '—'}</strong></div><div className="so-kv"><span>PO Created</span><strong>{pos.length ? date(pos[0].created_at) : '—'}</strong></div><div className="so-kv"><span>Required Ship Date</span><strong>{date(requiredDate)}</strong></div></section>
           <section className="so-card"><h3>Documents & Links</h3>{order.quote_id && <Link to={`/quotes/${order.quote_id}`}>View Quote ({order.quote_number})</Link>}{order.invoice_id && <Link to={`/invoices/${order.invoice_id}`}>View Invoice ({order.invoice_number})</Link>}{pos.map(po=><Link key={po.id} to={`/purchase-orders/${po.id}`}>View Purchase Order ({po.po_number})</Link>)}<button onClick={()=>navigate(`/orders/${order.id}/print`)}>Print Work Order</button></section>
         </aside>
       </div>

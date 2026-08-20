@@ -49,7 +49,7 @@ interface ApparelItem {
 }
 
 interface CatalogColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null }
-interface CatalogSize { style_size_id: string; size_code: string; size_name: string }
+interface CatalogSize { style_size_id: string; size_code: string; size_name: string; size_spec?: { garment_weight_g?: number | null } | null }
 interface CatalogVariant { sku_id: string; sku_code: string; style_color_id: string; style_size_id: string }
 interface CatalogStyle {
   id: string; name: string; sku: string; brand: string; image_url: string | null
@@ -1345,6 +1345,17 @@ export function NewQuotationPage() {
   const apparelTotal   = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty * item.quotedCost, 0), [apparelItems])
   const apparelQty     = useMemo(() => apparelItems.reduce((sum, item) => sum + item.qty, 0), [apparelItems])
   const apparelArtwork = useMemo(() => apparelItems.reduce((sum, item) => sum + Number(Boolean(item.front_image)) + Number(Boolean(item.back_image)), 0), [apparelItems])
+  // Live apparel weight from the selected BlankTex size's per-size garment weight
+  // (grams → lbs). Display-only; nothing here changes what is saved.
+  const GRAMS_PER_LB = 453.59237
+  const apparelUnitWeightG = (item: ApparelItem) => {
+    const g = Number(item.availableSizes?.find(s => s.style_size_id === item.sizeId)?.size_spec?.garment_weight_g)
+    return Number.isFinite(g) ? g : 0
+  }
+  const apparelWeightLbs = useMemo(
+    () => +(apparelItems.reduce((sum, item) => sum + apparelUnitWeightG(item) * item.qty, 0) / GRAMS_PER_LB).toFixed(2),
+    [apparelItems]
+  )
   const gangsheetTotal = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets * row.quotedCost, 0), [gangsheetRows])
   const gangsheetQty   = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.qtySheets, 0), [gangsheetRows])
   const gangsheetArtwork = useMemo(() => gangsheetRows.reduce((sum, row) => sum + row.noArtworks, 0), [gangsheetRows])
@@ -1649,7 +1660,7 @@ export function NewQuotationPage() {
                 <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
               </div>
               <CatalogStyleSearch onSelect={addCatalogStyle} />
-              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
@@ -1662,17 +1673,18 @@ export function NewQuotationPage() {
                     <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
+                    <td>{apparelUnitWeightG(item) ? `${(apparelUnitWeightG(item) * item.qty / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {apparelItems.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
+                {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
                 <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Artworks</span><strong>{apparelArtwork}</strong></div></td>
-                <td></td>
+                <td><div className="live-summary-stat"><span>Total Weight</span><strong>{apparelWeightLbs ? `${apparelWeightLbs} lbs` : '—'}</strong></div></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
-                <td></td>
+                <td colSpan={2}></td>
               </tr></tfoot></table></div>
             </section>
           )}

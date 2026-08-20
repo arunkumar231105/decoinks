@@ -162,6 +162,25 @@ async function getItemsForOrder(orderId, orderType) {
   else if (orderType === 'gangsheet') table = 'order_items_gangsheet'
   else table = 'order_items_dtf'
 
+  // Apparel lines expose a read-only weight derived live from the BlankTex
+  // per-size garment weight via the line's existing catalog_size_id. Nothing is
+  // stored and no write/convert path changes. Other order types have no
+  // per-size weight and are returned exactly as before.
+  if (table === 'order_items_apparel') {
+    const { rows } = await query(
+      `SELECT oi.*,
+              wsp.garment_weight_g AS unit_weight_g,
+              ROUND(wsp.garment_weight_g / 453.59237, 2) AS unit_weight_lbs,
+              ROUND(wsp.garment_weight_g * oi.qty / 453.59237, 2) AS line_weight_lbs
+         FROM order_items_apparel oi
+         LEFT JOIN blanktex.style_size_specs wsp ON wsp.style_size_id = oi.catalog_size_id
+        WHERE oi.order_id = $1
+        ORDER BY oi.sort_order`,
+      [orderId]
+    )
+    return rows
+  }
+
   const { rows } = await query(
     `SELECT * FROM ${table} WHERE order_id = $1 ORDER BY sort_order`, [orderId]
   )
@@ -190,7 +209,10 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
 
   params.push(limit, offset)
   const { rows } = await query(
-    `SELECT o.*, c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
+    `SELECT o.*,
+            COALESCE(o.entry_date, o.created_at::date) AS entry_date,
+            COALESCE(o.due_date, o.order_date) AS due_date,
+            c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
             COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
             latest_shipment.status AS tracking_status,
             COALESCE(o.tracking_number, latest_shipment.tracking_number) AS display_tracking_number
@@ -236,6 +258,10 @@ async function getById(id) {
   )
   if (!rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
   const items = await getItemsForOrder(id, rows[0].order_type)
+  const totalWeightG = items.reduce(
+    (sum, i) => sum + (Number(i.unit_weight_g) || 0) * (Number(i.qty) || 0),
+    0
+  )
   const [artworks, purchaseOrders, shipments, activities] = await Promise.all([
     query(`SELECT id,artwork_no,name,file_url,thumbnail_url,status,width_inches,height_inches,location_on_product,created_at FROM artworks WHERE order_id=$1 ORDER BY created_at`, [id]),
     query(`SELECT po.id,po.po_number,po.status,po.created_at FROM purchase_orders po LEFT JOIN po_orders poo ON poo.po_id=po.id WHERE (po.order_id=$1 OR poo.order_id=$1) AND po.deleted_at IS NULL ORDER BY po.created_at`, [id]),
@@ -243,7 +269,9 @@ async function getById(id) {
     query(`SELECT action,description,created_at FROM activity_logs WHERE entity_type='order' AND entity_id=$1 ORDER BY created_at`, [id]),
   ])
   return { ...rows[0], items, artworks: artworks.rows, purchase_orders: purchaseOrders.rows,
-    shipments: shipments.rows, activities: activities.rows }
+    shipments: shipments.rows, activities: activities.rows,
+    total_weight_g: Math.round(totalWeightG),
+    total_weight_lbs: +(totalWeightG / 453.59237).toFixed(2) }
 }
 
 async function create(data) {
@@ -260,6 +288,9 @@ async function create(data) {
   } = data
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
+  const today = new Date().toISOString().split('T')[0]
+  const resolvedOrderDate = order_date || today
+  const resolvedDueDate = due_date || resolvedOrderDate
   let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
   let resolvedCustomerId = customer_id || null
   let resolvedSupplierId = supplier_id || null
@@ -297,7 +328,7 @@ async function create(data) {
     await client.query('BEGIN')
     const { rows } = await client.query(
       `INSERT INTO orders (
-         order_number, quotation_id, invoice_id, customer_id, supplier_id, order_type, order_date, due_date,
+         order_number, quotation_id, invoice_id, customer_id, supplier_id, order_type, order_date, entry_date, due_date,
          payment_terms, payment_method, payment_status, currency,
          amount_paid, payment_reference, payment_date,
          rush_services, shipping_charges, subtotal, discount_pct, discount_amt,
@@ -305,11 +336,11 @@ async function create(data) {
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
        RETURNING *`,
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
-        order_date || new Date().toISOString().split('T')[0], due_date || null,
+        resolvedOrderDate, resolvedDueDate,
         payment_terms || 'Due on Receipt', payment_method || null, effectiveStatus, currency,
         effectivePaid, payment_reference || null, payment_date || null,
         rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,

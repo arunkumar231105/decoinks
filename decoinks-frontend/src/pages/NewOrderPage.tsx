@@ -581,6 +581,17 @@ export function NewOrderPage() {
     return dtf.reduce((s, r) => s + r.unitPrice * r.qty, 0)
   }, [orderType, apparel, gangsheet, dtf])
   const apparelQty = useMemo(() => apparel.reduce((sum, row) => sum + row.qty, 0), [apparel])
+  // Live apparel weight from the selected BlankTex size's per-size garment weight
+  // (grams → lbs). Display-only; does not change the saved order payload.
+  const GRAMS_PER_LB = 453.59237
+  const orderUnitWeightG = (row: ApparelItem) => {
+    const g = Number(row.availableSizes?.find(s => s.style_size_id === row.sizeId)?.size_spec?.garment_weight_g)
+    return Number.isFinite(g) ? g : 0
+  }
+  const apparelWeightLbs = useMemo(
+    () => +(apparel.reduce((sum, row) => sum + orderUnitWeightG(row) * row.qty, 0) / GRAMS_PER_LB).toFixed(2),
+    [apparel]
+  )
   const gangsheetQty = useMemo(() => gangsheet.reduce((sum, row) => sum + row.qty, 0), [gangsheet])
   const gangsheetArtworkCount = useMemo(() => gangsheetArtworks.reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0), [gangsheetArtworks])
   const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
@@ -950,6 +961,7 @@ export function NewOrderPage() {
                         <th>Mockup <small>Optional</small></th>
                         <th>Unit Price</th>
                         <th>Amount</th>
+                        <th>Weight</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -980,6 +992,7 @@ export function NewOrderPage() {
                             </div>
                           </td>
                           <td className="no-td-amount">${fmt(row.unitPrice * row.qty)}</td>
+                          <td>{orderUnitWeightG(row) ? `${(orderUnitWeightG(row) * row.qty / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                           <td>
                             <button className="no-action-icon-btn no-delete-icon" onClick={() => removeApparel(row.id)} title="Remove row">
                               <Trash2 size={13} />
@@ -992,10 +1005,10 @@ export function NewOrderPage() {
                       <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
-                      <td></td>
+                      <td><div className="live-summary-stat"><span>Total Weight</span><strong>{apparelWeightLbs ? `${apparelWeightLbs} lbs` : '—'}</strong></div></td>
                       <td></td>
                       <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
-                      <td></td>
+                      <td colSpan={2}></td>
                     </tr></tfoot>
                   </table>
                 </div>

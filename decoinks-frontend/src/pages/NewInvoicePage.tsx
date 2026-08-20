@@ -56,7 +56,7 @@ interface ApparelItem {
 }
 
 interface CatalogColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null }
-interface CatalogSize { style_size_id: string; size_code: string; size_name: string }
+interface CatalogSize { style_size_id: string; size_code: string; size_name: string; size_spec?: { garment_weight_g?: number | null } | null }
 interface CatalogVariant { sku_id: string; sku_code: string; style_color_id: string; style_size_id: string }
 interface CatalogStyle {
   id: string; name: string; sku: string; brand: string; image_url: string | null
@@ -664,6 +664,17 @@ export function NewInvoicePage() {
     () => getInvoiceCounters(orderType, apparelItems, gangsheetItems, transferItems),
     [orderType, apparelItems, gangsheetItems, transferItems],
   )
+  // Live apparel weight from the selected BlankTex size's per-size garment weight
+  // (grams → lbs). Display-only; does not change the saved invoice payload.
+  const GRAMS_PER_LB = 453.59237
+  const invoiceUnitWeightG = (row: ApparelItem) => {
+    const g = Number(row.availableSizes?.find(s => s.style_size_id === row.sizeId)?.size_spec?.garment_weight_g)
+    return Number.isFinite(g) ? g : 0
+  }
+  const apparelWeightLbs = useMemo(
+    () => +(apparelItems.reduce((sum, row) => sum + invoiceUnitWeightG(row) * row.qty, 0) / GRAMS_PER_LB).toFixed(2),
+    [apparelItems]
+  )
 
   // â"€â"€ Apparel handlers â"€â"€
   const addApparelItem = () =>
@@ -770,6 +781,8 @@ export function NewInvoicePage() {
         artwork_count: Number(Boolean(row.front_image || row.artwork_image)) + Number(Boolean(row.back_image)),
         sort_order:    i,
         sizes:          formatTransferSize(row.width, row.height),
+        width_in:      row.width.trim() ? Number(row.width) : null,
+        height_in:     row.height.trim() ? Number(row.height) : null,
         artwork_image: row.artwork_image || row.front_image || null,
         front_image:   row.front_image || row.artwork_image || null,
         back_image:    row.back_image || null,
@@ -1036,6 +1049,7 @@ export function NewInvoicePage() {
                         <th>Unit Price (USD)</th>
                         <th>Discount</th>
                         <th>Amount (USD)</th>
+                        <th>Weight</th>
                         <th style={{ width: 36 }} />
                       </tr>
                     </thead>
@@ -1075,20 +1089,22 @@ export function NewInvoicePage() {
                           </td>
                           <td data-label="Discount"><div className="ni-price-cell"><span>$</span><input type="number" min={0} step={0.01} className="ni-price-input" disabled={ratesLocked} value={row.lineDiscount ?? 0} onChange={e => updateApparelItem(row.id, { lineDiscount: +e.target.value })} /></div></td>
                           <td className="ni-amount" data-label="Amount">${fmt(Math.max(row.qty * row.unitPrice - Number(row.lineDiscount || 0), 0))}</td>
+                          <td data-label="Weight">{invoiceUnitWeightG(row) ? `${(invoiceUnitWeightG(row) * row.qty / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                           <td data-label="Action">
                             <button className="ni-del-btn" onClick={() => removeApparelItem(row.id)}><Trash2 size={13} /></button>
                           </td>
                         </tr>
                       ))}
-                      {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
+                      {apparelItems.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
                       <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{invoiceCounoers.totalqtySheets}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{invoiceCounoers.totalArtworks}</strong></div></td>
-                      <td colSpan={2}></td>
-                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td><div className="live-summary-stat"><span>Total Weight</span><strong>{apparelWeightLbs ? `${apparelWeightLbs} lbs` : '—'}</strong></div></td>
                       <td></td>
+                      <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                      <td colSpan={2}></td>
                     </tr></tfoot>
                   </table>
                 </div>

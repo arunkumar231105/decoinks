@@ -129,11 +129,31 @@ async function getById(id) {
     `SELECT * FROM payments WHERE invoice_id = $1 ORDER BY paid_at ASC`,
     [id]
   )
+  // Apparel weight is read-only, derived live from the BlankTex per-size garment
+  // weight via the line's existing catalog_size_id (no stored weight, no write
+  // or conversion change).
   const items = await query(
-    `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, created_at`,
+    `SELECT ii.*,
+            wsp.garment_weight_g AS unit_weight_g,
+            ROUND(wsp.garment_weight_g / 453.59237, 2) AS unit_weight_lbs,
+            ROUND(wsp.garment_weight_g * ii.qty / 453.59237, 2) AS line_weight_lbs
+       FROM invoice_items ii
+       LEFT JOIN blanktex.style_size_specs wsp ON wsp.style_size_id = ii.catalog_size_id
+      WHERE ii.invoice_id = $1
+      ORDER BY ii.sort_order, ii.created_at`,
     [id]
   ).catch(() => ({ rows: [] }))
-  return { ...rows[0], payments: payments.rows, items: items.rows }
+  const totalWeightG = items.rows.reduce(
+    (sum, i) => sum + (Number(i.unit_weight_g) || 0) * (Number(i.qty) || 0),
+    0
+  )
+  return {
+    ...rows[0],
+    payments: payments.rows,
+    items: items.rows,
+    total_weight_g: Math.round(totalWeightG),
+    total_weight_lbs: +(totalWeightG / 453.59237).toFixed(2),
+  }
 }
 
 async function create(fields_in) {
@@ -316,8 +336,9 @@ async function create(fields_in) {
            (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
             front_image, back_image, artwork_image, sizes, colors,
             catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
-            brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+            brand, model, product_image, style_description, artwork_no, line_discount, tax_code,
+            width_in, height_in, taxable, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
         [
           rows[0].id,
           it.category || null,
@@ -343,6 +364,10 @@ async function create(fields_in) {
           it.artwork_no || null,
           Number(it.line_discount) || 0,
           it.tax_code || null,
+          it.width_in ?? null,
+          it.height_in ?? null,
+          it.taxable ?? true,
+          it.notes || null,
         ]
       )
     }
@@ -420,8 +445,9 @@ async function writeInvoiceItems(exec, invoiceId, { items, quote_id }) {
            (invoice_id, category, description, qty, unit_price, amount, artwork_count, sort_order,
             front_image, back_image, artwork_image, sizes, colors,
             catalog_style_id, catalog_color_id, catalog_size_id, catalog_sku,
-            brand, model, product_image, style_description, artwork_no, line_discount, tax_code)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+            brand, model, product_image, style_description, artwork_no, line_discount, tax_code,
+            width_in, height_in, taxable, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
         [
           invoiceId,
           it.category || null,
@@ -447,6 +473,10 @@ async function writeInvoiceItems(exec, invoiceId, { items, quote_id }) {
           it.artwork_no || null,
           Number(it.line_discount) || 0,
           it.tax_code || null,
+          it.width_in ?? null,
+          it.height_in ?? null,
+          it.taxable ?? true,
+          it.notes || null,
         ]
       )
     }
@@ -765,18 +795,19 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
 
   const ordNumber = await getNextNumber('ORD', 'orders', 'order_number')
   const total = +Number(invoice.total).toFixed(2)
+  const orderDate = new Date().toISOString().split('T')[0]
 
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
-       (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+       (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
         subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
         payment_terms, payment_method, currency, contact_name, contact_email,
         contact_phone, shipping_name, shipping_address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
-      new Date().toISOString().split('T')[0],
+      orderDate,
       invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
       invoice.tax_pct || 0, invoice.tax_amt || 0, total,
       invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',
@@ -843,17 +874,18 @@ async function updateStatus(id, status, actor) {
 
         if (!existing[0]) {
           const total = +Number(invoice.total).toFixed(2)
+          const orderDate = new Date().toISOString().split('T')[0]
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
-               (order_number, invoice_id, supplier_id, customer_id, order_type, order_date,
+               (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
                 subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
                 payment_terms, payment_method, currency, contact_name, contact_email,
                 contact_phone, shipping_name, shipping_address, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
               ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
-              new Date().toISOString().split('T')[0],
+              orderDate,
               invoice.subtotal, invoice.discount_pct || 0, invoice.discount_amt,
               invoice.tax_pct || 0, invoice.tax_amt || 0, total,
               invoice.payment_terms, invoice.payment_method, invoice.currency || 'USD',

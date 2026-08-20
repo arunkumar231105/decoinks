@@ -1,5 +1,5 @@
 import { useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
-import { useNavigate, useLocation, Link, useParams } from 'react-router-dom'
+import { useNavigate, useLocation, Link, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import {
@@ -113,6 +113,7 @@ interface POFormState {
   terms_conditions: string
   ship_source: '' | 'vendor' | 'self'
   carrier: string
+  shipping_method: string
   tracking_number: string
   ship_date: string
   estimated_delivery: string
@@ -196,6 +197,7 @@ const initialState: POFormState = {
   terms_conditions: '',
   ship_source: '',
   carrier: '',
+  shipping_method: '',
   tracking_number: '',
   ship_date: '',
   estimated_delivery: '',
@@ -277,9 +279,32 @@ export function NewPurchaseOrderPage() {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const fromOrderId: string | undefined = (location.state as any)?.fromOrderId
+  // Order to convert can arrive via in-app navigation (location.state) OR as a
+  // cross-app redirect from the Shipping App: /purchase-orders/new?order=<uuid>.
+  const [searchParams] = useSearchParams()
+  const fromOrderId: string | undefined =
+    (location.state as any)?.fromOrderId || searchParams.get('order') || undefined
 
   const set = (field: keyof POFormState, value: any) => dispatch({ type: 'SET', field, value })
+
+  // Prefill the Shipment & Fulfillment section from the Shipping App's chosen
+  // lane (carrier, service type, ship date, ETA). Runs once, only when those
+  // params are present and we're not editing an existing PO.
+  const shipPrefilled = useRef(false)
+  useEffect(() => {
+    if (shipPrefilled.current || isEdit) return
+    const carrier = searchParams.get('carrier')
+    const method = searchParams.get('method')
+    const shipDate = searchParams.get('ship_date')
+    const eta = searchParams.get('eta')
+    if (!carrier && !method && !shipDate && !eta) return
+    shipPrefilled.current = true
+    if (carrier) set('carrier', carrier)
+    if (method) set('shipping_method', method)
+    if (shipDate) set('ship_date', shipDate)
+    if (eta) set('estimated_delivery', eta)
+    set('ship_source', 'vendor')
+  }, [searchParams, isEdit])
 
   // Draft persistence — survives refresh / hard refresh / redeploy.
   // Create mode only: an edit form is authoritative from the server, so a stale
@@ -357,6 +382,7 @@ export function NewPurchaseOrderPage() {
         terms_conditions:     existingPO.terms_conditions || '',
         ship_source:          existingPO.ship_source || '',
         carrier:              existingPO.carrier || '',
+        shipping_method:      existingPO.shipping_method || '',
         tracking_number:      existingPO.tracking_number || '',
         ship_date:            existingPO.ship_date ? existingPO.ship_date.split('T')[0] : '',
         estimated_delivery:   existingPO.estimated_delivery ? existingPO.estimated_delivery.split('T')[0] : '',
@@ -632,6 +658,7 @@ export function NewPurchaseOrderPage() {
       // Shipment / fulfilment details.
       ship_source: state.ship_source || null,
       carrier: state.carrier || null,
+      shipping_method: state.shipping_method || null,
       tracking_number: state.tracking_number || null,
       ship_date: state.ship_date || null,
       estimated_delivery: state.estimated_delivery || null,
@@ -781,6 +808,17 @@ export function NewPurchaseOrderPage() {
 
   const itemsTotal = useMemo(
     () => state.items.reduce((s, it) => s + it.line_total, 0),
+    [state.items]
+  )
+  // Live apparel weight from the selected BlankTex size's per-size garment weight
+  // (grams → lbs). Display-only; does not change the saved PO payload.
+  const GRAMS_PER_LB = 453.59237
+  const poUnitWeightG = (it: POLineItem) => {
+    const g = Number(it.availableSizes?.find(s => s.style_size_id === it.catalog_size_id)?.size_spec?.garment_weight_g)
+    return Number.isFinite(g) ? g : 0
+  }
+  const poWeightLbs = useMemo(
+    () => +(state.items.reduce((s, it) => s + poUnitWeightG(it) * it.qty_ordered, 0) / GRAMS_PER_LB).toFixed(2),
     [state.items]
   )
 
@@ -1087,12 +1125,13 @@ export function NewPurchaseOrderPage() {
                   <th style={{ width: 150 }}>Artwork</th>
                   <th style={{ width: 96 }}>Unit Price (USD)</th>
                   <th style={{ width: 96 }}>Total (USD)</th>
+                  <th style={{ width: 80 }}>Weight</th>
                   <th style={{ width: 40 }} />
                 </tr>
               </thead>
               <tbody>
                 {state.items.length === 0 && (
-                  <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                  <tr><td colSpan={12} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
                     Search and select a Product Master style above.
                   </td></tr>
                 )}
@@ -1137,6 +1176,7 @@ export function NewPurchaseOrderPage() {
                     <td style={{ textAlign: 'right', paddingRight: 8, fontWeight: 700, fontSize: 13 }}>
                       ${fmt(it.line_total)}
                     </td>
+                    <td>{poUnitWeightG(it) ? `${(poUnitWeightG(it) * it.qty_ordered / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                     <td>
                       <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ITEM', id: it.id })}>
                         <Trash2 size={13} />
@@ -1149,6 +1189,7 @@ export function NewPurchaseOrderPage() {
                 <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.items.reduce((sum, item) => sum + item.qty_ordered, 0)}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Weight</span><strong>{poWeightLbs ? `${poWeightLbs} lbs` : '—'}</strong></div></td>
                 <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
                 <td></td>
@@ -1316,6 +1357,14 @@ export function NewPurchaseOrderPage() {
             <label className="np-label">Carrier</label>
             <input className="np-input" placeholder="UPS, FedEx, DHL…"
               value={state.carrier} onChange={e => set('carrier', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Service Type</label>
+            <select className="np-input" value={state.shipping_method} onChange={e => set('shipping_method', e.target.value)}>
+              <option value="">Select…</option>
+              <option value="Ground">Ground</option>
+              <option value="Air">Air</option>
+            </select>
           </div>
           <div className="np-field">
             <label className="np-label">Tracking Number</label>

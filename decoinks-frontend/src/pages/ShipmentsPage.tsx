@@ -339,7 +339,6 @@ export function ShipmentsPage() {
           <thead>
             <tr>
               <th>Ship Date</th>
-              <th>Tracking ID</th>
               <th>Customer Name</th>
               <th>PO #</th>
               <th>Carrier</th>
@@ -353,6 +352,7 @@ export function ShipmentsPage() {
               <th>Last Scan State</th>
               <th>Estimated Delivery</th>
               <th>Delivered Date</th>
+              <th>Tracking ID</th>
               <th></th>
             </tr>
           </thead>
@@ -370,7 +370,6 @@ export function ShipmentsPage() {
             {!isLoading && rowsToShow.map(s => (
               <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
                 <td className="sh-muted">{s.ship_date ?? '-'}</td>
-                <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td className="sh-customer">{s.customer_name ?? '-'}</td>
                 <td className="sh-muted">{s.po_number ?? '-'}</td>
                 <td className="sh-muted">{s.carrier ?? '-'}</td>
@@ -388,6 +387,7 @@ export function ShipmentsPage() {
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
                 <td className="sh-muted">{s.estimated_delivery ?? '-'}</td>
                 <td className="sh-muted">{s.delivered_date ?? '-'}</td>
+                <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td onClick={e => e.stopPropagation()}>
                   <button
                     className="lb-icon-btn"

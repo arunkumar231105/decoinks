@@ -41,6 +41,7 @@ interface Invoice {
   balance_due: number
   notes: string | null
   payments: Payment[]
+  total_weight_lbs?: number
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -91,6 +92,16 @@ export function InvoiceDetailPage() {
     queryFn: () => api.get(`/invoices/${id}`).then(r => r.data.data as Invoice),
     enabled: !!id,
   })
+
+  // Read-only artworks attached to this invoice (union of quote + order artworks).
+  const { data: artworkData } = useQuery({
+    queryKey: ['invoice-artworks', id],
+    queryFn: () => api.get(`/invoices/${id}/artworks`).then(
+      r => r.data.artworks as Array<{ id: string; artwork_no: string; name: string; file_url: string | null; file_type: string | null; status: string }>
+    ),
+    enabled: !!id,
+  })
+  const artworks = artworkData ?? []
 
   // ── Mutations ──
 
@@ -320,6 +331,33 @@ export function InvoiceDetailPage() {
             </div>
           )}
 
+          {/* Artworks (read-only) — attached via linked quotation / sales order */}
+          {artworks.length > 0 && (
+            <div className="np-card">
+              <div className="np-card-header">
+                <h3>Artworks ({artworks.length})</h3>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '8px 0' }}>
+                {artworks.map(a => {
+                  const ext = (a.file_type || '').toLowerCase()
+                  const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)
+                  return (
+                    <a key={a.id} href={a.file_url ?? '#'} target="_blank" rel="noreferrer"
+                       style={{ width: 110, textDecoration: 'none', color: 'inherit' }}>
+                      <div style={{ width: 110, height: 110, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb' }}>
+                        {isImg && a.file_url
+                          ? <img src={a.file_url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <FileText size={30} color="#9ca3af" />}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.artwork_no}</div>
+                      <div style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={a.name}>{a.name}</div>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Payment History */}
           <div className="np-card">
             <div className="np-card-header">
@@ -374,6 +412,9 @@ export function InvoiceDetailPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <SummaryRow label="Subtotal"       value={`$${fmt(invoice.subtotal)}`} />
               <SummaryRow label="Discount"       value={`— $${fmt(invoice.discount_amt)}`} dimmed />
+              {invoice.total_weight_lbs ? (
+                <SummaryRow label="Total Weight"  value={`${invoice.total_weight_lbs} lbs`} dimmed />
+              ) : null}
               <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
                 <SummaryRow label="Invoice Total" value={`$${fmt(invoice.total)}`} bold />
               </div>

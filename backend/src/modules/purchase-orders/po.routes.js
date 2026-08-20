@@ -95,10 +95,11 @@ const createSchema = z.object({
 })
 
 const updateSchema = createSchema.partial().extend({
-  items:       z.array(itemSchema).optional(),
-  order_ids:   z.array(z.string().uuid()).optional(),
-  fragments:   z.array(fragmentSchema).optional(),
-  artwork_ids: z.array(z.string().uuid()).optional(),
+  items:           z.array(itemSchema).optional(),
+  order_ids:       z.array(z.string().uuid()).optional(),
+  fragments:       z.array(fragmentSchema).optional(),
+  artwork_ids:     z.array(z.string().uuid()).optional(),
+  shipping_labels: z.string().optional().nullable(),
 })
 
 const statusSchema = z.object({

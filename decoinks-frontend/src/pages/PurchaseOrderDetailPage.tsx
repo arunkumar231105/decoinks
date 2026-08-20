@@ -206,6 +206,28 @@ export function PurchaseOrderDetailPage() {
     onError: (err) => toast.error(getApiError(err)),
   })
 
+  // Upload a shipping label (image), then persist its URL onto the PO via the
+  // standard update path (shipping_labels column).
+  const [uploadingLabel, setUploadingLabel] = useState(false)
+  const onLabelFile = async (file: File | undefined) => {
+    if (!file) return
+    setUploadingLabel(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const up = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const url = up.data?.url ?? up.data?.data?.url
+      if (!url) throw new Error('Upload did not return a URL')
+      await api.put(`/purchase-orders/${id}`, { shipping_labels: url })
+      queryClient.invalidateQueries({ queryKey: ['purchase-order', id] })
+      toast.success('Shipping label uploaded')
+    } catch (err) {
+      toast.error(getApiError(err))
+    } finally {
+      setUploadingLabel(false)
+    }
+  }
+
   const sendToPortalMutation = useMutation({
     mutationFn: (supplier_id: string) =>
       api.post(`/purchase-orders/${id}/send-to-portal`, { supplier_id: supplier_id || null }),
@@ -353,7 +375,20 @@ export function PurchaseOrderDetailPage() {
                 <DetailRow label="Gangsheet Width" value={po.gangsheet_width || '-'} />
                 <DetailRow label="Delivery Type" value={po.delivery_type || '-'} />
                 <DetailRow label="Courier Account" value={po.courier_account || '-'} />
-                <DetailRow label="Shipping Labels" value={po.shipping_labels || '-'} />
+                <div>
+                  <p style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Shipping Label</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {po.shipping_labels
+                      ? (/^https?:\/\//.test(po.shipping_labels)
+                          ? <a href={po.shipping_labels} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>View label</a>
+                          : <span style={{ fontSize: 13 }}>{po.shipping_labels}</span>)
+                      : <span style={{ fontSize: 13, color: '#9ca3af' }}>Not uploaded</span>}
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: uploadingLabel ? 'default' : 'pointer' }}>
+                      {uploadingLabel ? 'Uploading…' : (po.shipping_labels ? 'Replace' : 'Upload')}
+                      <input type="file" accept="image/*" hidden disabled={uploadingLabel} onChange={e => { onLabelFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
+                    </label>
+                  </div>
+                </div>
                 <DetailRow label="Packages" value={String(po.packages ?? '-')} />
                 <DetailRow label="Source Payment Status" value={po.source_payment_status || '-'} />
               </div>

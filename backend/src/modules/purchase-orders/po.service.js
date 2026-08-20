@@ -646,6 +646,7 @@ async function update(id, data) {
          tracking_number      = COALESCE($32, tracking_number),
          carrier              = COALESCE($33, carrier),
          tracking_notes       = COALESCE($34, tracking_notes),
+         shipping_labels      = COALESCE($35, shipping_labels),
          updated_at        = NOW()
        WHERE id = $28 AND deleted_at IS NULL
        RETURNING *`,
@@ -660,6 +661,7 @@ async function update(id, data) {
         id,
         data.ship_source ?? null, data.ship_date ?? null, data.estimated_delivery ?? null,
         data.tracking_number ?? null, data.carrier ?? null, data.tracking_notes ?? null,
+        data.shipping_labels ?? null,
       ]
     )
     if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })

@@ -5,7 +5,7 @@ import toast from '../utils/toast'
 import { api } from '../services/api'
 
 export interface CatalogColor { style_color_id: string; display_name: string; color_name: string; hex_color: string | null }
-export interface CatalogSize { style_size_id: string; size_code: string; size_name: string }
+export interface CatalogSize { style_size_id: string; size_code: string; size_name: string; size_spec?: { garment_weight_g?: number | null } | null }
 export interface CatalogVariant { sku_id: string; sku_code: string; style_color_id: string; style_size_id: string }
 export interface ApparelCatalogStyle {
   id: string; name: string; sku: string; brand: string; image_url: string | null
