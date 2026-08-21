@@ -5,16 +5,15 @@ const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
 function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct = 0) {
-  // Sum the lines as they are billed — each rounded to whole cents — so the
-  // subtotal always equals what the printed lines add up to. Accumulating the
-  // exact rate x qty and rounding once at the end drifts from the document by a
-  // few cents once rates carry more than two decimals.
+  // Exact rate x qty summed, rounded once at the end — the quoted figure, which
+  // is what the quotation this order came from carries. Each printed line is
+  // still rounded on its own, so the lines can add to a few cents less.
   let itemsTotal = 0
   for (const item of items) {
     if (orderType === 'apparel' || orderType === 'dtf') {
-      itemsTotal += +(Number(item.unit_price) * Number(item.qty)).toFixed(2)
+      itemsTotal += Number(item.unit_price) * Number(item.qty)
     } else if (orderType === 'gangsheet') {
-      itemsTotal += +(Number(item.price_per_sheet) * Number(item.qty)).toFixed(2)
+      itemsTotal += Number(item.price_per_sheet) * Number(item.qty)
     }
   }
   // Subtotal is the product lines only. Rush and shipping are separate charges

@@ -4,13 +4,12 @@ const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
 function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushServices = 0) {
-  // Each line is billed at whole cents, so the subtotal is the sum of those
-  // rounded lines — the very figures printed on the document. Summing the exact
-  // rate x qty and rounding once at the end drifts from what the customer can
-  // add up: ten lines at 2.037 came to 110.00 against 109.96 on the page. The
-  // expression below is the same one that writes each line's `amount`, so the
-  // two can never disagree.
-  const itemsTotal = items.reduce((s, i) => s + +(Number(i.unit_price) * Number(i.qty)).toFixed(2), 0)
+  // The subtotal is the exact rate x qty summed, rounded once at the end — the
+  // owner quotes a round figure and expects it back (54 transfers at 2.037 is
+  // 109.998, quoted as 110.00 and totalling 125.00). Each printed line is still
+  // rounded to whole cents on its own, so adding the lines by hand can come to a
+  // few cents less; the document's own subtotal is the quoted figure.
+  const itemsTotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
   // Subtotal is the quoted lines only; shipping and rush are added on top of it
   // so the quote reads the same way as the invoice, order and PO it becomes.
   const subtotal = +itemsTotal.toFixed(2)

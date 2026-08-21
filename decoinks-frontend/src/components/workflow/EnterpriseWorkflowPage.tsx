@@ -623,7 +623,9 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
     <ItemsSection items={items}/>
     <DrawerSection title="Total Amount" fields={[
       { label: 'Total Qty', value: quotationQty.toLocaleString() },
-      { label: 'Item Charges', value: money(quotationItemsTotal) },
+      // The stored subtotal is the quoted figure; re-adding the rounded lines
+      // here showed $109.96 beside a $124.96 total that was built from $110.00.
+      { label: 'Item Charges', value: money(row.subtotal ?? quotationItemsTotal) },
       { label: 'Shipping Charges', value: money(row.estimated_shipping || 0) },
       { label: 'Total', value: `${money(row.total)} ${row.currency || 'USD'}` },
     ]}/>
@@ -639,7 +641,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Source', value: first(row, 'customer_source', 'source') === '—' ? first(customer, 'source') : first(row, 'customer_source', 'source') }, { label: 'Sales Agent', value: first(row, 'sales_agent_display_name', 'sales_agent_name', 'agent_name') },
     ]}/>
     <DrawerSection title="Financial Summary" fields={[
-      { label: 'Item Charges', value: money(items.reduce((total: number, item: AnyRow) => total + Number(item.amount ?? (Number(item.unit_price || 0) * Number(item.qty || 0))), 0)) },
+      { label: 'Item Charges', value: money(row.subtotal ?? items.reduce((total: number, item: AnyRow) => total + Number(item.amount ?? (Number(item.unit_price || 0) * Number(item.qty || 0))), 0)) },
       { label: 'Shipping Charges', value: money(pick(row, 'shipping_charges', 'original_shipping_charges') || 0) },
       { label: `Tax (${Number(row.tax_pct || 0)}%)`, value: money(row.tax_amt) }, { label: 'Total Amount', value: money(row.total) },
       { label: 'Amount Paid', value: money(row.amount_paid) }, { label: 'Balance Due', value: money(row.balance_due) },
