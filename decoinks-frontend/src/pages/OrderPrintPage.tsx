@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
+import { rate } from '../utils/rate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Order {
@@ -657,7 +658,7 @@ export function OrderPrintPage() {
                       <td><ArtworkThumb src={item.back_image} alt="back artwork" label={`${item.artwork_no || item.item} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>
                       {hasFrontMockup && <td><ArtworkThumb src={item.front_mockup} alt="front mockup" label={`${item.artwork_no || item.item} — Front Mockup`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>}
                       {hasBackMockup && <td><ArtworkThumb src={item.back_mockup} alt="back mockup" label={`${item.artwork_no || item.item} — Back Mockup`} className="art-img" fallback={<div className="art-empty">—</div>} /></td>}
-                      <td style={{ fontWeight: 500 }}>{fmt(item.unit_price)}</td>
+                      <td style={{ fontWeight: 500 }}>{rate(item.unit_price)}</td>
                       <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     </tr>
                   )
@@ -694,7 +695,7 @@ export function OrderPrintPage() {
                     <td>
                       <ArtworkThumb src={r.item.front_image ?? r.item.artwork_image ?? (orderArtworks[sno] && orderArtworks[sno].file_type !== 'pdf' ? orderArtworks[sno].file_url : null)} alt={r.artNo} label={r.artNo} className="art-img" fallback={<div className="art-empty">🖼</div>} />
                     </td>
-                    <td style={{ fontWeight: 700 }}>{fmt(r.item.unit_price)}</td>
+                    <td style={{ fontWeight: 700 }}>{rate(r.item.unit_price)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
                   </tr>
                 ))}
@@ -726,7 +727,7 @@ export function OrderPrintPage() {
                     <td className="td-l" style={{ fontWeight: 500 }}>{item.size || '—'}</td>
                     <td>{item.no_artworks}</td>
                     <td style={{ fontWeight: 600 }}>{item.qty}</td>
-                    <td>{fmt(item.price_per_sheet)}</td>
+                    <td>{rate(item.price_per_sheet)}</td>
                     <td style={{ fontWeight: 700 }}>{fmt(item.amount)}</td>
                     <td>
                       <ArtworkThumb src={item.front_image} alt="front" label={`Gangsheet ${idx + 1} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} />

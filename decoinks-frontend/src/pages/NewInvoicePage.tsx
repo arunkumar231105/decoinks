@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
 import { cn } from '../utils/cn'
 import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
+import { rate } from '../utils/rate'
 import {
   Check,
   ChevronDown,
@@ -1081,7 +1082,7 @@ export function NewInvoicePage() {
                           <td data-label="Artwork"><div className="nq-artwork-pair"><InvoiceArtworkUpload imageUrl={row.front_image} label="Front" onChange={url => updateApparelItem(row.id, { front_image: url })} /><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateApparelItem(row.id, { back_image: url })} /></div></td>
                           <td data-label="Unit Price">
                             {ratesLocked ? (
-                              <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
+                              <span className="ni-price-locked">${rate(row.unitPrice)}</span>
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>
@@ -1165,7 +1166,7 @@ export function NewInvoicePage() {
                           <td data-label="Back Artwork"><InvoiceArtworkUpload imageUrl={row.back_image} label="Back" onChange={url => updateGangsheetItem(row.id, { back_image: url })} /></td>
                           <td data-label="Price / Sheet">
                             {ratesLocked ? (
-                              <span className="ni-price-locked">${fmt(row.pricePerSheet)}</span>
+                              <span className="ni-price-locked">${rate(row.pricePerSheet)}</span>
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>
@@ -1230,7 +1231,7 @@ export function NewInvoicePage() {
                           </td>
                           <td data-label="Unit Price">
                             {ratesLocked ? (
-                              <span className="ni-price-locked">${fmt(row.unitPrice)}</span>
+                              <span className="ni-price-locked">${rate(row.unitPrice)}</span>
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>

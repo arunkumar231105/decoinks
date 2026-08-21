@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
+import { rate } from '../utils/rate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
@@ -727,7 +728,7 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
               <td>
                 <ArtworkThumb src={backUrl} alt="back artwork" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
               </td>
-              <td style={{ fontWeight: 600 }}>$ {fmt2(item.unit_price)}</td>
+              <td style={{ fontWeight: 600 }}>$ {rate(item.unit_price)}</td>
               <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
             </tr>
           )
@@ -786,7 +787,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
             </td>
             <td style={{ fontWeight: 600, fontSize: 11 }}>{row.size}</td>
             <td style={{ fontWeight: 600 }}>{row.item.qty} pcs</td>
-            {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {fmt2(row.item.unit_price)}</td>}
+            {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {rate(row.item.unit_price)}</td>}
             <td style={{ fontWeight: 700 }}>$ {fmt2(row.item.amount)}</td>
           </tr>
         ))}
@@ -825,7 +826,7 @@ function GangsheetTable({ items }: { items: QuoteItem[] }) {
             <td>
               <ArtworkThumb src={item.back_image} alt="back" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>
-            <td>$ {fmt2(item.unit_price)}</td>
+            <td>$ {rate(item.unit_price)}</td>
             <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
           </tr>
         ))}
@@ -854,7 +855,7 @@ function GenericTable({ items }: { items: QuoteItem[] }) {
             <td style={{ fontWeight: 700 }}>{idx + 1}</td>
             <td className="left"><div className="item-main">{item.description}</div></td>
             <td style={{ fontWeight: 600 }}>{item.qty}</td>
-            <td>$ {fmt2(item.unit_price)}</td>
+            <td>$ {rate(item.unit_price)}</td>
             <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
           </tr>
         ))}

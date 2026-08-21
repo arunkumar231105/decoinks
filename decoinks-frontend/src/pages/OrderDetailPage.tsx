@@ -11,6 +11,7 @@ import toast from '../utils/toast'
 import { api } from '../services/api'
 import { orderStage, processStatus } from '../utils/orderStatus'
 import { cn } from '../utils/cn'
+import { rate } from '../utils/rate'
 
 interface Order {
   id: string; order_number: string; status: string; order_type: 'apparel'|'dtf'|'gangsheet'
@@ -144,7 +145,7 @@ export function OrderDetailPage() {
                   <td><div className="so-product">{item.product_image ? <img src={item.product_image} alt=""/> : <Package size={22}/>}<div><strong>{item.item}</strong><small>{[item.brand,item.model,item.catalog_sku].filter(Boolean).join(' · ')}</small></div></div></td>
                   <td>{item.color || '—'}</td><td>{item.size || '—'}</td><td>{item.qty}</td><td>{item.artwork_no ? 'Front / Back' : '—'}</td>
                   <td><div className="so-art-pair">{[item.front_image,item.back_image].filter(Boolean).map((src:string,i:number)=><a href={src} target="_blank" rel="noreferrer" key={src}><img src={src} alt={i ? 'back' : 'front'}/></a>)}{!item.front_image && !item.back_image && <ImageIcon size={18}/>}</div></td>
-                  <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td>{item.line_weight_lbs != null ? `${Number(item.line_weight_lbs).toFixed(2)} lbs` : '—'}</td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
+                  <td>${rate(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td><td>{item.line_weight_lbs != null ? `${Number(item.line_weight_lbs).toFixed(2)} lbs` : '—'}</td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td>
                 </>}
                 {order.order_type === 'dtf' && <>
                   <td><strong>{item.artwork_no || (!dtfDimensions(item).width && item.artwork_name !== 'DTF Transfer' ? item.artwork_name : null) || `AW-TF-${String(index + 1).padStart(3, '0')}`}</strong></td>
@@ -152,7 +153,7 @@ export function OrderDetailPage() {
                   <td>{dtfDimensions(item).height ?? '—'}</td>
                   <td>{item.qty}</td>
                   <td>{(() => { const aw = artworks[index]; const awUrl = aw && !['pdf','ai','psd'].includes(String(aw.file_type||'').toLowerCase()) ? aw.file_url : null; const src = item.front_image || item.artwork_image || awUrl; return src ? <a href={src} target="_blank" rel="noreferrer"><img className="so-art" src={src} alt={item.artwork_no || 'Artwork'}/></a> : '—' })()}</td>
-                  <td>${fmt(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td>
+                  <td>${rate(item.unit_price)}</td><td><strong>${fmt(item.amount)}</strong></td>
                 </>}
                 {order.order_type === 'gangsheet' && <><td>{item.size}</td><td>{item.no_artworks}</td><td>{item.qty}</td><td>{item.front_image ? <img className="so-art" src={item.front_image} alt="gangsheet"/> : '—'}</td><td><strong>${fmt(item.amount)}</strong></td><td><span className="so-status-pill">{item.production_status || 'Artwork Approved'}</span></td></>}
               </tr>)}</tbody>

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
+import { rateIn } from '../utils/rate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
@@ -698,7 +699,7 @@ export function InvoicePrintPage() {
                       <td>
                         <ArtworkThumb src={backUrl} alt="back" label={`${item.description || `Gangsheet ${idx + 1}`} — Back`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
-                      <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
+                      <td style={{ fontWeight: 500 }}>{rateIn(item.unit_price, currency)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>
                   )
@@ -812,7 +813,7 @@ export function InvoicePrintPage() {
                       <td>
                         <ArtworkThumb src={backUrl} alt="back" label={`${artBack?.artwork_no || item.description} — Back`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
                       </td>
-                      <td style={{ fontWeight: 500 }}>{money(item.unit_price)}</td>
+                      <td style={{ fontWeight: 500 }}>{rateIn(item.unit_price, currency)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>
                   )

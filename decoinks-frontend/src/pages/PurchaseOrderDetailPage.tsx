@@ -8,6 +8,7 @@ import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { getValidTransitions, type UserRole } from '../utils/statusTransitions'
 import { getApiError } from '../utils/apiError'
+import { rate } from '../utils/rate'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -491,7 +492,7 @@ export function PurchaseOrderDetailPage() {
                         <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{item.hsn_code ?? '-'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#374151' }}>{item.uom}</td>
                         <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{item.qty_ordered}</td>
-                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{fmo(item.unit_price)}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{rate(item.unit_price, '-')}</td>
                         <td style={{ padding: '8px', fontSize: '12px', textAlign: 'right', paddingRight: '12px', color: '#6b7280' }}>{item.discount_pct}%</td>
                         <td style={{ padding: '8px', fontSize: '12px', textAlign: 'right', paddingRight: '12px', color: '#6b7280' }}>{item.tax_pct}%</td>
                         <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600, textAlign: 'right', paddingRight: '12px' }}>
