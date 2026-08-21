@@ -84,10 +84,47 @@ const RECOVERED = [
     evidence: 'ORD-2026-0098 (18-Aug) + $124.00 deposit 18-Aug; sheet says $26 shipping, deposit says $25' },
 ]
 
+// The 16 real deposits from the report that were never imported — the scripts
+// wrote a synthetic 'Historical Import' row instead. date, method, sender,
+// gross, PayPal fee, and the order it pays where that is unambiguous (exactly
+// one live order for that customer whose product amount, or failing that whose
+// total, equals the deposit). The rest stay unlinked rather than guessed at:
+// they are mostly customers outside the two sheets.
+const MISSING_DEPOSITS = [
+  { d: '2026-08-03', method: 'Zelle',  who: 'Kyle Morris',                      amt:  47.00, fee:  0.00, order: 'ORD-2026-0082' },
+  { d: '2026-08-04', method: 'PayPal', who: 'Artistic Tees',                    amt: 229.50, fee:  6.86, order: 'ORD-2026-0081' },
+  { d: '2026-08-07', method: 'Zelle',  who: 'Yang Li',                          amt:  73.00, fee:  0.00, order: null },
+  { d: '2026-08-07', method: 'Zelle',  who: 'Samuel Ngwamukie',                 amt:  68.00, fee:  0.00, order: 'ORD-2026-0076' },
+  { d: '2026-08-08', method: 'PayPal', who: 'Artistic Tees',                    amt:  95.00, fee:  2.84, order: 'ORD-2026-0106' },
+  { d: '2026-08-10', method: 'PayPal', who: 'carol garlin',                     amt:  95.00, fee:  2.84, order: 'ORD-2026-0089' },
+  { d: '2026-08-11', method: 'PayPal', who: 'Artistic Tees',                    amt: 303.00, fee:  9.06, order: 'ORD-2026-0090' },
+  { d: '2026-08-12', method: 'PayPal', who: 'Juan moreno',                      amt:  46.00, fee:  1.38, order: null },
+  { d: '2026-08-12', method: 'Zelle',  who: 'Tabernacle Of Faith Intl Healing', amt:  65.00, fee:  0.00, order: null },
+  { d: '2026-08-14', method: 'Zelle',  who: 'Jennifer Trujeque',                amt:  65.00, fee:  0.00, order: null },
+  { d: '2026-08-14', method: 'Zelle',  who: 'Ricardo Malia',                    amt:  66.00, fee:  0.00, order: null },
+  { d: '2026-08-17', method: 'PayPal', who: 'Artistic Tees',                    amt: 415.25, fee: 12.42, order: 'ORD-2026-0107' },
+  { d: '2026-08-18', method: 'PayPal', who: 'Artistic Tees',                    amt: 124.00, fee:  3.71, order: 'ORD-2026-0108' },
+  { d: '2026-08-18', method: 'PayPal', who: 'Artistic Tees',                    amt:  45.00, fee:  1.35, order: null },
+  { d: '2026-08-19', method: 'Zelle',  who: 'Lizbeth M Garcia',                 amt: 125.00, fee:  0.00, order: null },
+  { d: '2026-08-20', method: 'PayPal', who: 'Chris Cox',                        amt:  73.00, fee:  0.00, order: null },
+  // A second pass on strict date+amount surfaced these eight. The first pass
+  // missed them because an unrelated ledger row happened to carry the same
+  // amount; none has anything within a week of it under the same customer.
+  { d: '2026-08-03', method: 'PayPal', who: 'Angie Tate',                       amt:  50.00, fee:  1.50, order: null },
+  { d: '2026-08-05', method: 'Zelle',  who: 'Bobbie Hansen',                    amt:  40.00, fee:  0.00, order: null },
+  { d: '2026-08-09', method: 'PayPal', who: 'Angie Tate',                       amt:  38.00, fee:  1.14, order: null },
+  { d: '2026-08-11', method: 'PayPal', who: 'Michael Trenk',                    amt:  57.00, fee:  1.70, order: null },
+  { d: '2026-08-13', method: 'PayPal', who: 'Artistic Tees',                    amt: 109.00, fee:  3.26, order: null },
+  { d: '2026-08-14', method: 'Zelle',  who: 'Kyle Morris',                      amt:  40.00, fee:  0.00, order: null },
+  { d: '2026-08-18', method: 'PayPal', who: 'Carl Deibler',                     amt: 155.00, fee:  3.64, order: null },
+  { d: '2026-08-18', method: 'Zelle',  who: 'Maria Elena P Lagunday',           amt:  55.00, fee:  0.00, order: null },
+]
+
 const money = n => Number(n).toFixed(2)
 const report = []
 const note = (k, s) => report.push(`  [${k}] ${s}`)
-const stats = { syntheticRemoved: 0, ordersPriced: 0, posPriced: 0, invoicesPriced: 0, statusCorrected: 0 }
+const stats = { syntheticRemoved: 0, depositsImported: 0, echeckDuplicatesRemoved: 0, invoiceLinksFixed: 0,
+                ordersPriced: 0, posPriced: 0, invoicesPriced: 0, statusCorrected: 0 }
 
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
@@ -143,6 +180,73 @@ async function main() {
     const { rowCount: removed } = AMOUNTS_ONLY ? { rowCount: 0 } : await client.query(
       `DELETE FROM payments WHERE payment_method = $1`, [SYNTHETIC_METHOD])
     stats.syntheticRemoved = removed
+
+    // ── 2b. Import the real deposits the scripts never brought in ────────────
+    if (!AMOUNTS_ONLY) {
+      const { rows: [{ n: lastNum }] } = await client.query(
+        `SELECT COALESCE(MAX(SUBSTRING(payment_number FROM '[0-9]+$')::int), 0) AS n
+           FROM payments WHERE payment_number LIKE 'PAY-2026-%'`)
+      let seq = lastNum
+      const { rows: [actor] } = await client.query(
+        `SELECT id FROM users WHERE email = 'info@technocas.com' LIMIT 1`)
+
+      for (const m of MISSING_DEPOSITS) {
+        // Keyed on date + amount + sender so a second run cannot double-insert.
+        const { rows: already } = await client.query(
+          `SELECT 1 FROM payments WHERE payment_date = $1::date AND amount = $2
+             AND COALESCE(customer_name,'') = $3`, [m.d, m.amt, m.who])
+        if (already.length) continue
+
+        let orderId = null, invoiceId = null, customerId = null
+        if (m.order) {
+          const { rows: [o] } = await client.query(
+            `SELECT id, invoice_id, customer_id FROM orders
+              WHERE order_number = $1 AND deleted_at IS NULL`, [m.order])
+          if (o) { orderId = o.id; invoiceId = o.invoice_id; customerId = o.customer_id }
+        }
+        const num = `PAY-2026-${String(++seq).padStart(4, '0')}`
+        await client.query(
+          `INSERT INTO payments (payment_number, payment_date, paid_at, amount, fee_amount,
+             payment_method, status, customer_id, order_id, invoice_id, customer_name,
+             received_from_name, notes, recorded_by)
+           VALUES ($1,$2::date,$2::date::timestamptz,$3,$4,$5,'Completed',$6,$7,$8,$9,$9,$10,$11)`,
+          [num, m.d, m.amt, m.fee, m.method, customerId, orderId, invoiceId, m.who,
+           'Imported from the Decoinks payment deposit report', actor ? actor.id : null])
+        stats.depositsImported++
+        note('LEDGER', `${num} ${m.d} ${m.who} ${money(m.amt).padStart(9)} ${m.method}` +
+                       (m.order ? `  → ${m.order}` : '  (no order matched — left unlinked)'))
+      }
+
+      // ── 2b-ii. Drop the eCheck confirmations counted twice ──────────────────
+      // PayPal sent a "Cleared eCheck confirmation" a week after each of three
+      // Pride & Culture payments, and both the original and the confirmation
+      // were recorded — $73.80 counted twice. The owner's report lists the
+      // 30-Apr confirmations as excluded follow-ups; the 23-Apr originals stay.
+      const { rows: echecks } = await client.query(
+        `DELETE FROM payments
+          WHERE payment_number IN ('PAY-2026-0050','PAY-2026-0051','PAY-2026-0052')
+            AND payment_date = DATE '2026-04-30'
+          RETURNING payment_number, amount`)
+      stats.echeckDuplicatesRemoved = echecks.length
+      for (const e of echecks) {
+        note('LEDGER', `${e.payment_number} ${money(e.amount).padStart(9)} — eCheck confirmation of the 23-Apr payment, counted twice`)
+      }
+
+      // ── 2c. Give invoices credit for deposits already in the ledger ─────────
+      // A payment carrying an order but no invoice_id left its invoice reading
+      // unpaid. The link is derivable from the order, so no guessing is needed.
+      const { rows: relinked } = await client.query(
+        `UPDATE payments p SET invoice_id = o.invoice_id, updated_at = NOW()
+           FROM orders o
+          WHERE p.order_id = o.id AND o.deleted_at IS NULL
+            AND p.invoice_id IS NULL AND o.invoice_id IS NOT NULL
+          RETURNING p.payment_number, p.amount`)
+      stats.invoiceLinksFixed = relinked.length
+      if (relinked.length) {
+        note('LEDGER', `${relinked.length} existing payments given their invoice link ` +
+                       `(derived from the order, total ${money(relinked.reduce((s, r) => s + Number(r.amount), 0))})`)
+      }
+    }
 
     // ── 3. Let invoice status follow the money ───────────────────────────────
     // The trigger has already refreshed amount_paid / balance_due for every
