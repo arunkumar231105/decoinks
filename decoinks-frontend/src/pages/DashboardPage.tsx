@@ -13,7 +13,7 @@ import {
 import { api } from '../services/api'
 
 // ── Types (mirror /dashboard/overview) ──────────────────────────────────────
-type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number; orders_covered?: number }
+type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number; orders_covered?: number; reached?: number }
 type Split = { new: number; existing: number; new_value?: number; existing_value?: number }
 type Overview = {
   period: { from: string; to: string; prev_from: string; prev_to: string; days: number }
@@ -281,9 +281,12 @@ export function DashboardPage() {
             // Orders covered by a PO — comparable with the other order-based
             // stages (raw PO count can exceed orders: one order → many POs).
             { label: 'PO Issued', count: P.po.orders_covered ?? P.po.count },
-            { label: 'In Production', count: P.production.count },
-            { label: 'Shipped', count: P.shipped.count },
-            { label: 'Delivered', count: P.delivered.count },
+            // Funnel is cumulative "reached this stage or beyond" — an order that
+            // is Delivered has also passed through Production and Shipped. The KPI
+            // cards above instead show current-status buckets (reached ?? count).
+            { label: 'In Production', count: P.production.reached ?? P.production.count },
+            { label: 'Shipped', count: P.shipped.reached ?? P.shipped.count },
+            { label: 'Delivered', count: P.delivered.reached ?? P.delivered.count },
           ]} />
           <TrendPanel trend={data.trend} />
         </>}

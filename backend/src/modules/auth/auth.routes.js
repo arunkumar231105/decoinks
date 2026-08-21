@@ -1,10 +1,22 @@
 const { Router } = require('express')
 const { z }      = require('zod')
+const rateLimit  = require('express-rate-limit')
 const { validate }    = require('../../middleware/validate')
 const { verifyToken } = require('../../middleware/auth')
 const controller      = require('./auth.controller')
 
 const router = Router()
+
+// Brute-force guard for credential endpoints. Generous limits — normal users
+// (even a fat-fingered password + a fresh login on another tab) stay well
+// under the ceiling; scripted attackers get 429s.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'Too many login attempts, please try again later.' },
+})
 
 const loginSchema = z.object({
   email:    z.string().email('Invalid email'),
@@ -24,7 +36,7 @@ const changePasswordSchema = z.object({
 
 router.get ('/setup-status',                                                   controller.setupStatus)
 router.post('/setup',            validate(setupSchema),                        controller.setup)
-router.post('/login',            validate(loginSchema),                        controller.login)
+router.post('/login',            loginLimiter, validate(loginSchema),          controller.login)
 router.post('/sso',                                                            controller.sso)
 router.post('/refresh',                                                        controller.refresh)   // reads httpOnly cookie
 router.get ('/me',               verifyToken,                                  controller.getMe)

@@ -82,6 +82,7 @@ const intakeFields = {
 }
 
 const createSchema = z.object({
+  entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),
   supplier_id:        z.string().uuid().optional().nullable(),
@@ -99,6 +100,7 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
+  entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),
   supplier_id:        z.string().uuid().optional().nullable(),

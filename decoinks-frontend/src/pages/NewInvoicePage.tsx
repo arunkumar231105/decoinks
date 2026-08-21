@@ -358,11 +358,13 @@ function calculateInvoiceTotals({
   discountValue: number
   taxPct: number
 }) {
-  const subtotal = itemsTotal + rushCharges + shippingCharges + rushServices
+  // Subtotal is the item lines only; rush and shipping are added on top of it.
+  const subtotal = itemsTotal
   const rawDiscount = discountType === 'percentage' ? subtotal * (discountValue / 100) : discountValue
   const discountAmt = +Math.min(Math.max(rawDiscount, 0), subtotal).toFixed(2)
-  const taxAmt = +(Math.max(subtotal - discountAmt, 0) * (Math.max(taxPct, 0) / 100)).toFixed(2)
-  const total = +(Math.max(subtotal - discountAmt + taxAmt, 0)).toFixed(2)
+  const charged = +Math.max(subtotal - discountAmt + rushCharges + shippingCharges + rushServices, 0).toFixed(2)
+  const taxAmt = +(charged * (Math.max(taxPct, 0) / 100)).toFixed(2)
+  const total = +(charged + taxAmt).toFixed(2)
 
   return { subtotal, discountAmt, taxAmt, total }
 }

@@ -13,12 +13,47 @@ function calcTotals(items, orderType, rushServices, shippingCharges, discountPct
       itemsTotal += Number(item.price_per_sheet) * Number(item.qty)
     }
   }
-  const subtotal = +(itemsTotal + Number(rushServices) + Number(shippingCharges)).toFixed(2)
+  // Subtotal is the product lines only. Rush and shipping are separate charges
+  // that sit on top of it, the same way the PO module treats freight, so an
+  // export reconciles as subtotal - discount + rush + shipping + tax = total.
+  const subtotal = +itemsTotal.toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
-  const tax_amt = +((subtotal - discount_amt) * (taxPct / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt + tax_amt).toFixed(2)
+  const charged = +(subtotal - discount_amt + Number(rushServices) + Number(shippingCharges)).toFixed(2)
+  const tax_amt = +(charged * (taxPct / 100)).toFixed(2)
+  const total = +(charged + tax_amt).toFixed(2)
   return { subtotal, discount_amt, tax_amt, total, items_total: +itemsTotal.toFixed(2) }
 }
+
+// `orders.status` and the split order_stage / process_status columns describe
+// the same order in two vocabularies, so they are always written together and
+// this is the only place the two are translated. `status` stays the column the
+// state machine drives; the split pair is what the screens read.
+//   order_stage    — the document: Draft while it is being written, Sent once
+//                    it has been issued. 'Saved' is only ever set explicitly.
+//   process_status — the job on the floor.
+const PROCESS_BY_STATUS = {
+  'Draft':         null,
+  'Confirmed':     'Pushed',
+  'In Production': 'In Production',
+  'QC':            'QC',
+  'Ready to Ship': 'Completed',
+  'Shipped':       'Shipped',
+  'Delivered':     'Delivered',
+  'Cancelled':     'Cancelled',
+}
+const STATUS_BY_PROCESS = {
+  'Pushed':        'Confirmed',
+  'Completed':     'Ready to Ship',
+  'In Production': 'In Production',
+  'QC':            'QC',
+  'Shipped':       'Shipped',
+  'Delivered':     'Delivered',
+  'Cancelled':     'Cancelled',
+}
+const processForStatus = status => PROCESS_BY_STATUS[status] ?? null
+const statusForProcess = process => STATUS_BY_PROCESS[process] ?? null
+// Draft means still being written; every later state has been issued out.
+const stageForStatus = status => (status === 'Draft' ? 'Draft' : 'Sent')
 
 // Order addresses are snapshots, so keep their wording but remove the repeated
 // comma-separated components produced by legacy imports (for example
@@ -253,7 +288,10 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
                 NULLIF(CONCAT_WS(' ', cust.state, cust.zip), ''), cust.country)), '')
             ) AS export_shipping_address,
             COALESCE(NULLIF(BTRIM(o.source_po_number), ''), latest_po.source_po_number, latest_po.po_number) AS export_source_po_number,
-            COALESCE(NULLIF(o.subtotal, 0), NULLIF(i.subtotal, 0), NULLIF(item_totals.item_amount, 0)) AS export_subtotal,
+            -- Recover a missing subtotal from the invoice or the item lines, but
+            -- fall through to 0.00 rather than blank: a free order where only
+            -- shipping was charged has a real subtotal of zero, not an unknown one.
+            COALESCE(NULLIF(o.subtotal, 0), NULLIF(i.subtotal, 0), NULLIF(item_totals.item_amount, 0), 0) AS export_subtotal,
             CASE WHEN i.status = 'Paid' THEN i.total ELSE o.total END AS export_total,
             CASE WHEN i.status = 'Paid' THEN i.amount_paid ELSE o.amount_paid END AS export_amount_paid,
             CASE
@@ -268,6 +306,15 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
               WHEN o.status = 'Draft' AND i.status = 'Paid' THEN 'Confirmed'
               ELSE o.status::text
             END AS export_status,
+            -- Fall back to the combined status for any row written before the
+            -- split columns existed, so an export is never blank here.
+            COALESCE(o.order_stage, CASE WHEN o.status = 'Draft' THEN 'Draft' ELSE 'Sent' END) AS export_order_stage,
+            COALESCE(o.process_status, CASE o.status::text
+              WHEN 'Confirmed'     THEN 'Pushed'
+              WHEN 'Ready to Ship' THEN 'Completed'
+              WHEN 'Draft'         THEN NULL
+              ELSE o.status::text
+            END) AS export_process_status,
             COALESCE(
               NULLIF(BTRIM(o.courier), ''), latest_shipment.carrier,
               CASE
@@ -409,8 +456,16 @@ async function create(data) {
     if (!resolvedSupplierId) resolvedSupplierId = invoice.supplier_id
   }
 
+  let totalQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  if (invoice_id && items.length === 0) {
+    const { rows: qtyRows } = await query(`SELECT COALESCE(SUM(qty),0) AS qty FROM invoice_items WHERE invoice_id=$1`, [invoice_id])
+    totalQty = Number(qtyRows[0].qty)
+  }
   if (totals.subtotal <= 0 || totals.total <= 0) {
     throw Object.assign(new Error('Sales order subtotal and total must be greater than zero'), { statusCode: 422 })
+  }
+  if (totalQty <= 0) {
+    throw Object.assign(new Error('Sales order total quantity must be greater than zero'), { statusCode: 422 })
   }
 
   let customer = null
@@ -456,8 +511,11 @@ async function create(data) {
          tax_pct, tax_amt, total, notes,
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
-         assigned_to, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+         assigned_to, created_by, order_stage, process_status
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
+                 -- kept in step with the status chosen on the line above
+                 CASE WHEN $3::uuid IS NOT NULL THEN 'Sent'   ELSE 'Draft' END,
+                 CASE WHEN $3::uuid IS NOT NULL THEN 'Pushed' ELSE NULL    END)
        RETURNING *`,
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
@@ -538,6 +596,13 @@ async function update(id, data, actorId) {
   const totals = items.length
     ? calcTotals(items, order_type, rush, shipping, discPct, taxPct)
     : { subtotal: existing.subtotal, discount_amt: existing.discount_amt, tax_amt: existing.tax_amt, total: existing.total }
+
+  if (!Number.isFinite(Number(totals.total)) || Number(totals.total) <= 0) {
+    throw Object.assign(new Error('Sales order total must be greater than zero'), { statusCode: 422 })
+  }
+  if (items.length && items.reduce((sum, item) => sum + Number(item.qty || 0), 0) <= 0) {
+    throw Object.assign(new Error('Sales order total quantity must be greater than zero'), { statusCode: 422 })
+  }
 
   // Resolve the amount received + effective payment status for this update.
   const paidProvided = data.amount_paid !== undefined && data.amount_paid !== null
@@ -650,9 +715,12 @@ async function updateStatus(id, status, actor) {
   }
   if (actorUser) validateTransition('order', cur[0].status, status, actorUser)
 
+  // The split columns follow the transition the state machine just approved, so
+  // they can never drift from `status` or skip a transition of their own.
   const { rows } = await query(
-    `UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL RETURNING *`,
-    [status, id]
+    `UPDATE orders SET status=$1, order_stage=$2, process_status=$3, updated_at=NOW()
+      WHERE id=$4 AND deleted_at IS NULL RETURNING *`,
+    [status, stageForStatus(status), processForStatus(status), id]
   )
   if (!rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
 

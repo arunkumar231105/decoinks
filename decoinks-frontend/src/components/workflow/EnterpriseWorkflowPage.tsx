@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import toast from '../../utils/toast'
 import { api } from '../../services/api'
+import { orderStage, processStatus } from '../../utils/orderStatus'
 import { downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
@@ -123,11 +124,17 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
       { key: 'order_type', label: 'Product Type', render: r => titleCase(r.order_type) },
+      { key: 'print_type', label: 'Print Type', render: r => common.empty(r, 'print_type') },
       { key: 'qty', label: 'Qty', numeric: true, render: r => Number(r.total_qty || 0).toLocaleString() },
+      { key: 'subtotal', label: 'Subtotal', numeric: true, render: r => money(r.subtotal) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Order Value', numeric: true, render: r => <strong>{money(r.total)}</strong> },
       { key: 'paid', label: 'Paid Amount', numeric: true, render: r => money(pick(r, 'amount_paid', 'payment_received')) },
       { key: 'method', label: 'Payment Method', render: r => common.empty(r, 'payment_method') },
-      { key: 'status', label: 'Status', render: common.status },
+      // Order Status is where the document is; Process Status is where the job
+      // is. Both fall back to the combined status for any row not yet split.
+      { key: 'order_stage', label: 'Order Status', render: r => <Badge>{orderStage(r)}</Badge> },
+      { key: 'process_status', label: 'Process Status', render: r => <Badge>{processStatus(r)}</Badge> },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
       { key: 'delivery', label: 'Estimated Delivery', render: r => date(pick(r, 'expected_delivery_date', 'due_date')) },

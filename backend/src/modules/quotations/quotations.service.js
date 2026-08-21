@@ -5,10 +5,35 @@ const { validateTransition } = require('../../utils/stateMachine')
 
 function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushServices = 0) {
   const itemsTotal = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.qty), 0)
-  const subtotal = +(itemsTotal + Number(estimatedShipping) + Number(rushServices)).toFixed(2)
+  // Subtotal is the quoted lines only; shipping and rush are added on top of it
+  // so the quote reads the same way as the invoice, order and PO it becomes.
+  const subtotal = +itemsTotal.toFixed(2)
   const discount_amt = +(subtotal * (discountPct / 100)).toFixed(2)
-  const total = +(subtotal - discount_amt).toFixed(2)
+  const total = +(subtotal - discount_amt + Number(estimatedShipping) + Number(rushServices)).toFixed(2)
   return { subtotal, discount_amt, tax_amt: 0, total }
+}
+
+function normalizeAddress(value) {
+  if (value == null) return null
+  const parts = String(value).split(',').map(part => part.trim()).filter(Boolean)
+  const unique = []
+  for (const part of parts) {
+    const key = part.toLowerCase().replace(/\s+/g, ' ')
+    const prior = unique.join(', ').toLowerCase().replace(/\s+/g, ' ')
+    if (unique.some(existing => existing.toLowerCase() === key) || (key.length >= 5 && prior.includes(key))) continue
+    unique.push(part.replace(/\s+/g, ' '))
+  }
+  return unique.join(', ') || null
+}
+
+function assertPositiveQuotation(total, items) {
+  const totalQty = (items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  if (!Number.isFinite(Number(total)) || Number(total) <= 0) {
+    throw Object.assign(new Error('Quotation total must be greater than zero'), { statusCode: 422 })
+  }
+  if (totalQty <= 0) {
+    throw Object.assign(new Error('Quotation total quantity must be greater than zero'), { statusCode: 422 })
+  }
 }
 
 async function list({ page = 1, limit = 10, status = '', supplier_id = '', search = '' }) {
@@ -37,7 +62,10 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
   params.push(limit, offset)
   const { rows } = await query(
     `SELECT q.*, c.name AS supplier_name, u.name AS created_by_name,
-            COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
+            COALESCE(NULLIF(item_totals.total_qty,0),NULLIF(linked_po.order_total_qty,0),linked_po.total_artworks,0)::INT AS total_qty,
+            COALESCE(q.due_date,q.created_at::date) AS export_quote_date,
+            COALESCE(q.due_date,q.entry_date,q.created_at::date) AS export_valid_until,
+            CASE WHEN linked_po.order_id IS NOT NULL THEN 'Approved' ELSE q.status::text END AS export_status,
             COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total
      FROM quotations q
      LEFT JOIN suppliers c ON c.id = q.supplier_id
@@ -48,12 +76,33 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
        FROM quotation_items qi
        WHERE qi.quotation_id = q.id
      ) item_totals ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT o.id AS order_id,po.total_artworks,
+              (SELECT COALESCE(SUM(qty),0) FROM (
+                 SELECT qty FROM order_items_apparel WHERE order_id=o.id
+                 UNION ALL SELECT qty FROM order_items_dtf WHERE order_id=o.id
+                 UNION ALL SELECT qty FROM order_items_gangsheet WHERE order_id=o.id
+               ) oq) AS order_total_qty
+       FROM invoices i
+       LEFT JOIN orders o ON (o.invoice_id=i.id OR o.id=i.order_id) AND o.deleted_at IS NULL
+       LEFT JOIN purchase_orders po ON po.order_id=o.id AND po.deleted_at IS NULL
+       WHERE i.quote_id=q.id AND i.deleted_at IS NULL
+       ORDER BY po.created_at DESC NULLS LAST
+       LIMIT 1
+     ) linked_po ON TRUE
      ${where}
      ORDER BY q.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
-  return { rows, total }
+  return {
+    rows: rows.map(row => ({
+      ...row,
+      shipping_address: normalizeAddress(row.shipping_address),
+      billing_address: normalizeAddress(row.billing_address),
+    })),
+    total,
+  }
 }
 
 async function getById(id) {
@@ -101,6 +150,9 @@ async function create({
 }) {
   const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
+  assertPositiveQuotation(total, items)
+  const resolvedEntryDate = entry_date || new Date().toISOString().slice(0, 10)
+  const resolvedValidUntil = valid_until || resolvedEntryDate
 
   const client = await getClient()
   try {
@@ -118,12 +170,12 @@ async function create({
        VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
        RETURNING *`,
       [
-        quote_number, lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
+        quote_number, lead_id || null, supplier_id || null, order_type || null, resolvedEntryDate, resolvedValidUntil,
         subtotal, discount_pct, discount_amt, 0, 0, total, notes || null, created_by,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
-        shipping_address || null, billing_address || null, due_date || null, sales_agent_id || null,
+        normalizeAddress(shipping_address), normalizeAddress(billing_address), due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
         estimated_shipping || 0, rush_services || 0, payment_terms || 'Due on Receipt',
         payment_method || null, customer_notes || null, customer_id || null,
@@ -154,15 +206,20 @@ async function create({
 }
 
 async function update(id, {
-  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items,
+  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct, notes, items,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source, shipping_country, shipping_state, shipping_city,
   zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
   customer_requirement_summary, quote_estimate,
   estimated_shipping, rush_services, payment_terms, payment_method, customer_notes,
 }, actorId) {
-  const itemList = items ?? []
-  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, discount_pct, 0, estimated_shipping, rush_services)
+  const existing = await getById(id)
+  const itemList = items ?? existing.items
+  const effectiveDiscountPct = discount_pct ?? Number(existing.discount_pct || 0)
+  const effectiveShipping = estimated_shipping ?? Number(existing.estimated_shipping || 0)
+  const effectiveRush = rush_services ?? Number(existing.rush_services || 0)
+  const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, effectiveDiscountPct, 0, effectiveShipping, effectiveRush)
+  assertPositiveQuotation(total, itemList)
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -189,11 +246,11 @@ async function update(id, {
        RETURNING id`,
       [
         lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
-        subtotal, discount_pct, discount_amt, 0, 0, total, notes || null,
+        subtotal, effectiveDiscountPct, discount_amt, 0, 0, total, notes || null,
         company_name || null, customer_name || null, billing_email || null, contact_number || null,
         whatsapp || null, wechat || null, customer_category || null, customer_source || null,
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
-        shipping_address || null, billing_address || null, due_date || null, sales_agent_id || null,
+        normalizeAddress(shipping_address), normalizeAddress(billing_address), due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
         estimated_shipping != null ? estimated_shipping : null,
         rush_services != null ? rush_services : null,
@@ -239,10 +296,13 @@ async function updateStatus(id, status, actor) {
 
   // Fetch current status + customer name for transition validation and numbering
   const { rows: cur } = await query(
-    `SELECT status, customer_name FROM quotations WHERE id = $1`, [id]
+    `SELECT q.status,q.customer_name,q.total,
+            COALESCE((SELECT SUM(qi.qty) FROM quotation_items qi WHERE qi.quotation_id=q.id),0) AS total_qty
+     FROM quotations q WHERE q.id=$1`, [id]
   )
   if (!cur[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
   if (actorUser) validateTransition('quotation', cur[0].status, status, actorUser)
+  if (status === 'Approved') assertPositiveQuotation(cur[0].total, [{ qty: Number(cur[0].total_qty) }])
 
   // Use the SAME numbering scheme as the manual invoice path (customer-name based)
   // so both routes produce consistent invoice numbers. Generated outside the
@@ -773,6 +833,7 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
       const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
       const items = lineItem ? [lineItem] : []
       const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, 0, 0)
+      assertPositiveQuotation(total, items)
 
       const { rows } = await client.query(
         `INSERT INTO quotations (
@@ -783,12 +844,12 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
            shipping_country, shipping_state, shipping_city, zip_code,
            shipping_address, billing_address,
            due_date, internal_notes, quote_estimate,
-           created_by
+           entry_date, valid_until, created_by
          ) VALUES (
            $1,$2,$3,$4,0,$5,0,$6,$7,
            $8,$9,$10,$11,$12,$13,$14,$15,
            $16,$17,$18,$19,$20,$21,
-           $22,$23,$24,$25
+           $22,$23,$24,COALESCE($25::date,CURRENT_DATE),COALESCE($25::date,CURRENT_DATE),$26
          ) RETURNING *`,
         [
           quote_number,
@@ -807,11 +868,12 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
           mappedFields.shipping_state    || null,
           mappedFields.shipping_city     || null,
           mappedFields.zip_code          || null,
-          mappedFields.shipping_address  || null,
-          mappedFields.billing_address   || null,
+          normalizeAddress(mappedFields.shipping_address),
+          normalizeAddress(mappedFields.billing_address),
           mappedFields.due_date          || null,
           mappedFields.internal_notes    || null,
           mappedFields.quote_estimate != null ? mappedFields.quote_estimate : null,
+          mappedFields.due_date || null,
           createdBy,
         ]
       )

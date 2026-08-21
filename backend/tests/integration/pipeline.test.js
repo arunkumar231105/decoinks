@@ -185,6 +185,7 @@ describe('Pipeline: invoice_paid → auto-order', () => {
         supplier_id: supplierId,
         subtotal: 100, discount_amt: 0, tax_amt: 0,
         issue_date: new Date().toISOString().split('T')[0],
+        items: [{ description: 'Direct invoice item', qty: 1, unit_price: 100, amount: 100 }],
       })
     expect(invRes.status).toBe(201)
     const invoiceId = invRes.body.data.id

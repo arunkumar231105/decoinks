@@ -10,6 +10,28 @@ function calcTotal(subtotal, discount_amt, tax_amt = 0) {
   return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
 }
 
+function assertPositiveInvoice(total, totalQty) {
+  if (!Number.isFinite(Number(total)) || Number(total) <= 0) {
+    throw Object.assign(new Error('Invoice total must be greater than zero'), { statusCode: 422 })
+  }
+  if (!Number.isFinite(Number(totalQty)) || Number(totalQty) <= 0) {
+    throw Object.assign(new Error('Invoice total quantity must be greater than zero'), { statusCode: 422 })
+  }
+}
+
+function normalizeAddress(value) {
+  if (value == null) return null
+  const parts = String(value).split(',').map(part => part.trim()).filter(Boolean)
+  const unique = []
+  for (const part of parts) {
+    const key = part.toLowerCase().replace(/\s+/g, ' ')
+    const prior = unique.join(', ').toLowerCase().replace(/\s+/g, ' ')
+    if (unique.some(existing => existing.toLowerCase() === key) || (key.length >= 5 && prior.includes(key))) continue
+    unique.push(part.replace(/\s+/g, ' '))
+  }
+  return unique.join(', ') || null
+}
+
 function bestAddress(...candidates) {
   const addresses = candidates
     .map(value => String(value || '').trim())
@@ -17,7 +39,29 @@ function bestAddress(...candidates) {
   const detailed = addresses.find(value =>
     !/^(?:united states(?: of america)?|usa|us)$/i.test(value.replace(/[,\s]+/g, ' ').trim())
   )
-  return detailed || addresses[0] || null
+  return normalizeAddress(detailed || addresses[0] || null)
+}
+
+async function resolveInvoiceQuantity(items, quoteId, orderId) {
+  if (Array.isArray(items) && items.length > 0) {
+    return items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
+  }
+  if (quoteId) {
+    const { rows } = await query(`SELECT COALESCE(SUM(qty),0) AS qty FROM quotation_items WHERE quotation_id=$1`, [quoteId])
+    return Number(rows[0].qty)
+  }
+  if (orderId) {
+    const { rows } = await query(
+      `SELECT COALESCE(SUM(qty),0) AS qty FROM (
+         SELECT qty FROM order_items_apparel WHERE order_id=$1
+         UNION ALL SELECT qty FROM order_items_dtf WHERE order_id=$1
+         UNION ALL SELECT qty FROM order_items_gangsheet WHERE order_id=$1
+       ) quantities`,
+      [orderId]
+    )
+    return Number(rows[0].qty)
+  }
+  return 0
 }
 
 async function logActivity(actorId, invoiceId, action, description) {
@@ -59,24 +103,54 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
     `SELECT i.*, COALESCE(c.name, s.name, i.customer_name) AS customer_display_name,
             COALESCE(i.sales_agent_name, u.name) AS sales_agent_display_name,
             o.order_number, q.quote_number,
-            COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total
+            COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total,
+            COALESCE(NULLIF(item_totals.total_qty,0),NULLIF(order_totals.total_qty,0),latest_po.total_artworks,0)::INT AS export_total_qty,
+            COALESCE(i.created_at::date,i.issue_date) AS export_entry_date,
+            COALESCE(i.due_date,i.issue_date) AS export_due_date,
+            CASE WHEN o.payment_status='Paid' THEN 'Paid' ELSE i.status::text END AS export_status,
+            CASE WHEN o.payment_status='Paid' THEN i.total ELSE i.amount_paid END AS export_amount_paid,
+            CASE WHEN o.payment_status='Paid' THEN 0 ELSE i.balance_due END AS export_balance_due
      FROM invoices i
      LEFT JOIN customers c  ON c.id = i.customer_id
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
-     LEFT JOIN orders o     ON o.id = i.order_id
+     LEFT JOIN LATERAL (
+       SELECT ord.* FROM orders ord
+       WHERE (ord.id=i.order_id OR ord.invoice_id=i.id) AND ord.deleted_at IS NULL
+       ORDER BY (ord.id=i.order_id) DESC,ord.created_at
+       LIMIT 1
+     ) o ON TRUE
      LEFT JOIN quotations q ON q.id = i.quote_id
      LEFT JOIN users u      ON u.id = i.created_by
      LEFT JOIN LATERAL (
-       SELECT COALESCE(SUM(ii.amount), 0) AS items_total
+       SELECT COALESCE(SUM(ii.amount), 0) AS items_total,COALESCE(SUM(ii.qty),0) AS total_qty
        FROM invoice_items ii
        WHERE ii.invoice_id = i.id
      ) item_totals ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(qty),0) AS total_qty FROM (
+         SELECT qty FROM order_items_apparel WHERE order_id=o.id
+         UNION ALL SELECT qty FROM order_items_dtf WHERE order_id=o.id
+         UNION ALL SELECT qty FROM order_items_gangsheet WHERE order_id=o.id
+       ) quantities
+     ) order_totals ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT po.total_artworks FROM purchase_orders po
+       WHERE po.order_id=o.id AND po.deleted_at IS NULL
+       ORDER BY po.created_at DESC LIMIT 1
+     ) latest_po ON TRUE
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
-  return { rows, total }
+  return {
+    rows: rows.map(row => ({
+      ...row,
+      billing_address: normalizeAddress(row.billing_address),
+      shipping_address: normalizeAddress(row.shipping_address),
+    })),
+    total,
+  }
 }
 
 async function getById(id) {
@@ -256,7 +330,11 @@ async function create(fields_in) {
   }
 
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
+  const totalQty    = await resolveInvoiceQuantity(items, quote_id, order_id)
+  assertPositiveInvoice(total, totalQty)
   const balance_due = total
+  const resolvedIssueDate = issue_date || new Date().toISOString().slice(0, 10)
+  const resolvedDueDate = due_date || resolvedIssueDate
   const resolvedBillingAddress = bestAddress(
     fields.billing_address,
     quoteData?.billing_address,
@@ -281,7 +359,7 @@ async function create(fields_in) {
       resolvedCustomerName, resolvedSupplierId, resolvedCustomerId,
       resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, total, balance_due,
       resolvedBillingAddress, resolvedShippingAddress,
-      issue_date, due_date, notes, created_by, order_type, items, fields, quoteData,
+      issue_date: resolvedIssueDate, due_date: resolvedDueDate, notes, created_by, order_type, items, fields, quoteData,
     })
   }
 
@@ -300,8 +378,8 @@ async function create(fields_in) {
     [
       invoice_number,
       `INV-INT-${invoice_number}`, quote_id || null, order_id || null, resolvedSupplierId, resolvedCustomerId,
-      issue_date || new Date().toISOString().split('T')[0],
-      due_date || null,
+      resolvedIssueDate,
+      resolvedDueDate,
       resolvedSubtotal,
       Number(fields.discount_pct ?? (fields.discount_type === 'percentage' ? fields.discount_value : 0)) || 0,
       resolvedDiscountAmt,
@@ -686,7 +764,7 @@ async function update(id, fields) {
 
   for (const key of allowed) {
     if (fields[key] !== undefined) {
-      params.push(fields[key])
+      params.push(key === 'billing_address' || key === 'shipping_address' ? normalizeAddress(fields[key]) : fields[key])
       sets.push(`${key} = $${params.length}`)
     }
   }
@@ -705,6 +783,9 @@ async function update(id, fields) {
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
     const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
     const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
+    if (!Number.isFinite(newTotal) || newTotal <= 0) {
+      throw Object.assign(new Error('Invoice total must be greater than zero'), { statusCode: 422 })
+    }
     const amountPaid     = Number(existing.amount_paid) || 0
     const newBalanceDue  = +(Math.max(0, newTotal - amountPaid)).toFixed(2)
 
@@ -776,6 +857,8 @@ async function copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType) {
 async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   // Resolve order_type from the linked quotation (if any)
   const q = clientArg || { query: (...a) => query(...a) }
+  const { rows: qtyRows } = await q.query(`SELECT COALESCE(SUM(qty),0) AS qty FROM invoice_items WHERE invoice_id=$1`, [invoiceId])
+  assertPositiveInvoice(invoice.total, Number(qtyRows[0].qty))
   const { rows: qtRows } = await q.query(
     `SELECT q.order_type, q.id AS quote_id
      FROM invoices i
@@ -834,9 +917,14 @@ async function updateStatus(id, status, actor) {
   const actorId   = typeof actor === 'string' ? actor : actor.id
   const actorUser = typeof actor === 'string' ? null   : actor
 
-  const { rows: cur } = await query(`SELECT status FROM invoices WHERE id = $1`, [id])
+  const { rows: cur } = await query(
+    `SELECT i.status,i.total,COALESCE((SELECT SUM(ii.qty) FROM invoice_items ii WHERE ii.invoice_id=i.id),0) AS total_qty
+     FROM invoices i WHERE i.id=$1`,
+    [id]
+  )
   if (!cur[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
   if (actorUser) validateTransition('invoice', cur[0].status, status, actorUser)
+  if (status === 'Paid') assertPositiveInvoice(cur[0].total, Number(cur[0].total_qty))
 
   const ordNumber = status === 'Paid' ? await getNextNumber('ORD', 'orders', 'order_number') : null
 

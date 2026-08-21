@@ -44,3 +44,11 @@ e2e/playwright-report/
 e2e/test-results/
 e2e/screenshots/
 e2e/.env
+
+# Local operational artefacts — never commit these.
+# backups/ holds multi-hundred-MB database dumps and exports/ holds generated
+# spreadsheets; both are working files, not source.
+backups/
+exports/
+scratchpad/
+*.bak-*

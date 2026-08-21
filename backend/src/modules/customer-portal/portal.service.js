@@ -75,7 +75,7 @@ async function getSummary(customerId) {
   // this customer's orders, not every file sitting in the vault.
   const { rows: artRows } = await db.query(
     `SELECT count(DISTINCT lower(btrim(name)))::int AS artworks FROM (
-       SELECT d.artwork_name AS name FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
+       SELECT btrim(regexp_replace(d.artwork_name, '^AW#?[0-9]+\\s*[-–]\\s*', '', 'i')) AS name FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND d.artwork_name NOT ILIKE '%AGGREGATE%'
        UNION ALL
        SELECT el->>'artwork_no' FROM orders o
@@ -211,7 +211,7 @@ function prettySize(size, w, h) {
 async function getArtworks(customerId) {
   const { rows } = await db.query(
     `WITH items AS (
-       SELECT d.artwork_name AS name, d.size, d.width_inches AS w, d.height_inches AS h,
+       SELECT btrim(regexp_replace(d.artwork_name, '^AW#?[0-9]+\\s*[-–]\\s*', '', 'i')) AS name, d.size, d.width_inches AS w, d.height_inches AS h,
               d.qty, d.artwork_no, COALESCE(d.artwork_image, d.front_image) AS image,
               o.id AS order_id, o.order_number, o.order_date
          FROM orders o JOIN order_items_dtf d ON d.order_id = o.id

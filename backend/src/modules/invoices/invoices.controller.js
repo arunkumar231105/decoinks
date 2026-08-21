@@ -78,13 +78,13 @@ async function exportCsv(req, res, next) {
     const { status = '', customer_id = '', search = '' } = req.query
     const { rows } = await service.list({ page: 1, limit: 10000, status, customer_id, search })
     const columns = [
-    ['Invoice No', 'invoice_number'], ['Issue Date', 'issue_date'], ['Due Date', 'due_date'],
-    ['Status', 'status'], ['Customer Name', 'customer_display_name'], ['Email', 'billing_email'],
+    ['Invoice No', 'invoice_number'], ['Issue Date', 'issue_date'], ['Entry Date', 'export_entry_date'], ['Due Date', 'export_due_date'],
+    ['Status', 'export_status'], ['Customer Name', 'customer_display_name'], ['Email', 'billing_email'],
     ['Contact Number', 'contact_number'], ['Order No', 'order_number'], ['Quote No', 'quote_number'],
     ['Billing Address', 'billing_address'], ['Shipping Address', 'shipping_address'],
     ['Subtotal', 'subtotal'], ['Discount', 'discount_amt'], ['Tax', 'tax_amt'],
-    ['Shipping Charges', 'shipping_charges'], ['Total', 'total'],
-    ['Amount Paid', 'amount_paid'], ['Balance Due', 'balance_due'], ['Currency', 'currency'],
+    ['Shipping Charges', 'shipping_charges'], ['Total Qty', 'export_total_qty'], ['Total', 'total'],
+    ['Amount Paid', 'export_amount_paid'], ['Balance Due', 'export_balance_due'], ['Currency', 'currency'],
     ['Payment Terms', 'payment_terms'], ['Payment Method', 'payment_method'],
     ['Sales Agent', 'sales_agent_display_name'], ['Notes', 'notes'],
     ]

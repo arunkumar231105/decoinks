@@ -112,7 +112,9 @@ async function exportCsv(req, res, next) {
     const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id, date_from, date_to, search })
     const columns = [
     ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
-    ['Due Date', 'due_date'], ['Status', 'export_status'], ['Order Type', 'order_type'],
+    ['Due Date', 'due_date'], ['Status', 'export_status'],
+    ['Order Status', 'export_order_stage'], ['Process Status', 'export_process_status'],
+    ['Order Type', 'order_type'], ['Print Type', 'print_type'],
     ['Customer Name', 'customer_name'], ['Contact Name', 'export_contact_name'],
     ['Contact Email', 'export_contact_email'], ['Contact Phone', 'export_contact_phone'],
     ['Shipping Name', 'export_shipping_name'], ['Shipping Address', 'export_shipping_address'],

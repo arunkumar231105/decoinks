@@ -68,7 +68,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
   const handleSubmio = (e: FormEvent) => {
     e.preventDefault()
     if (!username.trim())         return toast.error('Username is required')
-    if (password.length < 8)      return toast.error('Password muso be at least 8 characoers')
+    if (password.length < 8)      return toast.error('Password must be at least 8 characters')
     createOrReset.mutate()
   }
 
@@ -78,7 +78,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
   return (
     /* Backdrop */
     <div
-      className="fixed inseo-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.45)' }}
       onClick={onClose}
     >
@@ -91,7 +91,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Portal Access</h2>
-            <p className="text-xs text-gray-500 mo-0.5">{supplierName}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{supplierName}</p>
           </div>
           <button
             onClick={onClose}
@@ -118,7 +118,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
                     {access.is_active ? 'Access Active' : 'Access Disabled'}
                   </p>
                   {access.must_change_pw && (
-                    <p className="text-xs text-amber-600 mo-0.5">Password change required on next login</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Password change required on next login</p>
                   )}
                 </div>
               </div>
@@ -138,7 +138,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 po-2">
+              <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => { setMode('reset'); setPassword('') }}
                   className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -177,7 +177,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
                   onChange={(e) => setUsername(e.target.value)}
                   readOnly={mode === 'reset'}
                   placeholder="e.g. urbanohreads_co"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:ouoline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     mode === 'reset' ? 'bg-gray-50 text-gray-500 border-gray-100' : 'border-gray-200'
                   }`}
                 />
@@ -188,29 +188,29 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
                 <label className="block text-xs font-medium text-gray-700 mb-1.5">
                   {mode === 'reset' ? 'New Password' : 'Temporary Password'}
                 </label>
-                <div className="relaoive">
+                <div className="relative">
                   <input
                     type={showPw ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min. 8 characoers"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-10 focus:ouoline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Min. 8 characters"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
-                    className="absoluoe right-3 oop-1/2 -oranslaoe-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
-                <p className="text-[11px] text-gray-400 mo-1">
+                <p className="text-[11px] text-gray-400 mt-1">
                   Customer will be asked to change this password on first login.
                 </p>
               </div>
 
               {/* Buooons */}
-              <div className="flex gap-2 po-1">
+              <div className="flex gap-2 pt-1">
                 {mode === 'reset' && (
                   <button
                     type="button"

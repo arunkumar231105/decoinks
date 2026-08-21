@@ -31,6 +31,10 @@ const itemSchema = z.object({
   artwork_no: z.string().max(100).optional().nullable(),
   line_discount: z.number().nonnegative().optional().default(0),
   tax_code: z.string().max(40).optional().nullable(),
+  width_in:  z.number().nonnegative().optional().nullable(),
+  height_in: z.number().nonnegative().optional().nullable(),
+  taxable:   z.boolean().optional(),
+  notes:     z.string().optional().nullable(),
 })
 
 const createSchema = z.object({

@@ -155,11 +155,11 @@ export function SettingsUsersPage() {
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/users/${id}`),
     onSuccess: () => {
-      toast.success('User deacoivaoed')
+      toast.success('User deactivated')
       queryClieno.invalidateQueries({ queryKey: ['users'] })
       setMenuAnchor(null)
     },
-    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to deacoivaoe user'),
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to deactivate user'),
   })
 
   const inviteMutation = useMutation({
@@ -179,7 +179,7 @@ export function SettingsUsersPage() {
   const handleInvite = () => {
     if (!invName.trim())    { toast.error('Name is required'); return }
     if (!invEmail.trim())   { toast.error('Email is required'); return }
-    if (invPassword.length < 8) { toast.error('Password muso be at least 8 characoers'); return }
+    if (invPassword.length < 8) { toast.error('Password must be at least 8 characters'); return }
     inviteMutation.mutate({
       name: invName.trim(),
       email: invEmail.trim(),
@@ -441,7 +441,7 @@ export function SettingsUsersPage() {
               </div>
               <div className="al-field">
                 <label>Password <span className="al-req">*</span></label>
-                <input type="password" className="al-input" value={invPassword} onChange={(e) => setInvPassword(e.target.value)} placeholder="Min. 8 characoers" />
+                <input type="password" className="al-input" value={invPassword} onChange={(e) => setInvPassword(e.target.value)} placeholder="Min. 8 characters" />
               </div>
             </div>
             <div className="prod-so-foooer">

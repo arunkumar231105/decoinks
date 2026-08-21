@@ -596,10 +596,12 @@ export function NewOrderPage() {
   const gangsheetArtworkCount = useMemo(() => gangsheetArtworks.reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0), [gangsheetArtworks])
   const dtfQty = useMemo(() => dtf.reduce((sum, row) => sum + row.qty, 0), [dtf])
 
-  const subtotal    = useMemo(() => itemsTotal + rushServices + shippingCharges, [itemsTotal, rushServices, shippingCharges])
+  // Subtotal is the item lines only; rush and shipping are added on top of it.
+  const subtotal    = useMemo(() => itemsTotal, [itemsTotal])
   const discountAmt = useMemo(() => +(subtotal * (discountPct / 100)).toFixed(2), [subtotal, discountPct])
-  const taxAmt      = useMemo(() => +((subtotal - discountAmt) * (taxPct / 100)).toFixed(2), [subtotal, discountAmt, taxPct])
-  const total       = useMemo(() => +(subtotal - discountAmt + taxAmt).toFixed(2), [subtotal, discountAmt, taxAmt])
+  const charged     = useMemo(() => +(subtotal - discountAmt + rushServices + shippingCharges).toFixed(2), [subtotal, discountAmt, rushServices, shippingCharges])
+  const taxAmt      = useMemo(() => +(charged * (taxPct / 100)).toFixed(2), [charged, taxPct])
+  const total       = useMemo(() => +(charged + taxAmt).toFixed(2), [charged, taxAmt])
   const balanceDue  = useMemo(() => +Math.max(0, total - (Number(amountPaid) || 0)).toFixed(2), [total, amountPaid])
 
   // â"€â"€ Table helpers â"€â"€

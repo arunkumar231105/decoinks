@@ -384,7 +384,8 @@ export function OrderPrintPage() {
   const totalQty   = allItems.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0)
   const itemsTotal = allItems.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
   const shippingAmt = Number(order.shipping_charges ?? 0)
-  const subtotalPlus = itemsTotal + shippingAmt
+  // Subtotal is the item lines only; shipping is its own line beneath it.
+  const subtotalAmt = allItems.length ? itemsTotal : Number(order.subtotal ?? 0)
 
   // PAYMENT SUMMARY — prefer the linked invoice's real ledger figures; fall
   // back to the order's own payment_status (Paid = fully paid, else unpaid).
@@ -524,12 +525,11 @@ export function OrderPrintPage() {
                 </h4>
                 <table>
                   <tbody>
-                    <tr><td className="ol">Items Total</td><td className="ov">{fmt(itemsTotal)}</td></tr>
-                    <tr><td className="ol">Shipping Charges</td><td className="ov">{fmt(shippingAmt)}</td></tr>
-                    <tr><td className="ol">Subtotal</td><td className="ov">{fmt(subtotalPlus)}</td></tr>
+                    <tr><td className="ol">Subtotal</td><td className="ov">{fmt(subtotalAmt)}</td></tr>
                     {Number(order.discount_amt) > 0 && (
                       <tr><td className="ol">Bulk Discount</td><td className="ov neg">{'-' + fmt(order.discount_amt)}</td></tr>
                     )}
+                    <tr><td className="ol">Shipping Charges</td><td className="ov">{fmt(shippingAmt)}</td></tr>
                     <tr><td className="ol">Tax</td><td className="ov">{fmt(order.tax_amt)}</td></tr>
                     <tr className="tr-total"><td>TOTAL DUE</td><td className="ov" style={{ fontWeight: 800 }}>{fmt(balanceDue)}</td></tr>
                   </tbody>
@@ -692,7 +692,7 @@ export function OrderPrintPage() {
                     <td style={{ fontWeight: 500 }}>{r.height}</td>
                     <td style={{ fontWeight: 600 }}>{r.item.qty}</td>
                     <td>
-                      <ArtworkThumb src={r.item.front_image ?? r.item.artwork_image} alt={r.artNo} label={r.artNo} className="art-img" fallback={<div className="art-empty">🖼</div>} />
+                      <ArtworkThumb src={r.item.front_image ?? r.item.artwork_image ?? (orderArtworks[sno] && orderArtworks[sno].file_type !== 'pdf' ? orderArtworks[sno].file_url : null)} alt={r.artNo} label={r.artNo} className="art-img" fallback={<div className="art-empty">🖼</div>} />
                     </td>
                     <td style={{ fontWeight: 700 }}>{fmt(r.item.unit_price)}</td>
                     <td style={{ fontWeight: 600 }}>{fmt(r.item.amount)}</td>
@@ -787,8 +787,8 @@ export function OrderPrintPage() {
           </table>
         </div>
 
-        {/* ══ ARTWORKS SECTION (gangsheet only — apparel/DTF tables carry thumbnails inline) ══ */}
-        {isGangsheet && orderArtworks.length > 0 && (
+        {/* ══ ARTWORKS SECTION (all order types — shows every attached artwork) ══ */}
+        {orderArtworks.length > 0 && (
           <div className="aw-section">
             <div className="aw-section-hdr">
               <div className="aw-section-num">★</div>

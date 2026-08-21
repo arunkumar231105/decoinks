@@ -9,10 +9,12 @@ import {
 } from 'lucide-react'
 import toast from '../utils/toast'
 import { api } from '../services/api'
+import { orderStage, processStatus } from '../utils/orderStatus'
 import { cn } from '../utils/cn'
 
 interface Order {
   id: string; order_number: string; status: string; order_type: 'apparel'|'dtf'|'gangsheet'
+  order_stage?: string|null; process_status?: string|null; print_type?: string|null
   order_date: string; entry_date?: string|null; created_at?: string; due_date: string|null; required_ship_date?: string|null
   total: number; subtotal: number; rush_services: number; shipping_charges: number
   supplier_id: string|null; supplier_name: string|null; customer_name: string|null
@@ -102,7 +104,7 @@ export function OrderDetailPage() {
       </Menu>
 
       <section className="so-meta-card">
-        <div><small>Order #</small><strong>{order.order_number}</strong><span className="so-green-badge">{order.status}</span></div>
+        <div><small>Order #</small><strong>{order.order_number}</strong><span className="so-green-badge">{orderStage(order)}</span><span className="so-green-badge">{processStatus(order)}</span></div>
         <div><small>Quote</small>{order.quote_id ? <Link to={`/quotes/${order.quote_id}`}>{order.quote_number || 'View Quote'}</Link> : <strong>—</strong>}</div>
         <div><small>Invoice</small>{order.invoice_id ? <Link to={`/invoices/${order.invoice_id}`}>{order.invoice_number || 'View Invoice'}</Link> : <strong>—</strong>}</div>
         <div><small>Order Date</small><strong>{date(order.order_date)}</strong></div>
@@ -172,7 +174,7 @@ export function OrderDetailPage() {
 
         <aside className="so-sidebar">
           <section className="so-card"><h3>Commercial Summary</h3><div className="so-kv"><span>Quote</span><strong>{order.quote_number || '—'}</strong></div><div className="so-kv"><span>Invoice</span><strong>{order.invoice_number || '—'}</strong></div><div className="so-kv"><span>Order Value</span><strong>${fmt(order.total)}</strong></div><div className="so-kv"><span>Rush Services</span><strong>${fmt(order.rush_services)}</strong></div><div className="so-kv"><span>Shipping Method</span><strong>{order.shipping_method || 'Standard'}</strong></div><div className="so-kv"><span>Required Ship Date</span><strong>{date(requiredDate)}</strong></div></section>
-          <section className="so-card"><h3>Production Summary</h3><div className="so-kv"><span>Artwork Status</span><b className={artworkApproved?'ok':''}>{artworkApproved?'Approved':'Pending'}</b></div><div className="so-kv"><span>PO Status</span><b>{pos.length ? pos[pos.length-1].status : 'Not Created'}</b></div><div className="so-kv"><span>Production Status</span><b>{order.status}</b></div><div className="so-kv"><span>QC Status</span><b>{workflowDone[4]?'Completed':'Not Started'}</b></div><div className="so-kv"><span>Shipment Status</span><b>{shipment?.status || 'Not Started'}</b></div></section>
+          <section className="so-card"><h3>Production Summary</h3><div className="so-kv"><span>Artwork Status</span><b className={artworkApproved?'ok':''}>{artworkApproved?'Approved':'Pending'}</b></div><div className="so-kv"><span>PO Status</span><b>{pos.length ? pos[pos.length-1].status : 'Not Created'}</b></div><div className="so-kv"><span>Order Status</span><b>{orderStage(order)}</b></div><div className="so-kv"><span>Process Status</span><b>{processStatus(order)}</b></div><div className="so-kv"><span>Print Type</span><b>{order.print_type || '—'}</b></div><div className="so-kv"><span>QC Status</span><b>{workflowDone[4]?'Completed':'Not Started'}</b></div><div className="so-kv"><span>Shipment Status</span><b>{shipment?.status || 'Not Started'}</b></div></section>
           <section className="so-card"><h3>Key Dates</h3><div className="so-kv"><span>Order Date</span><strong>{date(order.order_date)}</strong></div><div className="so-kv"><span>Entry Date</span><strong>{date(order.entry_date || order.created_at)}</strong></div><div className="so-kv"><span>Artwork Approved</span><strong>{artworkApproved ? date(order.order_date) : '—'}</strong></div><div className="so-kv"><span>PO Created</span><strong>{pos.length ? date(pos[0].created_at) : '—'}</strong></div><div className="so-kv"><span>Required Ship Date</span><strong>{date(requiredDate)}</strong></div></section>
           <section className="so-card"><h3>Documents & Links</h3>{order.quote_id && <Link to={`/quotes/${order.quote_id}`}>View Quote ({order.quote_number})</Link>}{order.invoice_id && <Link to={`/invoices/${order.invoice_id}`}>View Invoice ({order.invoice_number})</Link>}{pos.map(po=><Link key={po.id} to={`/purchase-orders/${po.id}`}>View Purchase Order ({po.po_number})</Link>)}<button onClick={()=>navigate(`/orders/${order.id}/print`)}>Print Work Order</button></section>
         </aside>

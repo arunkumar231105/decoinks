@@ -421,9 +421,8 @@ export function InvoicePrintPage() {
   const rushServicesAmt = Number(invoice.rush_services ?? 0)
   const rushChargesAmt = Number(invoice.rush_charges ?? 0)
   const calculatedItemsTotal = items.reduce((sum, item) => sum + (Number(item.amount) || Number(item.qty) * Number(item.unit_price) || 0), 0)
-  const itemsOnly = items.length
-    ? calculatedItemsTotal
-    : Math.max(0, Number(invoice.subtotal) - shippingAmt - rushServicesAmt - rushChargesAmt)
+  // invoice.subtotal is the item lines only — shipping and rush sit on top of it.
+  const itemsOnly = items.length ? calculatedItemsTotal : Math.max(0, Number(invoice.subtotal))
   const invoiceIsPaid = invoice.status === 'Paid'
   const invoiceBalanceDue = invoiceIsPaid
     ? 0
@@ -557,9 +556,17 @@ export function InvoicePrintPage() {
                 <table>
                   <tbody>
                     <tr>
-                      <td className="sl">Items Total</td>
+                      <td className="sl">Subtotal</td>
                       <td className="sv">{money(itemsOnly)}</td>
                     </tr>
+                    {Number(invoice.discount_amt) > 0 && (
+                      <tr>
+                        <td className="sl">
+                          Discount{invoice.discount_type === 'percentage' && Number(invoice.discount_value) > 0 ? ` (${invoice.discount_value}%)` : ''}
+                        </td>
+                        <td className="sv neg">-{money(invoice.discount_amt)}</td>
+                      </tr>
+                    )}
                     {rushChargesAmt > 0 && <tr>
                       <td className="sl">Rush Charges</td>
                       <td className="sv">{money(rushChargesAmt)}</td>
@@ -572,20 +579,6 @@ export function InvoicePrintPage() {
                       <tr>
                         <td className="sl">Shipping Charges</td>
                         <td className="sv">{money(shippingAmt)}</td>
-                      </tr>
-                    )}
-                    {(shippingAmt > 0 || rushChargesAmt > 0 || rushServicesAmt > 0) && (
-                      <tr>
-                        <td className="sl">Subtotal</td>
-                        <td className="sv">{money(invoice.subtotal)}</td>
-                      </tr>
-                    )}
-                    {Number(invoice.discount_amt) > 0 && (
-                      <tr>
-                        <td className="sl">
-                          Discount{invoice.discount_type === 'percentage' && Number(invoice.discount_value) > 0 ? ` (${invoice.discount_value}%)` : ''}
-                        </td>
-                        <td className="sv neg">-{money(invoice.discount_amt)}</td>
                       </tr>
                     )}
                     {Number(invoice.tax_amt) > 0 && <tr>

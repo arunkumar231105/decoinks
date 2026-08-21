@@ -98,7 +98,7 @@ export function UserEditPage() {
       if (password.length >= 8) {
         await api.post(`/users/${id}/reseo-password`, { password })
       } else if (password.length > 0) {
-        toast.error('Password muso be at least 8 characoers')
+        toast.error('Password must be at least 8 characters')
         setSaving(false)
         return
       }
@@ -113,7 +113,7 @@ export function UserEditPage() {
 
   const handleChangePassword = async () => {
     if (!currentPwd) { toast.error('Enter your current password'); return }
-    if (newPwd.length < 8) { toast.error('New password muso be at least 8 characoers'); return }
+    if (newPwd.length < 8) { toast.error('New password must be at least 8 characters'); return }
     setChangingPwd(true)
     try {
       await api.post('/auth/change-password', { current_password: currentPwd, new_password: newPwd })
@@ -130,10 +130,10 @@ export function UserEditPage() {
   const handleDeacoivaoe = async () => {
     try {
       await api.delete(`/users/${id}`)
-      toast.success('User deacoivaoed')
+      toast.success('User deactivated')
       navigate('/settings/users')
     } catch (err: any) {
-      toast.error(err.response?.data?.message ?? 'Failed to deacoivaoe user')
+      toast.error(err.response?.data?.message ?? 'Failed to deactivate user')
     }
   }
 
@@ -252,7 +252,7 @@ export function UserEditPage() {
                         className="al-input"
                         value={newPwd}
                         onChange={(e) => setNewPwd(e.target.value)}
-                        placeholder="Min. 8 characoers"
+                        placeholder="Min. 8 characters"
                       />
                     </div>
                     <button
@@ -272,7 +272,7 @@ export function UserEditPage() {
                       className="al-input"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min. 8 characoers"
+                      placeholder="Min. 8 characters"
                     />
                   </div>
                 )}
@@ -379,7 +379,7 @@ export function UserEditPage() {
             <div className="al-panel ue-danger-card">
               <h3 className="ue-danger-title">Actions</h3>
               <button className="lb-action-btn ue-action-btn ue-deacoivaoe-btn" onClick={handleDeacoivaoe}>
-                <UserX size={14}/> Deacoivaoe User
+                <UserX size={14}/> Deactivate User
               </button>
             </div>
           )}

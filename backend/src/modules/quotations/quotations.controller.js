@@ -117,8 +117,8 @@ async function exportCsv(req, res, next) {
     const { status = '', customer_id = '', supplier_id = '', search = '' } = req.query
     const { rows } = await service.list({ page: 1, limit: 10000, status, supplier_id: supplier_id || customer_id, search })
     const columns = [
-    ['Quotation No', 'quote_number'], ['Revision', 'revision'], ['Quote Date', 'created_at'],
-    ['Entry Date', 'entry_date'], ['Valid Until', 'valid_until'], ['Status', 'status'],
+    ['Quotation No', 'quote_number'], ['Revision', 'revision'], ['Quote Date', 'export_quote_date'],
+    ['Entry Date', 'entry_date'], ['Valid Until', 'export_valid_until'], ['Status', 'export_status'],
     ['Customer Name', 'customer_name'], ['Company', 'company_name'], ['Supplier', 'supplier_name'],
     ['Email', 'billing_email'], ['Contact Number', 'contact_number'],
     ['Shipping Address', 'shipping_address'], ['Billing Address', 'billing_address'],
