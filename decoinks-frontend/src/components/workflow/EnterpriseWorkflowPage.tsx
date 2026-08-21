@@ -133,7 +133,6 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
       { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
       { key: 'order_type', label: 'Product Type', render: r => titleCase(r.order_type) },
-      { key: 'print_type', label: 'Print Type', render: r => common.empty(r, 'print_type') },
       { key: 'qty', label: 'Qty', numeric: true, render: r => Number(r.total_qty || 0).toLocaleString() },
       { key: 'subtotal', label: 'Subtotal', numeric: true, render: r => money(r.subtotal) },
       { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.shipping_charges) },
