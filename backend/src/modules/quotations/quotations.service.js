@@ -769,7 +769,7 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
       const { value, error } = parseNum(stripMoney(lineItem.net_amount), 0)
       if (!error && value != null) {
         const q = lineItem.qty && lineItem.qty > 0 ? lineItem.qty : 1
-        lineItem.unit_price = +(value / q).toFixed(2)
+        lineItem.unit_price = +(value / q).toFixed(4)   // rate column holds 4 decimals
       }
     }
 

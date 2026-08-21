@@ -910,7 +910,7 @@ function LeadItemsSection({ items, setItems }: { items: LeadItem[]; setItems: (i
                 <td>
                   <div className="nq-money-input nq-money-quoted">
                     <span>$</span>
-                    <input type="number" min={0} step={0.01} value={item.unit_price} onChange={e => updateItem(item.id, { unit_price: +e.target.value })} />
+                    <input type="number" min={0} step="any" value={item.unit_price} onChange={e => updateItem(item.id, { unit_price: +e.target.value })} />
                   </div>
                 </td>
                 <td className="nq-td-total">${fmt(item.qty * item.unit_price)}</td>
@@ -1671,7 +1671,7 @@ export function NewQuotationPage() {
                     <td><code className="nq-item-sku">{item.sku || (item.colorId && item.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></div></td>
-                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
                     <td>{apparelUnitWeightG(item) ? `${(apparelUnitWeightG(item) * item.qty / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
@@ -1703,7 +1703,7 @@ export function NewQuotationPage() {
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
                     <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={row.artwork_image} label="Artwork" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
-                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setTransferRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
@@ -1746,7 +1746,7 @@ export function NewQuotationPage() {
                     <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
                     <td><ImageUploadCell imageUrl={row.front_image} label="Front" uploading={uploadingImg[`${row.id}-front_image`]} onUpload={f => uploadItemImage(row.id, 'front_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={row.back_image} label="Back" uploading={uploadingImg[`${row.id}-back_image`]} onUpload={f => uploadItemImage(row.id, 'back_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { back_image: null })} /></td>
-                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
+                    <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(row.qtySheets * row.quotedCost)}</td>
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setGangsheetRows(prev => prev.filter(r => r.id !== row.id))}><Trash2 size={14} /></button></td>
                   </tr>
