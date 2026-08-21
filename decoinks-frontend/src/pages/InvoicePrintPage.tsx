@@ -423,7 +423,10 @@ export function InvoicePrintPage() {
   const rushChargesAmt = Number(invoice.rush_charges ?? 0)
   const calculatedItemsTotal = items.reduce((sum, item) => sum + (Number(item.amount) || Number(item.qty) * Number(item.unit_price) || 0), 0)
   // invoice.subtotal is the item lines only — shipping and rush sit on top of it.
-  const itemsOnly = items.length ? calculatedItemsTotal : Math.max(0, Number(invoice.subtotal))
+  // Prefer it over re-adding the lines: each line is rounded to whole cents on
+  // its own, so a rate finer than a cent makes them add to a few less than the
+  // figure that was quoted and billed.
+  const itemsOnly = Math.max(0, Number(invoice.subtotal)) || calculatedItemsTotal
   const invoiceIsPaid = invoice.status === 'Paid'
   const invoiceBalanceDue = invoiceIsPaid
     ? 0

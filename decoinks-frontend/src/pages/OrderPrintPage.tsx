@@ -385,8 +385,11 @@ export function OrderPrintPage() {
   const totalQty   = allItems.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0)
   const itemsTotal = allItems.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
   const shippingAmt = Number(order.shipping_charges ?? 0)
-  // Subtotal is the item lines only; shipping is its own line beneath it.
-  const subtotalAmt = allItems.length ? itemsTotal : Number(order.subtotal ?? 0)
+  // Subtotal is the item lines only; shipping is its own line beneath it. Use
+  // the order's own subtotal — the quoted figure — rather than re-adding the
+  // lines here: each line is rounded to whole cents on its own, so a rate finer
+  // than a cent makes them add to a few less (110.00 quoted, 109.96 re-added).
+  const subtotalAmt = Number(order.subtotal ?? 0) || itemsTotal
 
   // PAYMENT SUMMARY — prefer the linked invoice's real ledger figures; fall
   // back to the order's own payment_status (Paid = fully paid, else unpaid).
@@ -779,7 +782,7 @@ export function OrderPrintPage() {
                     <div className="stat-icon">🧮</div>
                     <div>
                       <div className="stat-lbl">{isDtf ? 'Items Total' : 'Total Amount'}</div>
-                      <div className="stat-val">{fmt(isDtf ? itemsTotal : order.total)}</div>
+                      <div className="stat-val">{fmt(isDtf ? subtotalAmt : order.total)}</div>
                     </div>
                   </div>
                 </td>
