@@ -126,7 +126,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'delivered'), tone: 'green' },
     ],
     columns: [
-      { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}{r.locked_at ? <span className="ew-lock" title={`Locked on ${String(r.locked_at).slice(0, 10)} — reconciled and sealed`}> 🔒</span> : null}</strong> },
+      { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
       { key: 'sales_channel', label: 'Channel', render: r => common.empty(r, 'sales_channel') },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
