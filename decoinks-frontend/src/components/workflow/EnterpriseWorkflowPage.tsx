@@ -118,7 +118,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'delivered'), tone: 'green' },
     ],
     columns: [
-      { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
+      { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}{r.locked_at ? <span className="ew-lock" title={`Locked on ${String(r.locked_at).slice(0, 10)} — reconciled and sealed`}> 🔒</span> : null}</strong> },
+      { key: 'sales_channel', label: 'Channel', render: r => common.empty(r, 'sales_channel') },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
@@ -218,6 +219,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [customer, setCustomer] = useState('All')
   const [product, setProduct] = useState('All')
   const [source, setSource] = useState('All')
+  // Orders only: which route the order arrived by, and whether the record has
+  // been sealed after reconciliation.
+  const [channel, setChannel] = useState('All')
+  const [locked, setLocked] = useState('All')
   const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -269,6 +274,9 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (customer !== 'All' && customerOf(row) !== customer) return false
     if (product !== 'All' && productOf(row) !== product) return false
     if (source !== 'All' && sourceOf(row) !== source) return false
+    if (channel !== 'All' && String(row.sales_channel || '') !== channel) return false
+    if (locked === 'Locked' && !row.locked_at) return false
+    if (locked === 'Unlocked' && row.locked_at) return false
     const rawDate = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
     const rowDate = rawDate ? String(rawDate).slice(0, 10) : ''
     if ((periodRangeMemo[0] || periodRangeMemo[1]) && !rowDate) return false
@@ -310,7 +318,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
   const sources = useMemo(() => unique(allRows.map(sourceOf)), [allRows])
-  useEffect(() => { setPage(1) }, [search, status, customer, product, source, period, dateFrom, dateTo, sortBy])
+  useEffect(() => { setPage(1) }, [search, status, customer, product, source, channel, locked, period, dateFrom, dateTo, sortBy])
   useEffect(() => { if (page > pages) setPage(pages) }, [page, pages])
 
   const openDetail = async (row: AnyRow) => {
@@ -365,6 +373,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
+    setChannel('All'); setLocked('All')
     setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setPage(1)
   }
 
@@ -412,6 +421,8 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Customer / Vendor</span><select value={customer} onChange={e => setCustomer(e.target.value)}><option>All</option>{customers.map(v => <option key={v}>{v}</option>)}</select></label>
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
+        {kind === 'orders' && <label><span>Channel</span><select value={channel} onChange={e => setChannel(e.target.value)}><option>All</option><option value="TSI">TSI</option><option value="DIGI">DIGI</option></select></label>}
+        {kind === 'orders' && <label><span>Locked</span><select value={locked} onChange={e => setLocked(e.target.value)}><option>All</option><option value="Locked">Locked</option><option value="Unlocked">Unlocked</option></select></label>}
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
         <label><span>Sort By</span><select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}>
           <option value="date_desc">Date: newest first</option>

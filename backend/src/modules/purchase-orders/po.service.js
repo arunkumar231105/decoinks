@@ -1,6 +1,7 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
 const { validateTransition } = require('../../utils/stateMachine')
+const { assertNotLocked } = require('../../utils/recordLock')
 
 // ── Calculations ──────────────────────────────────────────────────────────────
 
@@ -594,6 +595,7 @@ async function create(data) {
 
 async function update(id, data) {
   const existing = await getById(id)
+  assertNotLocked(existing, 'purchase order', existing?.po_number)
   const items = data.items || existing.items
   const freight = data.freight_charges ?? existing.freight_charges ?? 0
   const other   = data.other_charges   ?? existing.other_charges   ?? 0

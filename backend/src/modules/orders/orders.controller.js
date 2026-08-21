@@ -4,8 +4,10 @@ const { success, created, paginated } = require('../../utils/response')
 
 async function list(req, res, next) {
   try {
-    const { page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '' } = req.query
-    const { rows, total } = await service.list({ page: +page, limit: +limit, status, order_type, customer_id, date_from, date_to, search })
+    const { page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '',
+            sales_channel = '', locked = '' } = req.query
+    const { rows, total } = await service.list({ page: +page, limit: +limit, status, order_type, customer_id,
+                                                 date_from, date_to, search, sales_channel, locked })
     return paginated(res, rows, total, +page, +limit)
   } catch (err) { next(err) }
 }
@@ -108,13 +110,15 @@ async function orderCsvTemplate(_req, res) {
 // GET /export — full filtered result set as CSV with readable headers.
 async function exportCsv(req, res, next) {
   try {
-    const { status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '' } = req.query
-    const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id, date_from, date_to, search })
+    const { status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '',
+            sales_channel = '', locked = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id,
+                                          date_from, date_to, search, sales_channel, locked })
     const columns = [
     ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
     ['Due Date', 'due_date'], ['Status', 'export_status'],
     ['Order Status', 'export_order_stage'], ['Process Status', 'export_process_status'],
-    ['Order Type', 'order_type'], ['Print Type', 'print_type'],
+    ['Order Type', 'order_type'], ['Print Type', 'print_type'], ['Channel', 'sales_channel'],
     ['Customer Name', 'customer_name'], ['Contact Name', 'export_contact_name'],
     ['Contact Email', 'export_contact_email'], ['Contact Phone', 'export_contact_phone'],
     ['Shipping Name', 'export_shipping_name'], ['Shipping Address', 'export_shipping_address'],
