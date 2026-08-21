@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   BadgeCheck, Box, CalendarDays, ChevronDown, ChevronFirst, ChevronLast,
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
-  PackageCheck, Plus, Printer, Search, Send, ShoppingBag,
+  PackageCheck, Pencil, Plus, Printer, Search, Send, ShoppingBag,
   Trash2, Truck, Upload, Users, X,
 } from 'lucide-react'
 import toast from '../../utils/toast'
@@ -350,6 +350,14 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   }
   const pathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}` : `${config.api}/${row.id}`
   const printPathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}/print` : `${config.api}/${row.id}/print`
+  // Straight from the drawer into the record's own form. Only the two kinds
+  // that actually have an edit screen get the button — a quotation or invoice
+  // would land on a blank "new" form, which is worse than no button at all.
+  const editFor = (row: AnyRow): (() => void) | null => {
+    if (kind === 'orders') return () => navigate('/orders/new', { state: { editOrderId: row.id } })
+    if (kind === 'purchase-orders') return () => navigate(`/purchase-orders/${row.id}/edit`)
+    return null
+  }
   const toggle = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
   const visiblePages = useMemo(() => Array.from({ length: Math.min(5, pages) }, (_, i) => Math.min(Math.max(1, page - 2) + i, pages)).filter((v, i, a) => a.indexOf(v) === i), [page, pages])
@@ -470,7 +478,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
       <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
-      <div className="ew-drawer-actions">{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
+      <div className="ew-drawer-actions">{editFor(active) && <button onClick={editFor(active)!} title="Open this record in its form"><Pencil size={16}/><span>Edit</span></button>}{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
       </aside>
