@@ -409,7 +409,7 @@ async function create(data) {
   const {
     customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
-    amount_paid, payment_reference, payment_date,
+    amount_paid, payment_reference, payment_date, payment_id,
     rush_services = 0, shipping_charges = 0,
     discount_pct = 0, tax_pct = 0,
     notes, contact_name, contact_email, contact_phone,
@@ -554,6 +554,35 @@ async function create(data) {
         [order.id, invoice_id]
       )
     }
+    // Attach the payment this order was raised against. Money lands in the
+    // bank before the order is keyed in — the business runs on Advance terms —
+    // so the order form asks which payment it belongs to and the two are tied
+    // together here rather than from the payment screen.
+    //
+    // A payment can cover several orders (the combined-billing jobs did), so
+    // the first order to claim it takes payments.order_id and any later one is
+    // recorded as an allocation. That keeps recalc_invoice_paid correct, which
+    // counts a payment once — through its allocations when it has them, through
+    // its own invoice_id when it does not.
+    if (payment_id) {
+      const { rows: payRows } = await client.query(
+        `SELECT id, order_id, amount FROM payments WHERE id = $1 FOR UPDATE`, [payment_id])
+      const pay = payRows[0]
+      if (!pay) {
+        throw Object.assign(new Error('The selected payment no longer exists'), { statusCode: 422 })
+      }
+      if (!pay.order_id) {
+        await client.query(
+          `UPDATE payments SET order_id = $1, invoice_id = COALESCE(invoice_id, $2), updated_at = NOW()
+            WHERE id = $3`, [order.id, invoice_id || null, payment_id])
+      } else if (pay.order_id !== order.id) {
+        await client.query(
+          `INSERT INTO payment_allocations (payment_id, order_id, allocated_amount)
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [payment_id, order.id, totals.total])
+      }
+    }
+
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
        VALUES ($1, 'order', $2, 'created', $3)`,

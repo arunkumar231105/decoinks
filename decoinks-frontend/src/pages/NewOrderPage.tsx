@@ -193,6 +193,10 @@ export function NewOrderPage() {
   const [paymentStatus,  setPaymentStatus]  = useState<PaymentStatus>('Unpaid')
   const [amountPaid,       setAmountPaid]       = useState(0)
   const [paymentReference, setPaymentReference] = useState('')
+  // Which payment this order is being raised against. Money lands before the
+  // order is keyed in, so the order is attached to a payment that already
+  // exists rather than the payment being pointed at an order later.
+  const [paymentId, setPaymentId] = useState('')
   const [paymentDate,      setPaymentDate]      = useState('')
 
   // Dates
@@ -308,6 +312,25 @@ export function NewOrderPage() {
   }
 
   // ── Fetch existing order when editing ────────────────────────────────────
+  // Payments available to attach. Unattached ones come first, because those are
+  // almost always the one being looked for; already-attached payments stay
+  // selectable so a payment covering several orders can be picked more than
+  // once, which the combined-billing jobs need.
+  const { data: paymentsData } = useQuery({
+    queryKey: ['selectable-payments'],
+    queryFn:  () => api.get('/payments', { params: { page: 1, limit: 500 } }).then(r => r.data.data?.rows ?? []),
+    staleTime: 30_000,
+  })
+  const selectablePayments = useMemo(() => {
+    const list: any[] = Array.isArray(paymentsData) ? paymentsData : []
+    return [...list].sort((a, b) => {
+      const aFree = a.order_number ? 1 : 0
+      const bFree = b.order_number ? 1 : 0
+      if (aFree !== bFree) return aFree - bFree
+      return String(b.payment_date || '').localeCompare(String(a.payment_date || ''))
+    })
+  }, [paymentsData])
+
   const { data: existingOrder } = useQuery({
     queryKey: ['edit-order', editOrderId],
     queryFn:  () => api.get(`/orders/${editOrderId}`).then(r => r.data.data),
@@ -712,6 +735,7 @@ export function NewOrderPage() {
       payment_status:   paymentStatus,
       amount_paid:      Number(amountPaid) || 0,
       payment_reference: paymentReference || null,
+      payment_id:       paymentId || null,
       payment_date:     paymentDate || null,
       currency:         currency,
       rush_services:    rushServices,
@@ -763,6 +787,13 @@ export function NewOrderPage() {
 
   const handleSave = (_asDraft = false) => {
     if (!customerId) { toast.error('Please select a customer'); return }
+    // Required on a new order only. Editing an existing one must not demand a
+    // payment it never had, and the invoice→order conversion does not come
+    // through this form at all.
+    if (!editOrderId && !paymentId) {
+      toast.error('Add the payment for this sales order first, then select it here')
+      return
+    }
     const activeItems = orderType === 'apparel' ? apparel : orderType === 'gangsheet' ? gangsheet : dtf
     if (activeItems.length > 0) {
       const itemErr = validateItems()
@@ -1329,6 +1360,44 @@ export function NewOrderPage() {
                   <option value="GBP">GBP - British Pound</option>
                   <option value="AUD">AUD - Australian Dollar</option>
                 </select>
+              </div>
+
+              <div className="no-payment-field">
+                <label className="no-payment-label">
+                  Payment <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <select
+                  className="no-info-select"
+                  value={paymentId}
+                  onChange={e => {
+                    const id = e.target.value
+                    setPaymentId(id)
+                    // Carry the payment's own details onto the order so the two
+                    // never disagree about how or when it was paid.
+                    const chosen = selectablePayments.find(p => p.id === id)
+                    if (chosen) {
+                      if (chosen.payment_method) setPaymentMethod(normalizePaymentMethod(chosen.payment_method))
+                      if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
+                      if (chosen.payment_number) setPaymentReference(chosen.payment_number)
+                      setAmountPaid(Number(chosen.amount) || 0)
+                    }
+                  }}
+                >
+                  <option value="">— Select the payment for this order —</option>
+                  {selectablePayments.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
+                        p.customer_name, `$${Number(p.amount || 0).toFixed(2)}`,
+                        p.order_number ? `(already on ${p.order_number})` : null]
+                        .filter(Boolean).join('  ·  ')}
+                    </option>
+                  ))}
+                </select>
+                {!paymentId && (
+                  <small style={{ color: '#6b7280', fontSize: 11.5 }}>
+                    Record the payment first, then pick it here.
+                  </small>
+                )}
               </div>
 
               <div className="no-payment-field">

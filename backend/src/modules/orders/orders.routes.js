@@ -102,6 +102,10 @@ const headerFields = {
   payment_status:   z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
   amount_paid:      z.number().nonnegative().optional(),
   payment_reference: z.string().max(150).optional().nullable(),
+  // The payment this order is being raised against. The order form requires it;
+  // it stays optional here because the invoice→order conversion and the CSV
+  // importer create orders with no payment in hand.
+  payment_id:       z.string().uuid().optional().nullable(),
   payment_date:     z.string().optional().nullable(),
   currency:         z.string().max(3).optional(),
   rush_services:    z.number().nonnegative().default(0),

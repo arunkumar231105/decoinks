@@ -50,13 +50,6 @@ export function NewPaymentPage() {
         id: String(c.id), label: String(c.display_name || c.name || '—'),
       }))),
   })
-  const { data: orders = [] } = useQuery<Option[]>({
-    queryKey: ['payment-orders'],
-    queryFn: () => api.get('/orders', { params: { page: 1, limit: 1000 } })
-      .then(r => (r.data.data?.rows ?? r.data.data ?? []).map((o: Record<string, unknown>) => ({
-        id: String(o.id), label: `${o.order_number} — ${o.customer_name || o.shipping_name || ''}`.trim(),
-      }))),
-  })
 
   // The company's own receiving accounts — a lookup, so a renamed account
   // updates everywhere at once.
@@ -110,8 +103,6 @@ export function NewPaymentPage() {
     { order_id: '', allocated_amount: '' },
   ])
   const allocatedTotal = allocations.reduce((sum, a) => sum + (Number(a.allocated_amount) || 0), 0)
-  const setAlloc = (i: number, patch: Partial<{ order_id: string; allocated_amount: string }>) =>
-    setAllocations(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
 
   const save = async () => {
     if (!(totalAmount > 0)) return toast.error('Enter an amount greater than zero')
@@ -249,32 +240,11 @@ export function NewPaymentPage() {
                 {customers.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </div>
-            <div className="al-field">
-              <label>Applied To (orders)</label>
-              {allocations.map((row, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 32px', gap: 8, marginBottom: 6 }}>
-                  <select className="al-input" value={row.order_id}
-                          onChange={e => setAlloc(i, { order_id: e.target.value })}>
-                    <option value="">— Select order —</option>
-                    {orders.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </select>
-                  <input className="al-input" type="number" placeholder="0.00" value={row.allocated_amount}
-                         onChange={e => setAlloc(i, { allocated_amount: e.target.value })} />
-                  <button type="button" aria-label="Remove"
-                          onClick={() => setAllocations(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)}
-                          style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 6, cursor: 'pointer', color: '#dc2626' }}>×</button>
-                </div>
-              ))}
-              <button type="button" className="lb-action-btn" style={{ fontSize: 12, padding: '5px 10px' }}
-                      onClick={() => setAllocations(rows => [...rows, { order_id: '', allocated_amount: '' }])}>
-                + Add another order
-              </button>
-              <p style={{ fontSize: 11.5, margin: '6px 0 0',
-                          color: allocatedTotal > totalAmount ? '#dc2626' : '#6b7280' }}>
-                Applied ${allocatedTotal.toFixed(2)} of ${totalAmount.toFixed(2)}
-                {allocatedTotal > totalAmount ? ' — more than the payment total' : ''}
-              </p>
-            </div>
+            {/* The sales order is chosen from the ORDER form, not here. Money
+                lands before the order is keyed in, so the order is raised
+                against an existing payment and links itself on save. The
+                order_id and allocation columns are untouched — only this
+                picker is gone, so nothing already linked is affected. */}
             <div className="al-field"><label>Notes</label>
               <textarea className="al-textarea" rows={4} value={form.notes}
                 onChange={e => set('notes', e.target.value)} placeholder="Any notes about this payment…" />
