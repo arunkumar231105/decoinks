@@ -43,6 +43,14 @@ const Badge = ({ children }: { children: React.ReactNode }) => <span className={
 const initials = (value: any) => String(value || '?').trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase()
 const PersonCell = ({ name, sub }: { name: any; sub?: any }) => <div className="ew-person"><span>{initials(name)}</span><div><strong>{name || '—'}</strong><small>{sub || '—'}</small></div></div>
 
+// The three real intake groups. Channel alone will not do it — both channels
+// carry apparel — and product type alone will not either.
+const ORDER_GROUPS = [
+  { value: 'TSI — DTF',      channel: 'TSI',  type: 'dtf' },
+  { value: 'TSI — Apparel',  channel: 'TSI',  type: 'apparel' },
+  { value: 'DIGI — Apparel', channel: 'DIGI', type: 'apparel' },
+]
+
 const common = {
   empty: (r: AnyRow, ...keys: string[]) => pick(r, ...keys) ?? '—',
   status: (r: AnyRow) => <Badge>{titleCase(r.status)}</Badge>,
@@ -219,10 +227,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [customer, setCustomer] = useState('All')
   const [product, setProduct] = useState('All')
   const [source, setSource] = useState('All')
-  // Orders only: which route the order arrived by, and whether the record has
-  // been sealed after reconciliation.
-  const [channel, setChannel] = useState('All')
-  const [locked, setLocked] = useState('All')
+  // Orders only. One control rather than Channel and Product Type separately,
+  // because the useful question is always the pair: TSI's DTF work, TSI's
+  // apparel, or DIGI's apparel.
+  const [group, setGroup] = useState('All')
   const [period, setPeriod] = useState<PeriodKey>('today')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -274,9 +282,11 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (customer !== 'All' && customerOf(row) !== customer) return false
     if (product !== 'All' && productOf(row) !== product) return false
     if (source !== 'All' && sourceOf(row) !== source) return false
-    if (channel !== 'All' && String(row.sales_channel || '') !== channel) return false
-    if (locked === 'Locked' && !row.locked_at) return false
-    if (locked === 'Unlocked' && row.locked_at) return false
+    if (group !== 'All') {
+      const wanted = ORDER_GROUPS.find(g => g.value === group)
+      if (wanted && (String(row.sales_channel || '') !== wanted.channel
+                     || String(row.order_type || '') !== wanted.type)) return false
+    }
     const rawDate = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
     const rowDate = rawDate ? String(rawDate).slice(0, 10) : ''
     if ((periodRangeMemo[0] || periodRangeMemo[1]) && !rowDate) return false
@@ -318,7 +328,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
   const sources = useMemo(() => unique(allRows.map(sourceOf)), [allRows])
-  useEffect(() => { setPage(1) }, [search, status, customer, product, source, channel, locked, period, dateFrom, dateTo, sortBy])
+  useEffect(() => { setPage(1) }, [search, status, customer, product, source, group, period, dateFrom, dateTo, sortBy])
   useEffect(() => { if (page > pages) setPage(pages) }, [page, pages])
 
   const openDetail = async (row: AnyRow) => {
@@ -373,7 +383,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
-    setChannel('All'); setLocked('All')
+    setGroup('All')
     setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setPage(1)
   }
 
@@ -421,8 +431,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Customer / Vendor</span><select value={customer} onChange={e => setCustomer(e.target.value)}><option>All</option>{customers.map(v => <option key={v}>{v}</option>)}</select></label>
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
-        {kind === 'orders' && <label><span>Channel</span><select value={channel} onChange={e => setChannel(e.target.value)}><option>All</option><option value="TSI">TSI</option><option value="DIGI">DIGI</option></select></label>}
-        {kind === 'orders' && <label><span>Locked</span><select value={locked} onChange={e => setLocked(e.target.value)}><option>All</option><option value="Locked">Locked</option><option value="Unlocked">Unlocked</option></select></label>}
+        {kind === 'orders' && <label><span>Channel</span><select value={group} onChange={e => setGroup(e.target.value)}><option>All</option>{ORDER_GROUPS.map(g => <option value={g.value} key={g.value}>{g.value}</option>)}</select></label>}
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
         <label><span>Sort By</span><select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}>
           <option value="date_desc">Date: newest first</option>
