@@ -1085,7 +1085,7 @@ export function NewInvoicePage() {
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>
-                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { unitPrice: +e.target.value })} />
+                                <input type="number" min={0} step="any" className="ni-price-input" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparelItem(row.id, { unitPrice: +e.target.value })} />
                               </div>
                             )}
                           </td>
@@ -1169,7 +1169,7 @@ export function NewInvoicePage() {
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>
-                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.pricePerSheet} onChange={e => updateGangsheetItem(row.id, { pricePerSheet: +e.target.value })} />
+                                <input type="number" min={0} step="any" className="ni-price-input" value={row.pricePerSheet} onChange={e => updateGangsheetItem(row.id, { pricePerSheet: +e.target.value })} />
                               </div>
                             )}
                           </td>
@@ -1234,7 +1234,7 @@ export function NewInvoicePage() {
                             ) : (
                               <div className="ni-price-cell">
                                 <span>$</span>
-                                <input type="number" min={0} step={0.01} className="ni-price-input" value={row.unitPrice} onChange={e => updateTransferItem(row.id, { unitPrice: +e.target.value })} />
+                                <input type="number" min={0} step="any" className="ni-price-input" value={row.unitPrice} onChange={e => updateTransferItem(row.id, { unitPrice: +e.target.value })} />
                               </div>
                             )}
                           </td>

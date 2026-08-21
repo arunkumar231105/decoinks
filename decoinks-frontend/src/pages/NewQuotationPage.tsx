@@ -1551,7 +1551,9 @@ export function NewQuotationPage() {
     const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
     const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
     const packagingCharge = otherCharges.find(c => c.key === 'packaging')
-    const itemsSubtotal   = allItems.reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0)
+    // Round each line the way it is billed and printed, then add them up, so
+    // this matches what the server stores and what the page shows.
+    const itemsSubtotal   = allItems.reduce((s, i) => s + +(Number(i.qty) * Number(i.unit_price)).toFixed(2), 0)
     const estimatedShipping = shippingCharge?.enabled ? (shippingCharge.quotedCost || 0) : 0
     // The discount is entered as a quoted $ amount. Convert it to a % of the SAME
     // base the backend applies it to (items + shipping), so the entered $ is the $

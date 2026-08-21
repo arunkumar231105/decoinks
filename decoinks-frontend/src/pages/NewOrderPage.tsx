@@ -1032,7 +1032,7 @@ export function NewOrderPage() {
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
-                              <input type="number" min={0} step={0.01} value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { unitPrice: +e.target.value })} />
+                              <input type="number" min={0} step="any" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateApparel(row.id, { unitPrice: +e.target.value })} />
                             </div>
                           </td>
                           <td className="no-td-amount">${fmt(row.unitPrice * row.qty)}</td>
@@ -1090,7 +1090,7 @@ export function NewOrderPage() {
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
-                              <input type="number" min={0} step={0.01} value={row.pricePerSheet} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { pricePerSheet: +e.target.value })} />
+                              <input type="number" min={0} step="any" value={row.pricePerSheet} onFocus={e => e.target.select()} onChange={e => updateGangsheet(row.id, { pricePerSheet: +e.target.value })} />
                             </div>
                           </td>
                           <td className="no-td-amount">${fmt(row.pricePerSheet * row.qty)}</td>
@@ -1171,7 +1171,7 @@ export function NewOrderPage() {
                           <td>
                             <div className="no-price-input">
                               <span>$</span>
-                              <input type="number" min={0} step={0.01} value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateDtf(row.id, { unitPrice: +e.target.value })} />
+                              <input type="number" min={0} step="any" value={row.unitPrice} onFocus={e => e.target.select()} onChange={e => updateDtf(row.id, { unitPrice: +e.target.value })} />
                             </div>
                           </td>
                           <td className="no-td-amount">${fmt(row.unitPrice * row.qty)}</td>
