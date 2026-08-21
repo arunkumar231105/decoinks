@@ -56,6 +56,21 @@ const common = {
   status: (r: AnyRow) => <Badge>{titleCase(r.status)}</Badge>,
 }
 
+// Filters survive leaving the page. Edit an order, save, come back, and the
+// list should be where it was left — not reset to Today with every filter
+// cleared, which meant re-picking them after every single edit. Kept per kind
+// in sessionStorage so orders and invoices remember separately, and so it
+// lasts the working session without becoming a permanent setting.
+type SavedFilters = {
+  search: string; status: string; customer: string; product: string; source: string
+  group: string; period: PeriodKey; dateFrom: string; dateTo: string; sortBy: string
+  page: number; pageSize: number
+}
+const filtersKey = (kind: string) => `ew-filters:${kind}`
+const readFilters = (kind: string): Partial<SavedFilters> => {
+  try { return JSON.parse(sessionStorage.getItem(filtersKey(kind)) || '{}') } catch { return {} }
+}
+
 const CONFIG: Record<EnterpriseWorkflowKind, {
   title: string; subtitle: string; api: string; newPath: string; newLabel: string; search: string
   numberKey: string; dateKey: string; columns: Column[]; kpis: Kpi[]; statuses: string[]
@@ -218,25 +233,26 @@ const sourceOf = (r: AnyRow) => String(pick(r, 'source', 'customer_source', 'sen
 export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind }) {
   const config = CONFIG[kind]
   const navigate = useNavigate()
+  const [saved] = useState<Partial<SavedFilters>>(() => readFilters(kind))
   const [allRows, setAllRows] = useState<AnyRow[]>([])
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(PAGE_SIZE)
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('All')
-  const [customer, setCustomer] = useState('All')
-  const [product, setProduct] = useState('All')
-  const [source, setSource] = useState('All')
+  const [pageSize, setPageSize] = useState(saved.pageSize ?? PAGE_SIZE)
+  const [search, setSearch] = useState(saved.search ?? '')
+  const [status, setStatus] = useState(saved.status ?? 'All')
+  const [customer, setCustomer] = useState(saved.customer ?? 'All')
+  const [product, setProduct] = useState(saved.product ?? 'All')
+  const [source, setSource] = useState(saved.source ?? 'All')
   // Orders only. One control rather than Channel and Product Type separately,
   // because the useful question is always the pair: TSI's DTF work, TSI's
   // apparel, or DIGI's apparel.
-  const [group, setGroup] = useState('All')
-  const [period, setPeriod] = useState<PeriodKey>('today')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [group, setGroup] = useState(saved.group ?? 'All')
+  const [period, setPeriod] = useState<PeriodKey>(saved.period ?? 'today')
+  const [dateFrom, setDateFrom] = useState(saved.dateFrom ?? '')
+  const [dateTo, setDateTo] = useState(saved.dateTo ?? '')
   // Newest first by date is the default the owner asked for; ordering by the
   // document series is one pick away for when the list should read 101, 100, 99…
   type SortKey = 'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'
-  const [sortBy, setSortBy] = useState<SortKey>('date_desc')
+  const [sortBy, setSortBy] = useState<SortKey>((saved.sortBy as SortKey) ?? 'date_desc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<AnyRow | null>(null)
   const [detail, setDetail] = useState<AnyRow | null>(null)
@@ -256,10 +272,32 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     finally { setLoading(false) }
   }
 
+  // Persist the current view so returning from an edit lands back on it.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(filtersKey(kind), JSON.stringify({
+        search, status, customer, product, source, group, period, dateFrom, dateTo, sortBy, pageSize,
+      }))
+    } catch { /* private browsing or a full quota — filters just will not persist */ }
+  }, [kind, search, status, customer, product, source, group, period, dateFrom, dateTo, sortBy, pageSize])
+
   useEffect(() => { load() }, [kind])
+  // If the component is reused across kinds rather than remounted, the state
+  // above still holds the previous kind's view. Load the new kind's own saved
+  // filters, so Orders and Invoices never inherit each other's — and so the
+  // persist effect below does not write one kind's view under the other's key.
+  const mountedKind = useRef(kind)
   useEffect(() => {
     setPage(1); setActive(null); setDetail(null); setSelected(new Set())
     setVisibleColumns(new Set(config.columns.map(c => c.key)))
+    if (mountedKind.current === kind) return          // first run: lazy state already did it
+    mountedKind.current = kind
+    const next = readFilters(kind)
+    setSearch(next.search ?? ''); setStatus(next.status ?? 'All')
+    setCustomer(next.customer ?? 'All'); setProduct(next.product ?? 'All')
+    setSource(next.source ?? 'All'); setGroup(next.group ?? 'All')
+    setPeriod(next.period ?? 'today'); setDateFrom(next.dateFrom ?? ''); setDateTo(next.dateTo ?? '')
+    setSortBy((next.sortBy as SortKey) ?? 'date_desc'); setPageSize(next.pageSize ?? PAGE_SIZE)
   }, [kind])
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -392,6 +430,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
     setGroup('All')
     setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setPage(1)
+    try { sessionStorage.removeItem(filtersKey(kind)) } catch { /* nothing to forget */ }
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
