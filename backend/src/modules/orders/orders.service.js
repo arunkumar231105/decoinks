@@ -3,7 +3,6 @@ const { getNextNumber } = require('../../utils/counter')
 const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
-const { assertNotLocked } = require('../../utils/recordLock')
 
 function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct = 0) {
   let itemsTotal = 0
@@ -250,7 +249,7 @@ async function getItemsForOrder(orderId, orderType) {
   return rows
 }
 
-async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', supplier_id = '', date_from = '', date_to = '', search = '', sales_channel = '', locked = '' }) {
+async function list({ page = 1, limit = 10, status = '', order_type = '', customer_id = '', supplier_id = '', date_from = '', date_to = '', search = '', sales_channel = '' }) {
   const offset = (page - 1) * limit
   const conditions = ['o.deleted_at IS NULL']
   const params = []
@@ -263,9 +262,6 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
   if (date_to) { params.push(date_to); conditions.push(`o.order_date <= $${params.length}`) }
   // Which route the order came in by: the TSI sheets, or DIGI's direct API.
   if (sales_channel) { params.push(sales_channel); conditions.push(`o.sales_channel = $${params.length}`) }
-  // 'yes' / 'no' rather than a boolean, so an absent filter stays absent.
-  if (locked === 'yes') conditions.push('o.locked_at IS NOT NULL')
-  if (locked === 'no')  conditions.push('o.locked_at IS NULL')
   if (search) {
     params.push(`%${search}%`)
     conditions.push(`(o.order_number ILIKE $${params.length} OR o.source_po_number ILIKE $${params.length} OR o.contact_name ILIKE $${params.length} OR cust.name ILIKE $${params.length})`)
@@ -621,7 +617,6 @@ async function create(data) {
 
 async function update(id, data, actorId) {
   const existing = await getById(id)
-  assertNotLocked(existing, 'sales order', existing?.order_number)
   const items     = data.items || []
   const order_type  = existing.order_type   // order_type is immutable after creation
   const rush        = data.rush_services    ?? existing.rush_services

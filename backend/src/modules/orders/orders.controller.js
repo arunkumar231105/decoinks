@@ -5,9 +5,9 @@ const { success, created, paginated } = require('../../utils/response')
 async function list(req, res, next) {
   try {
     const { page = 1, limit = 10, status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '',
-            sales_channel = '', locked = '' } = req.query
+            sales_channel = '' } = req.query
     const { rows, total } = await service.list({ page: +page, limit: +limit, status, order_type, customer_id,
-                                                 date_from, date_to, search, sales_channel, locked })
+                                                 date_from, date_to, search, sales_channel })
     return paginated(res, rows, total, +page, +limit)
   } catch (err) { next(err) }
 }
@@ -111,9 +111,9 @@ async function orderCsvTemplate(_req, res) {
 async function exportCsv(req, res, next) {
   try {
     const { status = '', order_type = '', customer_id = '', date_from = '', date_to = '', search = '',
-            sales_channel = '', locked = '' } = req.query
+            sales_channel = '' } = req.query
     const { rows } = await service.list({ page: 1, limit: 10000, status, order_type, customer_id,
-                                          date_from, date_to, search, sales_channel, locked })
+                                          date_from, date_to, search, sales_channel })
     const columns = [
     ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
     ['Due Date', 'due_date'], ['Status', 'export_status'],
