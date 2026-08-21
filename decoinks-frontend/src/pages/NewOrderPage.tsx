@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
+import { ChevronDown, Copy, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -59,7 +59,7 @@ const parseDimensions = (value?: string | null) => {
   const match = String(value ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
   return { width: match?.[1] ?? '', height: match?.[2] ?? '' }
 }
-const PAYMENT_TERMS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
+const PAYMENT_TERMS = ['Advance', 'Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
 const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }> = {
@@ -630,6 +630,17 @@ export function NewOrderPage() {
   // â"€â"€ Table helpers â"€â"€
   const updateApparel  = (id: string, p: Partial<ApparelItem>)   => setApparel(prev => prev.map(r => r.id === id ? { ...r, ...p } : r))
   const removeApparel  = (id: string) => setApparel(prev => prev.filter(r => r.id !== id))
+  // Adding the same style a second time should not mean going back through the
+  // catalogue search. This copies the row in place — style, colour, size,
+  // artwork, price, images and the catalogue ids behind them — and drops the
+  // copy directly beneath the original, so only the field that differs needs
+  // touching. A fresh id keeps React's row identity and the delete button
+  // working per row.
+  const duplicateApparel = (id: string) => setApparel(prev => {
+    const i = prev.findIndex(r => r.id === id)
+    if (i === -1) return prev
+    return [...prev.slice(0, i + 1), { ...prev[i], id: uid() }, ...prev.slice(i + 1)]
+  })
   const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])
   const selectOrderApparelColor = (item: ApparelItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)
@@ -1027,6 +1038,9 @@ export function NewOrderPage() {
                           <td className="no-td-amount">${fmt(row.unitPrice * row.qty)}</td>
                           <td>{orderUnitWeightG(row) ? `${(orderUnitWeightG(row) * row.qty / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                           <td>
+                            <button className="no-action-icon-btn" onClick={() => duplicateApparel(row.id)} title="Add another of this item">
+                              <Copy size={13} />
+                            </button>
                             <button className="no-action-icon-btn no-delete-icon" onClick={() => removeApparel(row.id)} title="Remove row">
                               <Trash2 size={13} />
                             </button>

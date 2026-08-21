@@ -97,7 +97,10 @@ const headerFields = {
   invoice_id:         z.string().uuid().optional().nullable(),
   order_date:       isoDate.optional().nullable(),
   due_date:         isoDate.optional().nullable(),
-  payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']).optional(),
+  // 'Advance' is the term almost every order here runs on — the TSI and DIGI
+  // sheets both say so — and 114 of 125 stored orders carry it. It was missing
+  // from this list, so opening any of them and saving was rejected as invalid.
+  payment_terms:    z.enum(['Advance', 'Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']).optional(),
   payment_method:   z.string().max(50).optional().nullable(),
   payment_status:   z.enum(['Unpaid', 'Partial', 'Paid', 'Refunded']).optional(),
   amount_paid:      z.number().nonnegative().optional(),

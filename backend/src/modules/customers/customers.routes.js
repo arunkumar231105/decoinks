@@ -59,7 +59,7 @@ const customerFields = {
   tier:             z.string().optional().nullable(),
   customer_type:    z.enum(['business', 'individual', 'non_profit']).optional().nullable(),
   job_title:        z.string().max(120).optional().nullable(),
-  payment_terms:    z.enum(['Due on Receipt', 'Net 15', 'Net 30', 'Net 60']).optional().nullable(),
+  payment_terms:    z.enum(['Advance', 'Due on Receipt', 'Net 15', 'Net 30', 'Net 60']).optional().nullable(),
   credit_limit:     z.number().nonnegative().optional().nullable(),
   assigned_agent_id: z.string().uuid().optional().nullable(),
   addresses: z.array(z.object({
