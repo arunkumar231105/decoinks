@@ -418,7 +418,9 @@ async function create(data) {
   const today = new Date().toISOString().split('T')[0]
   const resolvedOrderDate = order_date || today
   const resolvedDueDate = due_date || resolvedOrderDate
-  let totals = calcTotals(items, order_type, rush_services, shipping_charges, discount_pct, tax_pct)
+  let resolvedShipping = Number(shipping_charges) || 0
+  let resolvedRush     = Number(rush_services) || 0
+  let totals = calcTotals(items, order_type, resolvedRush, resolvedShipping, discount_pct, tax_pct)
   let resolvedCustomerId = customer_id || null
   let resolvedSupplierId = supplier_id || null
   let invoice = null
@@ -426,6 +428,7 @@ async function create(data) {
   if (invoice_id) {
     const { rows: invRows } = await query(
       `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.customer_id, i.supplier_id,
+              i.shipping_charges, i.rush_services,
               i.customer_name, i.billing_email, i.contact_number, i.shipping_address,
               existing_order.id AS existing_order_id
        FROM invoices i
@@ -454,6 +457,11 @@ async function create(data) {
       total:        Number(invoice.total),
       items_total:  Number(invoice.subtotal),
     }
+    // Carry the shipping and rush lines too. The invoice total already includes
+    // them, so without this the order reconciles to nothing: a $125.16 total
+    // sitting above a $0.00 shipping row.
+    resolvedShipping = Number(invoice.shipping_charges || 0)
+    resolvedRush     = Number(invoice.rush_services || 0)
     if (!resolvedCustomerId) resolvedCustomerId = invoice.customer_id
     if (!resolvedSupplierId) resolvedSupplierId = invoice.supplier_id
   }
@@ -524,7 +532,7 @@ async function create(data) {
         resolvedOrderDate, resolvedDueDate,
         payment_terms || 'Due on Receipt', payment_method || null, effectiveStatus, currency,
         effectivePaid, payment_reference || null, payment_date || null,
-        rush_services, shipping_charges, totals.subtotal, discount_pct, totals.discount_amt,
+        resolvedRush, resolvedShipping, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
         resolvedContactName, resolvedContactEmail, resolvedContactPhone,
         resolvedShippingName, resolvedShippingAddress,

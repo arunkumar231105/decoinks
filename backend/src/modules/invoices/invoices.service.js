@@ -6,8 +6,13 @@ const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function calcTotal(subtotal, discount_amt, tax_amt = 0) {
-  return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)).toFixed(2)
+// Shipping and rush are billed on top of the goods, exactly as the quotation
+// and the purchase order compute them. Leaving them out here is what made a
+// $125 quote arrive as a $110.16 invoice — the shipping was stored on the row
+// and then ignored by the total, and the sales order inherited that total.
+function calcTotal(subtotal, discount_amt, tax_amt = 0, shipping_charges = 0, rush_charges = 0) {
+  return +(Number(subtotal) - Number(discount_amt) + Number(tax_amt)
+           + Number(shipping_charges || 0) + Number(rush_charges || 0)).toFixed(2)
 }
 
 function assertPositiveInvoice(total, totalQty) {
@@ -329,7 +334,11 @@ async function create(fields_in) {
     if (sRows[0]) resolvedCustomerName = sRows[0].name
   }
 
-  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt)
+  // Same value the INSERTs below store in shipping_charges / rush_charges, so
+  // the total can never drift from the line it is printed next to.
+  const resolvedShipping = Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0) || 0
+  const resolvedRush     = Number(fields.rush_charges) || 0
+  const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, resolvedShipping, resolvedRush)
   const totalQty    = await resolveInvoiceQuantity(items, quote_id, order_id)
   assertPositiveInvoice(total, totalQty)
   const balance_due = total
@@ -770,7 +779,7 @@ async function update(id, fields) {
   }
   if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
 
-  const financialFields = ['subtotal', 'discount_amt', 'tax_amt']
+  const financialFields = ['subtotal', 'discount_amt', 'tax_amt', 'shipping_charges', 'rush_charges']
   if (financialFields.some((f) => fields[f] !== undefined)) {
     const existing = await getById(id)
 
@@ -782,7 +791,9 @@ async function update(id, fields) {
     const newSubtotal    = fields.subtotal     !== undefined ? Number(fields.subtotal)     : Number(existing.subtotal)
     const newDiscountAmt = fields.discount_amt !== undefined ? Number(fields.discount_amt) : Number(existing.discount_amt)
     const newTaxAmt      = fields.tax_amt      !== undefined ? Number(fields.tax_amt)      : Number(existing.tax_amt)
-    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt)
+    const newShipping    = fields.shipping_charges !== undefined ? Number(fields.shipping_charges) : Number(existing.shipping_charges || 0)
+    const newRush        = fields.rush_charges     !== undefined ? Number(fields.rush_charges)     : Number(existing.rush_charges || 0)
+    const newTotal       = calcTotal(newSubtotal, newDiscountAmt, newTaxAmt, newShipping, newRush)
     if (!Number.isFinite(newTotal) || newTotal <= 0) {
       throw Object.assign(new Error('Invoice total must be greater than zero'), { statusCode: 422 })
     }
@@ -885,9 +896,10 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
        (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
         status, payment_status, amount_paid,
         subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+        shipping_charges, rush_services,
         payment_terms, payment_method, currency, contact_name, contact_email,
         contact_phone, shipping_name, shipping_address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
@@ -898,6 +910,7 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
       invoice.customer_name, invoice.billing_email, invoice.contact_number,
       invoice.customer_name, invoice.shipping_address, invoice.notes,
       actorId,
+      Number(invoice.shipping_charges || 0), Number(invoice.rush_services || 0),
     ]
   )
   const orderId = ordRows[0].id
@@ -969,9 +982,10 @@ async function updateStatus(id, status, actor) {
                (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
                 status, payment_status, amount_paid,
                 subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
+                shipping_charges, rush_services,
                 payment_terms, payment_method, currency, contact_name, contact_email,
                 contact_phone, shipping_name, shipping_address, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
               ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
@@ -982,6 +996,7 @@ async function updateStatus(id, status, actor) {
               invoice.customer_name, invoice.billing_email, invoice.contact_number,
               invoice.customer_name, invoice.shipping_address, invoice.notes,
               actorId,
+              Number(invoice.shipping_charges || 0), Number(invoice.rush_services || 0),
             ]
           )
           autoOrderId = ordRows[0].id
