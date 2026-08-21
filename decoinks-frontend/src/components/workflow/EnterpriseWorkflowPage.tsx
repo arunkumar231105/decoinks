@@ -292,7 +292,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (periodRangeMemo[0] && rowDate < periodRangeMemo[0]) return false
     if (periodRangeMemo[1] && rowDate > periodRangeMemo[1]) return false
     return true
-  }), [allRows, search, status, customer, product, source, periodRangeMemo, config.dateKey])
+  }), [allRows, search, status, customer, product, source, group, periodRangeMemo, config.dateKey])
 
   const dateOf = (row: AnyRow) => {
     const raw = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
