@@ -72,6 +72,8 @@ const statusSchema = z.object({
 
 router.get('/',             controller.list)
 router.get('/stats',        controller.stats)
+// /export must stay above /:id — otherwise the id route matches "export".
+router.get('/export',       controller.exportCsv)
 router.get('/:id',          controller.getOne)
 router.post('/',            validate(createSchema), controller.create)
 router.put('/:id',          validate(updateSchema), controller.update)

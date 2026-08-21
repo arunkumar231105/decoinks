@@ -2,6 +2,7 @@ const fs = require('fs')
 const { parse } = require('csv-parse/sync')
 const service = require('./shipments.service')
 const { success, created, paginated } = require('../../utils/response')
+const { sendCsv } = require('../../utils/csvExport')
 
 async function list(req, res, next) {
   try {
@@ -86,4 +87,32 @@ async function voidLabel(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, getOne, stats, create, update, updateStatus, refreshTracking, trackPreview, importCsv, getRates, buyLabel, voidLabel, remove }
+// GET /export — the full filtered result set as CSV with readable headers,
+// matching the orders / invoices / payments exports rather than dumping raw
+// column names for whatever happens to be on screen.
+async function exportCsv(req, res, next) {
+  try {
+    const { status = '', search = '' } = req.query
+    const { rows } = await service.list({ page: 1, limit: 10000, status, search })
+    const columns = [
+      ['Shipment No', 'shipment_number'], ['Ship Date', 'ship_date'],
+      ['Status', 'export_status'], ['Tracking Status', 'tracking_status'],
+      ['Carrier', 'carrier'], ['Service Type', 'service_type'],
+      ['Tracking No', 'tracking_number'],
+      ['Customer Name', 'customer_name'], ['Recipient Name', 'recipient_name'],
+      ['Ship To Address', 'export_address'], ['Ship To City', 'ship_to_city'],
+      ['Ship To State', 'ship_to_state'], ['Ship To Postal Code', 'ship_to_postal_code'],
+      ['Order No', 'order_number'], ['PO No', 'po_number'],
+      ['Orders On Parcel', 'allocated_count'],
+      ['Supplier', 'supplier_name'], ['Ship Source', 'ship_source'],
+      ['Weight (lbs)', 'weight_lbs'], ['Shipping Cost', 'shipping_cost'],
+      ['Estimated Delivery', 'estimated_delivery'], ['Original ETA', 'original_eta'],
+      ['Delivered Date', 'delivered_date'],
+      ['Last Scan City', 'last_scan_city'], ['Last Scan State', 'last_scan_state'],
+      ['Is Return', 'is_return'], ['Notes', 'notes'], ['Created At', 'created_at'],
+    ]
+    return sendCsv(res, 'shipments', columns, rows)
+  } catch (err) { next(err) }
+}
+
+module.exports = { list, getOne, stats, create, update, updateStatus, refreshTracking, trackPreview, importCsv, getRates, buyLabel, voidLabel, remove, exportCsv }

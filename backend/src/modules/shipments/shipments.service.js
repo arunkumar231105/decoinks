@@ -2,13 +2,21 @@ const { query } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
 const shippo = require('../../utils/shippo')
 
-async function list({ page = 1, limit = 10, status = '' }) {
+async function list({ page = 1, limit = 10, status = '', search = '' }) {
   const offset = (page - 1) * limit
   const params = []
   // Soft-deleted shipments never appear in the list; hard delete stays possible
   // through the remove() path but is now discouraged.
   const conditions = ['s.deleted_at IS NULL']
   if (status) { params.push(status); conditions.push(`s.status = $${params.length}`) }
+  // Optional server-side search, used by the CSV export so it can cover the
+  // whole result set. The list screen still filters on the client.
+  if (search) {
+    params.push(`%${search}%`)
+    const p = `$${params.length}`
+    conditions.push(`(s.shipment_number ILIKE ${p} OR s.tracking_number ILIKE ${p}
+      OR s.customer_name ILIKE ${p} OR s.recipient_name ILIKE ${p} OR s.carrier ILIKE ${p})`)
+  }
   const where = 'WHERE ' + conditions.join(' AND ')
 
   const countRes = await query(`SELECT COUNT(*) FROM shipments s ${where}`, params)
@@ -19,7 +27,11 @@ async function list({ page = 1, limit = 10, status = '' }) {
     `SELECT s.*, c.name AS supplier_name, o.order_number,
             po.po_number, po.shipping_address AS po_shipping_address,
             alloc.allocated_count,
-            COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name
+            COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name,
+            -- The carrier's own status wins when Shippo has reported one; the
+            -- internal enum is the fallback. Same rule the stats cards use.
+            COALESCE(NULLIF(BTRIM(s.tracking_status), ''), s.status::text) AS export_status,
+            COALESCE(NULLIF(BTRIM(s.address), ''), po.shipping_address) AS export_address
      FROM shipments s
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id

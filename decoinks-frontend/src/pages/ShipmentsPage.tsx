@@ -227,6 +227,27 @@ export function ShipmentsPage() {
     needsAttention: allShipments.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
   }
 
+  // Server-side export: downloads the FULL filtered result set as CSV with
+  // readable column headers, the same way every other module's Export works,
+  // rather than only the rows currently rendered.
+  const exportAll = async () => {
+    try {
+      const res = await api.get('/shipments/export', {
+        params: { search, status: statusFilter === 'All' ? '' : statusFilter },
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(res.data as Blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `shipments-${new Date().toISOString().slice(0, 10)}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Fall back to exporting what is on screen if the endpoint is unavailable.
+      downloadCsv('shipments.csv', filtered as unknown as Record<string, unknown>[])
+    }
+  }
+
   return (
     <div className="sh-page">
 
@@ -256,6 +277,9 @@ export function ShipmentsPage() {
         <button className="lb-action-btn" onClick={() => setShowImport(true)}>
           <Upload size={13} /> Import CSV
         </button>
+        <button className="lb-action-btn" onClick={exportAll}>
+          <Download size={13} /> Export
+        </button>
         <button
           className="lb-action-btn"
           onClick={() => refreshAllMutation.mutate()}
@@ -274,10 +298,6 @@ export function ShipmentsPage() {
           <span>Apr 1, 2026 - May 3, 2026</span>
           <ChevronDown size={12} />
         </div>
-        <button className="lb-action-btn sh-export-btn" onClick={() => downloadCsv('shipments.csv', filtered as unknown as Record<string, unknown>[])}>
-          <Download size={13} /> Export
-          <ChevronDown size={12} />
-        </button>
       </div>
 
       {/* Stats */}
