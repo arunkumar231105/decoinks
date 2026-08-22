@@ -11,6 +11,7 @@
 #   ./dev-sandbox.sh serve     start the sandbox API on :8001 (production stays on :8000)
 #   ./dev-sandbox.sh test      run the API smoke test against the sandbox
 #   ./dev-sandbox.sh diff      compare sandbox and production schemas
+#   ./dev-sandbox.sh pending   list migrations the sandbox has and production does not
 #   ./dev-sandbox.sh stop      stop the sandbox API
 #   ./dev-sandbox.sh promote   run the same migrations against PRODUCTION (asks first)
 set -euo pipefail
@@ -20,6 +21,7 @@ API=decoinks_backend
 PROD=decoinks_db
 DEV=decoinks_dev
 DEV_URL="postgresql://postgres:decoinks_pass@postgres:5432/${DEV}"
+MIGRATIONS_DIR="$(cd "$(dirname "$0")/../migrations" && pwd)"
 
 psql_dev() { docker exec "$PG" psql -U postgres -d "$DEV" "$@"; }
 psql_prod() { docker exec "$PG" psql -U postgres -d "$PROD" "$@"; }
@@ -37,7 +39,25 @@ case "${1:-}" in
     done
     ;;
   migrate)
-    docker exec "$API" sh -c "DATABASE_URL='${DEV_URL}' node migrations/run.js" | tail -8
+    # Sandbox migrations live in their own folder inside the API container, and
+    # deliberately not in /app/migrations. The container's entrypoint runs every
+    # .sql file in that folder against DATABASE_URL on boot, and on a normal boot
+    # DATABASE_URL is production — so a file left there is applied to production
+    # by the next restart, with nobody asking for it. Keeping unapproved work
+    # here means a restart cannot promote it by accident.
+    for f in "${MIGRATIONS_DIR}"/*.sql; do
+      [ -e "$f" ] || continue
+      docker cp "$f" "$API":/app/sandbox-migrations/ >/dev/null
+    done
+    docker exec "$API" sh -c "cp -f /app/migrations/run.js /app/sandbox-migrations/run.js"
+    docker exec "$API" sh -c "DATABASE_URL='${DEV_URL}' node /app/sandbox-migrations/run.js" | tail -8
+    ;;
+  pending)
+    # What the sandbox has that production has not.
+    docker exec "$PG" sh -c "
+      psql -U postgres -d ${DEV}  -t -A -c \"SELECT filename FROM _migrations ORDER BY 1\" > /tmp/dev.mig
+      psql -U postgres -d ${PROD} -t -A -c \"SELECT filename FROM _migrations ORDER BY 1\" > /tmp/prod.mig
+      comm -23 /tmp/dev.mig /tmp/prod.mig"
     ;;
   serve)
     docker exec -d "$API" sh -c "DATABASE_URL='${DEV_URL}' PORT=8001 node server.js > /tmp/dev-backend.log 2>&1"
