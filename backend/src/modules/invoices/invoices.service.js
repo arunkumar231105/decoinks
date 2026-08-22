@@ -777,7 +777,10 @@ async function update(id, fields) {
       sets.push(`${key} = $${params.length}`)
     }
   }
-  if (!sets.length) throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
+  // Rewriting only the lines is a legitimate edit — the header may be unchanged.
+  if (!sets.length && !Array.isArray(fields.items)) {
+    throw Object.assign(new Error('No fields to update'), { statusCode: 400 })
+  }
 
   const financialFields = ['subtotal', 'discount_amt', 'tax_amt', 'shipping_charges', 'rush_charges']
   if (financialFields.some((f) => fields[f] !== undefined)) {
@@ -817,14 +820,48 @@ async function update(id, fields) {
   }
 
   params.push(id)
-  const { rows } = await query(
-    `UPDATE invoices SET ${sets.join(', ')}, updated_at = NOW()
-     WHERE id = $${params.length}
-     RETURNING *`,
-    params
-  )
-  if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-  return rows[0]
+
+  // Line items, when the caller sends them. update() used to ignore `items`
+  // entirely, so editing an invoice saved the header and silently dropped every
+  // change to the lines — which is why the app offered no Edit at all. The
+  // header and the lines move together in one transaction, so a failure part
+  // way through cannot leave an invoice whose total disagrees with its lines.
+  const rewriteItems = Array.isArray(fields.items)
+  if (!rewriteItems) {
+    const { rows } = await query(
+      `UPDATE invoices SET ${sets.join(', ')}, updated_at = NOW()
+       WHERE id = $${params.length}
+       RETURNING *`,
+      params
+    )
+    if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+    return rows[0]
+  }
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const assignments = sets.length ? `${sets.join(', ')}, updated_at = NOW()` : 'updated_at = NOW()'
+    const { rows } = await client.query(
+      `UPDATE invoices SET ${assignments}
+       WHERE id = $${params.length}
+       RETURNING *`,
+      params
+    )
+    if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+    if (rows[0].status === 'Void') {
+      throw Object.assign(new Error('Cannot edit the items of a voided invoice'), { statusCode: 409 })
+    }
+    await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [id])
+    await writeInvoiceItems(client.query.bind(client), id, { items: fields.items, quote_id: rows[0].quote_id })
+    await client.query('COMMIT')
+    return rows[0]
+  } catch (err) {
+    try { await client.query('ROLLBACK') } catch (_) { /* nothing to roll back */ }
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType) {
@@ -1084,10 +1121,15 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
       newStatus = inv.status === 'Draft' ? 'Sent' : inv.status
     }
 
+    // $3 is used twice — once assigned to the enum column, once compared against
+    // a text literal — so Postgres could not settle on one type for it and threw
+    // "inconsistent types deduced for parameter $3: text versus invoice_status".
+    // Every attempt to record a payment 500'd, which is why an invoice created
+    // from a quotation stayed Draft and unpaid. Both uses are cast explicitly.
     const { rows } = await client.query(
       `UPDATE invoices
-       SET amount_paid = $1, balance_due = $2, status = $3,
-           paid_at = CASE WHEN $3 = 'Paid' AND paid_at IS NULL THEN NOW() ELSE paid_at END,
+       SET amount_paid = $1, balance_due = $2, status = $3::invoice_status,
+           paid_at = CASE WHEN $3::text = 'Paid' AND paid_at IS NULL THEN NOW() ELSE paid_at END,
            updated_at = NOW()
        WHERE id = $4
        RETURNING *`,

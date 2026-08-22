@@ -397,6 +397,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     // /quotes/:id already opens the quotation form for editing; the drawer just
     // never offered it, so a quote could only be edited by typing the URL.
     if (kind === 'quotations') return () => navigate(`/quotes/${row.id}`)
+    // A paid or voided invoice is a settled document; editing it would move
+    // money someone has already received.
+    if (kind === 'invoices') {
+      const settled = ['Paid', 'Partially Paid', 'Void'].includes(String(row.status || ''))
+      return settled ? null : () => navigate('/invoices/new', { state: { editInvoiceId: row.id } })
+    }
     return null
   }
   const toggle = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })

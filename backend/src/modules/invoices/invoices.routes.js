@@ -99,6 +99,9 @@ const updateSchema = z.object({
   shipping_charges: z.number().nonnegative().optional(),
   discount_type:    z.enum(['percentage', 'fixed']).optional(),
   discount_value:   z.number().nonnegative().optional(),
+  // Editing an invoice rewrites its lines; the service replaces them in the
+  // same transaction as the header.
+  items:            z.array(itemSchema).optional(),
 }).strict()
 
 const statusSchema = z.object({

@@ -425,6 +425,7 @@ export function NewInvoicePage() {
 
   // Convert-from-quote context (set when navigated from QuotesListPage)
   const fromQuoteId: string | undefined = (location.state as any)?.fromQuoteId
+  const editInvoiceId: string | undefined = (location.state as any)?.editInvoiceId
 
   // Rates locked from approved quotation
   const [ratesLocked, setRatesLocked] = useState(false)
@@ -484,8 +485,26 @@ export function NewInvoicePage() {
     refetchOnMount: 'always',
   })
 
+  const { data: editingInvoice } = useQuery({
+    queryKey: ['edit-invoice', editInvoiceId],
+    queryFn:  () => api.get(`/invoices/${editInvoiceId}`).then(r => r.data.data ?? r.data),
+    enabled:  !!editInvoiceId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // One hydration path for both. The invoice names its shipping differently and
+  // its status means something else entirely — an Approved *quote* locks rates,
+  // a Paid *invoice* must not — so the status is not carried across.
+  const hydrateFrom = useMemo(() => {
+    if (sourceQuote) return sourceQuote
+    if (!editingInvoice) return undefined
+    return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined }
+  }, [sourceQuote, editingInvoice])
+
   // Pre-populate form fields from quote once data arrives
   useEffect(() => {
+    const sourceQuote = hydrateFrom
     if (!sourceQuote) return
     // Lock rates if the source quote is Approved
     if (sourceQuote.status === 'Approved') {
@@ -559,7 +578,7 @@ export function NewInvoicePage() {
         back_image:  it.back_image  ?? null,
       })))
     }
-  }, [sourceQuote])
+  }, [hydrateFrom])
 
   // Catalog rows saved on quotations contain stable BlankTex IDs. Hydrate the
   // live color/size/SKU choices and product preview without changing snapshots.
@@ -613,7 +632,9 @@ export function NewInvoicePage() {
 
   // Save mutation
   const saveMutation = useMutation({
-    mutationFn: (data: any) => api.post('/invoices', data).then(r => r.data.data ?? r.data),
+    mutationFn: (data: any) => (editInvoiceId
+      ? api.put(`/invoices/${editInvoiceId}`, data)
+      : api.post('/invoices', data)).then(r => r.data.data ?? r.data),
     onSuccess: (inv: any) => {
       // Refresh invoice-related caches so lists, dashboard figures and the
       // converted quote's status reflect the new/updated invoice immediately.
