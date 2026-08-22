@@ -29,10 +29,18 @@ export function useFormDraft<T extends Record<string, unknown>>(
   const storageKey = PREFIX + key
   const [restored, setRestored] = useState(false)
   const hydrated = useRef(false)
+  // Set once the draft has been deliberately thrown away — by Discard, or by a
+  // successful save. Every write is gated on it, because the teardown flush
+  // below runs *after* clearDraft and would otherwise put the draft straight
+  // back: Discard removed the key, beforeunload rewrote it, the reload restored
+  // it, and the button looked broken. The same rewrite happened on save, so the
+  // next new form came up holding the record that had just been saved.
+  const discarded = useRef(false)
   const latest = useRef(values)
   latest.current = values
 
   const write = () => {
+    if (discarded.current) return
     try { localStorage.setItem(storageKey, JSON.stringify(latest.current)) } catch { /* quota — ignore */ }
   }
 
@@ -83,6 +91,7 @@ export function useFormDraft<T extends Record<string, unknown>>(
   }, [storageKey, enabled])
 
   const clearDraft = () => {
+    discarded.current = true
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
     setRestored(false)
   }
