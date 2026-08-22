@@ -153,7 +153,11 @@ async function create({
   due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
   estimated_shipping = 0, rush_services = 0, payment_terms, payment_method, customer_notes,
 }) {
-  const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
+  // 'Q', not 'QT'. Ninety-eight of the ninety-nine quotations in the book are
+  // numbered Q-2026-NNNN; the generator was asking for QT, so every quotation
+  // created since the series was tidied landed outside it, in a second sequence
+  // of its own that the numbering never reached.
+  const quote_number = await getNextNumber('Q', 'quotations', 'quote_number')
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
   assertPositiveQuotation(total, items)
   const resolvedEntryDate = entry_date || new Date().toISOString().slice(0, 10)
@@ -690,7 +694,7 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
     try {
       await client.query('BEGIN')
 
-      const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
+      const quote_number = await getNextNumber('Q', 'quotations', 'quote_number')
       const items = lineItem ? [lineItem] : []
       const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, 0, 0)
       assertPositiveQuotation(total, items)

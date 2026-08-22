@@ -26,6 +26,7 @@
  * Usage (inside the backend container):
  *   SMOKE_BASE=http://localhost:8001/api node scripts/preview-parity-test.js
  *   ... --limit=25    sweep only the first 25 of each kind
+ *   ... --no-chain    sweep only; creates nothing, spends no document numbers
  */
 const jwt = require('jsonwebtoken')
 const { Pool } = require('pg')
@@ -329,7 +330,11 @@ async function main() {
   console.log(`API ${BASE}   database ${db.name}\n`)
 
   await sweep()
-  await chain()
+  // --no-chain leaves the database untouched: the chain section creates a
+  // document at each stage, and on production that spends document numbers
+  // the shop keeps in an unbroken sequence.
+  if (!process.argv.includes('--no-chain')) await chain()
+  else console.log('\nCHAIN — skipped (--no-chain): nothing was created.')
 
   console.log(`\n${'─'.repeat(74)}`)
   if (!fails.length) console.log(`ALL ${passed} PREVIEW CHECKS PASSED`)
