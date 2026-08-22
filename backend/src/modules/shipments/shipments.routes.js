@@ -57,12 +57,26 @@ const bodyFields = {
   delivered_date:      z.string().optional().nullable(),
 }
 
+// Every field above is optional on its own, which meant an empty body passed
+// validation and created a blank parcel — no carrier, no tracking, nothing to
+// ship and nobody to ship it to. A shipment has to say at least one of those
+// things: what it belongs to, how it is tracked, or who it is going to. That
+// admits every real path (the form, the CSV import, a bought label, and the
+// Shippo labels that arrive with tracking before an order is linked) and
+// rejects an empty POST.
+const IDENTIFYING = ['order_id', 'po_id', 'order_ids', 'tracking_number', 'recipient_name', 'customer_name']
 const createSchema = z.object({
   ...bodyFields,
   supplier_name_text: z.string().optional().nullable(),
   agent_name:         z.string().optional().nullable(),
   status:             z.enum(STATUSES).optional(),
-})
+}).refine(
+  (body) => IDENTIFYING.some((k) => {
+    const v = body[k]
+    return Array.isArray(v) ? v.length > 0 : v !== undefined && v !== null && String(v).trim() !== ''
+  }),
+  { message: `A shipment needs at least one of: ${IDENTIFYING.join(', ')}` }
+)
 
 const updateSchema = z.object(bodyFields).strict()
 
