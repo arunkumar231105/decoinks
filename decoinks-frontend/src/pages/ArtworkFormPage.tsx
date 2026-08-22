@@ -282,10 +282,6 @@ export function ArtworkFormPage() {
 
           <section className="af-panel af-actions-panel">
             <h3>Actions</h3>
-            <button className="af-action-button" onClick={() => toast.info('Designer integration coming soon')}>
-              <Pencil size={15} />
-              Edit in Designer
-            </button>
             <button className="af-action-button af-action-primary" onClick={() => toast.info('Change artwork status to Awaiting Approval from the status dropdown')}>
               <Send size={15} />
               Send for Approval
@@ -297,10 +293,6 @@ export function ArtworkFormPage() {
             <button className="af-action-button" onClick={() => toast.info('Download: right-click on the artwork preview and Save Image')}>
               <Download size={15} />
               Download Artwork
-            </button>
-            <button className="af-action-button af-action-danger" onClick={() => toast.info('Delete version coming soon')}>
-              <Trash2 size={15} />
-              Delete Version
             </button>
           </section>
         </aside>

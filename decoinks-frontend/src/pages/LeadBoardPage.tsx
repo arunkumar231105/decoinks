@@ -397,7 +397,6 @@ export function LeadBoardPage() {
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <button className="lb-action-btn" title="Coming soon" style={{ opacity: 0.5, cursor: 'not-allowed' }}><Settings2 size={14} /> Board Settings</button>
         </div>
       </div>
 

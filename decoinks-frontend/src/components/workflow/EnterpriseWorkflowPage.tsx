@@ -394,6 +394,9 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const editFor = (row: AnyRow): (() => void) | null => {
     if (kind === 'orders') return () => navigate('/orders/new', { state: { editOrderId: row.id } })
     if (kind === 'purchase-orders') return () => navigate(`/purchase-orders/${row.id}/edit`)
+    // /quotes/:id already opens the quotation form for editing; the drawer just
+    // never offered it, so a quote could only be edited by typing the URL.
+    if (kind === 'quotations') return () => navigate(`/quotes/${row.id}`)
     return null
   }
   const toggle = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })

@@ -92,7 +92,6 @@ export function OrderDetailPage() {
         <div className="so-actions">
           <button onClick={() => navigate(`/orders/${order.id}/print`)}><Eye size={14}/> Preview</button>
           <button onClick={() => navigate(`/orders/${order.id}/print`)}><Printer size={14}/> Print Work Order</button>
-          <button onClick={() => toast.info('Task creation will use this Sales Order as its source')}><ClipboardList size={14}/> Create Tasks</button>
           <button onClick={e => setMoreAnchor(e.currentTarget)}><MoreHorizontal size={14}/> More Actions</button>
           <button className="so-primary" onClick={release} disabled={statusMutation.isPending}><Factory size={14}/> Release to Production</button>
         </div>
