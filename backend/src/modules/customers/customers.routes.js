@@ -75,6 +75,12 @@ const customerFields = {
     job_title: emptyable(z.string().max(120)),
     email: emailField, phone: phoneField, mobile_number: phoneField, whatsapp: phoneField,
     is_primary: z.boolean().optional(),
+    // Who this person is the contact FOR. A ten-person company needs the shop to
+    // find the billing contact without reading job titles.
+    contact_role: z.enum(['BILLING','SHIPPING','ARTWORK','PRODUCTION','PURCHASING','OWNER','GENERAL']).optional().nullable(),
+    department: emptyable(z.string().max(120)),
+    is_active: z.boolean().optional(),
+    preferred_contact_method: z.enum(['EMAIL','PHONE','MOBILE','WHATSAPP']).optional().nullable(),
     notes: emptyable(z.string().max(2000)),
   })).optional(),
 }

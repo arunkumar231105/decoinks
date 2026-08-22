@@ -249,6 +249,7 @@ async function getById(id) {
            ORDER BY is_default DESC, address_type, created_at`, [id]),
     query(`SELECT id, first_name, middle_name, last_name, job_title, email, phone,
                   mobile_number, whatsapp, is_primary, notes, created_at
+           , contact_role, department, is_active, preferred_contact_method
            FROM customer_contacts WHERE customer_id = $1 AND deleted_at IS NULL
            ORDER BY is_primary DESC, created_at`, [id]),
     query(`SELECT id, quote_number, status, total, created_at FROM quotations
@@ -300,20 +301,29 @@ async function getById(id) {
 // is_primary=true survives, so a mis-formed payload can never violate it.
 async function insertContacts(client, customerId, contacts, createdBy) {
   let primaryTaken = false
+  const rolesTaken = new Set()
   for (const ct of contacts || []) {
     const filled = ct.first_name || ct.middle_name || ct.last_name || ct.job_title
       || ct.email || ct.phone || ct.mobile_number || ct.whatsapp || ct.notes
+      || ct.department || ct.contact_role
     if (!filled) continue                       // skip blank rows
     const isPrimary = !!ct.is_primary && !primaryTaken
     if (isPrimary) primaryTaken = true
+    // Same guard as is_primary, for the same reason: uq_customer_contacts_one_per_role
+    // allows one active contact per role, so a payload naming two billing
+    // contacts keeps the first and leaves the second unroled rather than failing.
+    const role = ct.contact_role && !rolesTaken.has(ct.contact_role) ? ct.contact_role : null
+    if (role) rolesTaken.add(role)
     await client.query(
       `INSERT INTO customer_contacts
          (customer_id, first_name, middle_name, last_name, job_title, email,
-          phone, mobile_number, whatsapp, is_primary, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          phone, mobile_number, whatsapp, is_primary, notes, created_by,
+          contact_role, department, is_active, preferred_contact_method)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [customerId, ct.first_name || null, ct.middle_name || null, ct.last_name || null,
        ct.job_title || null, ct.email || null, ct.phone || null, ct.mobile_number || null,
-       ct.whatsapp || null, isPrimary, ct.notes || null, createdBy || null]
+       ct.whatsapp || null, isPrimary, ct.notes || null, createdBy || null,
+       role, ct.department || null, ct.is_active !== false, ct.preferred_contact_method || null]
     )
   }
 }
