@@ -337,7 +337,11 @@ async function create(fields_in) {
   // Same value the INSERTs below store in shipping_charges / rush_charges, so
   // the total can never drift from the line it is printed next to.
   const resolvedShipping = Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0) || 0
-  const resolvedRush     = Number(fields.rush_charges) || 0
+  // The quote records its rush amount in rush_services; the invoice has both
+  // rush_services and rush_charges and the total is built from rush_charges.
+  // Reading only rush_charges dropped the quote's rush from every converted
+  // invoice — $20 on a $596.80 quote arrived as $576.80.
+  const resolvedRush     = Number(fields.rush_charges ?? fields.rush_services ?? quoteData?.rush_services ?? 0) || 0
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, resolvedShipping, resolvedRush)
   const totalQty    = await resolveInvoiceQuantity(items, quote_id, order_id)
   assertPositiveInvoice(total, totalQty)
@@ -364,7 +368,7 @@ async function create(fields_in) {
   // (The order_id / no-quote path below is unchanged.)
   if (quote_id) {
     return await createOrSyncInvoiceFromQuote({
-      quote_id, order_id,
+      quote_id, order_id, resolvedShipping, resolvedRush,
       resolvedCustomerName, resolvedSupplierId, resolvedCustomerId,
       resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, total, balance_due,
       resolvedBillingAddress, resolvedShippingAddress,
@@ -406,7 +410,7 @@ async function create(fields_in) {
       fields.payment_method || quoteData?.payment_method || null,
       fields.currency       || quoteData?.currency       || 'USD',
       Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
-      Number(fields.rush_charges) || 0,
+      resolvedRush,
       Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
       fields.discount_type || quoteData?.discount_type || 'percentage',
       Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
@@ -594,7 +598,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
     quote_id, order_id,
     resolvedCustomerName, resolvedSupplierId, resolvedCustomerId,
     resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, total, balance_due,
-    resolvedBillingAddress, resolvedShippingAddress,
+    resolvedBillingAddress, resolvedShippingAddress, resolvedShipping, resolvedRush,
     issue_date, due_date, notes, created_by, order_type, items, fields, quoteData,
   } = ctx
 
@@ -650,8 +654,8 @@ async function createOrSyncInvoiceFromQuote(ctx) {
           fields.payment_method || quoteData?.payment_method || null,
           fields.currency       || quoteData?.currency       || 'USD',
           Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
-          Number(fields.rush_charges) || 0,
-          Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+          resolvedRush,
+          resolvedShipping,
           fields.discount_type || quoteData?.discount_type || 'percentage',
           Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
         ]
@@ -745,8 +749,8 @@ async function createOrSyncInvoiceFromQuote(ctx) {
         fields.payment_method || quoteData?.payment_method || null,
         fields.currency       || quoteData?.currency       || 'USD',
         Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
-        Number(fields.rush_charges) || 0,
-        Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
+        resolvedRush,
+        resolvedShipping,
         fields.discount_type || quoteData?.discount_type || 'percentage',
         Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
       ]
@@ -1224,13 +1228,31 @@ async function convertToOrder(invoiceId, actorId, orderType) {
   if (existing[0]) return { order: existing[0], alreadyExisted: true }
 
   const orderSvc = require('../orders/orders.service')
-  const order = await orderSvc.create({
-    invoice_id:  invoiceId,
-    order_type:  orderType,
-    items:       [],
-    created_by:  actorId,
-  })
-  return { order, alreadyExisted: false }
+  try {
+    const order = await orderSvc.create({
+      invoice_id:  invoiceId,
+      order_type:  orderType,
+      items:       [],
+      created_by:  actorId,
+    })
+    return { order, alreadyExisted: false }
+  } catch (err) {
+    // Paying an invoice in full already raises its sales order, in the same
+    // request. Pressing Convert to Sales Order afterwards then reached
+    // orders.create, which refuses a second order for one invoice — so the
+    // button answered 409 for an order that exists and is on screen. Read it
+    // back and hand it over instead; the check above catches the ordinary
+    // case, this catches the one where payment and conversion cross.
+    if (err.statusCode !== 409) throw err
+    const { rows: raced } = await query(
+      `SELECT o.*, s.name AS supplier_name FROM orders o
+       LEFT JOIN suppliers s ON s.id = o.supplier_id
+       WHERE o.invoice_id = $1 AND o.deleted_at IS NULL ORDER BY o.created_at LIMIT 1`,
+      [invoiceId]
+    )
+    if (!raced[0]) throw err
+    return { order: raced[0], alreadyExisted: true }
+  }
 }
 
 module.exports = { list, getById, create, update, updateStatus, recordPayment, remove, convertToOrder }

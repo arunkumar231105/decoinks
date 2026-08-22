@@ -520,10 +520,11 @@ async function create(data) {
           billing_address, terms_conditions,
           total_discount, total_tax, freight_charges, other_charges, grand_total, order_id,
           po_type, supplier_contact_id, communication_method, payment_status,
-          ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes)
+          ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes,
+          customer_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34,$35,$36)
+               $31,$32,$33,$34,$35,$36,$37)
        RETURNING *`,
       [
         po_number,
@@ -562,6 +563,7 @@ async function create(data) {
         tracking_number || null,
         carrier || null,
         tracking_notes || null,
+        data.customer_id || null,
       ]
     )
     const po = rows[0]

@@ -8,7 +8,8 @@
 #
 #   ./dev-sandbox.sh refresh   drop and re-clone the sandbox from production
 #   ./dev-sandbox.sh migrate   run pending migrations against the sandbox only
-#   ./dev-sandbox.sh serve     start the sandbox API on :8001 (production stays on :8000)
+#   ./dev-sandbox.sh serve     start the sandbox API on :8001 from its own copy of the code
+#   ./dev-sandbox.sh chain     run the full lead → customer → quote → invoice → order → PO test
 #   ./dev-sandbox.sh test      run the API smoke test against the sandbox
 #   ./dev-sandbox.sh diff      compare sandbox and production schemas
 #   ./dev-sandbox.sh pending   list migrations the sandbox has and production does not
@@ -22,6 +23,21 @@ PROD=decoinks_db
 DEV=decoinks_dev
 DEV_URL="postgresql://postgres:decoinks_pass@postgres:5432/${DEV}"
 MIGRATIONS_DIR="$(cd "$(dirname "$0")/../migrations" && pwd)"
+BACKEND_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# The sandbox runs from its own copy of the code inside the container. Editing
+# /app directly would leave untested changes in the path the production process
+# loads on its next restart — the database was isolated, the code was not.
+SBX=/app-sandbox
+
+# Refresh the sandbox code tree from the repo, then overlay whatever differs
+# from what production is running.
+sync_code() {
+  docker exec "$API" sh -c "mkdir -p $SBX && ln -sfn /app/node_modules $SBX/node_modules"
+  # One stream, so the sandbox always runs exactly what is in the repo.
+  tar -C "$BACKEND_DIR" -cf - src scripts migrations server.js 2>/dev/null \
+    | docker exec -i "$API" tar -C "$SBX" -xf -
+}
+
 
 psql_dev() { docker exec "$PG" psql -U postgres -d "$DEV" "$@"; }
 psql_prod() { docker exec "$PG" psql -U postgres -d "$PROD" "$@"; }
@@ -60,13 +76,15 @@ case "${1:-}" in
       comm -23 /tmp/dev.mig /tmp/prod.mig"
     ;;
   serve)
-    docker exec -d "$API" sh -c "DATABASE_URL='${DEV_URL}' PORT=8001 node server.js > /tmp/dev-backend.log 2>&1"
+    sync_code
+    docker exec -d "$API" sh -c "cd $SBX && DATABASE_URL='${DEV_URL}' PORT=8001 node server.js > /tmp/dev-backend.log 2>&1"
     sleep 6
     docker exec "$API" sh -c 'tail -2 /tmp/dev-backend.log'
     echo "sandbox API on :8001 — production untouched on :8000"
     ;;
   test)
-    docker exec "$API" sh -c "SMOKE_BASE=http://localhost:8001/api DATABASE_URL='${DEV_URL}' node scripts/smoke-test-api.js"
+    sync_code
+    docker exec "$API" sh -c "cd $SBX && SMOKE_BASE=http://localhost:8001/api DATABASE_URL='${DEV_URL}' node scripts/smoke-test-api.js"
     ;;
   diff)
     echo "Tables in the sandbox that production does not have:"
@@ -77,8 +95,13 @@ case "${1:-}" in
       echo 'Tables production has that the sandbox does not:'
       comm -13 /tmp/dev.tables /tmp/prod.tables | sed 's/^/  - /'"
     ;;
+  chain)
+    sync_code
+    docker exec "$API" sh -c "cd $SBX && SMOKE_BASE=http://localhost:8001/api DATABASE_URL='${DEV_URL}' node scripts/e2e-chain-test.js ${2:-}"
+    ;;
   stop)
-    docker exec "$API" sh -c "pkill -f 'PORT=8001' || true"
+    docker cp "$BACKEND_DIR/scripts/stop-sandbox-api.sh" "$API":/tmp/stop-sandbox-api.sh >/dev/null
+    docker exec "$API" sh /tmp/stop-sandbox-api.sh
     echo "sandbox API stopped"
     ;;
   promote)

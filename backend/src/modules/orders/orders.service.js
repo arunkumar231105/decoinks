@@ -838,7 +838,7 @@ async function getBoard() {
 async function convertToPO(orderId, actorId) {
   // Multiple POs per order are allowed (e.g. different suppliers)
   const { rows: orderRows } = await query(
-    `SELECT id, order_number, order_type, supplier_id, shipping_address, due_date
+    `SELECT id, order_number, order_type, supplier_id, customer_id, shipping_address, due_date
      FROM orders WHERE id = $1`,
     [orderId]
   )
@@ -847,10 +847,55 @@ async function convertToPO(orderId, actorId) {
 
   const po_type = order.order_type === 'gangsheet' ? 'gangsheet' : 'apparel'
 
-  // Apparel: pre-populate PO line items from the order's items, resolving
-  // each artwork_no to its artworks row so previews join instead of copy.
+  // Lines come from the table that holds them for this kind of order. Reading
+  // order_items_apparel for every order meant a DTF or gangsheet order raised a
+  // purchase order with no lines at all — the supplier was sent an empty sheet.
+  // Each artwork_no is resolved to its artworks row so previews join rather
+  // than copy.
   let items = []
-  if (po_type === 'apparel') {
+  if (order.order_type === 'dtf') {
+    const { rows: dtf } = await query(
+      `SELECT oi.artwork_name, oi.size, oi.qty, oi.unit_price, oi.artwork_no, oi.sort_order,
+              oi.width_inches, oi.height_inches, oi.front_image, oi.back_image, a.id AS artwork_id
+         FROM order_items_dtf oi
+         LEFT JOIN artworks a ON a.artwork_no = oi.artwork_no
+        WHERE oi.order_id = $1
+        ORDER BY oi.sort_order`,
+      [orderId]
+    )
+    items = dtf.map((oi, i) => ({
+      item_name:    oi.artwork_name || 'DTF Transfers',
+      print_type:   'DTF Transfers',
+      // The shop writes the transfer as "4x3.5"; that is what size holds.
+      artwork_size: oi.size || null,
+      qty_ordered:  Number(oi.qty) || 1,
+      unit_price:   Number(oi.unit_price) || 0,
+      artwork_id:   oi.artwork_id || null,
+      artwork_no:   oi.artwork_no || null,
+      front_image:  oi.front_image || null,
+      back_image:   oi.back_image || null,
+      sort_order:   oi.sort_order ?? i,
+    }))
+  } else if (order.order_type === 'gangsheet') {
+    const { rows: gs } = await query(
+      `SELECT oi.size, oi.qty, oi.no_artworks, oi.price_per_sheet, oi.sort_order,
+              oi.front_image, oi.back_image
+         FROM order_items_gangsheet oi
+        WHERE oi.order_id = $1
+        ORDER BY oi.sort_order`,
+      [orderId]
+    )
+    items = gs.map((oi, i) => ({
+      item_name:    oi.size ? `Gangsheet ${oi.size}` : 'Gangsheet',
+      print_type:   'Gangsheet',
+      artwork_size: oi.size || null,
+      qty_ordered:  Number(oi.qty) || 1,
+      unit_price:   Number(oi.price_per_sheet) || 0,
+      front_image:  oi.front_image || null,
+      back_image:   oi.back_image || null,
+      sort_order:   oi.sort_order ?? i,
+    }))
+  } else {
     const { rows: orderItems } = await query(
       `SELECT oi.item, oi.category, oi.color, oi.size, oi.qty, oi.artwork_no, oi.artwork_size,
               oi.unit_price, oi.front_image, oi.back_image, oi.sort_order,
@@ -897,6 +942,7 @@ async function convertToPO(orderId, actorId) {
     po_type,
     order_ids:        [orderId],
     supplier_id:      order.supplier_id || null,
+    customer_id:      order.customer_id || null,
     shipping_address: order.shipping_address || null,
     expected_date:    order.due_date || null,
     items,
