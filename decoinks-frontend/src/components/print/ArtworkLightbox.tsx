@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { storageThumb } from '../../utils/storageThumb'
 
 interface ArtworkEntry {
   id: string
@@ -127,7 +128,7 @@ export function ArtworkThumb({
 
   if (!src || failed) return <>{fallback}</>
 
-  const image = <img src={src} alt={alt} className={className} style={style} onError={() => setFailed(true)} />
+  const image = <img src={storageThumb(src, 640)} alt={alt} className={className} style={style} onError={() => setFailed(true)} />
   if (!absoluteUrl) return image
 
   const openLightbox = (event: MouseEvent<HTMLAnchorElement>) => {

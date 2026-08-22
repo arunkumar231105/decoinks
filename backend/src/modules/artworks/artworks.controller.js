@@ -2,6 +2,7 @@ const service = require('./artworks.service')
 const vault = require('./artwork-vault.service')
 const studio = require('./artwork-studio.service')
 const { success, created, paginated } = require('../../utils/response')
+const storageThumbs = require('./storage-thumb.service')
 
 const DESIGN_STUDIO_URL = process.env.DESIGN_STUDIO_URL || 'https://designstudio.decoinkssuite.com'
 
@@ -139,6 +140,23 @@ async function studioPreview(req, res, next) {
     return res.send(buffer)
   } catch (err) { next(err) }
 }
+// Resized copy of a stored image, for print layouts that would otherwise embed
+// the full-resolution original in the PDF. Public like the studio thumbnail
+// above: it only ever reads a path that is already served publicly by MinIO.
+async function storageThumb(req, res, next) {
+  try {
+    const { buffer, mime, key } = await storageThumbs.thumbnail(req.query.src || '', req.query.w)
+    // The key contains the object's uuid, so a different image means a
+    // different URL; the bytes behind one URL never change.
+    const validator = `"${key}-${req.query.w || 480}-${buffer.length}"`
+    res.setHeader('ETag', validator)
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable')
+    if (req.headers['if-none-match'] === validator) return res.status(304).end()
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.send(buffer)
+  } catch (err) { next(err) }
+}
 async function studioHandoff(req, res, next) {
   try { return success(res, await studio.handoffToken(req.query.token || '', req.query.id || '')) } catch (err) { next(err) }
 }
@@ -152,6 +170,7 @@ async function studioSave(req, res, next) {
 }
 
 module.exports = {
+  storageThumb,
   list, getOne, getBoard, create, createTask, updateStatus, remove,
   vaultList, vaultStats, vaultFacets, vaultRevision, vaultDetail, vaultSync, vaultSetCover,
   vaultBulkUpdate, vaultLinkAsset, vaultExport,

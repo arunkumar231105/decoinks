@@ -20,6 +20,9 @@ router.get('/studio/vault/revision',  controller.studioVaultRevision)  // live c
 router.get('/studio/thumb',           controller.studioPreview)        // Nextcloud thumbnail
 router.get('/studio/handoff',         controller.studioHandoff)        // vault token → asset token
 router.post('/studio/save',           uploadStudioArtwork, controller.studioSave)
+// Resized copy of a stored image, so a print layout does not embed the
+// full-resolution original. Reads only paths MinIO already serves publicly.
+router.get('/storage-thumb',          controller.storageThumb)
 
 router.use(verifyToken)
 

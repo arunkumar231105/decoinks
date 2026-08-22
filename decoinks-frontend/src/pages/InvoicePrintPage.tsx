@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 import { rateIn } from '../utils/rate'
+import { storageThumb } from '../utils/storageThumb'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
@@ -161,7 +162,7 @@ function QrBox({ src, alt }: { src: string; alt: string }) {
       }}>QR image not uploaded</div>
     )
   }
-  return <img src={src} alt={alt} onError={() => setFailed(true)}
+  return <img src={storageThumb(src, 320)} alt={alt} onError={() => setFailed(true)}
     style={{ width: 86, height: 86, objectFit: 'contain', display: 'block', margin: '0 auto', imageRendering: 'crisp-edges' }} />
 }
 
