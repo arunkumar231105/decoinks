@@ -116,9 +116,12 @@ async function exportCsv(req, res, next) {
                                           date_from, date_to, search, sales_channel })
     const columns = [
     ['Order No', 'order_number'], ['Order Date', 'order_date'], ['Entry Date', 'entry_date'],
-    ['Due Date', 'due_date'], ['Status', 'export_status'],
+    ['Due Date', 'due_date'],
+    // Three columns said "status" and two of them were enough: Order Status is
+    // where the order stands with the customer, Process Status where it stands
+    // in the shop. Print Type was a third name for what Order Type already says.
     ['Order Status', 'export_order_stage'], ['Process Status', 'export_process_status'],
-    ['Order Type', 'order_type'], ['Print Type', 'print_type'], ['Channel', 'sales_channel'],
+    ['Order Type', 'order_type'], ['Channel', 'export_channel'],
     ['Customer Name', 'customer_name'], ['Contact Name', 'export_contact_name'],
     ['Contact Email', 'export_contact_email'], ['Contact Phone', 'export_contact_phone'],
     ['Shipping Name', 'export_shipping_name'], ['Shipping Address', 'export_shipping_address'],
@@ -128,7 +131,7 @@ async function exportCsv(req, res, next) {
     ['Total', 'export_total'], ['Amount Paid', 'export_amount_paid'], ['Payment Status', 'export_payment_status'],
     ['Payment Method', 'payment_method'], ['Payment Terms', 'payment_terms'],
     ['Courier', 'export_courier'], ['Tracking No', 'export_tracking_number'],
-    ['Agent', 'export_agent_name'], ['Notes', 'notes'],
+    ['Agent', 'export_agent_name'],
     ]
     return sendCsv(res, 'sales-orders', columns, rows)
   } catch (err) { next(err) }

@@ -328,7 +328,16 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
               END
             ) AS export_courier,
             COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) AS export_tracking_number,
-            COALESCE(u.name, customer_agent.name, creator.name) AS export_agent_name
+            COALESCE(u.name, customer_agent.name, creator.name) AS export_agent_name,
+            -- The channel says who supplies the job; the type says what it is.
+            -- The shop reads them as one thing — TSI's transfers, TSI's apparel,
+            -- DIGI's apparel — so the pair is shown as one label. Derived rather
+            -- than stored: sales_channel already holds half of it, and a second
+            -- copy of the same fact is a second chance to disagree with itself.
+            CASE WHEN o.order_type::text = 'dtf'
+                 THEN COALESCE(o.sales_channel, 'TSI') || ' DTF Transfer'
+                 ELSE COALESCE(o.sales_channel, 'TSI') || ' DTF Apparel'
+            END AS export_channel
      FROM orders o
      LEFT JOIN suppliers c ON c.id = o.supplier_id
      LEFT JOIN customers cust ON cust.id = o.customer_id

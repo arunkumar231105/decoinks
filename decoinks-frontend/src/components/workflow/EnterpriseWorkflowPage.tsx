@@ -142,7 +142,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     ],
     columns: [
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
-      { key: 'sales_channel', label: 'Channel', render: r => common.empty(r, 'sales_channel') },
+      { key: 'sales_channel', label: 'Channel', render: r => common.empty(r, 'export_channel', 'sales_channel') },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
