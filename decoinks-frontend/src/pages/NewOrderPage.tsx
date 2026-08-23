@@ -741,7 +741,12 @@ export function NewOrderPage() {
       order_type:       orderType,
       order_date:       orderDate,
       due_date:         dueDate || null,
-      payment_terms:    paymentTerms === 'Paid' ? 'Due on Receipt' : paymentTerms,
+      // Send the term that was picked. This used to rewrite 'Paid' to
+      // 'Due on Receipt' on the way out, so choosing Paid and saving came back
+      // as Due on Receipt every time and looked like the form had ignored it.
+      // payment_terms is free text on the order, the API already accepts 'Paid',
+      // and seven orders are stored under it.
+      payment_terms:    paymentTerms,
       payment_method:   paymentMethod,
       payment_status:   paymentStatus,
       amount_paid:      Number(amountPaid) || 0,
@@ -1318,7 +1323,10 @@ export function NewOrderPage() {
                 <select className="no-info-select" value={paymentTerms} onChange={e => {
                   const val = e.target.value
                   setPaymentTerms(val)
-                  if (val === 'Paid') setPaymentStatus('Paid')
+                  // Paid is not really a term — it is the shop saying the money
+                  // is already in. So it settles the payment: full amount
+                  // received, nothing due.
+                  if (val === 'Paid') { setPaymentStatus('Paid'); setAmountPaid(total) }
                 }}>
                   {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
                 </select>

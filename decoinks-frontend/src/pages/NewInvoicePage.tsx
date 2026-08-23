@@ -92,6 +92,9 @@ interface TransferItem {
 // â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+// The select shows the long form; the invoice stores the three-letter code.
+const CURRENCY_OPTIONS = ['USD - US Dollar', 'CAD - Canadian Dollar', 'GBP - Pound Sterling']
 const todayISO = () => new Date().toISOString().split('T')[0]
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -502,6 +505,16 @@ export function NewInvoicePage() {
     return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined }
   }, [sourceQuote, editingInvoice])
 
+  // The hydration below deliberately drops the source's status — an Approved
+  // quote locks rates and a Paid invoice must not. But when the source IS the
+  // invoice being edited, its own paid state is exactly what the header badge
+  // and the terms dropdown should show; without this, opening a settled invoice
+  // showed it as Unpaid.
+  useEffect(() => {
+    if (!editingInvoice) return
+    if (editingInvoice.status === 'Paid') setIsPaid(true)
+  }, [editingInvoice])
+
   // Pre-populate form fields from quote once data arrives
   useEffect(() => {
     const sourceQuote = hydrateFrom
@@ -532,6 +545,14 @@ export function NewInvoicePage() {
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
     if (sourceQuote.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceQuote.payment_method))
     if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
+    // The select holds "USD - US Dollar" and the record holds "USD". Without
+    // this the currency was never read back, so editing any invoice quietly
+    // reset it to dollars — invisible while every invoice is in dollars, and
+    // wrong the first time one is not.
+    if (sourceQuote.currency) {
+      const match = CURRENCY_OPTIONS.find(c => c.startsWith(`${sourceQuote.currency} `))
+      if (match) setCurrency(match)
+    }
     if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
       setDiscountType('fixed'); setDiscountValue(Number(sourceQuote.discount_amt))
@@ -1446,9 +1467,7 @@ export function NewInvoicePage() {
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Currency</label>
                 <select className="ni-select" value={currency} onChange={e => setCurrency(e.target.value)}>
-                  <option>USD - US Dollar</option>
-                  <option>CAD - Canadian Dollar</option>
-                  <option>GBP - Pound Sterling</option>
+                  {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div className="ni-payment-field">
