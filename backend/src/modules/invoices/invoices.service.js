@@ -144,7 +144,7 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
        ORDER BY po.created_at DESC LIMIT 1
      ) latest_po ON TRUE
      ${where}
-     ORDER BY i.created_at DESC
+     ORDER BY i.issue_date DESC, i.created_at DESC, i.invoice_number DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
