@@ -49,8 +49,12 @@ const SERIES = [
   // created_at, not entry_date: the quotations list labels created_at as
   // "Quote Date" and sorts on it, so that is the date the shop reads the
   // sequence against.
+  // altPrefix: quotations written before the generator was corrected carry QT-
+  // rather than Q-. They are the same series and belong in it, so they are
+  // adopted rather than left sitting outside the sequence with the newest date
+  // in the book and a number from the middle of it.
   { key: 'quotations', table: 'quotations', column: 'quote_number', prefix: 'Q',
-    dateColumn: 'created_at', label: 'Quotations' },
+    altPrefix: 'QT', dateColumn: 'created_at', label: 'Quotations' },
   { key: 'invoices', table: 'invoices', column: 'invoice_number', prefix: 'INV',
     dateColumn: 'issue_date', label: 'Invoices' },
   { key: 'orders', table: 'orders', column: 'order_number', prefix: 'ORD',
@@ -61,6 +65,9 @@ const SERIES = [
 
 const YEAR = 2026
 const pad = n => String(n).padStart(4, '0')
+// Matches the series' own prefix and any older spelling of the same series.
+const seriesPattern = s =>
+  `^(${[s.prefix, ...(s.altPrefix ? [s.altPrefix] : [])].join('|')})-${YEAR}-[0-9]+$`
 
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
@@ -80,7 +87,7 @@ async function main() {
                source_system IS NULL AS entered_by_hand
           FROM ${s.table}
          WHERE deleted_at IS NULL AND ${s.column} ~ $1
-         ORDER BY ${s.dateColumn}, created_at, id`, [`^${s.prefix}-${YEAR}-[0-9]+$`])
+         ORDER BY ${s.dateColumn}, created_at, id`, [seriesPattern(s)])
 
       const moves = rows
         .map((r, i) => ({ ...r, to: `${s.prefix}-${YEAR}-${pad(i + 1)}` }))
@@ -90,7 +97,7 @@ async function main() {
       // shape the pattern does not match — must not be about to be overwritten.
       const { rows: [outsideRow] } = await client.query(
         `SELECT count(*)::int AS n FROM ${s.table} WHERE deleted_at IS NULL AND ${s.column} !~ $1`,
-        [`^${s.prefix}-${YEAR}-[0-9]+$`])
+        [seriesPattern(s)])
       const outside = outsideRow.n
 
       plans.push({ series: s, rows, moves, outside })
@@ -135,7 +142,7 @@ async function main() {
       const { rowCount } = await client.query(
         `UPDATE ${s2.table} SET ${s2.column} = 'D-' || RIGHT(id::text, 12)
           WHERE deleted_at IS NOT NULL AND ${s2.column} ~ $1`,
-        [`^${s2.prefix}-${YEAR}-[0-9]+$`])
+        [seriesPattern(s2)])
       parked += rowCount
     }
     if (parked) console.log(`\nParked ${parked} deleted document(s) that were still holding a number.`)
@@ -207,7 +214,7 @@ async function main() {
                count(*) FILTER (WHERE num <> by_date)::int AS out_of_place,
                MIN(num) AS lowest, MAX(num) AS highest,
                count(DISTINCT num)::int AS distinct_numbers
-          FROM n`, [`^${s.prefix}-${YEAR}-[0-9]+$`])
+          FROM n`, [seriesPattern(s)])
       const gapless = Number(check.lowest) === 1 && Number(check.highest) === check.docs
       const unique = check.distinct_numbers === check.docs
       const ok = check.out_of_place === 0 && gapless && unique && check.docs === p.rows.length
