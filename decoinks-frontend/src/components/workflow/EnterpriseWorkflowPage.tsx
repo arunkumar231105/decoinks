@@ -177,7 +177,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(pick(x, 'grand_total', 'total') || 0), 0)), tone: 'green' },
     ],
     columns: [
-      { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'source_po_number', 'po_number')}</strong> },
+      // Our own number, not the supplier's. This column showed source_po_number
+      // first — the factory's reference, ORD-260820210740 — so the list looked
+      // unnumbered when PO-2026-0125 down to 0001 was sitting right behind it.
+      // The supplier's reference is worth seeing, so it keeps its own column.
+      { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'po_number')}</strong> },
+      { key: 'source_po_number', label: 'Supplier Ref', render: r => common.empty(r, 'source_po_number') },
       { key: 'order_date', label: 'PO Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },

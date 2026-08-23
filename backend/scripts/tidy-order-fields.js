@@ -135,6 +135,13 @@ async function main() {
          AND COALESCE(NULLIF(btrim(o.payment_method),''),'') = ''
          AND NULLIF(btrim(i.payment_method),'') IS NOT NULL`)).rowCount
 
+    // The nine still empty are all $0.00 orders where no money moved, so there
+    // is no platform to name. 'other' is a real option on the form and says
+    // exactly that, rather than claiming a Zelle transfer that never happened.
+    n.methodOther = (await client.query(`
+      UPDATE orders SET payment_method = 'other', updated_at = NOW()
+       WHERE deleted_at IS NULL AND COALESCE(NULLIF(btrim(payment_method),''),'') = ''`)).rowCount
+
     n.methodTidied = (await client.query(`
       UPDATE orders SET payment_method = (SELECT ${METHOD} FROM (SELECT payment_method AS m) t), updated_at = NOW()
        WHERE deleted_at IS NULL AND NULLIF(btrim(payment_method),'') IS NOT NULL
@@ -191,6 +198,7 @@ async function main() {
     console.log(`\nDone.`)
     console.log(`  payment terms set to Advance ${n.terms}`)
     console.log(`  payment method filled        ${n.methodFilled} from the invoice`)
+    console.log(`  payment method set to other  ${n.methodOther} (no money moved, nothing to name)`)
     console.log(`  payment method tidied        ${n.methodTidied} spellings settled`)
     console.log(`  marked Paid                  ${n.paid}`)
     console.log(`  agent set to ${agent.name.padEnd(16)} ${n.agent}`)
