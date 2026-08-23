@@ -773,6 +773,18 @@ export function NewOrderPage() {
             back_image: null,
           }))
 
+    // Terms of 'Paid' settle the order, whether or not the dropdown was touched
+    // this time. Deciding it here rather than in the change handler is what
+    // makes it hold: an order already saved as Paid fires no change event when
+    // you open it again, so the amount stayed at zero and the list printed
+    // PAID AMOUNT $0.00 beside an order marked Paid.
+    //
+    // A figure typed by hand wins over the term — that is the shop recording a
+    // part payment, and the term must not overwrite it.
+    const typedAnAmount = Number(amountPaid) > 0
+    const settledAmount = paymentTerms === 'Paid' && !typedAnAmount ? total : (Number(amountPaid) || 0)
+    const settledStatus = paymentTerms === 'Paid' && settledAmount >= total ? 'Paid' : paymentStatus
+
     return {
       customer_id:        customerId,
       supplier_id:        null,
@@ -789,14 +801,8 @@ export function NewOrderPage() {
       // and seven orders are stored under it.
       payment_terms:    paymentTerms,
       payment_method:   paymentMethod,
-      // Terms of 'Paid' settle the order, whether or not the dropdown was
-      // touched this time. Deciding it here rather than in the dropdown's
-      // change handler is what makes it hold: an order already saved as Paid
-      // fires no change event when you look at it again, so the amount stayed
-      // at zero and the list printed PAID AMOUNT $0.00 beside an order marked
-      // Paid. Saving now always writes what the terms say.
-      payment_status:   paymentTerms === 'Paid' ? 'Paid' : paymentStatus,
-      amount_paid:      paymentTerms === 'Paid' ? total : (Number(amountPaid) || 0),
+      payment_status:   settledStatus,
+      amount_paid:      settledAmount,
       payment_reference: paymentReference || null,
       payment_id:       paymentId || null,
       payment_date:     paymentDate || null,
@@ -1388,8 +1394,21 @@ export function NewOrderPage() {
                   setPaymentTerms(val)
                   // Paid is not really a term — it is the shop saying the money
                   // is already in. So it settles the payment: full amount
-                  // received, nothing due.
-                  if (val === 'Paid') { setPaymentStatus('Paid'); setAmountPaid(total) }
+                  // received, nothing due. And moving off it takes that back,
+                  // or the order stays settled while the terms say Net 30.
+                  //
+                  // A payment picked in the Payment field below is a real
+                  // receipt with a number behind it; that is never undone here.
+                  // Nor is a figure the shop typed by hand, which is a part
+                  // payment and none of this term's business — only the full
+                  // amount this dropdown put there is taken back.
+                  if (val === 'Paid') {
+                    setPaymentStatus('Paid')
+                    setAmountPaid(total)
+                  } else if (paymentTerms === 'Paid' && !paymentId && Number(amountPaid) === Number(total)) {
+                    setPaymentStatus('Unpaid')
+                    setAmountPaid(0)
+                  }
                 }}>
                   {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
                 </select>
