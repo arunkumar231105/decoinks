@@ -114,18 +114,24 @@ function buildInvoicePrefix(customerName) {
  */
 async function getNextInvoiceNumber(customerName) {
   const prefix = buildInvoicePrefix(customerName)
-  const scope = `INV:${prefix}`
+  // One scope for the whole book. The letters name the customer; the number is
+  // the invoice's place in the sequence, whoever it is for. Counting per
+  // customer instead made the list read VCA-0001, ATA-0003, JJU-0006 down the
+  // page — three letters that mean something followed by a number that means
+  // nothing to anyone reading the list in date order.
+  const scope = 'INV'
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [scope])
 
+    // Seeded from the highest number in the book, under any customer's letters.
     const { rows } = await client.query(
       `SELECT COALESCE(MAX(CAST(SPLIT_PART(invoice_number, '-', 2) AS INTEGER)), 0) AS max_seq
        FROM invoices
        WHERE invoice_number ~ $1`,
-      [`^${prefix}-[0-9]+$`]
+      ['^[A-Z]{3}-[0-9]+$']
     )
 
     const next = await claimNext(client, scope, rows[0].max_seq || 0)

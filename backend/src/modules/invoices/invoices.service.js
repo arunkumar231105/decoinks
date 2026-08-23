@@ -144,7 +144,13 @@ async function list({ page = 1, limit = 10, status = '', customer_id = '', suppl
        ORDER BY po.created_at DESC LIMIT 1
      ) latest_po ON TRUE
      ${where}
-     ORDER BY i.issue_date DESC, i.created_at DESC, i.invoice_number DESC
+     ORDER BY i.issue_date DESC, i.created_at DESC,
+              -- The number, not the whole string. Invoice numbers begin with the
+              -- customer's letters, so sorting the text puts RMA-0093 above
+              -- KMO-0094 and the sequence reads with a hole in it.
+              CASE WHEN i.invoice_number ~ '-[0-9]+$'
+                   THEN CAST(regexp_replace(i.invoice_number, '^.*-', '') AS integer) END DESC NULLS LAST,
+              i.invoice_number DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )

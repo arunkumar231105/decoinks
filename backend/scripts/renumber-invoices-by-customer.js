@@ -14,10 +14,12 @@
  * first three. This imports that function rather than copying it, so a number
  * written today and a number written by the next invoice cannot drift apart.
  *
- * WITHIN EACH CODE, IN DATE ORDER. An invoice's number is its position in that
- * customer's own history, so RFA-0001 is Robert Farrar's first and RFA-0012 his
- * twelfth. Ordered by issue date, then created_at, then the row's id, so the
- * result is the same every run.
+ * THE LETTERS SAY WHO, THE NUMBER SAYS WHEN. The three letters name the
+ * customer; the number is the invoice's place in the whole book, oldest 1 to
+ * newest N. Counting per customer instead was tried and read wrong on the
+ * screen: sorted by date the list jumped VCA-0001, ATA-0003, JJU-0006, which
+ * is a sequence of nothing. Ordered by issue date, then created_at, then the
+ * row's id, so the result is the same every run.
  *
  * TWO CODES ARE SHARED. ROBERT FARRAR and Robert Farrar differ only in case and
  * are the same person. Abdiel Castro and Alex M. Cabrera are not, and both give
@@ -60,13 +62,13 @@ async function main() {
       byCode.get(code).push(r)
     }
 
+    // rows already arrive oldest first, so the index is the place in the book.
     const moves = []
-    for (const [code, list] of byCode) {
-      list.forEach((r, i) => {
-        const to = `${code}-${pad(i + 1)}`
-        if (to !== r.invoice_number) moves.push({ ...r, code, to })
-      })
-    }
+    rows.forEach((r, i) => {
+      const code = buildInvoicePrefix(r.customer || 'Customer')
+      const to = `${code}-${pad(i + 1)}`
+      if (to !== r.invoice_number) moves.push({ ...r, code, to })
+    })
 
     console.log(`${rows.length} invoices across ${byCode.size} customer codes` +
       `   ${moves.length} change number`)
@@ -87,11 +89,12 @@ async function main() {
       }
     }
 
-    // The busiest customers, which is what the shop will notice first.
-    const busiest = [...byCode.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 6)
-    console.log('\n  Customers with the most invoices:')
-    for (const [code, list] of busiest) {
-      console.log(`      ${code}-0001 … ${code}-${pad(list.length)}   ${list[0].customer}`)
+    // The newest end, which is what the shop looks at first.
+    console.log('\n  How the newest end of the list will read:')
+    for (const r of rows.slice(-5).reverse()) {
+      const code = buildInvoicePrefix(r.customer || 'Customer')
+      console.log(`      ${String(r.issue_date).slice(0, 10)}   ${r.invoice_number.padEnd(14)} → ` +
+        `${code}-${pad(rows.indexOf(r) + 1)}   ${r.customer}`)
     }
 
     if (!APPLY) { console.log('\nDRY RUN — nothing written. Re-run with --apply to commit.'); return }
@@ -116,14 +119,14 @@ async function main() {
         [m.id, m.to])
     }
 
-    // getNextInvoiceNumber reads the counter under scope INV:<code>; it must not
-    // hand back a number already in use.
-    for (const [code, list] of byCode) {
-      await client.query(
-        `INSERT INTO counters (scope, last_value) VALUES ($1, $2)
-         ON CONFLICT (scope) DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = NOW()`,
-        [`INV:${code}`, list.length])
-    }
+    // One counter for the whole book: the number is the invoice's place in it,
+    // whoever the customer is. The old per-code counters would hand back a
+    // number already in use, so they are cleared.
+    await client.query(
+      `INSERT INTO counters (scope, last_value) VALUES ('INV', $1)
+       ON CONFLICT (scope) DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = NOW()`,
+      [rows.length])
+    await client.query(`DELETE FROM counters WHERE scope LIKE 'INV:%'`)
 
     // ── Proof ─────────────────────────────────────────────────────────────
     const { rows: [check] } = await client.query(`
@@ -132,14 +135,15 @@ async function main() {
              count(*) FILTER (WHERE invoice_number !~ '^[A-Z]{3}-[0-9]{4}$')::int AS wrong_shape,
              count(DISTINCT invoice_number)::int AS distinct_numbers
         FROM invoices WHERE deleted_at IS NULL`)
-    // Every code must run 1..N with no holes.
+    // One series now: 1 to N, no holes, and reading in date order.
     const { rows: [gaps] } = await client.query(`
       WITH n AS (
-        SELECT SPLIT_PART(invoice_number, '-', 1) AS code,
-               CAST(SPLIT_PART(invoice_number, '-', 2) AS int) AS num
+        SELECT CAST(SPLIT_PART(invoice_number, '-', 2) AS int) AS num,
+               ROW_NUMBER() OVER (ORDER BY issue_date, created_at, id) AS by_date
           FROM invoices WHERE deleted_at IS NULL AND invoice_number ~ '^[A-Z]{3}-[0-9]{4}$')
-      SELECT count(*)::int AS codes_with_a_hole FROM (
-        SELECT code FROM n GROUP BY code HAVING MIN(num) <> 1 OR MAX(num) <> count(*)) x`)
+      SELECT (SELECT count(*) FROM n WHERE num <> by_date)::int
+             + (SELECT CASE WHEN MIN(num) = 1 AND MAX(num) = count(*) THEN 0 ELSE 1 END FROM n)::int
+             AS codes_with_a_hole`)
 
     const ok = check.still_on_the_old_scheme === 0 && check.wrong_shape === 0 &&
       check.distinct_numbers === check.live && gaps.codes_with_a_hole === 0
@@ -147,7 +151,7 @@ async function main() {
     console.log(`  still on the old INV-2026 scheme: ${check.still_on_the_old_scheme}   ${check.still_on_the_old_scheme === 0 ? '✓' : '✗'}`)
     console.log(`  not shaped CCC-NNNN: ${check.wrong_shape}   ${check.wrong_shape === 0 ? '✓' : '✗'}`)
     console.log(`  every number unique: ${check.distinct_numbers === check.live ? 'yes' : 'no'}   ${check.distinct_numbers === check.live ? '✓' : '✗'}`)
-    console.log(`  codes with a hole in their sequence: ${gaps.codes_with_a_hole}   ${gaps.codes_with_a_hole === 0 ? '✓' : '✗'}`)
+    console.log(`  out of date order or with a hole: ${gaps.codes_with_a_hole}   ${gaps.codes_with_a_hole === 0 ? '✓' : '✗'}`)
 
     if (!ok) {
       await client.query('ROLLBACK')
