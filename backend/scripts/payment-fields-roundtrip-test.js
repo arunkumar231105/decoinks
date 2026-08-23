@@ -92,6 +92,22 @@ async function main() {
     await pool.query('DELETE FROM orders WHERE id=$1', [id])
   }
 
+  // A sweep over what is already there, not just what this run wrote. An order
+  // that says Paid while its money column says nothing was received is the
+  // state the shop kept finding — PAID AMOUNT $0.00 beside an order marked
+  // Paid — so it is worth catching the moment it comes back.
+  const { rows: [ledger] } = await pool.query(`
+    SELECT count(*) FILTER (WHERE payment_status = 'Paid' AND ROUND(COALESCE(amount_paid,0),2) = 0 AND total > 0)::int AS paid_but_nothing_received,
+           count(*) FILTER (WHERE payment_terms = 'Paid' AND payment_status <> 'Paid')::int AS terms_say_paid_status_does_not
+      FROM orders WHERE deleted_at IS NULL`)
+  for (const [label, n] of [
+    ['orders marked Paid with nothing recorded as received', ledger.paid_but_nothing_received],
+    ['orders whose terms say Paid but whose status does not', ledger.terms_say_paid_status_does_not],
+  ]) {
+    if (Number(n) === 0) passed++
+    else fails.push({ f: label, d: `${n} order(s)` })
+  }
+
   console.log(fails.length
     ? `${passed} passed, ${fails.length} FAILED:\n` + fails.map(x => `  ✗ ${x.f}\n      ${x.d}`).join('\n')
     : `ALL ${passed} PAYMENT FIELD CHECKS PASSED — every term, on save and after an edit.`)

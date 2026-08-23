@@ -789,8 +789,14 @@ export function NewOrderPage() {
       // and seven orders are stored under it.
       payment_terms:    paymentTerms,
       payment_method:   paymentMethod,
-      payment_status:   paymentStatus,
-      amount_paid:      Number(amountPaid) || 0,
+      // Terms of 'Paid' settle the order, whether or not the dropdown was
+      // touched this time. Deciding it here rather than in the dropdown's
+      // change handler is what makes it hold: an order already saved as Paid
+      // fires no change event when you look at it again, so the amount stayed
+      // at zero and the list printed PAID AMOUNT $0.00 beside an order marked
+      // Paid. Saving now always writes what the terms say.
+      payment_status:   paymentTerms === 'Paid' ? 'Paid' : paymentStatus,
+      amount_paid:      paymentTerms === 'Paid' ? total : (Number(amountPaid) || 0),
       payment_reference: paymentReference || null,
       payment_id:       paymentId || null,
       payment_date:     paymentDate || null,
