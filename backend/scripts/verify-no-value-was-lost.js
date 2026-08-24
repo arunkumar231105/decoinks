@@ -18,8 +18,15 @@
  */
 const { Pool } = require('pg')
 
-const DATABASE_URL = process.env.DATABASE_URL ||
-  'postgresql://postgres:decoinks_pass@localhost:5435/decoinks_dev'
+// No connection string in the source. This runs against whatever DATABASE_URL
+// points at, and refuses to run without one — a default here is a database
+// password in a public repository, and a default pointing at production is a
+// script that writes to it by accident.
+const DATABASE_URL = process.env.DATABASE_URL
+if (!DATABASE_URL) {
+  console.error('DATABASE_URL is not set. Refusing to guess which database to use.')
+  process.exit(1)
+}
 
 // legacy table, the rows it covers, destination table, link column,
 // then [legacy expression, destination column] for every value carried.
