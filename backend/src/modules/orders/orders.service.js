@@ -834,7 +834,9 @@ async function getBoard() {
             c.name AS supplier_name
      FROM orders o
      LEFT JOIN suppliers c ON c.id = o.supplier_id
-     WHERE o.deleted_at IS NULL AND o.status = ANY($1::text[])
+     -- status is the order_status enum; comparing it to a text array asks
+     -- Postgres for an operator that does not exist, and the board answered 500.
+     WHERE o.deleted_at IS NULL AND o.status::text = ANY($1::text[])
      ORDER BY o.due_date ASC NULLS LAST, o.created_at DESC`,
     [BOARD_STATUSES]
   )

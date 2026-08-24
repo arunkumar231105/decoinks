@@ -105,7 +105,10 @@ router.get('/stats',   controller.stats)
 router.get('/filters', controller.filters)
 router.get('/export',  controller.exportCsv)
 // Must stay above '/:id' — otherwise Express reads "portal-accounts" as an id.
-router.get('/portal-accounts', async (req, res, next) => {
+// Portal accounts are customer logins — usernames, and when each last signed
+// in. Managing them is an owner's job, not a salesperson's, and the route had
+// no guard at all.
+router.get('/portal-accounts', requireRole('Admin', 'Manager'), async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT cpu.id, cpu.customer_id, cpu.username, cpu.email, cpu.is_active,
