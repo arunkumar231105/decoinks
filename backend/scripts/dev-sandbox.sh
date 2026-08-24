@@ -61,6 +61,9 @@ case "${1:-}" in
     # DATABASE_URL is production — so a file left there is applied to production
     # by the next restart, with nobody asking for it. Keeping unapproved work
     # here means a restart cannot promote it by accident.
+    # The folder lives in the container's writable layer and does not survive a
+    # rebuild, so make sure it is there before copying into it.
+    docker exec "$API" mkdir -p /app/sandbox-migrations
     for f in "${MIGRATIONS_DIR}"/*.sql; do
       [ -e "$f" ] || continue
       docker cp "$f" "$API":/app/sandbox-migrations/ >/dev/null
