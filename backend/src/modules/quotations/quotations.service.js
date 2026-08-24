@@ -96,7 +96,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
        LIMIT 1
      ) linked_po ON TRUE
      ${where}
-     ORDER BY q.created_at DESC
+     ORDER BY q.created_at DESC, q.quote_number DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   )
@@ -153,7 +153,11 @@ async function create({
   due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
   estimated_shipping = 0, rush_services = 0, payment_terms, payment_method, customer_notes,
 }) {
-  const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
+  // 'Q', not 'QT'. Ninety-eight of the ninety-nine quotations in the book are
+  // numbered Q-2026-NNNN; the generator was asking for QT, so every quotation
+  // created since the series was tidied landed outside it, in a second sequence
+  // of its own that the numbering never reached.
+  const quote_number = await getNextNumber('Q', 'quotations', 'quote_number')
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, discount_pct, 0, estimated_shipping, rush_services)
   assertPositiveQuotation(total, items)
   const resolvedEntryDate = entry_date || new Date().toISOString().slice(0, 10)
@@ -210,61 +214,65 @@ async function create({
   }
 }
 
-async function update(id, {
-  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct, notes, items,
-  company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
-  customer_category, customer_source, shipping_country, shipping_state, shipping_city,
-  zip_code, shipping_address, billing_address, due_date, sales_agent_id, internal_notes,
-  customer_requirement_summary, quote_estimate,
-  estimated_shipping, rush_services, payment_terms, payment_method, customer_notes,
-}, actorId) {
+// The columns a caller may set on an edit. Anything absent from the request
+// keeps the value already stored — a partial save from the edit screen, which
+// sends only the lines it changed, must not blank the customer, the address or
+// the order type. Writing every column unconditionally is what used to do that.
+const EDITABLE_COLUMNS = [
+  'lead_id', 'customer_id', 'supplier_id', 'order_type', 'entry_date', 'valid_until', 'notes',
+  'company_name', 'customer_name', 'billing_email', 'contact_number', 'whatsapp', 'wechat',
+  'customer_category', 'customer_source', 'shipping_country', 'shipping_state', 'shipping_city',
+  'zip_code', 'due_date', 'sales_agent_id', 'internal_notes', 'customer_requirement_summary',
+  'quote_estimate', 'payment_terms', 'payment_method', 'customer_notes',
+  'estimated_shipping', 'rush_services',
+]
+// These two are stored through normalizeAddress rather than written raw.
+const EDITABLE_ADDRESSES = ['shipping_address', 'billing_address']
+
+async function update(id, payload, actorId) {
+  const { discount_pct, items } = payload
   const existing = await getById(id)
   const itemList = items ?? existing.items
   const effectiveDiscountPct = discount_pct ?? Number(existing.discount_pct || 0)
-  const effectiveShipping = estimated_shipping ?? Number(existing.estimated_shipping || 0)
-  const effectiveRush = rush_services ?? Number(existing.rush_services || 0)
+  const effectiveShipping = payload.estimated_shipping ?? Number(existing.estimated_shipping || 0)
+  const effectiveRush = payload.rush_services ?? Number(existing.rush_services || 0)
   const { subtotal, discount_amt, tax_amt, total } = calcTotals(itemList, effectiveDiscountPct, 0, effectiveShipping, effectiveRush)
   assertPositiveQuotation(total, itemList)
+
+  // Money is always recalculated from the lines; the rest is written only if
+  // the caller sent it.
+  const sets = []
+  const values = []
+  const put = (sql, value) => { values.push(value); sets.push(sql.replace('$?', `$${values.length}`)) }
+
+  put('subtotal=$?', subtotal)
+  put('discount_pct=$?', effectiveDiscountPct)
+  put('discount_amt=$?', discount_amt)
+  put('tax_pct=$?', 0)
+  put('tax_amt=$?', tax_amt)
+  put('total=$?', total)
+
+  for (const col of EDITABLE_COLUMNS) {
+    if (payload[col] === undefined) continue
+    put(`${col}=$?`, payload[col] === '' ? null : payload[col])
+  }
+  for (const col of EDITABLE_ADDRESSES) {
+    if (payload[col] === undefined) continue
+    put(`${col}=$?`, normalizeAddress(payload[col]))
+  }
+
+  // Editing an already-saved quote bumps the revision so it is visibly marked
+  // as revised (1 = original).
+  sets.push('revision_number=COALESCE(revision_number, 1) + 1')
+  sets.push('updated_at=NOW()')
+
   const client = await getClient()
   try {
     await client.query('BEGIN')
+    values.push(id)
     const { rows: updated } = await client.query(
-      `UPDATE quotations
-       SET lead_id=$1, supplier_id=$2, order_type=$3, entry_date=COALESCE($4, entry_date), valid_until=$5, subtotal=$6, discount_pct=$7,
-           discount_amt=$8, tax_pct=$9, tax_amt=$10, total=$11, notes=$12,
-           company_name=$13, customer_name=$14, billing_email=$15, contact_number=$16,
-           whatsapp=$17, wechat=$18, customer_category=$19, customer_source=$20,
-           shipping_country=$21, shipping_state=$22, shipping_city=$23, zip_code=$24,
-           shipping_address=$25, billing_address=$26, due_date=$27, sales_agent_id=$28,
-           internal_notes=$29, customer_requirement_summary=$30, quote_estimate=$31,
-           estimated_shipping=COALESCE($32, estimated_shipping),
-           rush_services=COALESCE($33, rush_services),
-           payment_terms=COALESCE($34, payment_terms),
-           payment_method=COALESCE($35, payment_method),
-           customer_notes=COALESCE($36, customer_notes),
-           customer_id=$37,
-           -- editing an already-saved quote bumps the revision so it is
-           -- visibly marked as revised (1 = original)
-           revision_number=COALESCE(revision_number, 1) + 1,
-           updated_at=NOW()
-       WHERE id=$38
-       RETURNING id`,
-      [
-        lead_id || null, supplier_id || null, order_type || null, entry_date || null, valid_until || null,
-        subtotal, effectiveDiscountPct, discount_amt, 0, 0, total, notes || null,
-        company_name || null, customer_name || null, billing_email || null, contact_number || null,
-        whatsapp || null, wechat || null, customer_category || null, customer_source || null,
-        shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
-        normalizeAddress(shipping_address), normalizeAddress(billing_address), due_date || null, sales_agent_id || null,
-        internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
-        estimated_shipping != null ? estimated_shipping : null,
-        rush_services != null ? rush_services : null,
-        payment_terms || null,
-        payment_method || null,
-        customer_notes || null,
-        customer_id || null,
-        id,
-      ]
+      `UPDATE quotations SET ${sets.join(', ')} WHERE id=$${values.length} RETURNING id`,
+      values
     )
     if (!updated[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
@@ -471,178 +479,29 @@ async function remove(id) {
 }
 
 async function convertToInvoice(quoteId, actorId) {
-  // Idempotency: return existing invoice if one already exists for this quote
-  const { rows: existing } = await query(
-    `SELECT i.*, c.name AS supplier_name, q.quote_number
-     FROM invoices i
-     LEFT JOIN suppliers c ON c.id = i.supplier_id
-     LEFT JOIN quotations q ON q.id = i.quote_id
-     WHERE i.quote_id = $1
-     ORDER BY i.created_at
-     LIMIT 1`,
-    [quoteId]
-  )
-  if (existing[0]) {
-    return { invoice: existing[0], alreadyExisted: true }
-  }
-
   // Verify quote exists
   const { rows: qRows } = await query(
     `SELECT id, quote_number FROM quotations WHERE id = $1`, [quoteId]
   )
   if (!qRows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
-  // Delegate to invoice service (it reads totals from the quote automatically)
+  // Whether an invoice already exists is answered by the invoice service, not
+  // here. This used to short-circuit and hand back whatever invoice it found,
+  // which meant correcting a quote and converting again silently returned the
+  // stale invoice — the edit never reached it.
+  //
+  // invoiceSvc.create routes a quote into createOrSyncInvoiceFromQuote, which
+  // creates the invoice if there is none, refreshes header and lines if the
+  // existing one is still an untouched draft, and refuses with a 409 naming the
+  // invoice once money has been taken against it or an order has been raised.
+  // That is the rule the shop wants: re-converting corrects a mistake, and
+  // stops being allowed the moment the invoice starts to matter.
+  const wasThereBefore = await query(
+    `SELECT invoice_number FROM invoices WHERE quote_id = $1 ORDER BY created_at LIMIT 1`, [quoteId]
+  )
   const invoiceSvc = require('../invoices/invoices.service')
   const invoice = await invoiceSvc.create({ quote_id: quoteId, created_by: actorId })
-  return { invoice, alreadyExisted: false }
-}
-
-// ── CSV Bulk Upload ───────────────────────────────────────────────────────────
-
-// Case-insensitive header normaliser
-function normaliseHeader(h) {
-  return h.toLowerCase().replace(/[\s_\-]+/g, '')
-}
-
-// Map normalised header → quotation field name
-const HEADER_MAP = {
-  customername:      'customer_name',
-  customer:          'customer_name',
-  clientname:        'customer_name',   // DTF PO master sheet
-  client:            'customer_name',
-  companyname:       'company_name',
-  company:           'company_name',
-  email:             'billing_email',
-  billingemail:      'billing_email',
-  phone:             'contact_number',
-  contactnumber:     'contact_number',
-  contact:           'contact_number',
-  whatsapp:          'whatsapp',
-  wechat:            'wechat',
-  category:          'customer_category',
-  buyertype:         'customer_category',
-  customercategory:  'customer_category',
-  source:            'customer_source',
-  customersource:    'customer_source',
-  ordertype:         'order_type',
-  type:              'order_type',
-  printtype:         'order_type',
-  country:           'shipping_country',
-  state:             'shipping_state',
-  city:              'shipping_city',
-  zip:               'zip_code',
-  zipcode:           'zip_code',
-  shippingaddress:   'shipping_address',
-  address:           'shipping_address',
-  shiptoaddress:     'shipping_address',   // DTF PO master sheet
-  shipto:            'shipping_address',
-  poshipping:        'shipping_address',
-  poshippingaddress: 'shipping_address',
-  billingaddress:    'billing_address',
-  duedate:           'due_date',
-  deliverydate:      'due_date',
-  requireddate:      'due_date',
-  requireddeliverydate: 'due_date',
-  notes:             'internal_notes',
-  internalnotes:     'internal_notes',
-  estimate:          'quote_estimate',
-  quoteestimate:     'quote_estimate',
-  status:            'status',
-  // line-item fields (prefixed li_)
-  product:           'li_description',
-  producttype:       'li_description',
-  item:              'li_description',
-  description:       'li_description',
-  qty:               'li_qty',
-  quantity:          'li_qty',
-  totalgangsheets:   'li_qty',   // DTF: number of gangsheets = quantity
-  gangsheets:        'li_qty',
-  unitprice:         'li_unit_price',
-  price:             'li_unit_price',
-  rate:              'li_unit_price',
-  netproduct:        'li_net_amount',   // DTF: net product amount for the row
-  netproductcost:    'li_net_amount',
-  netamount:         'li_net_amount',
-  netproductprice:   'li_net_amount',
-  sizes:             'li_sizes',
-  size:              'li_sizes',   // accept singular too (shared master CSV)
-  gangsheetwidth:    'li_width',   // DTF gangsheet dimensions → description
-  gangsheetlength:   'li_length',
-  colors:            'li_colors',
-  color:             'li_colors',
-  colour:            'li_colors',
-  artworkcount:      'li_artwork_count',
-  noartworks:        'li_artwork_count',
-  artworks:          'li_artwork_count',
-  totalartworks:     'li_artwork_count',
-  // Columns that belong to other modules (order_type, payment_terms, etc.)
-  // are simply not listed here, so they are ignored on a quote import.
-}
-
-const VALID_STATUSES = ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired']
-
-function parseDate(val) {
-  if (!val || !val.trim()) return null
-  const d = new Date(val.trim())
-  if (isNaN(d.getTime())) return undefined  // undefined = parse error
-  return d.toISOString().split('T')[0]
-}
-
-function parseNum(val, defaultVal = 0) {
-  if (val === undefined || val === null || val === '') return { value: defaultVal, error: null }
-  const n = Number(val)
-  if (isNaN(n)) return { value: null, error: `"${val}" is not a number` }
-  return { value: n, error: null }
-}
-
-// Minimal built-in CSV parser — no external dependency needed
-function parseCsv(buffer) {
-  let text = buffer.toString('utf8')
-  // Strip BOM
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1)
-
-  const lines = text.split(/\r?\n/)
-  const result = []
-
-  // Parse one CSV line (handles quoted fields with commas and escaped quotes)
-  function parseLine(line) {
-    const fields = []
-    let i = 0
-    while (i < line.length) {
-      if (line[i] === '"') {
-        // Quoted field
-        let val = ''
-        i++ // skip opening quote
-        while (i < line.length) {
-          if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2 }
-          else if (line[i] === '"') { i++; break }
-          else { val += line[i++] }
-        }
-        fields.push(val.trim())
-        if (line[i] === ',') i++
-      } else {
-        // Unquoted field
-        const end = line.indexOf(',', i)
-        if (end === -1) { fields.push(line.slice(i).trim()); break }
-        fields.push(line.slice(i, end).trim())
-        i = end + 1
-      }
-    }
-    return fields
-  }
-
-  if (lines.length < 2) return []
-  const headers = parseLine(lines[0])
-  for (let r = 1; r < lines.length; r++) {
-    const line = lines[r].trim()
-    if (!line) continue
-    const values = parseLine(line)
-    const obj = {}
-    headers.forEach((h, idx) => { obj[h] = values[idx] ?? '' })
-    result.push(obj)
-  }
-  return result
+  return { invoice, alreadyExisted: !!wasThereBefore.rows[0] }
 }
 
 async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null } = {}) {
@@ -835,7 +694,7 @@ async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null
     try {
       await client.query('BEGIN')
 
-      const quote_number = await getNextNumber('QT', 'quotations', 'quote_number')
+      const quote_number = await getNextNumber('Q', 'quotations', 'quote_number')
       const items = lineItem ? [lineItem] : []
       const { subtotal, discount_amt, tax_amt, total } = calcTotals(items, 0, 0)
       assertPositiveQuotation(total, items)

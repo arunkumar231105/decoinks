@@ -579,12 +579,16 @@ export function QuotePrintPage() {
           {/* Pricing Summary */}
           <div>
             <div className="section-title">Pricing Summary</div>
-            <div className="pr-row"><span className="lbl">Items Total</span><span className="val">{fmt(quote.subtotal - rushAmt - shippingAmt)}</span></div>
+            {/* subtotal is the item lines only — shipping and rush sit on top of
+                it, the same way the invoice, order and purchase order read.
+                This block used to subtract them from the subtotal as well,
+                which showed an items total short by exactly shipping + rush
+                and a summary that did not add up to its own total. */}
+            <div className="pr-row"><span className="lbl">Items Total</span><span className="val">{fmt(quote.subtotal)}</span></div>
+            {Number(quote.discount_amt) > 0 && <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>}
             {rushAmt > 0 && <div className="pr-row"><span className="lbl">Rush Services ⓘ</span><span className="val">{fmt(rushAmt)}</span></div>}
             {shippingAmt > 0 && <div className="pr-row"><span className="lbl">Estimated Shipping</span><span className="val">{fmt(shippingAmt)}</span></div>}
             <hr className="pr-divider" />
-            <div className="pr-row"><span className="lbl">Subtotal</span><span className="val">{fmt(quote.subtotal)}</span></div>
-            {Number(quote.discount_amt) > 0 && <div className="pr-row"><span className="lbl">Discount</span><span className="val neg">- {fmt(quote.discount_amt)}</span></div>}
             <div className="pr-row total"><span className="lbl">Total</span><span className="val">{fmt(quote.total)}</span></div>
           </div>
 

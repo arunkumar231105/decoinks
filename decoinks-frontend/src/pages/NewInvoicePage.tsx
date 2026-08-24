@@ -92,6 +92,9 @@ interface TransferItem {
 // â"€â"€â"€ Consoanos â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+// The select shows the long form; the invoice stores the three-letter code.
+const CURRENCY_OPTIONS = ['USD - US Dollar', 'CAD - Canadian Dollar', 'GBP - Pound Sterling']
 const todayISO = () => new Date().toISOString().split('T')[0]
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -502,6 +505,16 @@ export function NewInvoicePage() {
     return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined }
   }, [sourceQuote, editingInvoice])
 
+  // The hydration below deliberately drops the source's status — an Approved
+  // quote locks rates and a Paid invoice must not. But when the source IS the
+  // invoice being edited, its own paid state is exactly what the header badge
+  // and the terms dropdown should show; without this, opening a settled invoice
+  // showed it as Unpaid.
+  useEffect(() => {
+    if (!editingInvoice) return
+    if (editingInvoice.status === 'Paid') setIsPaid(true)
+  }, [editingInvoice])
+
   // Pre-populate form fields from quote once data arrives
   useEffect(() => {
     const sourceQuote = hydrateFrom
@@ -532,6 +545,14 @@ export function NewInvoicePage() {
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
     if (sourceQuote.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceQuote.payment_method))
     if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
+    // The select holds "USD - US Dollar" and the record holds "USD". Without
+    // this the currency was never read back, so editing any invoice quietly
+    // reset it to dollars — invisible while every invoice is in dollars, and
+    // wrong the first time one is not.
+    if (sourceQuote.currency) {
+      const match = CURRENCY_OPTIONS.find(c => c.startsWith(`${sourceQuote.currency} `))
+      if (match) setCurrency(match)
+    }
     if (sourceQuote.discount_pct)     { setDiscountType('percentage'); setDiscountValue(Number(sourceQuote.discount_pct)) }
     else if (sourceQuote.discount_amt && Number(sourceQuote.discount_amt) > 0) {
       setDiscountType('fixed'); setDiscountValue(Number(sourceQuote.discount_amt))
@@ -706,6 +727,42 @@ export function NewInvoicePage() {
   const updateApparelItem = (id: string, patch: Partial<ApparelItem>) =>
     setApparelItems(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   const removeApparelItem = (id: string) => setApparelItems(prev => prev.filter(r => r.id !== id))
+
+  // A line that arrived without a style — an import, or an invoice made from a
+  // document written before the catalogue existed — shows plain text boxes for
+  // colour and size, because there is no style behind it to list. The search
+  // only ever added a new line, so such a line could never be given one.
+  const [linkingRowId, setLinkingRowId] = useState<string | null>(null)
+
+  const linkStyleToRow = (rowId: string, style: CatalogStyle) => {
+    setApparelItems(prev => prev.map(row => {
+      if (row.id !== rowId) return row
+      const colour = style.colors?.find(c =>
+        c.display_name.toLowerCase() === (row.color || '').trim().toLowerCase())
+      const size = style.sizes?.find(z =>
+        z.size_name.toLowerCase() === (row.sizes || '').trim().toLowerCase())
+      const variant = style.variants?.find(v =>
+        v.style_color_id === colour?.style_color_id && v.style_size_id === size?.style_size_id)
+      return {
+        ...row,
+        styleId:          style.id,
+        styleCode:        style.sku,
+        brand:            style.brand,
+        productImage:     style.images?.[0]?.image_url ?? style.image_url ?? row.productImage,
+        styleDescription: style.description ?? row.styleDescription,
+        description:      row.description || style.name,
+        availableColors:  style.colors ?? [],
+        availableSizes:   style.sizes ?? [],
+        availableVariants: style.variants ?? [],
+        colorId:          colour?.style_color_id,
+        sizeId:           size?.style_size_id,
+        color:            colour?.display_name ?? row.color,
+        sizes:            size?.size_name ?? row.sizes,
+        sku:              variant?.sku_code ?? row.sku,
+      }
+    }))
+    setLinkingRowId(null)
+  }
 
   const addCatalogStyle = (style: CatalogStyle) => {
     setApparelItems(previous => [...previous, {
@@ -1057,7 +1114,15 @@ export function NewInvoicePage() {
             {orderType === 'apparel' && (
               <>
                 <p className="ni-items-hint">Select a BlankTex Product Master style. Product image, brand, style code, colors, sizes and SKU fill automatically.</p>
-                <InvoiceCatalogStyleSearch onSelect={addCatalogStyle} disabled={ratesLocked} />
+                <InvoiceCatalogStyleSearch disabled={ratesLocked} onSelect={style => {
+                  if (linkingRowId) linkStyleToRow(linkingRowId, style)
+                  else addCatalogStyle(style)
+                }} />
+                {linkingRowId && <button type="button" onClick={() => setLinkingRowId(null)}
+                  style={{ marginTop: 6, fontSize: 11.5, color: '#6b7280', background: 'none',
+                           border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
+                  Cancel linking
+                </button>}
                 <div className="ni-table-wrap">
                   <table className="ni-table ni-mobile-stack-table ni-catalog-items-table">
                     <thead>
@@ -1085,7 +1150,13 @@ export function NewInvoicePage() {
                           <td data-label="Product">
                             <div className="nq-quote-product">
                               <div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.description} /> : <Package size={20} />}</div>
-                              <div><strong>{row.description || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>{row.styleDescription && <small title={row.styleDescription}>{row.styleDescription}</small>}</div>
+                              <div><strong>{row.description || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>{row.styleDescription && <small title={row.styleDescription}>{row.styleDescription}</small>}
+                                {!row.styleId && !ratesLocked && <button type="button" onClick={() => setLinkingRowId(row.id)}
+                                  style={{ marginTop: 3, fontSize: 10.5, color: linkingRowId === row.id ? '#b45309' : '#2563eb',
+                                           background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                           fontWeight: 700, textAlign: 'left' }}>
+                                  {linkingRowId === row.id ? 'Choose it above…' : 'Link a style'}
+                                </button>}</div>
                             </div>
                           </td>
                           <td data-label="Color">
@@ -1446,9 +1517,7 @@ export function NewInvoicePage() {
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Currency</label>
                 <select className="ni-select" value={currency} onChange={e => setCurrency(e.target.value)}>
-                  <option>USD - US Dollar</option>
-                  <option>CAD - Canadian Dollar</option>
-                  <option>GBP - Pound Sterling</option>
+                  {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div className="ni-payment-field">

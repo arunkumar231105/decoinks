@@ -641,6 +641,47 @@ export function NewOrderPage() {
     if (i === -1) return prev
     return [...prev.slice(0, i + 1), { ...prev[i], id: uid() }, ...prev.slice(i + 1)]
   })
+  // A line that arrived without a style — an import, or a conversion from a
+  // document written before the catalogue existed — shows plain text boxes for
+  // colour and size, because there is no style behind it to list. There was no
+  // way to give it one either: the picker only ever added a new line. This is
+  // the row waiting to be linked to a style.
+  const [linkingRowId, setLinkingRowId] = useState<string | null>(null)
+
+  // Attach a catalogue style to a line that already exists, keeping whatever
+  // the line already says. Colour and size become dropdowns from that style;
+  // anything already typed in them is matched to the style's own options where
+  // it can be, and left alone where it cannot.
+  const linkStyleToRow = (rowId: string, style: ApparelCatalogStyle) => {
+    setApparel(prev => prev.map(row => {
+      if (row.id !== rowId) return row
+      const colour = style.colors?.find(c =>
+        c.display_name.toLowerCase() === (row.color || '').trim().toLowerCase())
+      const size = style.sizes?.find(z =>
+        z.size_name.toLowerCase() === (row.size || '').trim().toLowerCase())
+      const variant = style.variants?.find(v =>
+        v.style_color_id === colour?.style_color_id && v.style_size_id === size?.style_size_id)
+      return {
+        ...row,
+        styleId:          style.id,
+        styleCode:        style.sku,
+        brand:            style.brand,
+        productImage:     style.images?.[0]?.image_url ?? style.image_url ?? row.productImage,
+        styleDescription: style.description ?? row.styleDescription,
+        item:             row.item || style.name,
+        availableColors:  style.colors ?? [],
+        availableSizes:   style.sizes ?? [],
+        availableVariants: style.variants ?? [],
+        colorId:          colour?.style_color_id,
+        sizeId:           size?.style_size_id,
+        color:            colour?.display_name ?? row.color,
+        size:             size?.size_name ?? row.size,
+        sku:              variant?.sku_code ?? row.sku,
+      }
+    }))
+    setLinkingRowId(null)
+  }
+
   const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])
   const selectOrderApparelColor = (item: ApparelItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)
@@ -732,6 +773,18 @@ export function NewOrderPage() {
             back_image: null,
           }))
 
+    // Terms of 'Paid' settle the order, whether or not the dropdown was touched
+    // this time. Deciding it here rather than in the change handler is what
+    // makes it hold: an order already saved as Paid fires no change event when
+    // you open it again, so the amount stayed at zero and the list printed
+    // PAID AMOUNT $0.00 beside an order marked Paid.
+    //
+    // A figure typed by hand wins over the term — that is the shop recording a
+    // part payment, and the term must not overwrite it.
+    const typedAnAmount = Number(amountPaid) > 0
+    const settledAmount = paymentTerms === 'Paid' && !typedAnAmount ? total : (Number(amountPaid) || 0)
+    const settledStatus = paymentTerms === 'Paid' && settledAmount >= total ? 'Paid' : paymentStatus
+
     return {
       customer_id:        customerId,
       supplier_id:        null,
@@ -741,10 +794,15 @@ export function NewOrderPage() {
       order_type:       orderType,
       order_date:       orderDate,
       due_date:         dueDate || null,
-      payment_terms:    paymentTerms === 'Paid' ? 'Due on Receipt' : paymentTerms,
+      // Send the term that was picked. This used to rewrite 'Paid' to
+      // 'Due on Receipt' on the way out, so choosing Paid and saving came back
+      // as Due on Receipt every time and looked like the form had ignored it.
+      // payment_terms is free text on the order, the API already accepts 'Paid',
+      // and seven orders are stored under it.
+      payment_terms:    paymentTerms,
       payment_method:   paymentMethod,
-      payment_status:   paymentStatus,
-      amount_paid:      Number(amountPaid) || 0,
+      payment_status:   settledStatus,
+      amount_paid:      settledAmount,
       payment_reference: paymentReference || null,
       payment_id:       paymentId || null,
       payment_date:     paymentDate || null,
@@ -985,8 +1043,18 @@ export function NewOrderPage() {
             {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
               <>
-                <p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, brand and preview fill automatically.</p>
-                <ApparelCatalogPicker onSelect={addApparel} />
+                <p className="nq-items-hint">{linkingRowId
+                  ? 'Pick the style for that line — its colours and sizes will fill in.'
+                  : 'Select a Product Master style. Colors, sizes, SKU, brand and preview fill automatically.'}</p>
+                <ApparelCatalogPicker onSelect={style => {
+                  if (linkingRowId) linkStyleToRow(linkingRowId, style)
+                  else addApparel(style)
+                }} />
+                {linkingRowId && <button type="button" onClick={() => setLinkingRowId(null)}
+                  style={{ marginTop: 6, fontSize: 11.5, color: '#6b7280', background: 'none',
+                           border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
+                  Cancel linking
+                </button>}
                 <div className="no-table-wrap">
                   <table className="no-table no-catalog-apparel-table">
                     <thead>
@@ -1012,7 +1080,13 @@ export function NewOrderPage() {
                           <td className="no-td-num">{idx + 1}</td>
                           <td><select className="no-table-select" value={row.category} onChange={e => updateApparel(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td>
-                            <div className="nq-quote-product"><div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.item} /> : <Package size={20} />}</div><div><strong>{row.item || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span></div></div>
+                            <div className="nq-quote-product"><div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.item} /> : <Package size={20} />}</div><div><strong>{row.item || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>
+                              {!row.styleId && <button type="button" onClick={() => setLinkingRowId(row.id)}
+                                style={{ marginTop: 3, fontSize: 10.5, color: linkingRowId === row.id ? '#b45309' : '#2563eb',
+                                         background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                         fontWeight: 700, textAlign: 'left' }}>
+                                {linkingRowId === row.id ? 'Choose it above…' : 'Link a style'}
+                              </button>}</div></div>
                           </td>
                           <td>
                             {row.styleId ? <select className="no-table-select" value={row.colorId ?? ''} onChange={e => selectOrderApparelColor(row, e.target.value)}><option value="">Select color</option>{(row.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="no-table-input" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })} />}
@@ -1318,7 +1392,23 @@ export function NewOrderPage() {
                 <select className="no-info-select" value={paymentTerms} onChange={e => {
                   const val = e.target.value
                   setPaymentTerms(val)
-                  if (val === 'Paid') setPaymentStatus('Paid')
+                  // Paid is not really a term — it is the shop saying the money
+                  // is already in. So it settles the payment: full amount
+                  // received, nothing due. And moving off it takes that back,
+                  // or the order stays settled while the terms say Net 30.
+                  //
+                  // A payment picked in the Payment field below is a real
+                  // receipt with a number behind it; that is never undone here.
+                  // Nor is a figure the shop typed by hand, which is a part
+                  // payment and none of this term's business — only the full
+                  // amount this dropdown put there is taken back.
+                  if (val === 'Paid') {
+                    setPaymentStatus('Paid')
+                    setAmountPaid(total)
+                  } else if (paymentTerms === 'Paid' && !paymentId && Number(amountPaid) === Number(total)) {
+                    setPaymentStatus('Unpaid')
+                    setAmountPaid(0)
+                  }
                 }}>
                   {PAYMENT_TERMS.map(t => <option key={t}>{t}</option>)}
                 </select>
