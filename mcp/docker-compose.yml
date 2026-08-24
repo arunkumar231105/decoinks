@@ -1,0 +1,18 @@
+# The read-only MCP seat lives in its own compose project so the main
+# docker-compose.yml stays untouched. It joins the existing database network
+# and reaches postgres:5432 directly — so it keeps working after the host
+# port is closed to the internet.
+services:
+  reporting-mcp:
+    build: .
+    container_name: decoinks_reporting_mcp
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '127.0.0.1:8791:8791'   # loopback only; nginx is the way in
+    networks: [decoinks_net]
+
+networks:
+  decoinks_net:
+    external: true
+    name: decoinks_decoinks_net
