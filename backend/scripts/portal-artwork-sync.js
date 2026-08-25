@@ -49,13 +49,26 @@ async function propfindTree() {
   return hrefs.filter(h => h.startsWith(prefix) && !h.endsWith('/')).map(h => h.slice(prefix.length)) // "<cust>/<ORD..>/..."
 }
 
-/** Pick the reliable curated file set for one order folder's file list. */
+/** File sits DIRECTLY in <folder> (no nested subfolder like "New folder/"). */
+function directIn(f, folder) {
+  return new RegExp('/' + folder.replace(/\./g, '\\.') + '/[^/]+$', 'i').test(f)
+}
+
+/**
+ * Pick the curated final-artwork set for one order folder, best source first:
+ *   1. final_files2.0/*        (human-curated)
+ *   2. final_files/AW<NN>_FINAL (numbered convention)
+ *   3. final_files/*           (the finals folder — top level only)
+ * Mockups/, reference_files/, Gangsheets/ and nested subfolders are never used.
+ */
 function pickSource(folderFiles) {
-  const notJunk = f => !/\/New folder\//i.test(f)
-  const ff2 = folderFiles.filter(f => /\/final_files2\.0\//i.test(f) && IMG_EXT.includes(ext(f)) && notJunk(f))
+  const img = f => IMG_EXT.includes(ext(f))
+  const ff2 = folderFiles.filter(f => directIn(f, 'final_files2.0') && img(f))
   if (ff2.length) return { kind: 'final_files2.0', files: ff2.sort() }
-  const awfin = folderFiles.filter(f => /\/final_files\//i.test(f) && AWFIN.test(f))
+  const awfin = folderFiles.filter(f => directIn(f, 'final_files') && AWFIN.test(f))
   if (awfin.length) return { kind: 'AWxx_FINAL', files: awfin.sort((a, b) => (+a.match(AWFIN)[1]) - (+b.match(AWFIN)[1])) }
+  const ff = folderFiles.filter(f => directIn(f, 'final_files') && img(f))
+  if (ff.length) return { kind: 'final_files', files: ff.sort() }
   return null
 }
 
