@@ -56,6 +56,13 @@ function buildFilters(f) {
   if (f.country) add(f.country, n => `c.country ILIKE $${n}`)
   if (f.payment_terms) add(f.payment_terms, n => `c.payment_terms = $${n}`)
   if (f.assigned_agent) add(f.assigned_agent, n => `c.assigned_agent_id = $${n}`)
+  // A customer belongs to an order kind if they have ever ordered it. EXISTS,
+  // not a join, so someone who bought both transfers and apparel answers to
+  // both filters instead of being forced into one — and is not counted twice.
+  // order_type is an enum: cast it, or Postgres refuses the text parameter.
+  if (f.order_type) add(f.order_type, n => `EXISTS (SELECT 1 FROM orders ot
+      WHERE ot.customer_id = c.id AND ot.order_type::text = $${n}
+        AND ot.deleted_at IS NULL AND ot.status NOT IN ('Draft', 'Cancelled'))`)
   if (f.date_from) add(f.date_from, n => `c.created_at >= $${n}::date`)
   if (f.date_to) add(f.date_to, n => `c.created_at < ($${n}::date + INTERVAL '1 day')`)
 
@@ -155,7 +162,10 @@ async function list(options = {}) {
   const { rows } = await query(
     `${cte}
      SELECT * FROM base ${postWhere}
-     ORDER BY ${orderColumn} ${orderDirection} NULLS LAST, id DESC
+     -- Eighteen customers share one created_at to the second, so the tiebreak
+     -- decides what the page actually shows. A random uuid made the list read
+     -- as 0037, 0036, 0076 and look broken; the customer number reads in order.
+     ORDER BY ${orderColumn} ${orderDirection} NULLS LAST, customer_number ${orderDirection}, id DESC
      LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
     dataParams
   )
@@ -203,7 +213,10 @@ async function getStats(filters = {}) {
         -- Average revenue per order, ignoring free/sample rows so the KPI
         -- reflects real order value, not activity.
         COALESCE(ROUND(SUM(paid_spent) / NULLIF(SUM(paid_order_count), 0), 2), 0) AS avg_order_value,
-        COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value
+        COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value,
+        -- What this cohort is worth in total, as opposed to lifetime_value,
+        -- which is the same money divided by head count.
+        COALESCE(SUM(spent), 0)::NUMERIC(14,2) AS total_order_value
       FROM per_customer`, params),
     query(`SELECT COALESCE(SUM(inv.balance_due), 0)::NUMERIC(14,2) AS outstanding_balance
       FROM invoices inv

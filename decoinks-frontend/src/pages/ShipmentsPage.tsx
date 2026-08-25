@@ -16,10 +16,20 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
   Tag,
   Truck,
   Upload,
 } from 'lucide-react'
+
+// index.css is protected, so the header button carries its own reset.
+const SORT_BTN: React.CSSProperties = {
+  border: 0, background: 'none', padding: 0, color: 'inherit', font: 'inherit',
+  fontWeight: 'inherit', textTransform: 'inherit', display: 'flex',
+  alignItems: 'center', gap: 4, cursor: 'pointer', width: '100%', whiteSpace: 'nowrap',
+}
 import { Menu, MenuItem, Drawer } from '@mui/material'
 import { useQuery, keepPreviousData, useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
@@ -98,14 +108,27 @@ export function ShipmentsPage() {
   // Newest ship date first by default, matching the other modules; the SHP
   // series is one pick away for reading the list in sequence.
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'>('date_desc')
+  const [colSort, setColSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
+  // Header label -> the value that column shows, so a click sorts by what is
+  // on screen. Status is derived, not stored.
+  const SORT_COLUMNS: ReadonlyArray<readonly [string, (s: Shipment) => any]> = [
+    ['Ship Date', s => s.ship_date], ['Customer Name', s => s.customer_name],
+    ['PO #', s => s.po_number], ['Carrier', s => s.carrier],
+    ['Service Type', s => s.service_type], ['Ship-To Address', s => s.address],
+    ['City', s => s.ship_to_city], ['State', s => s.ship_to_state],
+    ['Postal Code', s => s.ship_to_postal_code], ['Status', s => effectiveStatus(s)],
+    ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
+    ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
+    ['Tracking ID', s => s.tracking_number],
+  ]
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showLabel, setShowLabel] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['shipments', { page }],
-    queryFn: () => api.get('/shipments', { params: { page, limit: PAGE_SIZE } }).then(r => r.data.data),
+    queryKey: ['shipments', 'all'],
+    queryFn: () => api.get('/shipments', { params: { page: 1, limit: 1000 } }).then(r => r.data.data),
     placeholderData: keepPreviousData,
   })
   // Dashboard-card counts aggregated across ALL shipments (not just this page).
@@ -115,8 +138,6 @@ export function ShipmentsPage() {
   })
 
   const allShipments: Shipment[] = data?.rows ?? []
-  const total: number = data?.total ?? 0
-  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const filtered = allShipments.filter((s) => {
     const matchesStatus = statusFilter === 'All' || effectiveStatus(s) === statusFilter
@@ -134,7 +155,20 @@ export function ShipmentsPage() {
     const m = String(s.shipment_number ?? '').match(/(\d+)\s*$/)
     return m ? Number(m[1]) : null
   }
-  const rowsToShow = [...filtered].sort((a, b) => {
+  const sortedAll = [...filtered].sort((a, b) => {
+    if (colSort) {
+      const col = SORT_COLUMNS.find(([label]) => label === colSort.key)
+      if (col) {
+        const x = col[1](a), y = col[1](b)
+        const xb = x === null || x === undefined || x === ''
+        const yb = y === null || y === undefined || y === ''
+        if (xb && yb) return 0
+        if (xb) return 1                      // blanks stay at the bottom both ways
+        if (yb) return -1
+        const cmp = String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' })
+        return colSort.dir === 'asc' ? cmp : -cmp
+      }
+    }
     if (sortBy === 'num_desc' || sortBy === 'num_asc') {
       const x = seqOf(a), y = seqOf(b)
       if (x === null && y === null) return 0
@@ -148,6 +182,9 @@ export function ShipmentsPage() {
     if (!y) return -1
     return sortBy === 'date_asc' ? x.localeCompare(y) : y.localeCompare(x)
   })
+  const total = sortedAll.length
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const rowsToShow = sortedAll.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const selectedShipment = allShipments.find(s => s.id === menuAnchor?.id)
   const cancelMutation = useMutation({
@@ -265,7 +302,7 @@ export function ShipmentsPage() {
           <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
         </button>
         <select className="sh-per-page" aria-label="Sort shipments"
-                value={sortBy} onChange={e => { setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
+                value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
           <option value="date_desc">Ship date: newest first</option>
           <option value="date_asc">Ship date: oldest first</option>
           <option value="num_desc">Number: high to low</option>
@@ -358,21 +395,14 @@ export function ShipmentsPage() {
         <table className="sh-table">
           <thead>
             <tr>
-              <th>Ship Date</th>
-              <th>Customer Name</th>
-              <th>PO #</th>
-              <th>Carrier</th>
-              <th>Service Type</th>
-              <th>Ship-To Address</th>
-              <th>City</th>
-              <th>State</th>
-              <th>Postal Code</th>
-              <th>Status</th>
-              <th>Last Scan City</th>
-              <th>Last Scan State</th>
-              <th>Estimated Delivery</th>
-              <th>Delivered Date</th>
-              <th>Tracking ID</th>
+              {SORT_COLUMNS.map(([label]) => (
+                <th key={label}>
+                  <button style={SORT_BTN} aria-label={`Sort by ${label}`}
+                    onClick={() => setColSort(c => ({ key: label, dir: c?.key === label && c.dir === 'desc' ? 'asc' : 'desc' }))}>
+                    {label} {colSort?.key !== label ? <ArrowDownUp size={11}/> : colSort.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>}
+                  </button>
+                </th>
+              ))}
               <th></th>
             </tr>
           </thead>
