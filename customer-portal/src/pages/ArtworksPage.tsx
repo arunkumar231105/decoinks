@@ -22,6 +22,10 @@ export default function ArtworksPage() {
   const [rows, setRows] = useState(10)
 
   const list = artworks.data ?? []
+  // Matrix: how many distinct artworks exist vs how many times they were used
+  // across orders (an artwork used in 3 orders counts 3 toward "used").
+  const totalArtworks = list.length
+  const usedInOrders = list.reduce((sum, a) => sum + a.usedInOrders.length, 0)
   const sizes = useMemo(() => ['All', ...Array.from(new Set(list.map(a => a.size).filter(Boolean) as string[]))], [list])
   const types = useMemo(() => ['All', ...Array.from(new Set(list.map(a => a.fileType).filter(Boolean) as string[]))], [list])
 
@@ -48,9 +52,9 @@ export default function ArtworksPage() {
   return (
     <Layout title="Artworks" subtitle="View and manage all artwork files." searchPlaceholder="Search by artwork name, order no, size…">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard icon={ImageIcon} loading={summary.loading} value={num(s?.artworks)} label="Total Artworks" hint="Total uploaded" />
-        <StatCard icon={Repeat} loading={summary.loading} value={num(s?.transfersQty)} label="Total Transfers Qty" hint="Across all orders" tone="bg-emerald-50 text-emerald-600" />
-        <StatCard icon={ShoppingBag} loading={summary.loading} value={num(s?.orders)} label="Orders" hint="Containing these artworks" tone="bg-amber-50 text-amber-600" />
+        <StatCard icon={ImageIcon} loading={artworks.loading} value={num(totalArtworks)} label="Total Artworks" hint="Distinct designs" />
+        <StatCard icon={ShoppingBag} loading={artworks.loading} value={num(usedInOrders)} label="Used in Orders" hint="Total times used across orders" tone="bg-amber-50 text-amber-600" />
+        <StatCard icon={Repeat} loading={summary.loading} value={num(s?.transfersQty)} label="Total Transfers Qty" hint="Pieces printed across all orders" tone="bg-emerald-50 text-emerald-600" />
       </div>
 
       <div className="cp-card mt-4 p-4">

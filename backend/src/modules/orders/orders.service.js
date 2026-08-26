@@ -114,14 +114,28 @@ async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {})
   const delta = +(want - alreadyPaid).toFixed(2)
 
   if (delta > 0.009) {
-    await client.query(
-      `INSERT INTO payments (invoice_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        invoiceId, delta, paymentMethod || 'other', reference || null,
-        paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
-      ]
-    )
+    // The sales order this invoice belongs to, so the payment written here is
+    // attached to the order and not left floating against the invoice alone.
+    const { rows: ordRows } = await client.query(
+      `SELECT id FROM orders WHERE invoice_id = $1 AND deleted_at IS NULL LIMIT 1`, [invoiceId])
+    const orderId = ordRows[0]?.id || null
+
+    // One payment per sales order. An order that already has one is settled;
+    // writing a second is how the same money came to be recorded twice.
+    const { rows: existing } = orderId
+      ? await client.query(`SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`, [orderId])
+      : { rows: [] }
+
+    if (!existing.length) {
+      await client.query(
+        `INSERT INTO payments (invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
+          paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
+        ]
+      )
+    }
   }
 
   const finalPaid = +Math.max(alreadyPaid, want).toFixed(2)

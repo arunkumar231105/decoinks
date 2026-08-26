@@ -52,3 +52,8 @@ backups/
 exports/
 scratchpad/
 *.bak-*
+
+# The owner's verified deposit file: 101 rows of real customer names, banks and
+# amounts. This repository is public — the payment scripts read it from disk,
+# it is never committed.
+backend/scripts/data/

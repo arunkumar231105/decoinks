@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   BadgeCheck, Box, CalendarDays, ChevronDown, ChevronFirst, ChevronLast,
+  ArrowDown, ArrowDownUp, ArrowUp,
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
   PackageCheck, Pencil, Plus, Printer, Search, Send, ShoppingBag,
   Trash2, Truck, Upload, Users, X,
@@ -17,7 +18,28 @@ import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
 type AnyRow = Record<string, any>
-type Column = { key: string; label: string; numeric?: boolean; render?: (row: AnyRow) => React.ReactNode }
+type Column = {
+  key: string; label: string; numeric?: boolean
+  // Where the sortable value lives. A list tries each field in turn; a
+  // function covers columns computed from several fields.
+  sortKey?: string | string[] | ((row: AnyRow) => any)
+  render?: (row: AnyRow) => React.ReactNode
+}
+
+const sortValueOf = (row: AnyRow, col: Column) => {
+  if (typeof col.sortKey === 'function') return col.sortKey(row)
+  const keys = col.sortKey ? (Array.isArray(col.sortKey) ? col.sortKey : [col.sortKey]) : [col.key]
+  for (const k of keys) { const v = row[k]; if (v !== null && v !== undefined && v !== '') return v }
+  return null
+}
+
+// index.css is protected, so the header button carries its own reset instead of
+// borrowing .leads-table's.
+const SORT_BTN: React.CSSProperties = {
+  border: 0, background: 'none', padding: 0, color: 'inherit', font: 'inherit',
+  fontWeight: 'inherit', textTransform: 'inherit', display: 'flex',
+  alignItems: 'center', gap: 4, cursor: 'pointer', width: '100%',
+}
 type Kpi = { label: string; icon: typeof Users; value: (rows: AnyRow[], total: number) => string | number; tone: string }
 
 const money = (value: any) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -92,13 +114,13 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'created_at', label: 'Quote Date', render: r => date(r.created_at) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
+      { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
       { key: 'source', label: 'Source', render: r => common.empty(r, 'source') },
       { key: 'sent_via', label: 'Sent Via', render: r => common.empty(r, 'sent_via') },
-      { key: 'item', label: 'Item', render: r => common.empty(r, 'order_type', 'item_name', 'description') },
-      { key: 'qty', label: 'Qty', numeric: true, render: r => Number(r.total_qty || 0).toLocaleString() },
+      { key: 'item', label: 'Item', sortKey: ['order_type', 'item_name', 'description'], render: r => common.empty(r, 'order_type', 'item_name', 'description') },
+      { key: 'qty', label: 'Qty', numeric: true, sortKey: 'total_qty', render: r => Number(r.total_qty || 0).toLocaleString() },
       { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
-      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.estimated_shipping) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'estimated_shipping', render: r => money(r.estimated_shipping) },
       { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
     ],
   },
@@ -117,12 +139,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'invoice_number', label: 'Invoice #', render: r => <strong className="ew-link">{r.invoice_number}</strong> },
       { key: 'quote_number', label: 'Quotation ID', render: r => common.empty(r, 'quote_number') },
-      { key: 'customer', label: 'Customer', render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
+      { key: 'customer', label: 'Customer', sortKey: ['customer_display_name', 'customer_name'], render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
       { key: 'invoice_date', label: 'Invoice Date', render: r => date(pick(r, 'invoice_date', 'issue_date')) },
       { key: 'due_date', label: 'Due Date', render: r => date(r.due_date) },
-      { key: 'payment', label: 'Payment Status', render: r => <Badge>{common.empty(r, 'payment_status', 'status')}</Badge> },
+      { key: 'payment', label: 'Payment Status', sortKey: ['payment_status', 'status'], render: r => <Badge>{common.empty(r, 'payment_status', 'status')}</Badge> },
       { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
-      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.shipping_charges) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
       { key: 'amount_paid', label: 'Paid', numeric: true, render: r => money(r.amount_paid) },
       { key: 'balance_due', label: 'Balance', numeric: true, render: r => money(r.balance_due) },
@@ -145,22 +167,22 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'sales_channel', label: 'Channel', render: r => common.empty(r, 'export_channel', 'sales_channel') },
       { key: 'order_date', label: 'Order Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
-      { key: 'agent', label: 'Agent Name', render: r => common.empty(r, 'agent_name') },
-      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
+      { key: 'agent', label: 'Agent Name', sortKey: 'agent_name', render: r => common.empty(r, 'agent_name') },
+      { key: 'customer', label: 'Customer Name', sortKey: ['customer_name', 'contact_name', 'supplier_name'], render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name', 'supplier_name')} sub={common.empty(r, 'contact_email')}/> },
       { key: 'order_type', label: 'Product Type', render: r => titleCase(r.order_type) },
-      { key: 'qty', label: 'Qty', numeric: true, render: r => Number(r.total_qty || 0).toLocaleString() },
+      { key: 'qty', label: 'Qty', numeric: true, sortKey: 'total_qty', render: r => Number(r.total_qty || 0).toLocaleString() },
       { key: 'subtotal', label: 'Subtotal', numeric: true, render: r => money(r.subtotal) },
-      { key: 'shipping', label: 'Shipping Charges', numeric: true, render: r => money(r.shipping_charges) },
+      { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Order Value', numeric: true, render: r => <strong>{money(r.total)}</strong> },
-      { key: 'paid', label: 'Paid Amount', numeric: true, render: r => money(pick(r, 'amount_paid', 'payment_received')) },
-      { key: 'method', label: 'Payment Method', render: r => common.empty(r, 'payment_method') },
+      { key: 'paid', label: 'Paid Amount', numeric: true, sortKey: ['amount_paid', 'payment_received'], render: r => money(pick(r, 'amount_paid', 'payment_received')) },
+      { key: 'method', label: 'Payment Method', sortKey: 'payment_method', render: r => common.empty(r, 'payment_method') },
       // Order Status is where the document is; Process Status is where the job
       // is. Both fall back to the combined status for any row not yet split.
-      { key: 'order_stage', label: 'Order Status', render: r => <Badge>{orderStage(r)}</Badge> },
-      { key: 'process_status', label: 'Process Status', render: r => <Badge>{processStatus(r)}</Badge> },
+      { key: 'order_stage', label: 'Order Status', sortKey: r => orderStage(r), render: r => <Badge>{orderStage(r)}</Badge> },
+      { key: 'process_status', label: 'Process Status', sortKey: r => processStatus(r), render: r => <Badge>{processStatus(r)}</Badge> },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
-      { key: 'delivery', label: 'Estimated Delivery', render: r => date(pick(r, 'expected_delivery_date', 'due_date')) },
+      { key: 'delivery', label: 'Estimated Delivery', sortKey: ['expected_delivery_date', 'due_date'], render: r => date(pick(r, 'expected_delivery_date', 'due_date')) },
     ],
   },
   'purchase-orders': {
@@ -189,11 +211,11 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'shipping', label: 'Shipping By', render: r => common.empty(r, 'shipping_by', 'shipping_method') },
+      { key: 'shipping', label: 'Shipping By', sortKey: ['shipping_by', 'shipping_method'], render: r => common.empty(r, 'shipping_by', 'shipping_method') },
       { key: 'service', label: 'Service Type', render: r => common.empty(r, 'service_type') },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_id', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
-      { key: 'delivery', label: 'Est. Delivery', render: r => date(r.expected_date) },
+      { key: 'delivery', label: 'Est. Delivery', sortKey: 'expected_date', render: r => date(r.expected_date) },
     ],
   },
   payments: {
@@ -212,7 +234,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
       { key: 'transaction_id', label: 'Transaction ID', render: r => common.empty(r, 'transaction_id') },
       { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
-      { key: 'customer', label: 'Customer Name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
+      { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
       { key: 'received_from_name', label: 'Received From', render: r => common.empty(r, 'received_from_name', 'customer_name') },
       { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
@@ -264,6 +286,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [loading, setLoading] = useState(true)
   const [quoteImport, setQuoteImport] = useState(false)
   const [orderImport, setOrderImport] = useState(false)
+  const [colSort, setColSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(config.columns.map(c => c.key)))
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -348,6 +371,22 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     return m ? Number(m[1]) : null
   }
   const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
+    if (colSort) {
+      const col = config.columns.find(c => c.key === colSort.key)
+      if (col) {
+        const x = sortValueOf(a, col), y = sortValueOf(b, col)
+        const xb = x === null || x === undefined || x === ''
+        const yb = y === null || y === undefined || y === ''
+        if (xb && yb) return 0
+        if (xb) return 1                      // blanks stay at the bottom both ways
+        if (yb) return -1
+        const cmp = col.numeric
+          ? Number(x) - Number(y)
+          // numeric:true so ORD-2026-0099 sorts before ORD-2026-0126
+          : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' })
+        return colSort.dir === 'asc' ? cmp : -cmp
+      }
+    }
     if (sortBy === 'num_desc' || sortBy === 'num_asc') {
       const x = seqOf(a), y = seqOf(b)
       if (x === null && y === null) return 0
@@ -360,7 +399,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (!x) return 1                          // undated rows sit at the bottom either way
     if (!y) return -1
     return sortBy === 'date_asc' ? x.localeCompare(y) : y.localeCompare(x)
-  }), [filteredRows, sortBy, config.dateKey, config.numberKey])
+  }), [filteredRows, sortBy, colSort, config.columns, config.dateKey, config.numberKey])
 
   const total = sortedRows.length
   const pages = Math.max(1, Math.ceil(total / pageSize))
@@ -370,7 +409,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
   const sources = useMemo(() => unique(allRows.map(sourceOf)), [allRows])
-  useEffect(() => { setPage(1) }, [search, status, customer, product, source, group, period, dateFrom, dateTo, sortBy])
+  useEffect(() => { setPage(1) }, [search, status, customer, product, source, group, period, dateFrom, dateTo, sortBy, colSort])
   useEffect(() => { if (page > pages) setPage(pages) }, [page, pages])
 
   const openDetail = async (row: AnyRow) => {
@@ -443,7 +482,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const clearFilters = () => {
     setSearch(''); setStatus('All'); setCustomer('All'); setProduct('All'); setSource('All')
     setGroup('All')
-    setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setPage(1)
+    setPeriod('all'); setDateFrom(''); setDateTo(''); setSortBy('date_desc'); setColSort(null); setPage(1)
     try { sessionStorage.removeItem(filtersKey(kind)) } catch { /* nothing to forget */ }
   }
 
@@ -493,7 +532,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {kind === 'orders' && <label><span>Channel</span><select value={group} onChange={e => setGroup(e.target.value)}><option>All</option>{ORDER_GROUPS.map(g => <option value={g.value} key={g.value}>{g.value}</option>)}</select></label>}
         {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
-        <label><span>Sort By</span><select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}>
+        <label><span>Sort By</span><select value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as SortKey) }}>
           <option value="date_desc">Date: newest first</option>
           <option value="date_asc">Date: oldest first</option>
           <option value="num_desc">Number: high to low</option>
@@ -513,7 +552,13 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <section className="ew-table-card">
         <div className="ew-table-scroll"><table className="ew-table"><thead><tr>
           <th><input type="checkbox" checked={allChecked} onChange={() => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))}/></th>
-          {shownColumns.map(c => <th key={c.key} className={c.numeric ? 'numeric' : ''}>{c.label}</th>)}<th>Actions</th>
+          {shownColumns.map(c => <th key={c.key} className={c.numeric ? 'numeric' : ''}>
+            <button style={{ ...SORT_BTN, justifyContent: c.numeric ? 'flex-end' : 'flex-start' }}
+              onClick={() => setColSort(s => ({ key: c.key, dir: s?.key === c.key && s.dir === 'desc' ? 'asc' : 'desc' }))}
+              aria-label={`Sort by ${c.label}`}>
+              {c.label} {colSort?.key !== c.key ? <ArrowDownUp size={11}/> : colSort.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>}
+            </button>
+          </th>)}<th>Actions</th>
         </tr></thead><tbody>
           {loading && Array.from({ length: 6 }).map((_, i) => <tr key={i} className="ew-skeleton"><td colSpan={shownColumns.length + 2}><span/></td></tr>)}
           {!loading && rows.length === 0 && <tr><td className="ew-empty" colSpan={shownColumns.length + 2}><strong>No matching records</strong><span>Try changing the period or clearing your filters.</span><button onClick={clearFilters}>Clear filters</button></td></tr>}
