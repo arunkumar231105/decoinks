@@ -344,7 +344,7 @@ export function NewOrderPage() {
   const { data: orderRing } = useQuery({
     queryKey: ['order-ring'],
     queryFn:  () => api.get('/orders', { params: { limit: 1000 } })
-      .then(r => (r.data.data ?? r.data.orders ?? [])
+      .then(r => (r.data.data?.rows ?? [])
         .map((o: any) => ({ id: o.id, order_number: o.order_number }))
         .filter((o: any) => o.id && o.order_number)
         .sort((a: any, b: any) => String(a.order_number).localeCompare(String(b.order_number)))),
