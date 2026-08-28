@@ -22,6 +22,7 @@ import { DraftBanner } from '../components/DraftBanner'
 import { useAuthStore } from '../store/authStore'
 import ArtworkUploader from '../components/ArtworkUploader'
 import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
+import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 
 type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
 
@@ -1369,7 +1370,6 @@ export function NewQuotationPage() {
   // the catalogue existed — has plain text boxes for colour and size, because
   // there is no style behind it to list. The search only ever added a new line,
   // so such a line could never be given one. This is the line waiting for it.
-  const [linkingItemId, setLinkingItemId] = useState<string | null>(null)
 
   const linkStyleToItem = (itemId: string, style: CatalogStyle) => {
     setApparelItems(prev => prev.map(item => {
@@ -1696,27 +1696,14 @@ export function NewQuotationPage() {
               <div className="nq-section-header">
                 <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
               </div>
-              <CatalogStyleSearch onSelect={style => {
-                if (linkingItemId) linkStyleToItem(linkingItemId, style)
-                else addCatalogStyle(style)
-              }} />
-              {linkingItemId && <button type="button" onClick={() => setLinkingItemId(null)}
-                style={{ marginTop: 6, fontSize: 11.5, color: '#6b7280', background: 'none',
-                         border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
-                Cancel linking
-              </button>}
-              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th></th></tr></thead><tbody>
+              <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th style={{ minWidth: 140 }}>Style</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
                   <tr key={item.id}>
                     <td className="nq-td-num">{idx + 1}</td>
+                    <td><ApparelStyleSelect value={item.styleCode} onSelect={style => linkStyleToItem(item.id, style)} /></td>
                     <td><select className="nq-table-select" value={item.category} onChange={e => updateApparelItem(item.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td><div className="nq-quote-product"><div className="nq-quote-product-image">{item.productImage ? <img src={item.productImage} alt={item.description} /> : <Package size={20} />}</div><div><strong>{item.description || 'Legacy apparel item'}</strong><span>Brand: {item.brand || '—'}</span><span>Style: {item.styleCode || '—'}</span>{item.styleDescription && <small title={item.styleDescription}>{item.styleDescription}</small>}
-                      {!item.styleId && <button type="button" onClick={() => setLinkingItemId(item.id)}
-                        style={{ marginTop: 3, fontSize: 10.5, color: linkingItemId === item.id ? '#b45309' : '#2563eb',
-                                 background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                 fontWeight: 700, textAlign: 'left' }}>
-                        {linkingItemId === item.id ? 'Choose it above…' : 'Link a style'}
-                      </button>}</div></div></td>
+                      </div></div></td>
                     <td>{item.styleId ? <select className="nq-table-select" value={item.colorId ?? ''} onChange={e => selectApparelColor(item, e.target.value)}><option value="">Select color</option>{(item.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="nq-table-input" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} />}</td>
                     <td>{item.styleId ? <select className="nq-table-select" value={item.sizeId ?? ''} onChange={e => selectApparelSize(item, e.target.value)}><option value="">Select size</option>{(item.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} />}</td>
                     <td><code className="nq-item-sku">{item.sku || (item.colorId && item.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
