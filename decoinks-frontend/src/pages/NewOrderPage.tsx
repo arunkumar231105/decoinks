@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, Copy, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -337,6 +337,41 @@ export function NewOrderPage() {
     queryFn:  () => api.get(`/orders/${editOrderId}`).then(r => r.data.data),
     enabled:  !!editOrderId,
   })
+
+  // Ek order se agle par jaane ke liye padosi chahiyen. Poori list ek baar aati
+  // hai aur react-query use rok leti hai, is liye har order par nayi request
+  // nahi jati. Sirf id aur number rakhe jate hain — baqi sab yahan bekaar hai.
+  const { data: orderRing } = useQuery({
+    queryKey: ['order-ring'],
+    queryFn:  () => api.get('/orders', { params: { limit: 1000 } })
+      .then(r => (r.data.data ?? r.data.orders ?? [])
+        .map((o: any) => ({ id: o.id, order_number: o.order_number }))
+        .filter((o: any) => o.id && o.order_number)
+        .sort((a: any, b: any) => String(a.order_number).localeCompare(String(b.order_number)))),
+    enabled:  !!editOrderId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Number ke hisaab se pichla aur agla. Aakhir par pahunch kar arrow band.
+  const { prevOrder, nextOrder, ringPos } = useMemo(() => {
+    const ring: { id: string; order_number: string }[] = orderRing ?? []
+    const i = ring.findIndex(o => String(o.id) === String(editOrderId))
+    if (i < 0) return { prevOrder: null, nextOrder: null, ringPos: '' }
+    return {
+      prevOrder: i > 0 ? ring[i - 1] : null,
+      nextOrder: i < ring.length - 1 ? ring[i + 1] : null,
+      ringPos: `${i + 1} / ${ring.length}`,
+    }
+  }, [orderRing, editOrderId])
+
+  // Usi route par rehte hue doosra order kholna. editOrderId location.state se
+  // aata hai, is liye state badalte hi query dobara chalti hai aur form khud
+  // naye order se bhar jata hai.
+  const goToOrder = (o: { id: string; order_number: string } | null) => {
+    if (!o) return
+    navigate('/orders/new', { state: { editOrderId: o.id } })
+    window.scrollTo({ top: 0 })
+  }
 
   useEffect(() => {
     if (!existingOrder) return
@@ -896,6 +931,28 @@ export function NewOrderPage() {
 
       {/* â"€â"€ Top action bar â"€â"€ */}
       <div className="no-topbar">
+        {editOrderId && (
+          <>
+            <button
+              className="no-topbar-btn"
+              onClick={() => goToOrder(prevOrder)}
+              disabled={!prevOrder}
+              title={prevOrder ? `Pichla order — ${prevOrder.order_number}` : 'Yeh pehla order hai'}
+            ><ChevronLeft size={14} /></button>
+            <button
+              className="no-topbar-btn"
+              onClick={() => goToOrder(nextOrder)}
+              disabled={!nextOrder}
+              title={nextOrder ? `Agla order — ${nextOrder.order_number}` : 'Yeh aakhri order hai'}
+            ><ChevronRight size={14} /></button>
+            {/* index.css protected hai, is liye yeh label apni style khud rakhta hai. */}
+            {ringPos && (
+              <span style={{ alignSelf: 'center', fontSize: 12, opacity: 0.6, marginRight: 4, whiteSpace: 'nowrap' }}>
+                {ringPos}
+              </span>
+            )}
+          </>
+        )}
         <button className="no-topbar-btn" onClick={() => editOrderId ? navigate(`/orders/${editOrderId}/print`) : toast.info('Save the order to preview it')}><Eye size={14} /> Preview</button>
         {!editOrderId && (
           <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}><Save size={14} /> Save Draft</button>
