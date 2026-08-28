@@ -36,6 +36,7 @@ import {
   UserCheck,
   Users,
   KeyRound,
+  ShieldAlert,
 } from 'lucide-react'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useAuthStore } from '../store/authStore'
@@ -56,6 +57,7 @@ const mainNav = [
   { label: 'Payments', path: '/payments', icon: CircleDollarSign },
   { label: 'Purchase Orders', path: '/purchase-orders', icon: ShoppingCart },
   { label: 'Shipments', path: '/shipments', icon: Truck },
+  { label: 'Claims', path: '/claims', icon: ShieldAlert },
   { label: 'Suppliers', path: '/suppliers', icon: Users },
   { label: 'Products', path: '/products', icon: Boxes },
 ]
