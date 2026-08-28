@@ -8,7 +8,8 @@ import { api } from '../services/api'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
 import { useAuthStore } from '../store/authStore'
-import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
+import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
+import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
@@ -646,7 +647,6 @@ export function NewOrderPage() {
   // colour and size, because there is no style behind it to list. There was no
   // way to give it one either: the picker only ever added a new line. This is
   // the row waiting to be linked to a style.
-  const [linkingRowId, setLinkingRowId] = useState<string | null>(null)
 
   // Attach a catalogue style to a line that already exists, keeping whatever
   // the line already says. Colour and size become dropdowns from that style;
@@ -1043,23 +1043,13 @@ export function NewOrderPage() {
             {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
               <>
-                <p className="nq-items-hint">{linkingRowId
-                  ? 'Pick the style for that line — its colours and sizes will fill in.'
-                  : 'Select a Product Master style. Colors, sizes, SKU, brand and preview fill automatically.'}</p>
-                <ApparelCatalogPicker onSelect={style => {
-                  if (linkingRowId) linkStyleToRow(linkingRowId, style)
-                  else addApparel(style)
-                }} />
-                {linkingRowId && <button type="button" onClick={() => setLinkingRowId(null)}
-                  style={{ marginTop: 6, fontSize: 11.5, color: '#6b7280', background: 'none',
-                           border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
-                  Cancel linking
-                </button>}
+                <p className="nq-items-hint">Pick a style on each line — item, colours, sizes and SKU fill in automatically.</p>
                 <div className="no-table-wrap">
                   <table className="no-table no-catalog-apparel-table">
                     <thead>
                       <tr>
                         <th style={{ width: 42 }}>S.No</th>
+                        <th style={{ minWidth: 140 }}>Style</th>
                         <th>Category</th>
                         <th>Item</th>
                         <th>Color</th>
@@ -1078,15 +1068,11 @@ export function NewOrderPage() {
                       {apparel.map((row, idx) => (
                         <tr key={row.id} className="no-row">
                           <td className="no-td-num">{idx + 1}</td>
+                          <td><ApparelStyleSelect value={row.styleCode} onSelect={style => linkStyleToRow(row.id, style)} /></td>
                           <td><select className="no-table-select" value={row.category} onChange={e => updateApparel(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td>
                             <div className="nq-quote-product"><div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.item} /> : <Package size={20} />}</div><div><strong>{row.item || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>
-                              {!row.styleId && <button type="button" onClick={() => setLinkingRowId(row.id)}
-                                style={{ marginTop: 3, fontSize: 10.5, color: linkingRowId === row.id ? '#b45309' : '#2563eb',
-                                         background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                         fontWeight: 700, textAlign: 'left' }}>
-                                {linkingRowId === row.id ? 'Choose it above…' : 'Link a style'}
-                              </button>}</div></div>
+                              </div></div>
                           </td>
                           <td>
                             {row.styleId ? <select className="no-table-select" value={row.colorId ?? ''} onChange={e => selectOrderApparelColor(row, e.target.value)}><option value="">Select color</option>{(row.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="no-table-input" value={row.color} onChange={e => updateApparel(row.id, { color: e.target.value })} />}
@@ -1120,7 +1106,7 @@ export function NewOrderPage() {
                       ))}
                     </tbody>
                     <tfoot><tr className="live-summary-row">
-                      <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
+                      <td colSpan={7}><span className="live-summary-title">Apparel Summary</span></td>
                       <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{apparel.length}</strong></div></td>
                       <td><div className="live-summary-stat"><span>Total Weight</span><strong>{apparelWeightLbs ? `${apparelWeightLbs} lbs` : '—'}</strong></div></td>
@@ -1130,6 +1116,7 @@ export function NewOrderPage() {
                     </tr></tfoot>
                   </table>
                 </div>
+                <button className="no-add-item-btn" onClick={() => addApparel()}><Plus size={13} /> Add Item</button>
               </>
             )}
 
@@ -1480,8 +1467,15 @@ export function NewOrderPage() {
                     if (chosen) {
                       if (chosen.payment_method) setPaymentMethod(normalizePaymentMethod(chosen.payment_method))
                       if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
-                      if (chosen.payment_number) setPaymentReference(chosen.payment_number)
-                      setAmountPaid(Number(chosen.amount) || 0)
+                      // The bank's or processor's own reference, which is what
+                      // anyone reconciling actually searches for. Our internal
+                      // payment number only stands in when there is none.
+                      setPaymentReference(chosen.transaction_id || chosen.reference_no || chosen.payment_number || '')
+                      const paid = Number(chosen.amount) || 0
+                      setAmountPaid(paid)
+                      // Terms follow the money: an amount that covers the order
+                      // is Paid, anything less is an advance.
+                      if (total > 0) setPaymentTerms(paid >= total - 0.005 ? 'Paid' : 'Advance')
                     }
                   }}
                 >

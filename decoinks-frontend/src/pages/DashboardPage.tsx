@@ -259,8 +259,13 @@ export function DashboardPage() {
           <StatCard icon={Users} title="New Leads" count={P.leads.count} prev={P.leads.prev} prevLabel={prevLabel} rows={typeRows(P.leads)} />
           <StatCard icon={BadgeCheck} tone="green" title="Qualified Leads" count={P.qualified.count} prev={P.qualified.prev} prevLabel={prevLabel} rows={typeRows(P.qualified)} />
           <StatCard icon={FileText} tone="violet" title="Quotations Sent" count={P.quotes.count} prev={P.quotes.prev} prevLabel={prevLabel} rows={typeRows(P.quotes)} />
-          <StatCard icon={UserPlus} tone="blue" title="Customers" count={C.total} prev={C.total - C.new + C.new_prev} prevLabel={prevLabel}
-            rows={[{ label: 'New Customers', count: C.new }, { label: 'Existing Customers', count: C.existing }]} />
+          {/* Every other card counts what happened in the chosen period; this one
+              showed the all-time customer list, so Daily read 80. It now counts
+              customers added in the period, and the rows split who actually
+              bought in it. */}
+          <StatCard icon={UserPlus} tone="blue" title="Customers Added" count={C.new} prev={C.new_prev} prevLabel={prevLabel}
+            rows={[{ label: 'First-time buyers', count: C.sales_orders.new },
+                   { label: 'Returning buyers', count: C.sales_orders.existing }]} />
           <StatCard icon={CircleDollarSign} tone="green" title="Payment Received" count={P.payments.count} unit="Orders" value={P.payments.value} prev={P.payments.prev} prevLabel={prevLabel} rows={typeRows(P.payments)} />
           <StatCard icon={ShoppingCart} tone="orange" title="Sales Orders Issued" count={P.sales_orders.count} unit="Orders" value={P.sales_orders.value} prev={P.sales_orders.prev} prevLabel={prevLabel} rows={typeRows(P.sales_orders)} pending={P.sales_orders.pending} />
           <StatCard icon={ClipboardList} tone="red" title="PO Issued" count={P.po.count} unit="Orders" prev={P.po.prev} prevLabel={prevLabel} rows={typeRows(P.po)} pending={P.po.pending} />

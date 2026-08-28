@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore'
 import { copyText, printPanel } from '../utils/actions'
 import { cn } from '../utils/cn'
 import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
+import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 import { rate } from '../utils/rate'
 import {
   Check,
@@ -732,7 +733,6 @@ export function NewInvoicePage() {
   // document written before the catalogue existed — shows plain text boxes for
   // colour and size, because there is no style behind it to list. The search
   // only ever added a new line, so such a line could never be given one.
-  const [linkingRowId, setLinkingRowId] = useState<string | null>(null)
 
   const linkStyleToRow = (rowId: string, style: CatalogStyle) => {
     setApparelItems(prev => prev.map(row => {
@@ -1113,21 +1113,13 @@ export function NewInvoicePage() {
             {/* -- Custom Printed Apparel -- */}
             {orderType === 'apparel' && (
               <>
-                <p className="ni-items-hint">Select a BlankTex Product Master style. Product image, brand, style code, colors, sizes and SKU fill automatically.</p>
-                <InvoiceCatalogStyleSearch disabled={ratesLocked} onSelect={style => {
-                  if (linkingRowId) linkStyleToRow(linkingRowId, style)
-                  else addCatalogStyle(style)
-                }} />
-                {linkingRowId && <button type="button" onClick={() => setLinkingRowId(null)}
-                  style={{ marginTop: 6, fontSize: 11.5, color: '#6b7280', background: 'none',
-                           border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
-                  Cancel linking
-                </button>}
+                <p className="ni-items-hint">Pick a style on each line — product, colours, sizes and SKU fill in automatically.</p>
                 <div className="ni-table-wrap">
                   <table className="ni-table ni-mobile-stack-table ni-catalog-items-table">
                     <thead>
                       <tr>
                         <th style={{ width: 36 }}>#</th>
+                        <th style={{ minWidth: 140 }}>Style</th>
                         <th>Category</th>
                         <th>Product <small>Image | Brand | Style</small></th>
                         <th>Color</th>
@@ -1146,17 +1138,13 @@ export function NewInvoicePage() {
                       {apparelItems.map((row, i) => (
                         <tr key={row.id}>
                           <td className="ni-od-num" data-label="S.No">{i + 1}</td>
+                          <td data-label="Style"><ApparelStyleSelect value={row.styleCode} disabled={ratesLocked} onSelect={style => linkStyleToRow(row.id, style as any)} /></td>
                           <td data-label="Category"><select className="ni-table-select" disabled={ratesLocked} value={row.category} onChange={e => updateApparelItem(row.id, { category: e.target.value })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                           <td data-label="Product">
                             <div className="nq-quote-product">
                               <div className="nq-quote-product-image">{row.productImage ? <img src={row.productImage} alt={row.description} /> : <Package size={20} />}</div>
                               <div><strong>{row.description || 'Legacy apparel item'}</strong><span>Brand: {row.brand || '—'}</span><span>Style: {row.styleCode || '—'}</span>{row.styleDescription && <small title={row.styleDescription}>{row.styleDescription}</small>}
-                                {!row.styleId && !ratesLocked && <button type="button" onClick={() => setLinkingRowId(row.id)}
-                                  style={{ marginTop: 3, fontSize: 10.5, color: linkingRowId === row.id ? '#b45309' : '#2563eb',
-                                           background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                           fontWeight: 700, textAlign: 'left' }}>
-                                  {linkingRowId === row.id ? 'Choose it above…' : 'Link a style'}
-                                </button>}</div>
+                                </div>
                             </div>
                           </td>
                           <td data-label="Color">
@@ -1203,6 +1191,7 @@ export function NewInvoicePage() {
                     </tr></tfoot>
                   </table>
                 </div>
+                <button className="ni-add-row-btn" onClick={addApparelItem} disabled={ratesLocked}><Plus size={13} /> Add Item</button>
               </>
             )}
 

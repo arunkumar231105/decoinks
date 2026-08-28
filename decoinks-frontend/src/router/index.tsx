@@ -79,6 +79,8 @@ const WorkflowListPage       = page(() => import('../pages/WorkflowListPage'), '
 const QuotesListPage         = page(() => import('../pages/QuotesListPage'), 'QuotesListPage')
 const NewQuotationPage       = page(() => import('../pages/NewQuotationPage'), 'NewQuotationPage')
 const ShipmentsPage          = page(() => import('../pages/ShipmentsPage'), 'ShipmentsPage')
+const ClaimsListPage         = page(() => import('../pages/ClaimsListPage'), 'ClaimsListPage')
+const NewClaimPage           = page(() => import('../pages/NewClaimPage'), 'NewClaimPage')
 const ArtworkLibraryPage     = page(() => import('../pages/ArtworkLibraryPage'), 'ArtworkLibraryPage')
 const SetupPage              = page(() => import('../pages/SetupPage'), 'SetupPage')
 const SupplierDetailPage     = page(() => import('../pages/SupplierDetailPage'), 'SupplierDetailPage')
@@ -260,6 +262,21 @@ export const router = createBrowserRouter([
                 path: '/shipments',
                 element: <ShipmentsPage />,
                 handle: { title: 'Shipments', subtitle: 'Monitor outgoing packages and pickups.' },
+              },
+              {
+                path: '/claims',
+                element: <ClaimsListPage />,
+                handle: { title: 'Claims', subtitle: 'Claims and refunds raised against sales orders.' },
+              },
+              {
+                path: '/claims/new',
+                element: <NewClaimPage />,
+                handle: { title: 'New Claim', subtitle: 'Raise a claim against a sales order.' },
+              },
+              {
+                path: '/claims/:id',
+                element: <NewClaimPage />,
+                handle: { title: 'Claim', subtitle: 'Review and decide a claim.' },
               },
               {
                 path: '/shipments/new',

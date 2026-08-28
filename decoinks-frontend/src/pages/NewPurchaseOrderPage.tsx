@@ -10,7 +10,8 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
-import { APPAREL_CATEGORIES, ApparelCatalogPicker, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
+import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
+import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ type Action =
   | { type: 'SET'; field: keyof POFormState; value: any }
   | { type: 'ADD_ITEM' }
   | { type: 'ADD_CATALOG_ITEM'; style: ApparelCatalogStyle }
+  | { type: 'LINK_STYLE'; id: string; style: ApparelCatalogStyle }
   | { type: 'UPDATE_ITEM'; id: string; patch: Partial<POLineItem> }
   | { type: 'REMOVE_ITEM'; id: string }
   | { type: 'ADD_ORDER'; order: CoveredOrder }
@@ -218,6 +220,15 @@ function reducer(state: POFormState, action: Action): POFormState {
       const item = newItem(state.items.length)
       const style = action.style
       return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
+    }
+    // A style chosen on a line that already exists. Colour, size and SKU are
+    // cleared, because the ones held belong to the style being replaced.
+    case 'LINK_STYLE': {
+      const style = action.style
+      return { ...state, items: state.items.map(it => it.id !== action.id ? it : {
+        ...it, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [],
+        catalog_color_id: '', catalog_size_id: '', color: '', size: '', catalog_variant_sku: '',
+      }) }
     }
     case 'UPDATE_ITEM': {
       const items = state.items.map(it => {
@@ -1110,12 +1121,12 @@ export function NewPurchaseOrderPage() {
               <h3>Custom Printed Shirt Order Items</h3>
             </div>
           </div>
-          <ApparelCatalogPicker onSelect={style => dispatch({ type: 'ADD_CATALOG_ITEM', style })} />
           <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
             <table className="np-table" style={{ minWidth: 1050 }}>
               <thead>
                 <tr>
                   <th style={{ width: 36 }}>#</th>
+                  <th style={{ minWidth: 140 }}>Style</th>
                   <th style={{ width: 120 }}>Category</th>
                   <th style={{ minWidth: 190 }}>Product</th>
                   <th style={{ width: 100 }}>Color</th>
@@ -1131,13 +1142,14 @@ export function NewPurchaseOrderPage() {
               </thead>
               <tbody>
                 {state.items.length === 0 && (
-                  <tr><td colSpan={12} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
-                    Search and select a Product Master style above.
+                  <tr><td colSpan={13} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                    Add a line, then pick its style from the Style column.
                   </td></tr>
                 )}
                 {state.items.map((it, i) => (
                   <tr key={it.id}>
                     <td className="np-td-num">{i + 1}</td>
+                    <td><ApparelStyleSelect value={it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
                     <td><select className="np-table-select" value={it.category} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { category: e.target.value } })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td>
                       <div className="nq-quote-product"><div className="nq-quote-product-image">{it.product_image ? <img src={it.product_image} alt={it.item_name} /> : <Package size={20} />}</div><div><strong>{it.item_name}</strong><span>Brand: {it.brand || '—'}</span></div></div>
@@ -1196,6 +1208,7 @@ export function NewPurchaseOrderPage() {
               </tr></tfoot>
             </table>
           </div>
+          <button className="np-add-row-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}><Plus size={13} /> Add Item</button>
         </div>
       )}
 

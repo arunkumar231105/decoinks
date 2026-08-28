@@ -19,4 +19,21 @@ const uploadAttachment = multer(opts).single('file')
 const studioMaxBytes = parseInt(process.env.STUDIO_MAX_FILE_SIZE_MB || '60', 10) * 1024 * 1024
 const uploadStudioArtwork = multer({ storage: multer.memoryStorage(), fileFilter, limits: { fileSize: studioMaxBytes } }).single('file')
 
-module.exports = { uploadArtwork, uploadAttachment, uploadStudioArtwork }
+// Claim evidence is whatever proves the complaint: a photograph of the damage,
+// the courier's PDF, a video of the box being opened. Larger, and wider than
+// the artwork filter allows.
+const claimMimes = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic',
+  'application/pdf',
+  'video/mp4', 'video/quicktime', 'video/webm',
+]
+const claimMaxBytes = parseInt(process.env.CLAIM_MAX_FILE_SIZE_MB || '20', 10) * 1024 * 1024
+const uploadClaimFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: claimMaxBytes },
+  fileFilter: (_req, file, cb) => claimMimes.includes(file.mimetype)
+    ? cb(null, true)
+    : cb(new Error(`${file.mimetype} is not accepted. Use an image, a PDF or a video.`), false),
+}).single('file')
+
+module.exports = { uploadArtwork, uploadAttachment, uploadStudioArtwork, uploadClaimFile }
