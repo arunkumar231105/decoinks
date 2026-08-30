@@ -1,6 +1,6 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Edit3, Eye, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, Edit3, Eye, Images, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -10,12 +10,17 @@ import { DraftBanner } from '../components/DraftBanner'
 import { useAuthStore } from '../store/authStore'
 import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
+import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type OrderType = 'apparel' | 'gangsheet' | 'dtf'
+// What an artwork cell can be handed: a file off the desktop, or a picture
+// dragged out of the customer's Drive folder.
+type PickedImage = File | DriveFile
+const isDriveFile = (value: PickedImage): value is DriveFile => !(value instanceof File)
 type PaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Refunded'
 
 interface Customer {
@@ -79,15 +84,44 @@ const initDtf      = (): DtfItem[]       => [{ id: uid(), artworkNo: '', width: 
 // ArtworkThumb
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// A picture for an order line can arrive three ways: the file dialog, a file
+// dragged in from the desktop, or a tile dragged out of the Drive picker. All
+// three end at the same handler — see uploadItemImage, which tells a Drive
+// pick from a local file and routes it accordingly.
 function ImageUploadCell({
   imageUrl, label, onUpload, onRemove, uploading,
 }: {
   imageUrl?: string | null; label: string
-  onUpload: (file: File) => void; onRemove: () => void; uploading?: boolean
+  onUpload: (file: PickedImage) => void; onRemove: () => void; uploading?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [dropActive, setDropActive] = useState(false)
+
+  const accepts = (event: DragEvent) =>
+    event.dataTransfer.types.includes(DRIVE_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
+
+  const onDrop = (event: DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    setDropActive(false)
+    const payload = event.dataTransfer.getData(DRIVE_DRAG_TYPE)
+    if (payload) {
+      // A malformed payload is ignored rather than thrown: the drop came from
+      // outside this component and must never break the order form.
+      try { onUpload(JSON.parse(payload) as DriveFile) } catch { /* not our payload */ }
+      return
+    }
+    const file = event.dataTransfer.files?.[0]
+    if (file) onUpload(file)
+  }
+
   return (
-    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+    <div
+      className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}${dropActive ? ' dap-drop-active' : ''}`}
+      onDragOver={event => { if (accepts(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true) } }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={onDrop}
+    >
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
       {imageUrl ? (
@@ -147,13 +181,13 @@ function ArtworkSizePicker({ value, onChange, autoDetected = false }: { value: s
 // "Bank Transfer" or "bank_transfer"). Normalise known variants to this form's
 // option values on convert; any unknown/legacy value is returned unchanged so
 // nothing is lost (a fallback <option> renders it).
-const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'shopify', 'bank_transfer', 'cash', 'other']
+const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'bank_transfer', 'cash', 'other']
 const normalizePaymentMethod = (v?: string | null): string => {
   const raw = String(v ?? '').trim()
   if (!raw) return ''
   const map: Record<string, string> = {
     'bank transfer': 'bank_transfer', bank_transfer: 'bank_transfer',
-    paypal: 'paypal', zelle: 'zelle',
+    paypal: 'paypal', zelle: 'zelle', stripe: 'stripe', shopify: 'shopify',
     'cash app': 'cashapp', cash_app: 'cashapp', cashapp: 'cashapp',
     cash: 'cash', other: 'other',
   }
@@ -277,21 +311,31 @@ export function NewOrderPage() {
     { enabled: !editOrderId && !fromInvoiceId },
   )
 
+  // Artwork picker — the customer's Google Drive folder, opened beside the table.
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false)
+
   // Image uploads
   const [uploadingImg, setUploadingImg] = useState<Record<string, boolean>>({})
   const uploadItemImage = async (
     rowId: string,
     field: 'frontImage' | 'backImage' | 'artworkImage' | 'frontMockup' | 'backMockup',
-    file: File,
+    file: PickedImage,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     updater: (id: string, patch: any) => void,
     autoSizeField?: 'artworkSize' | 'size' | 'dimensions'
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      // A Drive pick is copied into the CRM's own storage server-side, so the
+      // order keeps a stable URL of its own and answers with the same
+      // { url, dimensions } body a desktop upload does.
+      const res = isDriveFile(file)
+        ? await api.post('/drive/attach', { file_id: file.id })
+        : await (() => {
+            const form = new FormData()
+            form.append('file', file)
+            return api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+          })()
       const autoSize = res.data?.dimensions?.artwork_size
       const dimensions = autoSizeField === 'dimensions' ? parseDimensions(autoSize) : null
       updater(rowId, {
@@ -306,7 +350,8 @@ export function NewOrderPage() {
         toast.success(`Artwork size detected: ${autoSize} (${dpiNote})`)
       }
     } catch (error: any) {
-      toast.error(error?.response?.data?.error ?? 'Image upload failed. Use JPG, PNG, WEBP or SVG up to 10 MB.')
+      toast.error(error?.response?.data?.error ?? error?.response?.data?.message
+        ?? 'Image upload failed. Use JPG, PNG, WEBP or SVG up to 10 MB.')
     } finally {
       setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: false }))
     }
@@ -1091,11 +1136,21 @@ export function NewOrderPage() {
 
           {/* Table card */}
           <div className="no-card">
-            <h3 className="no-section-title">
-              {orderType === 'apparel' && 'Custom Printed Apparel'}
-              {orderType === 'gangsheet' && 'DTF Gangsheet'}
-              {orderType === 'dtf' && 'DTF Transfers'}
-            </h3>
+            <div className="dap-section-head">
+              <h3 className="no-section-title">
+                {orderType === 'apparel' && 'Custom Printed Apparel'}
+                {orderType === 'gangsheet' && 'DTF Gangsheet'}
+                {orderType === 'dtf' && 'DTF Transfers'}
+              </h3>
+              <button
+                type="button"
+                className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                onClick={() => setDrivePickerOpen(open => !open)}
+                title="Show this customer's artworks from Google Drive"
+              >
+                <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+              </button>
+            </div>
 
             {/* â"€â"€ Apparel table â"€â"€ */}
             {orderType === 'apparel' && (
@@ -1605,6 +1660,13 @@ export function NewOrderPage() {
           {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : editOrderId ? 'Update Order' : 'Save Order'}
         </button>
       </div>
+
+      {/* The customer's Drive artworks, dragged onto the artwork cells above. */}
+      <DriveArtworkPicker
+        open={drivePickerOpen}
+        customerName={customerText}
+        onClose={() => setDrivePickerOpen(false)}
+      />
 
     </div>
   )

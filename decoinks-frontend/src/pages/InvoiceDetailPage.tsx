@@ -62,6 +62,7 @@ const PAYMENT_METHODS = [
   { value: 'cashapp',       label: 'CashApp' },
   { value: 'zelle',         label: 'Zelle' },
   { value: 'paypal',        label: 'PayPal' },
+  { value: 'stripe',        label: 'Stripe' },
   { value: 'shopify',       label: 'Shopify' },
   { value: 'check',         label: 'Check' },
   { value: 'other',         label: 'Other' },
