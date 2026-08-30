@@ -409,13 +409,13 @@ function getInvoiceCounters(
 // invoices/orders use "bank_transfer"). Normalise known variants to this form's
 // option values on convert; any unknown/legacy value is returned unchanged so
 // nothing is lost (a fallback <option> renders it).
-const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'shopify', 'bank_transfer', 'cash', 'other']
+const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'bank_transfer', 'cash', 'other']
 const normalizePaymentMethod = (v?: string | null): string => {
   const raw = String(v ?? '').trim()
   if (!raw) return ''
   const map: Record<string, string> = {
     'bank transfer': 'bank_transfer', bank_transfer: 'bank_transfer',
-    paypal: 'paypal', zelle: 'zelle',
+    paypal: 'paypal', zelle: 'zelle', stripe: 'stripe', shopify: 'shopify',
     'cash app': 'cashapp', cash_app: 'cashapp', cashapp: 'cashapp',
     cash: 'cash', other: 'other',
   }

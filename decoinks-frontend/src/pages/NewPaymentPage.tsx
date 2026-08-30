@@ -7,7 +7,7 @@ import toast from '../utils/toast'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
 
-const METHODS = ['Bank Transfer', 'Cash', 'Card', 'PayPal', 'Zelle', 'Shopify', 'Cheque', 'Other']
+const METHODS = ['Bank Transfer', 'Cash', 'Card', 'PayPal', 'Zelle', 'Stripe', 'Shopify', 'Cheque', 'Other']
 const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 
 const today = () => new Date().toISOString().slice(0, 10)
