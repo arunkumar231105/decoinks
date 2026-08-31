@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 
 // Business rules shared by every aggregate below: an order counts when it is
 // not soft-deleted and not Draft/Cancelled; an invoice balance counts when it
@@ -542,14 +543,16 @@ async function remove(id) {
     )
     if (!cust[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
 
-    // These are the only nullable customer FKs whose constraints use NO ACTION.
-    // All other verified customer references are handled by their FK SET NULL or
-    // CASCADE rules. Keeping this explicit avoids an expensive information_schema
-    // scan on every delete (which previously made one deletion take 10–20+ seconds).
-    await client.query(`UPDATE leads SET customer_id = NULL WHERE customer_id = $1`, [id])
-    await client.query(`UPDATE quotations SET customer_id = NULL WHERE customer_id = $1`, [id])
-
-    await client.query(`DELETE FROM customers WHERE id = $1`, [id])
+    // A buyer with history is that history's owner. Removing them used to clear
+    // quotations.customer_id, leaving documents that named someone the system
+    // no longer had.
+    await assertNoDependents(client, id, [
+      { table: 'orders',     column: 'customer_id', label: 'sales order' },
+      { table: 'invoices',   column: 'customer_id', label: 'invoice' },
+      { table: 'quotations', column: 'customer_id', label: 'quotation' },
+    ], { subject: 'customer' })
+    if (!await softDelete(client, 'customers', id))
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
     await client.query('COMMIT')
     return { id }
   } catch (err) {

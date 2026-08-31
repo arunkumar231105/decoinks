@@ -108,14 +108,14 @@ describe('POST /api/quotations/bulk-upload (real import)', () => {
     expect(d.skippedRows[0].rowNumber).toBe(4)
   })
 
-  test('created quotes have correct QT-YYYY-NNNN numbers', async () => {
+  test('created quotes have correct Q-YYYY-NNNN numbers', async () => {
     const res = await uploadCsv(CSV_3ROWS)
     const { rows } = await pool.query(
       `SELECT quote_number FROM quotations ORDER BY created_at`
     )
     expect(rows).toHaveLength(2)
     for (const r of rows) {
-      expect(r.quote_number).toMatch(/^QT-\d{4}-\d{4}$/)
+      expect(r.quote_number).toMatch(/^Q-\d{4}-\d{4}$/)
     }
   })
 

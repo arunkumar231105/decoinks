@@ -51,7 +51,7 @@ describe('POST /api/leads', () => {
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        supplier_name: 'Test Lead Customer',
+        customer_name: 'Test Lead Customer',
         source:        'Email',
       })
 
@@ -70,7 +70,7 @@ describe('POST /api/leads — with product interest', () => {
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        supplier_name:    'Acme Corp',
+        customer_name:    'Acme Corp',
         source:           'WhatsApp',
         company_name:     'Acme Corporation',
         email:            'orders@acme.com',
@@ -122,7 +122,7 @@ describe('POST /api/leads — with product interest', () => {
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        supplier_name: 'Update PI Test',
+        customer_name: 'Update PI Test',
         source: 'Email',
         productInterest: [{ product_type: 'Cap', qty: 200 }],
       })
@@ -154,7 +154,7 @@ describe('PATCH /api/leads/:id/move', () => {
     const res = await request(app)
       .post('/api/leads')
       .set('Authorization', `Bearer ${token}`)
-      .send({ supplier_name: 'Move Test Lead', source: 'WhatsApp' })
+      .send({ customer_name: 'Move Test Lead', source: 'WhatsApp' })
     leadId = res.body.data.id
   })
 

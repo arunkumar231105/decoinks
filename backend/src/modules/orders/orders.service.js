@@ -3,6 +3,7 @@ const { getNextNumber } = require('../../utils/counter')
 const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 
 function calcTotals(items, orderType, rushServices, shippingCharges, discountPct, taxPct = 0) {
   // Exact rate x qty summed, rounded once at the end — the quoted figure, which
@@ -817,19 +818,19 @@ async function remove(id) {
   try {
     await client.query('BEGIN')
     const { rows: ord } = await client.query(
-      `SELECT id FROM orders WHERE id = $1`, [id]
+      `SELECT id FROM orders WHERE id = $1 AND deleted_at IS NULL`, [id]
     )
     if (!ord[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
-    // Unlink dependents — the linked documents are kept, only the order link is
-    // detached (purchase_orders.order_id, po_orders, invoices.order_id are RESTRICT;
-    // artworks/shipments have no CASCADE on order_id).
-    await client.query(`DELETE FROM po_orders WHERE order_id = $1`, [id])
-    await client.query(`UPDATE purchase_orders SET order_id = NULL WHERE order_id = $1`, [id])
-    await client.query(`UPDATE invoices        SET order_id = NULL WHERE order_id = $1`, [id])
-    await client.query(`UPDATE artworks         SET order_id = NULL WHERE order_id = $1`, [id])
-    await client.query(`UPDATE shipments        SET order_id = NULL WHERE order_id = $1`, [id])
-    // order_items_apparel/gangsheet/dtf, portal_order_visibility, portal_status_updates all CASCADE
-    await client.query(`DELETE FROM orders WHERE id = $1`, [id])
+    // An order that was bought against, shipped, or paid for is a record of
+    // something that happened. Artwork and the invoice are left out: art is
+    // reused across jobs, and the invoice is the order's own paperwork.
+    await assertNoDependents(client, id, [
+      { table: 'purchase_orders', column: 'order_id', label: 'purchase order' },
+      { table: 'shipments',       column: 'order_id', label: 'shipment' },
+      { table: 'payments',        column: 'order_id', label: 'payment', softDeletes: false },
+    ], { subject: 'sales order' })
+    if (!await softDelete(client, 'orders', id))
+      throw Object.assign(new Error('Order not found'), { statusCode: 404 })
     await client.query('COMMIT')
     return { id }
   } catch (err) {

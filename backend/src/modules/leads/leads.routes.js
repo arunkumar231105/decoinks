@@ -32,6 +32,16 @@ const contactFields = {
   whatsapp:         z.string().optional().nullable(),
   shipping_address: z.string().optional().nullable(),
   billing_address:  z.string().optional().nullable(),
+  // The service reads and stores these, but they were never declared here, and
+  // an undeclared key is stripped before the service ever sees it — so a lead's
+  // country, state, city and post code were accepted and silently dropped.
+  country:          z.string().optional().nullable(),
+  state:            z.string().optional().nullable(),
+  city:             z.string().optional().nullable(),
+  zip:              z.string().optional().nullable(),
+  // The date the customer wants the work by. It becomes the quote's due date
+  // when the lead is converted, so losing it here loses it for good.
+  delivery_date:    z.string().optional().nullable(),
   buyer_type:       z.string().optional().nullable(),
   internal_notes:   z.string().optional().nullable(),
   productInterest:  z.array(productInterestItemSchema).optional(),
