@@ -1,0 +1,109 @@
+/* Google Drive artwork picker. Kept out of index.css, which is protected —
+   this file is imported by DriveArtworkPicker and by nothing else. */
+
+.dap-panel {
+  position: fixed; top: 64px; right: 12px; bottom: 12px; width: 340px; z-index: 60;
+  display: flex; flex-direction: column;
+  background: #fff; border: 1px solid #e6ebf1; border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .16);
+  font-size: 13px; color: #1f2937;
+}
+
+.dap-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding: 12px 12px 10px; border-bottom: 1px solid #eef2f6; }
+.dap-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dap-title strong { font-size: 13.5px; font-weight: 700; color: #0f172a; }
+.dap-title small { font-size: 11.5px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dap-head-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.dap-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; color: #475569; cursor: pointer; }
+.dap-icon-btn:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+.dap-icon-btn:disabled { opacity: .55; cursor: not-allowed; }
+.dap-spin { animation: dap-rot 1s linear infinite; }
+@keyframes dap-rot { to { transform: rotate(360deg); } }
+
+.dap-tools { display: flex; align-items: center; gap: 6px; padding: 10px 12px 8px; }
+.dap-search { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 5px 8px; color: #94a3b8; }
+.dap-search:focus-within { border-color: #93c5fd; }
+.dap-search input { border: 0; outline: 0; width: 100%; font: inherit; font-size: 12.5px; color: #1f2937; background: transparent; }
+
+.dap-link-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px;
+  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #475569;
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.dap-link-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+.dap-folder-picker { padding: 0 12px 8px; }
+.dap-folder-picker input { width: 100%; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 6px 8px; font: inherit; font-size: 12.5px; outline: 0; }
+.dap-folder-picker input:focus { border-color: #93c5fd; }
+.dap-folder-picker ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 190px; overflow-y: auto;
+  border: 1px solid #eef2f6; border-radius: 8px; }
+.dap-folder-picker li + li { border-top: 1px solid #f1f5f9; }
+.dap-folder-picker button { display: block; width: 100%; text-align: left; padding: 6px 9px;
+  border: 0; background: none; font: inherit; font-size: 12.5px; color: #1f2937; cursor: pointer; }
+.dap-folder-picker button:hover { background: #f8fafc; }
+.dap-folder-picker button.active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+.dap-empty-row { padding: 8px 9px; font-size: 12px; color: #94a3b8; }
+
+.dap-tabs { display: flex; gap: 5px; overflow-x: auto; padding: 2px 12px 8px; }
+.dap-tabs button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
+  border: 1px solid #e2e8f0; border-radius: 999px; background: #fff; color: #475569;
+  font: inherit; font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dap-tabs button:hover { background: #f8fafc; }
+.dap-tabs button.active { background: #0f766e; border-color: #0f766e; color: #fff; }
+.dap-tabs button span { font-size: 10.5px; opacity: .75; }
+
+.dap-body { flex: 1; overflow-y: auto; padding: 4px 12px 12px; }
+
+.dap-grid { list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+.dap-tile { display: flex; flex-direction: column; gap: 3px; padding: 5px;
+  border: 1px solid #e6ebf1; border-radius: 9px; background: #fff; cursor: grab; }
+.dap-tile:hover { border-color: #94a3b8; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }
+.dap-tile:active { cursor: grabbing; }
+
+.dap-thumb { display: flex; align-items: center; justify-content: center;
+  height: 72px; border-radius: 6px; background: #f1f5f9; overflow: hidden; }
+.dap-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.dap-thumb-fallback { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #94a3b8; }
+.dap-thumb-fallback small { font-size: 9px; }
+
+.dap-tile-name { font-size: 10.5px; line-height: 1.25; color: #334155;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
+.dap-tile-meta { font-size: 9.5px; color: #94a3b8; }
+
+.dap-more { width: 100%; margin-top: 10px; padding: 7px 10px;
+  border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; color: #475569;
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.dap-more:hover { background: #f8fafc; }
+
+.dap-note { margin: 10px 2px; font-size: 12.5px; color: #64748b; line-height: 1.45; }
+.dap-note.dap-error { color: #b91c1c; }
+.dap-note.dap-muted { font-size: 11.5px; color: #94a3b8; }
+
+.dap-foot { padding: 8px 12px; border-top: 1px solid #eef2f6;
+  font-size: 11.5px; color: #94a3b8; }
+
+/* The drop target on an order line, while a tile is over it. */
+.nq-img-cell.dap-drop-active .nq-img-placeholder,
+.nq-img-cell.dap-drop-active .nq-img-thumb-wrap {
+  outline: 2px dashed #0f766e; outline-offset: 2px; border-radius: 6px;
+}
+
+@media (max-width: 1100px) {
+  .dap-panel { width: 300px; }
+  .dap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The "Drive artworks" toggle that sits beside the items-table title. */
+.dap-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dap-section-head .no-section-title { margin: 0; }
+
+.dap-open-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
+  border: 1px solid #d7dde5; border-radius: 8px; background: #fff; color: #334155;
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dap-open-btn:hover { background: #f8fafc; border-color: #b9c4d1; }
+.dap-open-btn.active { background: #0f766e; border-color: #0f766e; color: #fff; }
