@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body {
+  font-family: 'Poppins', system-ui, sans-serif;
+  background: #F5F5F5;
+  color: #121212;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The four ink colours of the wordmark, as a hairline. Used once, at the top
+   of the card, so the page carries the brand without shouting it. */
+.cmyk-rule {
+  height: 3px;
+  background: linear-gradient(90deg,
+    #00B4E4 0%, #00B4E4 25%,
+    #E45490 25%, #E45490 50%,
+    #F0C00C 50%, #F0C00C 75%,
+    #121212 75%, #121212 100%);
+}

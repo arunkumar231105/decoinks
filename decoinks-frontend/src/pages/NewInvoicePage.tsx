@@ -649,7 +649,7 @@ export function NewInvoicePage() {
 
   // After save, navigate to print/receipt if preview or short invoice was
   // triggered — otherwise go to invoice detail
-  const navigateAfterSave = useRef<'print' | 'receipt' | null>(null)
+  const navigateAfterSave = useRef<'print' | 'receipt' | 'send' | null>(null)
   const queryClient = useQueryClient()
 
   // Save mutation
@@ -664,6 +664,27 @@ export function NewInvoicePage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['quotations'] })
       queryClient.invalidateQueries({ queryKey: ['order-invoice-options'] })
+      // Sending is what hands the invoice to the customer. The Customer Portal
+      // hides Draft invoices on purpose — their pricing is not final — and only
+      // a Sent invoice can be paid online, so this status change is the moment
+      // the invoice becomes the customer's business.
+      if (navigateAfterSave.current === 'send' && inv?.id) {
+        navigateAfterSave.current = null
+        api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' })
+          // The invoice's payment link is created here, the moment it is sent,
+          // so it exists from the invoice's own beginning and never changes
+          // afterwards. Copy Link and the customer's Pay Now both return this
+          // one. A failure here is not worth blocking on — the link is created
+          // on first use anyway — so the send still counts as done.
+          .then(() => api.post(`/payment-links/invoices/${inv.id}`).catch(() => null))
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ['invoices'] })
+            toast.success('Invoice sent — the customer can now see and pay it in the Customer Portal')
+          })
+          .catch((err: any) => toast.apiError(err))
+          .finally(() => navigate(`/invoices/${inv.id}`))
+        return
+      }
       if (navigateAfterSave.current === 'print' && inv?.id) {
         navigateAfterSave.current = null
         navigate(`/invoices/${inv.id}/print`)
@@ -933,7 +954,95 @@ export function NewInvoicePage() {
     saveMutation.mutate(buildPayload())
   }
 
-  const sendInvoice = () => { toast.error('Save the invoice first, then update status from the invoice detail page') }
+  /* ── Payment link ─────────────────────────────────────────────────────────
+   *
+   * The agent's copy of the customer's pay page. One press produces a URL that
+   * carries its own identity, so the customer needs no portal account and no
+   * password — they open it, see this invoice and its fixed amount, and pay.
+   *
+   * The URL is shown once. Only its hash is stored, so it cannot be read back
+   * later; Regenerate issues a fresh one and kills the old.
+   */
+  const [payLink, setPayLink] = useState('')
+  const [payLinkState, setPayLinkState] = useState<{ payable: boolean; reason: string | null; active: boolean }>(
+    { payable: false, reason: null, active: false })
+  const [linkBusy, setLinkBusy] = useState(false)
+
+  useEffect(() => {
+    if (!editInvoiceId) return
+    api.get(`/payment-links/invoices/${editInvoiceId}`)
+      .then(r => {
+        const d = r.data?.data ?? r.data
+        setPayLinkState({ payable: d.payable, reason: d.reason, active: Boolean(d.link) })
+        // The invoice's existing URL, so the box is filled the moment the page
+        // opens and Copy Link never has to mint a replacement.
+        if (d.url) setPayLink(d.url)
+      })
+      .catch(() => { /* the panel simply stays idle */ })
+  }, [editInvoiceId])
+
+  /**
+   * `fresh` is Regenerate. Copy Link must never pass it: the customer may
+   * already be looking at this invoice's URL — in their inbox, or behind Pay
+   * Now in the portal — and replacing it would kill the page under them.
+   */
+  const generatePayLink = async (fresh = false) => {
+    if (!editInvoiceId) { toast.error('Save the invoice first, then generate its payment link'); return }
+    setLinkBusy(true)
+    try {
+      const r = await api.post(`/payment-links/invoices/${editInvoiceId}${fresh ? '?fresh=1' : ''}`)
+      const d = r.data?.data ?? r.data
+      setPayLink(d.url)
+      setPayLinkState(s => ({ ...s, active: true }))
+      await copyText(d.url)
+      toast.success(fresh
+        ? 'New payment link copied — the previous one no longer works'
+        : 'Payment link copied — send it to the customer')
+    } catch (err: any) {
+      toast.apiError(err)
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  const copyPayLink = async () => {
+    if (!payLink) { await generatePayLink(false); return }
+    await copyText(payLink)
+    toast.success('Payment link copied')
+  }
+
+  const disablePayLink = async () => {
+    if (!editInvoiceId) return
+    setLinkBusy(true)
+    try {
+      await api.delete(`/payment-links/invoices/${editInvoiceId}`)
+      setPayLink('')
+      setPayLinkState(s => ({ ...s, active: false }))
+      toast.success('Payment link disabled — it will no longer open')
+    } catch (err: any) {
+      toast.apiError(err)
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  const sendInvoice = () => {
+    if (saveMutation.isPending) return   // guard against duplicate submissions
+    if (!supplierId && !supplierText) {
+      toast.error('Please select a customer before sending')
+      return
+    }
+    // The portal finds a customer's invoices through customer_id, and a name
+    // typed by hand never creates that link. Without this check the invoice
+    // would be marked Sent and then be invisible to the one customer it is
+    // for — the worst kind of failure, because everything looks like it worked.
+    if (!supplierId) {
+      toast.error('Choose the customer from the list rather than typing the name, so the invoice reaches their portal')
+      return
+    }
+    navigateAfterSave.current = 'send'
+    saveMutation.mutate(buildPayload())
+  }
 
   const recordPayment = () => { toast.info('Save the invoice first, then record the payment from invoice details') }
 
@@ -1513,7 +1622,18 @@ export function NewInvoicePage() {
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Link</label>
                 <div className="ni-link-row">
-                  <input className="ni-link-input" readOnly placeholder="Generated after saving invoice" value="" />
+                  <input
+                    className="ni-link-input"
+                    readOnly
+                    onFocus={e => e.currentTarget.select()}
+                    placeholder={
+                      !editInvoiceId ? 'Save the invoice first'
+                        : payLinkState.reason ? payLinkState.reason
+                        : payLinkState.active ? 'Press Copy Link to copy this invoice\u2019s link'
+                        : 'Press Copy Link to generate'
+                    }
+                    value={payLink}
+                  />
                 </div>
               </div>
               <label className="ni-checkbox-row">
@@ -1544,9 +1664,15 @@ export function NewInvoicePage() {
                 <div><span>Reference / Transaction ID</span><strong>—</strong></div>
               </div>
               <div className="ni-payment-link-actions">
-                <button type="button" disabled>Copy Link</button>
-                <button type="button" disabled>Regenerate</button>
-                <button type="button" disabled>Disable Link</button>
+                <button type="button" onClick={copyPayLink} disabled={linkBusy || !editInvoiceId}>
+                  {payLink ? 'Copy Link' : linkBusy ? 'Working…' : 'Copy Link'}
+                </button>
+                <button type="button" onClick={() => generatePayLink(true)} disabled={linkBusy || !editInvoiceId}>
+                  Regenerate
+                </button>
+                <button type="button" onClick={disablePayLink} disabled={linkBusy || !editInvoiceId || !payLinkState.active}>
+                  Disable Link
+                </button>
               </div>
             </div>
           </div>

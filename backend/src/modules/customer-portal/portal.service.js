@@ -372,4 +372,126 @@ async function getProfile(customerId) {
   }
 }
 
-module.exports = { login, changePassword, getSummary, getOrders, getArtworks, getAssetPath, getProfile }
+
+/* ── Invoices ───────────────────────────────────────────────────────────────
+ *
+ * Draft invoices are never shown. A draft has not been confirmed by staff, so
+ * its pricing is not final — showing it would tell the customer a number that
+ * may still change, and letting them pay it would collect against figures
+ * nobody signed off. Moving Draft -> Sent in the admin app is the moment an
+ * invoice becomes the customer's business.
+ *
+ * The customer link is taken through invoices.customer_id OR the invoice's
+ * order, because neither column is populated on every row and using only one
+ * hides invoices from the customer they belong to.
+ */
+const PORTAL_INVOICE_COLUMNS = `
+  i.id, i.invoice_number, i.status, i.issue_date, i.due_date,
+  i.total, i.amount_paid, i.balance_due, i.currency, i.payment_terms,
+  i.order_id, o.order_number, o.status AS order_status,
+  (i.status IN ('Sent', 'Overdue') AND i.balance_due > 0) AS payable`
+
+const PORTAL_INVOICE_FROM = `
+  FROM invoices i
+  LEFT JOIN orders o ON o.id = i.order_id
+ WHERE i.status <> 'Draft'
+   AND COALESCE(i.customer_id, o.customer_id) = $1`
+
+async function getInvoices(customerId) {
+  const { rows } = await db.query(
+    `SELECT ${PORTAL_INVOICE_COLUMNS} ${PORTAL_INVOICE_FROM}
+     ORDER BY (i.status IN ('Sent', 'Overdue') AND i.balance_due > 0) DESC,
+              i.issue_date DESC NULLS LAST, i.invoice_number DESC`,
+    [customerId]
+  )
+  return rows.map(shapeInvoice)
+}
+
+async function getInvoice(customerId, invoiceId) {
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId ?? '')) return null
+
+  const { rows } = await db.query(
+    `SELECT ${PORTAL_INVOICE_COLUMNS},
+            i.subtotal, i.discount_amt, i.tax_amt, i.rush_services, i.shipping_charges,
+            i.customer_name, i.billing_email, i.contact_number,
+            i.billing_address, i.shipping_address, i.notes,
+            o.order_date, o.due_date AS order_due_date, o.order_type,
+            o.payment_status AS order_payment_status,
+            o.shipping_name, o.tracking_number, o.courier
+     ${PORTAL_INVOICE_FROM} AND i.id = $2 LIMIT 1`,
+    [customerId, invoiceId]
+  )
+  const inv = rows[0]
+  if (!inv) return null
+
+  const { rows: items } = await db.query(
+    `SELECT id, description, qty, unit_price, amount, sizes, colors
+       FROM invoice_items WHERE invoice_id = $1
+      ORDER BY sort_order, created_at`,
+    [invoiceId]
+  )
+
+  return {
+    ...shapeInvoice(inv),
+    subtotal: num(inv.subtotal),
+    discount: num(inv.discount_amt),
+    tax: num(inv.tax_amt),
+    rush: num(inv.rush_services),
+    shipping: num(inv.shipping_charges),
+    billTo: {
+      name: inv.customer_name,
+      email: inv.billing_email,
+      phone: inv.contact_number,
+      address: inv.billing_address,
+    },
+    shipTo: inv.shipping_address,
+    notes: inv.notes,
+    order: inv.order_id ? {
+      id: inv.order_id,
+      number: inv.order_number,
+      date: inv.order_date,
+      dueDate: inv.order_due_date,
+      type: inv.order_type,
+      status: inv.order_status,
+      paymentStatus: inv.order_payment_status,
+      shippingName: inv.shipping_name,
+      trackingNumber: inv.tracking_number,
+      courier: inv.courier,
+    } : null,
+    items: items.map(it => ({
+      id: it.id,
+      description: it.description,
+      qty: num(it.qty),
+      unitPrice: num(it.unit_price),
+      amount: num(it.amount),
+      sizes: it.sizes,
+      colors: it.colors,
+    })),
+  }
+}
+
+const num = v => (v === null || v === undefined ? 0 : Number(v))
+
+function shapeInvoice(r) {
+  return {
+    id: r.id,
+    invoiceNumber: r.invoice_number,
+    status: r.status,
+    issueDate: r.issue_date,
+    dueDate: r.due_date,
+    total: num(r.total),
+    amountPaid: num(r.amount_paid),
+    balanceDue: num(r.balance_due),
+    currency: r.currency || 'USD',
+    paymentTerms: r.payment_terms,
+    orderId: r.order_id,
+    orderNumber: r.order_number,
+    orderStatus: r.order_status,
+    payable: Boolean(r.payable),
+  }
+}
+
+module.exports = {
+  login, changePassword, getSummary, getOrders, getArtworks, getAssetPath, getProfile,
+  getInvoices, getInvoice,
+}

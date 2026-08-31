@@ -6,11 +6,12 @@ import {
   ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, FileText,
   PackageCheck, Pencil, Plus, Printer, Search, Send, ShoppingBag,
   Trash2, Truck, Upload, Users, X,
+  Link2,
 } from 'lucide-react'
 import toast from '../../utils/toast'
 import { api } from '../../services/api'
 import { orderStage, processStatus } from '../../utils/orderStatus'
-import { downloadCsv } from '../../utils/actions'
+import { copyText, downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
@@ -565,7 +566,15 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
           {!loading && rows.map(row => <tr key={row.id} className={active?.id === row.id ? 'active' : ''} onClick={() => openDetail(row)}>
             <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)}/></td>
             {shownColumns.map(c => <td key={c.key} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
-            <td onClick={e => e.stopPropagation()}><button className="ew-icon-btn" onClick={() => navigate(pathFor(row))} aria-label="Open full record" title="Open full record"><FileText size={16}/></button></td>
+            <td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
+              {kind === 'invoices' && (
+                <CopyPayLinkButton
+                  invoiceId={row.id}
+                  payable={['sent', 'overdue'].includes(String(row.status || '').toLowerCase()) && Number(row.balance_due || 0) > 0}
+                />
+              )}
+              <button className="ew-icon-btn" onClick={() => navigate(pathFor(row))} aria-label="Open full record" title="Open full record"><FileText size={16}/></button>
+            </td>
           </tr>)}
         </tbody></table></div>
         <footer className="ew-pagination"><span>Showing {total ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, total)} of <strong>{total}</strong> {config.title.toLowerCase()}</span><div><label>Rows per page <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}><option>10</option><option>25</option><option>50</option></select></label><button disabled={page === 1} onClick={() => setPage(1)}><ChevronFirst/></button><button disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft/></button>{visiblePages.map(p => <button className={p === page ? 'active' : ''} onClick={() => setPage(p)} key={p}>{p}</button>)}<button disabled={page === pages} onClick={() => setPage(p => p + 1)}><ChevronRight/></button><button disabled={page === pages} onClick={() => setPage(pages)}><ChevronLast/></button></div></footer>
@@ -588,6 +597,42 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <BulkUploadOrdersModal onClose={() => setOrderImport(false)} />
     )}
   </div>
+}
+
+/**
+ * Copy an invoice's payment link from the list, without opening it.
+ *
+ * The endpoint hands back the invoice's existing link rather than issuing a new
+ * one, so this is safe to press any number of times — an agent who forgot to
+ * copy the link when they sent the invoice can get the same URL back here, and
+ * whatever the customer is already holding keeps working.
+ */
+function CopyPayLinkButton({ invoiceId, payable }: { invoiceId: string; payable: boolean }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      className="ew-icon-btn"
+      disabled={busy || !payable}
+      title={payable ? 'Copy payment link' : 'Only a Sent invoice with a balance has a payment link'}
+      aria-label="Copy payment link"
+      onClick={async () => {
+        setBusy(true)
+        try {
+          const r = await api.post(`/payment-links/invoices/${invoiceId}`)
+          const url = (r.data?.data ?? r.data)?.url
+          if (!url) throw new Error('No link came back')
+          await copyText(url)
+          toast.success('Payment link copied — send it to the customer')
+        } catch (err: any) {
+          toast.apiError(err)
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <Link2 size={16}/>
+    </button>
+  )
 }
 
 type DrawerField = { label: string; value: React.ReactNode }

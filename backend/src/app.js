@@ -30,6 +30,10 @@ const customerRoutes       = require('./modules/customers/customers.routes')
 const searchRoutes         = require('./modules/search/search.routes')
 const importRoutes         = require('./modules/import/import.routes')
 const nextcloudRoutes      = require('./modules/nextcloud/nextcloud.routes')
+const gdriveRoutes         = require('./modules/gdrive/gdrive.routes')
+const stripeWebhookRoutes  = require('./modules/stripe/webhook.routes')
+const payRoutes            = require('./modules/stripe/pay.routes')
+const payLinkAdminRoutes   = require('./modules/stripe/paylinks.admin.routes')
 
 const app = express()
 
@@ -39,18 +43,51 @@ app.set('trust proxy', 1)
 
 app.use(helmet())
 const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean)
-app.use(cors({
-  origin: (origin, cb) => {
-    // No origin = curl / Postman / server-to-server — always allow
-    if (!origin) return cb(null, true)
-    // Any localhost origin is allowed (port 80 sends bare "http://localhost")
-    if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true)
-    if (allowedOrigins.includes(origin)) return cb(null, true)
-    cb(new Error(`CORS: origin ${origin} not allowed`))
-  },
+
+/**
+ * Is this request allowed to carry credentials?
+ *
+ * The same-origin case is the one that matters here and is easy to miss.
+ * Browsers attach an `Origin` header to every POST, including a POST a page
+ * makes to its own host — and each suite front-end proxies `/api/` to this
+ * server under its own domain, so those requests are same-origin yet still
+ * arrive with an Origin to be judged. When that domain is not in CORS_ORIGIN
+ * the login is refused, which is exactly what happened to the Customer Portal
+ * the moment it moved from http://<ip>:3002 (listed) to
+ * https://customer.decoinkssuite.com (not listed): every sign-in failed, and
+ * the screen reported it as "Invalid username or password".
+ *
+ * Comparing the origin's host to the request's own Host settles it properly,
+ * without needing a new domain added to configuration each time one is
+ * published.
+ */
+function originAllowed(origin, req) {
+  if (!origin) return true                                     // curl / server-to-server
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true
+  if (allowedOrigins.includes(origin)) return true
+  try {
+    // Same-origin: the page is asking its own host, so CORS is not in play.
+    return new URL(origin).host === req.headers.host
+  } catch {
+    return false
+  }
+}
+
+// The delegate form, because the decision needs the request's Host. A refusal
+// now simply withholds the header and lets the browser enforce it, rather than
+// throwing — the thrown Error used to surface as a 500 "Unhandled error",
+// which told nobody anything useful.
+app.use(cors((req, cb) => cb(null, {
+  origin: originAllowed(req.headers.origin, req),
   credentials: true,
-}))
+})))
 app.use(cookieParser())
+
+// Ahead of the JSON parser on purpose. Stripe signs the exact bytes it sends,
+// so a parsed body cannot be verified — every webhook would be rejected. This
+// router applies express.raw() to itself; everything below still gets JSON.
+app.use('/api/stripe/webhook', stripeWebhookRoutes)
+
 app.use(express.json({ limit: '10mb' }))
 app.use(pinoHttp({ logger }))
 app.use('/uploads', express.static('uploads'))
@@ -79,6 +116,9 @@ app.use('/api/customers',    customerRoutes)
 app.use('/api/search',       searchRoutes)
 app.use('/api/import',       importRoutes)
 app.use('/api/nextcloud',    nextcloudRoutes)
+app.use('/api/drive',        gdriveRoutes)
+app.use('/api/pay',          payRoutes)
+app.use('/api/payment-links', payLinkAdminRoutes)
 
 app.use(errorHandler)
 
