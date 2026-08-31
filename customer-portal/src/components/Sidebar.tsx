@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { Droplet, Headphones, Image, LayoutDashboard, ClipboardList, UserRound } from 'lucide-react'
+import { Droplet, Headphones, Image, LayoutDashboard, ClipboardList, Receipt, UserRound } from 'lucide-react'
 import { cn } from '../utils/cn'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/orders', label: 'Order History', icon: ClipboardList },
   { to: '/artworks', label: 'Artworks', icon: Image },
+  { to: '/invoices', label: 'Invoices', icon: Receipt },
   { to: '/profile', label: 'Profile', icon: UserRound },
 ]
 

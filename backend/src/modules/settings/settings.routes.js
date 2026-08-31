@@ -14,9 +14,15 @@ router.use(verifyToken)
 // Withheld, not omitted: the key comes back as null so the settings screen can
 // still show that a token is configured without being told what it is. Admins
 // and Managers — the roles that may write these — read them in full.
+//
+// `stripe_publishable_key` is deliberately absent: it is designed to be handed
+// to a browser and the pay page needs it, so withholding it would be theatre.
+// The secret key and the webhook signing secret are the ones that must not
+// leave this box.
 const SECRET_KEYS = new Set([
   'meta_page_token', 'meta_app_secret', 'meta_verify_token',
   'shippo_api_key', 'shippo_token', 'nextcloud_password', 'smtp_password',
+  'stripe_secret_key', 'stripe_webhook_secret',
 ])
 const PRIVILEGED = new Set(['Admin', 'Manager'])
 
@@ -43,6 +49,13 @@ router.put('/', requireRole('Admin', 'Manager'), async (req, res, next) => {
         [key, value === null ? null : String(value), req.user.id]
       )
     }
+    // The Stripe client caches its keys for a minute. Without this, an Admin
+    // who pastes a corrected key would keep seeing the old key's failures for
+    // up to that long and reasonably conclude the new one was wrong too.
+    if (Object.keys(updates).some(k => k.startsWith('stripe_'))) {
+      require('../stripe/stripe.client').invalidate()
+    }
+
     const { rows } = await db.query('SELECT key, value FROM settings ORDER BY key')
     const obj = {}
     rows.forEach(r => { obj[r.key] = r.value })

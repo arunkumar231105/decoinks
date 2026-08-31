@@ -144,6 +144,24 @@ services:
     depends_on: [backend]
     networks: [decoinks_net]
 
+  # Decoinks Payments — the page a customer lands on from a payment link.
+  #
+  # Its own app rather than a route inside customer_portal, because it is a
+  # different thing: no login, no account, no order history — one invoice and
+  # one amount, opened by someone who may have no portal account at all. Keeping
+  # it separate is also what lets pay.decoinks.com point at a site whose front
+  # door is a payment, not somebody's portal sign-in.
+  payment_portal:
+    build:
+      context: ./payment-portal
+      dockerfile: Dockerfile.portal
+    container_name: decoinks_payment_portal
+    restart: unless-stopped
+    ports:
+      - '3003:80'
+    depends_on: [backend]
+    networks: [decoinks_net]
+
 volumes:
   postgres_data:
   minio_data:

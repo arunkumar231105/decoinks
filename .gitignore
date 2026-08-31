@@ -4,6 +4,10 @@ node_modules/
 
 # Environment secrets — never commit
 .env
+# A password on disk for the Drive bridge. It sits in backend/ rather than in a
+# .env file, so the rules above do not catch it.
+.drive-bridge-pass
+**/.drive-bridge-pass
 .env.local
 .env.test
 .env.production

@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const jwt = require('jsonwebtoken')
 const svc = require('./portal.service')
+const db = require('../../config/db')
 
 const router = Router()
 
@@ -102,5 +103,61 @@ router.get('/summary',  wrap(async (req, res) => res.json({ data: await svc.getS
 router.get('/orders',   wrap(async (req, res) => res.json({ data: await svc.getOrders(req.portal.customerId) })))
 router.get('/artworks', wrap(async (req, res) => res.json({ data: await svc.getArtworks(req.portal.customerId) })))
 router.get('/profile',  wrap(async (req, res) => res.json({ data: await svc.getProfile(req.portal.customerId) })))
+
+
+/* ── Invoices ─────────────────────────────────────────────────────────────── */
+
+router.get('/invoices', wrap(async (req, res) =>
+  res.json({ data: await svc.getInvoices(req.portal.customerId) })))
+
+router.get('/invoices/:id', wrap(async (req, res) => {
+  const invoice = await svc.getInvoice(req.portal.customerId, req.params.id)
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+  res.json({ data: invoice })
+}))
+
+/**
+ * Pay Now.
+ *
+ * The portal does not take the payment itself — it mints the same link the
+ * direct-send route uses and hands back its URL. That is not indirection for
+ * its own sake: the pay page is destined for its own host (pay.decoinks.com),
+ * where this portal's token does not travel, so the link has to be the thing
+ * that carries the customer's identity. One page, one mechanism, two doors.
+ *
+ * The link is REUSED, never replaced. That matters more than it looks: an agent
+ * may already have sent this invoice's URL over WhatsApp, and minting a fresh
+ * one here would void the message already in the customer's hand. Pressing Pay
+ * Now takes the customer to that same URL.
+ */
+router.post('/invoices/:id/pay-link', wrap(async (req, res) => {
+  const invoice = await svc.getInvoice(req.portal.customerId, req.params.id)
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+
+  const paylinks = require('../stripe/paylinks.service')
+  const { token, reused } = await paylinks.getOrCreateForInvoice(invoice.id, {
+    customerId: req.portal.customerId,
+  })
+
+  res.json({ data: { url: `${await payPageBase(req)}/pay/${token}`, reused } })
+}))
+
+/**
+ * Where the pay page lives.
+ *
+ * Configurable because it is moving: today the page is served by this portal,
+ * and the owner intends to point pay.decoinks.com at it later. Setting
+ * `pay_page_base_url` switches every future link over without a code change.
+ */
+async function payPageBase(req) {
+  const { rows } = await db.query(`SELECT value FROM settings WHERE key = 'pay_page_base_url'`)
+  const configured = (rows[0]?.value || process.env.PAY_PAGE_BASE_URL || '').trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  // Last resort only. The pay page has its own host now, so falling back to
+  // this portal's host would send the customer to the wrong site.
+  const host = req.headers['x-forwarded-host'] || req.headers.host
+  const proto = req.headers['x-forwarded-proto'] || 'https'
+  return `${proto}://${host}`
+}
 
 module.exports = router
