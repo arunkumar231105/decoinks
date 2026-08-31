@@ -59,12 +59,17 @@ export function resetSessionState() {
 // that inside the XHR, so axios never sees the 302 — it sees either HTML where
 // JSON was expected, or a network error when the cross-origin hop is blocked.
 // Neither is a 401, so this used to fall through as "Failed to update order".
-function isSsoWall(res: { headers?: any; request?: any } | undefined) {
+function isSsoWall(res: { headers?: any; request?: any; status?: number } | undefined) {
   if (!res) return false
   const finalUrl: string = res.request?.responseURL || ''
   if (finalUrl.includes('/outpost.goauthentik.io/') || finalUrl.includes('/if/flow/')) return true
   const contentType = String(res.headers?.['content-type'] || '')
-  return contentType.includes('text/html')
+  if (!contentType.includes('text/html')) return false
+  // The wall hands back the login page as a success. HTML carrying an error
+  // status is the server's own error page instead — a route that is not there,
+  // a bad gateway — and reading that as the wall told people their session had
+  // ended and signed them out of a working session.
+  return Number(res.status ?? 200) < 400
 }
 
 // The session is gone. Hand the app an error shaped like a real API failure, so

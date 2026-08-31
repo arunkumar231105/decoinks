@@ -120,6 +120,18 @@ app.use('/api/drive',        gdriveRoutes)
 app.use('/api/pay',          payRoutes)
 app.use('/api/payment-links', payLinkAdminRoutes)
 
+// An unmatched /api route used to fall through to Express's own handler, which
+// answers with an HTML page. The client reads HTML where JSON belongs as the
+// single-sign-on wall — the only other thing that returns it — so a missing
+// route told the user their session had ended and signed them out. Answer in
+// JSON, as every other API response does, and it reads as the 404 it is.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `No such endpoint: ${req.method} ${req.baseUrl}${req.path}`,
+  })
+})
+
 app.use(errorHandler)
 
 module.exports = app

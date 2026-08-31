@@ -37,6 +37,24 @@ async function remove(req, res, next) {
   try { return success(res, await service.remove(req.params.id)) } catch (err) { next(err) }
 }
 
+// POST /bulk-delete — the list's "Delete selected". Every other list has had
+// this; payments never did, so the page called a route that was not there and
+// Express answered with its own HTML 404 page, which the client could only read
+// as the sign-in wall. Deleting one at a time, so one failure names itself
+// instead of losing the whole batch.
+async function bulkRemove(req, res, next) {
+  try {
+    const ids = req.body.ids || []
+    let deleted = 0
+    const errors = []
+    for (const id of ids) {
+      try { await service.remove(id); deleted++ }
+      catch (e) { errors.push({ id, message: e.message }) }
+    }
+    return success(res, { deleted, errors }, `${deleted} payment(s) deleted`)
+  } catch (err) { next(err) }
+}
+
 // GET /export — full filtered result set as CSV with readable headers.
 async function exportCsv(req, res, next) {
   try {
@@ -59,4 +77,4 @@ async function exportCsv(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, stats, filters, getOne, create, update, remove, exportCsv }
+module.exports = { list, stats, filters, getOne, create, update, remove, bulkRemove, exportCsv }
