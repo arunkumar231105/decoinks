@@ -1398,8 +1398,17 @@ export function NewQuotationPage() {
         sku:              variant?.sku_code ?? item.sku,
       }
     }))
-    setLinkingItemId(null)
   }
+
+  // A row to start from. The style search that used to sit above the table was
+  // replaced by a picker on each row, which left no way to create the first
+  // row at all — the section opened empty and stayed empty.
+  const addApparelItem = () =>
+    setApparelItems(prev => [...prev, {
+      id: uid(), category: 'T-Shirt', description: '',
+      variant: '', sizes: '', qty: 1, quotedCost: 0,
+      front_image: null, back_image: null,
+    }])
 
   const addCatalogStyle = (style: CatalogStyle) => {
     setApparelItems(prev => [...prev, {
@@ -1694,7 +1703,7 @@ export function NewQuotationPage() {
           {activeTab === 'apparel' && (
             <section className="nq-card">
               <div className="nq-section-header">
-                <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Select a Product Master style. Colors, sizes, SKU, description and preview fill automatically.</p></div>
+                <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Pick a style on each line — product, colours, sizes and SKU fill in automatically.</p></div>
               </div>
               <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th style={{ minWidth: 140 }}>Style</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
@@ -1715,7 +1724,7 @@ export function NewQuotationPage() {
                     <td><button className="nq-icon-btn nq-delete-btn" onClick={() => setApparelItems(prev => prev.filter(r => r.id !== item.id))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}
-                {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>Search and select a Product Master style above.</td></tr>}
+                {apparelItems.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '26px 0' }}>No items yet — click &ldquo;Add Item&rdquo; below, then pick a style on the row.</td></tr>}
               </tbody><tfoot><tr className="live-summary-row">
                 <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>Total Qty</span><strong>{apparelQty}</strong></div></td>
@@ -1724,6 +1733,7 @@ export function NewQuotationPage() {
                 <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(apparelTotal)}</strong></div></td>
                 <td colSpan={2}></td>
               </tr></tfoot></table></div>
+              <button className="nq-add-row-btn" onClick={addApparelItem}><Plus size={12} /> Add Item</button>
             </section>
           )}
 

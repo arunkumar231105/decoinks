@@ -759,7 +759,6 @@ export function NewOrderPage() {
         sku:              variant?.sku_code ?? row.sku,
       }
     }))
-    setLinkingRowId(null)
   }
 
   const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])

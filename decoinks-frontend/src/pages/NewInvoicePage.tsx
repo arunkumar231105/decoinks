@@ -167,9 +167,17 @@ function SupplierCombobox({ value, onChange, disabled = false }: { value: string
   const ref = useRef<HTMLDivElement>(null)
   const { data: suppliers = [] } = useQuery({
     queryKey: ['customers-for-invoice'],
-    queryFn: () => api.get('/customers', { params: { limit: 100 } }).then(r => r.data.data.rows),
+    queryFn: () => api.get('/customers', { params: { limit: 500 } }).then(r => r.data.data.rows),
   })
-  const filtered = suppliers.filter((c: any) => (c.name ?? '').toLowerCase().includes(value.toLowerCase()))
+  // A buyer is looked up by whatever the person typing happens to remember —
+  // the company on the invoice, the address they replied from, the number on
+  // the file. Matching the name alone found none of those.
+  const needle = value.trim().toLowerCase()
+  const filtered = needle
+    ? suppliers.filter((c: any) =>
+        [c.name, c.company_name, c.email, c.customer_number]
+          .filter(Boolean).some((f: string) => String(f).toLowerCase().includes(needle)))
+    : suppliers
   useEffect(() => {
     const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h)
@@ -184,12 +192,17 @@ function SupplierCombobox({ value, onChange, disabled = false }: { value: string
         style={{ width: '100%' }}
       />
       {open && filtered.length > 0 && (
-        <div className="no-customer-suggestions" style={{ top: '100%', zIndex: 999 }}>
-          {filtered.slice(0, 6).map((c: any) => (
+        // Every match, scrolled — the list used to stop at six, so a buyer
+        // further down could not be picked at all.
+        <div className="no-customer-suggestions"
+          style={{ top: '100%', zIndex: 999, maxHeight: 260, overflowY: 'auto' }}>
+          {filtered.map((c: any) => (
             <div key={c.id} className="no-customer-suggestion-item"
               onMouseDown={() => { onChange(c.name, c.id); setOpen(false) }}>
               <span className="no-cust-name">{c.name}</span>
-              {c.email && <span className="no-cust-email">{c.email}</span>}
+              {c.email
+                ? <span className="no-cust-email">{c.email}</span>
+                : c.company_name && <span className="no-cust-email">{c.company_name}</span>}
             </div>
           ))}
         </div>
@@ -782,7 +795,6 @@ export function NewInvoicePage() {
         sku:              variant?.sku_code ?? row.sku,
       }
     }))
-    setLinkingRowId(null)
   }
 
   const addCatalogStyle = (style: CatalogStyle) => {
