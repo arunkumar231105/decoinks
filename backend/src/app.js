@@ -34,6 +34,7 @@ const gdriveRoutes         = require('./modules/gdrive/gdrive.routes')
 const stripeWebhookRoutes  = require('./modules/stripe/webhook.routes')
 const payRoutes            = require('./modules/stripe/pay.routes')
 const payLinkAdminRoutes   = require('./modules/stripe/paylinks.admin.routes')
+const paypalRoutes         = require('./modules/paypal/paypal.routes')
 
 const app = express()
 
@@ -119,6 +120,7 @@ app.use('/api/nextcloud',    nextcloudRoutes)
 app.use('/api/drive',        gdriveRoutes)
 app.use('/api/pay',          payRoutes)
 app.use('/api/payment-links', payLinkAdminRoutes)
+app.use('/api/paypal',       paypalRoutes)
 
 // An unmatched /api route used to fall through to Express's own handler, which
 // answers with an HTML page. The client reads HTML where JSON belongs as the

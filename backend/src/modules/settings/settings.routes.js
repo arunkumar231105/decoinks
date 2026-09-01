@@ -23,6 +23,7 @@ const SECRET_KEYS = new Set([
   'meta_page_token', 'meta_app_secret', 'meta_verify_token',
   'shippo_api_key', 'shippo_token', 'nextcloud_password', 'smtp_password',
   'stripe_secret_key', 'stripe_webhook_secret',
+  'paypal_secret',
 ])
 const PRIVILEGED = new Set(['Admin', 'Manager'])
 
@@ -54,6 +55,9 @@ router.put('/', requireRole('Admin', 'Manager'), async (req, res, next) => {
     // up to that long and reasonably conclude the new one was wrong too.
     if (Object.keys(updates).some(k => k.startsWith('stripe_'))) {
       require('../stripe/stripe.client').invalidate()
+    }
+    if (Object.keys(updates).some(k => k.startsWith('paypal_'))) {
+      require('../paypal/paypal.client').invalidate()
     }
 
     const { rows } = await db.query('SELECT key, value FROM settings ORDER BY key')

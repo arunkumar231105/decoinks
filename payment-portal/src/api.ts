@@ -41,7 +41,29 @@ export interface PayView {
   expiresAt: string | null
   publishableKey: string
   testMode: boolean
+  // Present when PayPal is configured. `enabled: false` simply means the button
+  // is not offered — the card path is untouched either way.
+  paypal?: { enabled: boolean; clientId: string | null; sandbox: boolean }
 }
+
+const PAYPAL = '/api/paypal'
+
+/** Ask our server for a PayPal order. The amount comes from the link, not here. */
+export const createPaypalOrder = (t: string): Promise<{ orderId: string }> =>
+  fetch(`${PAYPAL}/${encodeURIComponent(t)}/order`, { method: 'POST', ...j }).then(read)
+
+/**
+ * Ask our server to capture it.
+ *
+ * The browser saying "approved" is not evidence — the server captures through
+ * PayPal and records only what PayPal itself confirms.
+ */
+export const capturePaypalOrder = (t: string, orderId: string): Promise<{ status: string }> =>
+  fetch(`${PAYPAL}/${encodeURIComponent(t)}/capture`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId }),
+  }).then(read)
 
 export interface PayStatus {
   paid: boolean

@@ -42,6 +42,9 @@ router.get('/:token', wrap(async (req, res) => {
       ...(await paylinks.publicView(link, invoice)),
       publishableKey: stripeConfig.publishableKey,
       testMode: stripeConfig.testMode,
+      // Whether to offer PayPal beside the card form. Absent or unconfigured
+      // simply means the button is not rendered — the card path is unaffected.
+      paypal: await require('../paypal/paypal.client').getPublicConfig().catch(() => ({ enabled: false })),
     },
   })
 }))

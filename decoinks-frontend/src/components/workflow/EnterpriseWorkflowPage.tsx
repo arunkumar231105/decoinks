@@ -49,6 +49,21 @@ const date = (value: any) => {
   const raw = String(value)
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
+/**
+ * Date with the time of day, when we actually know it.
+ *
+ * `payment_date` is a DATE column and carries no time; `paid_at` is a timestamp
+ * and does. So the time is shown only when the timestamp is there, rather than
+ * printing a made-up midnight beside every hand-entered payment.
+ */
+const dateTime = (row: AnyRow) => {
+  const stamp = row?.paid_at || row?.created_at
+  const day = date(pick(row, 'payment_date', 'paid_at'))
+  if (!stamp) return day
+  const d = new Date(String(stamp))
+  if (Number.isNaN(d.getTime())) return day
+  return `${day}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+}
 const titleCase = (value: any) => String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, (s: string) => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')
 const countStatus = (rows: AnyRow[], ...statuses: string[]) => rows.filter(r => statuses.some(status => String(r.status || '').trim().toLowerCase() === status.trim().toLowerCase())).length
@@ -676,13 +691,16 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
     <DrawerSection title="Payment Details" fields={[
       { label: 'Payment ID', value: first(row, 'payment_number') },
       { label: 'Transaction ID', value: first(row, 'transaction_id') },
-      { label: 'Payment Date', value: date(pick(row, 'payment_date', 'paid_at')) },
+      { label: 'Paid On', value: dateTime(row) },
       { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
       { label: 'Processor Fee', value: money(row.fee_amount) },
       { label: 'Net Received', value: <strong>{money(row.net_amount ?? row.amount)}</strong> },
       { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
       { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
-      { label: 'Reference No', value: first(row, 'reference_no') },
+      // "Reference No" is a bank or cheque reference, and a card payment has
+      // none — its reference is the Transaction ID above. Showing the invoice
+      // number here, or worse a description, only mislabelled them.
+      { label: 'For', value: first(row, 'reference_no', 'invoice_number', 'order_number') },
     ]}/>
     <DrawerSection title="Received" fields={[
       { label: 'Received From', value: first(row, 'received_from_name', 'customer_name') },

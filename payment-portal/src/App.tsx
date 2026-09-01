@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadStripe, type Stripe } from '@stripe/stripe-js'
 import { Elements, ExpressCheckoutElement, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { AlertCircle, ArrowUpRight, CheckCircle2, Loader2, Lock, ShieldCheck } from 'lucide-react'
-import { createIntent, fetchLink, fetchStatus, fmtDate, money, type PayView } from './api'
+import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js'
+import {
+  capturePaypalOrder, createIntent, createPaypalOrder, fetchLink, fetchStatus, fmtDate, money,
+  type PayView,
+} from './api'
 
 /**
  * Decoinks Payments.
@@ -243,7 +247,7 @@ function Form({ token, view, onPaid }: { token: string; view: PayView; onPaid: (
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form onSubmit={submit} className="space-y-4">
       {/*
         Apple Pay and Google Pay live here, not in the Payment Element.
         They are wallets that ride on the card rail rather than payment methods
@@ -254,6 +258,12 @@ function Form({ token, view, onPaid }: { token: string; view: PayView; onPaid: (
         iPhone, Google Pay in Chrome, and nothing at all on a desktop with
         neither, which is why the divider below is conditional.
       */}
+      {(walletsReady || (view.paypal?.enabled && view.paypal.clientId)) && (
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+          Pay in one tap
+        </div>
+      )}
+
       <div className={walletsReady ? 'block' : 'hidden'}>
         <ExpressCheckoutElement
           options={{
@@ -264,12 +274,54 @@ function Form({ token, view, onPaid }: { token: string; view: PayView; onPaid: (
           onReady={({ availablePaymentMethods }) => setWalletsReady(Boolean(availablePaymentMethods))}
           onConfirm={onWalletConfirm}
         />
-        <div className="my-6 flex items-center gap-4">
+      </div>
+
+      {view.paypal?.enabled && view.paypal.clientId && (
+        <div>
+
+          {/*
+            PayPal cannot come through Stripe here — Stripe's PayPal is for
+            merchants in Europe and the UK, and this is a US account, so a live
+            intent never lists it. It is integrated directly instead, and the
+            customer chooses on this page rather than being sent anywhere.
+          */}
+          <PayPalScriptProvider options={{
+            clientId: view.paypal.clientId,
+            currency: view.currency || 'USD',
+            intent: 'capture',
+            // Off: both instalment products (Pay in 4 and PayPal Credit), which
+            // the owner does not want; and PayPal's own card button, which put a
+            // second card route above the card form and made the page unreadable
+            // — the customer could not tell the two apart, and neither could we.
+            disableFunding: 'paylater,credit,card',
+            // Venmo is asked for explicitly. It still only renders for a buyer
+            // in the US whose PayPal account offers it, which is why it does not
+            // appear on a test opened from anywhere else.
+            enableFunding: 'venmo',
+          }}>
+            {/* PayPal and Venmo. Cards are the form below. */}
+            <PayPalButtons
+              style={{ layout: 'vertical', height: 48, shape: 'rect', label: 'pay' }}
+              createOrder={async () => (await createPaypalOrder(token)).orderId}
+              onApprove={async (data) => {
+                // Our server captures and records. Only then is it paid.
+                await capturePaypalOrder(token, data.orderID)
+                waitForOurBooks()
+              }}
+              onError={(err: any) => setMessage(
+                err?.message || 'PayPal could not complete that payment. Please try another method.')}
+            />
+          </PayPalScriptProvider>
+        </div>
+      )}
+
+      {(walletsReady || (view.paypal?.enabled && view.paypal.clientId)) && (
+        <div className="flex items-center gap-4">
           <span className="h-px flex-1 bg-hairline" />
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">or pay by card</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">or pay by card or bank</span>
           <span className="h-px flex-1 bg-hairline" />
         </div>
-      </div>
+      )}
 
       <PaymentElement options={{ layout: 'tabs' }} />
 
