@@ -414,7 +414,12 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
         customer_segment || buyer_type || null, tier || null,
         customer_type || null, job_title || null, payment_terms || null,
         credit_limit ?? null, assigned_agent_id || null,
-        normalizeStatus(status) || 'prospect',
+        // 'active', not 'prospect'. A customer record is created when there is
+        // real business to attach to it, so treating every new one as a
+        // prospect meant the list said "prospect" about people who had already
+        // ordered. Whether they stay active is decided by
+        // scripts/refresh-customer-status.js, from whether they actually buy.
+        normalizeStatus(status) || 'active',
         middle_name || null, external_customer_number || null,
       ]
     )
