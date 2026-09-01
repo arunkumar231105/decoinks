@@ -21,6 +21,76 @@ const paylinks = require('./paylinks.service')
 const router = Router()
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 
+/* ── Service routes, for the CRM ──────────────────────────────────────────
+ *
+ * Agents work in the CRM all day and should not have to open the Printshop to
+ * take a payment. These few routes let it ask for a link on their behalf.
+ *
+ * Authenticated by a secret of their own — deliberately not the SSO secret,
+ * which exists to prove a person signed in. Overloading it would mean one
+ * credential granting two unrelated powers, and rotating it for one reason
+ * would silently break the other.
+ *
+ * Mounted BEFORE `verifyToken` because the caller is a server, not a person
+ * with a staff login. They can do exactly two things — search customers and
+ * make a link — and nothing else in this file is reachable through them.
+ */
+function serviceAuth(req, res, next) {
+  const expected = (process.env.SERVICE_API_SECRET || '').trim()
+  if (!expected) return res.status(503).json({ error: 'Service access is not configured.' })
+  const given = req.get('x-decoinks-sso-secret') || ''
+  // Constant-time-ish: compare lengths first, then the whole string, so a
+  // wrong secret cannot be narrowed down by timing the response.
+  if (given.length !== expected.length || given !== expected) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+  next()
+}
+
+router.get('/service/customers', serviceAuth, wrap(async (req, res) => {
+  const q = String(req.query.search || '').trim()
+  const { rows } = await db.query(
+    `SELECT id, name, customer_number, email, phone
+       FROM customers
+      WHERE deleted_at IS NULL
+        AND ($1 = '' OR name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%'
+             OR customer_number ILIKE '%'||$1||'%' OR phone ILIKE '%'||$1||'%')
+      ORDER BY (name ILIKE $1||'%') DESC, name
+      LIMIT 25`, [q])
+  res.json({ data: rows })
+}))
+
+/** One customer by id — so the CRM can confirm the lead reached Printshop. */
+router.get('/service/customers/:id', serviceAuth, wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, name, customer_number, email FROM customers WHERE id = $1 AND deleted_at IS NULL`,
+    [req.params.id])
+  if (!rows[0]) return res.status(404).json({ error: 'That customer is not in Printshop yet.' })
+  res.json({ data: rows[0] })
+}))
+
+router.post('/service/advance', serviceAuth, wrap(async (req, res) => {
+  const base = await payPageBase()
+  const { customerId, itemAmount, shippingAmount, currency, description, createdBy } = req.body || {}
+
+  const { link, token, customer } = await paylinks.createStandalone({
+    customerId, itemAmount, shippingAmount, currency, description,
+    createdBy: createdBy || null,
+  })
+
+  res.json({
+    data: {
+      url: `${base}/pay/${token}`,
+      customer: customer.name,
+      amount: Number(link.amount),
+      itemAmount: Number(link.item_amount),
+      shippingAmount: Number(link.shipping_amount),
+      currency: link.currency,
+      description: link.description,
+    },
+  })
+}))
+
 router.use(verifyToken)
 
 /**
