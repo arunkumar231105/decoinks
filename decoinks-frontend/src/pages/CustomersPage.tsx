@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Divider, Menu, MenuItem, Skeleton } from '@mui/material'
 import { Wallet, Archive, ArrowDown, ArrowDownUp, ArrowUp, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleDollarSign, Download, FileUp, MoreHorizontal, Repeat, Search, SlidersHorizontal, Trash2, UserPlus, Users, X } from 'lucide-react'
 import toast from '../utils/toast'
+import { reportBulkDelete, confirmBulkDelete } from '../utils/bulkDeleteResult'
 import { api } from '../services/api'
 import { CustomerDetailsDrawer } from '../components/customers/CustomerDetailsDrawer'
 import { PERIOD_TABS, periodRange, toIsoDate, type PeriodKey } from '../utils/period'
@@ -31,8 +32,10 @@ export function CustomersPage(){
   const options=useQuery<any>({queryKey:['customers','filters'],queryFn:()=>api.get('/customers/filters').then(r=>r.data.data)})
   const remove=useMutation({mutationFn:(id:string)=>api.delete(`/customers/${id}`),onSuccess:()=>{toast.success('Customer deleted');setConfirm(null);setDrawer(null);qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Could not delete customer')})
   const archive=useMutation({mutationFn:(id:string)=>api.put(`/customers/${id}`,{status:'archived'}),onSuccess:()=>{toast.success('Customer archived');qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Could not archive customer')})
-  const bulkDelete=useMutation({mutationFn:(ids:string[])=>api.post('/customers/bulk-delete',{ids}),onSuccess:(res:any)=>{const n=res.data?.data?.deleted??0;toast.success(`${n} customer(s) permanently deleted`);setSelected(new Set());qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Delete failed')})
-  const handleBulkDelete=()=>{if(!selected.size)return;if(!window.confirm(`Permanently delete ${selected.size} customer(s)? This cannot be undone.`))return;bulkDelete.mutate([...selected])}
+  // A customer with orders, invoices or quotes against them is refused, so the
+  // reason is what matters here, not the count.
+  const bulkDelete=useMutation({mutationFn:(ids:string[])=>api.post('/customers/bulk-delete',{ids}),onSuccess:(res:any)=>{reportBulkDelete(res.data?.data,'customer');setSelected(new Set());qc.invalidateQueries({queryKey:['customers']})},onError:(e:any)=>toast.error(e.response?.data?.message||'Delete failed')})
+  const handleBulkDelete=()=>{if(!selected.size)return;if(!confirmBulkDelete(selected.size,'customer'))return;bulkDelete.mutate([...selected])}
   const rows=list.data?.rows||[], total=list.data?.total||0, pages=Math.max(1,Math.ceil(total/limit)), start=total?(page-1)*limit+1:0, end=Math.min(page*limit,total)
   const clear=()=>{setInput('');setSearch('');setFilters(EMPTY_FILTERS);setSort({by:'created_at',dir:'desc'});setPeriod('all');setDays('');setPage(1)}
   const active=Boolean(search||Object.values(filters).some(Boolean))
@@ -67,6 +70,6 @@ export function CustomersPage(){
     <CustomerDetailsDrawer customerId={drawer} onClose={()=>setDrawer(null)}/>
     <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={()=>setExportEl(null)}><MenuItem onClick={exportCsv}>Export filtered results as CSV</MenuItem></Menu>
     <Menu anchorEl={menu?.el} open={Boolean(menu)} onClose={()=>setMenu(null)}><MenuItem onClick={()=>{setDrawer(menu!.customer.id);setMenu(null)}}>View details</MenuItem><MenuItem onClick={()=>{nav(`/customers/${menu!.customer.id}`);setMenu(null)}}>Open full profile</MenuItem><MenuItem onClick={()=>{nav('/quotes/new');setMenu(null)}}>New quotation</MenuItem><Divider/><MenuItem onClick={()=>{archive.mutate(menu!.customer.id);setMenu(null)}}><Archive size={14} style={{marginRight:8}}/> Archive customer</MenuItem><MenuItem sx={{color:'#dc2626'}} onClick={()=>{setConfirm(menu!.customer);setMenu(null)}}><Trash2 size={14} style={{marginRight:8}}/> Delete customer</MenuItem></Menu>
-    <Dialog open={Boolean(confirm)} onClose={()=>setConfirm(null)}><DialogTitle>Delete Customer</DialogTitle><DialogContent><DialogContentText>Delete <strong>{confirm?.display_name}</strong> ({confirm?.customer_number||'no number'})? This action cannot be undone.</DialogContentText></DialogContent><DialogActions><button className="leads-btn" onClick={()=>setConfirm(null)}>Cancel</button><button className="leads-btn danger" disabled={remove.isPending} onClick={()=>confirm&&remove.mutate(confirm.id)}>Delete</button></DialogActions></Dialog>
+    <Dialog open={Boolean(confirm)} onClose={()=>setConfirm(null)}><DialogTitle>Delete Customer</DialogTitle><DialogContent><DialogContentText>Delete <strong>{confirm?.display_name}</strong> ({confirm?.customer_number||'no number'})? It will be removed from the lists; anything still using it is refused.</DialogContentText></DialogContent><DialogActions><button className="leads-btn" onClick={()=>setConfirm(null)}>Cancel</button><button className="leads-btn danger" disabled={remove.isPending} onClick={()=>confirm&&remove.mutate(confirm.id)}>Delete</button></DialogActions></Dialog>
   </div>
 }

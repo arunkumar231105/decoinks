@@ -141,6 +141,51 @@ describe('DELETE /api/leads/:id', () => {
   })
 })
 
+// ── BULK DELETE ───────────────────────────────────────────────────────────────
+
+describe('POST /bulk-delete reports what it could not remove', () => {
+  test('a quotation with an invoice is refused, and the reason is returned', async () => {
+    const quote = await createQuote()
+    await request(app)
+      .post(`/api/quotations/${quote.id}/convert-to-invoice`)
+      .set('Authorization', `Bearer ${token}`)
+
+    const res = await request(app)
+      .post('/api/quotations/bulk-delete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [quote.id] })
+
+    // 200 with nothing deleted — the list has to read `errors` to know why,
+    // which is exactly what it used to throw away.
+    expect(res.status).toBe(200)
+    expect(res.body.data.deleted).toBe(0)
+    expect(res.body.data.errors).toHaveLength(1)
+    expect(res.body.data.errors[0].message).toMatch(/invoice/i)
+    expect(res.body.data.errors[0].id).toBe(quote.id)
+  })
+
+  test('what can go, goes; what cannot is named', async () => {
+    const free = await createQuote()
+    const held = await createQuote()
+    await request(app)
+      .post(`/api/quotations/${held.id}/convert-to-invoice`)
+      .set('Authorization', `Bearer ${token}`)
+
+    const res = await request(app)
+      .post('/api/quotations/bulk-delete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [free.id, held.id] })
+
+    expect(res.body.data.deleted).toBe(1)
+    expect(res.body.data.errors).toHaveLength(1)
+    expect(res.body.data.errors[0].id).toBe(held.id)
+
+    const { rows } = await pool.query(
+      `SELECT id FROM quotations WHERE id = ANY($1) AND deleted_at IS NULL`, [[free.id, held.id]])
+    expect(rows.map(r => r.id)).toEqual([held.id])
+  })
+})
+
 // ── QUOTATION DELETE ──────────────────────────────────────────────────────────
 
 describe('DELETE /api/quotations/:id', () => {

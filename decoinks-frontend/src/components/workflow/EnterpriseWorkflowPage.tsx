@@ -9,6 +9,7 @@ import {
   Link2,
 } from 'lucide-react'
 import toast from '../../utils/toast'
+import { reportBulkDelete, confirmBulkDelete } from '../../utils/bulkDeleteResult'
 import { api } from '../../services/api'
 import { orderStage, processStatus } from '../../utils/orderStatus'
 import { copyText, downloadCsv } from '../../utils/actions'
@@ -486,12 +487,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const deleteSelected = async () => {
     if (!selected.size) return
-    const noun = config.title.toLowerCase()
-    if (!window.confirm(`Permanently delete ${selected.size} ${noun}? This cannot be undone.`)) return
+    const noun = config.title.toLowerCase().replace(/s$/, '')
+    if (!confirmBulkDelete(selected.size, noun)) return
     try {
       const res = await api.post(`${config.api}/bulk-delete`, { ids: [...selected] })
-      const n = res.data?.data?.deleted ?? selected.size
-      toast.success(`${n} record${n === 1 ? '' : 's'} permanently deleted`)
+      // Some rows are refused, and the reason matters more than the count.
+      reportBulkDelete(res.data?.data, noun)
       setSelected(new Set()); setActive(null); setDetail(null); await load()
     } catch (error: any) { toast.error(error.response?.data?.message || 'Delete failed') }
   }

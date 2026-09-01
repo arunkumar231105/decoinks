@@ -1001,7 +1001,7 @@ export function NewOrderPage() {
         {!editOrderId && (
           <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}><Save size={14} /> Save Draft</button>
         )}
-        <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to permanently delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
+        <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
         {!editOrderId && (
           <div className="no-split-wrap">
             <button className="no-topbar-btn no-topbar-send" onClick={handleSendToCustomer} disabled={createOrder.isPending}>
