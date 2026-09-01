@@ -28,7 +28,10 @@ async function read(res: Response) {
 }
 
 export interface PayView {
-  invoiceNumber: string
+  // Null on a payment taken before any invoice exists — `description` names it
+  // instead.
+  invoiceNumber: string | null
+  description: string | null
   orderNumber: string | null
   customerName: string | null
   amount: number
@@ -44,6 +47,7 @@ export interface PayStatus {
   paid: boolean
   linkStatus: string
   invoiceNumber: string | null
+  description?: string | null
   amount: number
   currency: string
   paidAt: string | null

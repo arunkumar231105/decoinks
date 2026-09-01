@@ -683,7 +683,8 @@ export function NewInvoicePage() {
       // the invoice becomes the customer's business.
       if (navigateAfterSave.current === 'send' && inv?.id) {
         navigateAfterSave.current = null
-        api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' })
+        Promise.resolve(chosenPayment ? applyChosenPayment(inv.id) : null)
+          .then(() => api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' }))
           // The invoice's payment link is created here, the moment it is sent,
           // so it exists from the invoice's own beginning and never changes
           // afterwards. Copy Link and the customer's Pay Now both return this
@@ -709,6 +710,10 @@ export function NewInvoicePage() {
         return
       }
       navigateAfterSave.current = null
+      if (chosenPayment && inv?.id) {
+        applyChosenPayment(inv.id).finally(() => navigate(`/invoices/${inv.id}`))
+        return
+      }
       toast.success(inv?._action === 'updated' ? 'Invoice updated' : 'Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
@@ -964,6 +969,39 @@ export function NewInvoicePage() {
     }
     navigateAfterSave.current = 'receipt'
     saveMutation.mutate(buildPayload())
+  }
+
+  /* ── An advance payment this invoice can claim ────────────────────────────
+   *
+   * The shop often collects before the paperwork exists. Those payments sit in
+   * the ledger against the customer with no invoice attached; this offers them
+   * here so the invoice being written now can claim one.
+   *
+   * Applying it moves no money — it only records which invoice the payment
+   * settles — and the invoice's status is then recomputed from the ledger, so
+   * it becomes Paid on its own rather than by anyone asserting it.
+   */
+  const [advancePayments, setAdvancePayments] = useState<any[]>([])
+  const [chosenPayment, setChosenPayment] = useState('')
+
+  useEffect(() => {
+    if (!supplierId) { setAdvancePayments([]); setChosenPayment(''); return }
+    api.get('/payment-links/unallocated', { params: { customer_id: supplierId } })
+      .then(r => setAdvancePayments((r.data?.data ?? r.data) || []))
+      .catch(() => setAdvancePayments([]))
+  }, [supplierId])
+
+  const applyChosenPayment = async (invoiceId: string) => {
+    if (!chosenPayment) return
+    try {
+      await api.post('/payment-links/apply', { paymentId: chosenPayment, invoiceId })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success('Payment applied — this invoice is settled')
+    } catch (err: any) {
+      // The invoice is already saved; only the link to the payment failed, and
+      // saying so is better than a success message that hides it.
+      toast.apiError(err)
+    }
   }
 
   /* ── Payment link ─────────────────────────────────────────────────────────
@@ -1631,6 +1669,35 @@ export function NewInvoicePage() {
                   {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
+              {advancePayments.length > 0 && (
+                <div className="ni-payment-field">
+                  <label className="ni-payment-label">
+                    Already paid? Apply a payment ({advancePayments.length} unclaimed)
+                  </label>
+                  <select
+                    className="ni-info-select"
+                    style={{ width: '100%' }}
+                    value={chosenPayment}
+                    onChange={e => setChosenPayment(e.target.value)}
+                  >
+                    <option value="">Don't apply a payment</option>
+                    {advancePayments.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
+                        {p.payment_date ? ` · ${String(p.payment_date).slice(0, 10)}` : ''}
+                        {p.unassigned ? ` · no customer on it${p.customer_name ? ` (from ${p.customer_name})` : ''}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {chosenPayment && (
+                    <p style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
+                      Applied when you save. The invoice is marked paid from the ledger, so the figures
+                      have to agree — a payment larger than this invoice will be refused.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Link</label>
                 <div className="ni-link-row">

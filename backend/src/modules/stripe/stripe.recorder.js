@@ -110,20 +110,33 @@ async function recordSucceededIntent(intent) {
 
   const linkId = intent.metadata?.payment_link_id || null
   const invoiceId = intent.metadata?.invoice_id || null
+  const metaCustomerId = intent.metadata?.customer_id || null
 
-  if (!invoiceId) {
+  // Money taken before any invoice existed. It is booked against the customer
+  // and waits there until an invoice claims it — which is the shop's actual
+  // habit: collect first, write the paperwork after.
+  const isAdvance = !invoiceId && Boolean(metaCustomerId)
+
+  if (!invoiceId && !isAdvance) {
     // A PaymentIntent created outside this application — someone charging a
     // card from the Stripe dashboard, say. Not ours to book; booking it against
     // a guessed invoice would be worse than leaving it for a human.
-    logger.warn({ intentId }, 'Stripe intent succeeded with no invoice_id in metadata — not recorded')
-    return { payment: null, created: false, skipped: 'no_invoice_metadata' }
+    logger.warn({ intentId }, 'Stripe intent succeeded with neither invoice nor customer in metadata — not recorded')
+    return { payment: null, created: false, skipped: 'no_metadata' }
   }
 
-  const invoice = await paylinks.getInvoice(invoiceId)
-  if (!invoice) {
+  const invoice = invoiceId ? await paylinks.getInvoice(invoiceId) : null
+  if (invoiceId && !invoice) {
     logger.error({ intentId, invoiceId }, 'Stripe intent references an invoice that no longer exists')
     return { payment: null, created: false, skipped: 'invoice_missing' }
   }
+
+  let payerName = invoice?.customer_record_name || invoice?.customer_name || null
+  if (!payerName && metaCustomerId) {
+    const { rows } = await db.query(`SELECT name FROM customers WHERE id = $1`, [metaCustomerId])
+    payerName = rows[0]?.name || null
+  }
+  const label = intent.metadata?.link_description || null
 
   const payment = await paymentsService.create({
     amount: dollars(intent.amount_received ?? intent.amount),
@@ -131,19 +144,22 @@ async function recordSucceededIntent(intent) {
     payment_method: 'Stripe',
     status: 'Completed',
     transaction_id: intentId,
-    reference_no: invoice.invoice_number,
-    invoice_id: invoice.id,
-    order_id: invoice.order_id || null,
-    customer_id: invoice.customer_id || null,
-    customer_name: invoice.customer_record_name || invoice.customer_name || null,
+    reference_no: invoice?.invoice_number || (label ? label.slice(0, 100) : null),
+    invoice_id: invoice?.id || null,
+    order_id: invoice?.order_id || null,
+    customer_id: invoice?.customer_id || metaCustomerId || null,
+    customer_name: payerName,
     received_into_account_id: await stripeAccountId(),
-    received_from_name: invoice.customer_record_name || invoice.customer_name || null,
-    notes: `Online card payment via Stripe (${intentId})`,
+    received_from_name: payerName,
+    notes: invoice
+      ? `Online card payment via Stripe (${intentId})`
+      : `Advance payment via Stripe before invoicing${label ? ` — ${label}` : ''} (${intentId})`,
     // recorded_by stays null: no member of staff recorded this, the customer did.
   })
 
   await settleDerived(payment, intentId, linkId)
-  logger.info({ intentId, paymentId: payment.id, invoice: invoice.invoice_number }, 'Stripe payment recorded')
+  logger.info({ intentId, paymentId: payment.id, invoice: invoice?.invoice_number || '(advance)' },
+    'Stripe payment recorded')
   return { payment, created: true }
 }
 
@@ -156,10 +172,13 @@ async function settleDerived(payment, intentId, linkIdHint = null) {
     await reconcileOrder(client, payment.order_id)
 
     // Find the link by its intent rather than trusting metadata alone, so a
-    // link is still closed out if the metadata was lost.
+    // link is still closed out if the metadata was lost. The invoice clause is
+    // skipped for an advance payment, which has no invoice to match on.
     const { rows } = await client.query(
       `SELECT id FROM payment_links
-        WHERE stripe_payment_intent_id = $1 OR id = $2::uuid OR (invoice_id = $3 AND status = 'active')
+        WHERE stripe_payment_intent_id = $1
+           OR id = $2::uuid
+           OR ($3::uuid IS NOT NULL AND invoice_id = $3::uuid AND status = 'active')
         LIMIT 1`,
       [intentId, linkIdHint, payment.invoice_id])
     if (rows[0]) await paylinks.markPaid(rows[0].id, { paymentId: payment.id }, client)
@@ -194,4 +213,96 @@ async function backfillFee(paymentIntentId, feeInDollars) {
   return rowCount > 0
 }
 
-module.exports = { recordSucceededIntent, reconcileInvoice, reconcileOrder, stripeAccountId, backfillFee }
+/**
+ * Claim an advance payment for an invoice written afterwards.
+ *
+ * The payment already exists and already holds real money; this only says which
+ * invoice it settles. Nothing about the money changes, which is why it is safe
+ * to do long after the fact.
+ *
+ * Guarded rather than trusting: the payment must be unallocated, must belong to
+ * the same customer, and must not overshoot what the invoice asks for. Each of
+ * those, unchecked, would put a real sum against the wrong record.
+ */
+async function attachPaymentToInvoice(paymentId, invoiceId) {
+  const { rows: pay } = await db.query(`SELECT * FROM payments WHERE id = $1`, [paymentId])
+  const payment = pay[0]
+  if (!payment) throw Object.assign(new Error('Payment not found'), { statusCode: 404 })
+  if (payment.invoice_id) {
+    throw Object.assign(new Error('That payment is already applied to another invoice.'), { statusCode: 409 })
+  }
+
+  const invoice = await paylinks.getInvoice(invoiceId)
+  if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
+
+  if (payment.customer_id && invoice.customer_id && payment.customer_id !== invoice.customer_id) {
+    throw Object.assign(
+      new Error('That payment belongs to a different customer.'), { statusCode: 409 })
+  }
+
+  const { rows: sum } = await db.query(
+    `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = $1`, [invoiceId])
+  const outstanding = +(Number(invoice.total) - Number(sum[0].paid)).toFixed(2)
+  if (Number(payment.amount) > outstanding + 0.01) {
+    throw Object.assign(new Error(
+      `That payment is ${Number(payment.amount).toFixed(2)}, more than the ${outstanding.toFixed(2)} still owed on this invoice.`),
+      { statusCode: 422 })
+  }
+
+  const client = await db.getClient()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `UPDATE payments
+          SET invoice_id = $2,
+              order_id = COALESCE(order_id, $3),
+              customer_id = COALESCE(customer_id, $4),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [paymentId, invoiceId, invoice.order_id || null, invoice.customer_id || null])
+
+    const result = await reconcileInvoice(client, invoiceId)
+    await reconcileOrder(client, invoice.order_id)
+    await client.query('COMMIT')
+    logger.info({ paymentId, invoiceId, status: result?.status }, 'Advance payment applied to invoice')
+    return { invoice: invoiceId, status: result?.status, balance: result?.balance }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Payments no invoice has claimed yet.
+ *
+ * Payments with no customer at all are included alongside the named customer's
+ * own. Staff entering a payment by hand often fill in "Received From" and never
+ * pick a customer from the list, so those rows carry a payer's name but no
+ * `customer_id` — filtering strictly on the id would hide real money from the
+ * one screen able to attach it. They are flagged `unassigned` so the UI can say
+ * so, and applying one fills the customer in from the invoice.
+ */
+async function unallocatedPayments(customerId) {
+  const { rows } = await db.query(
+    `SELECT p.id, p.payment_number, p.amount, p.payment_method, p.payment_date,
+            p.paid_at, p.reference_no, p.notes, p.transaction_id,
+            COALESCE(NULLIF(p.customer_name, ''), p.received_from_name) AS customer_name,
+            (p.customer_id IS NULL) AS unassigned
+       FROM payments p
+      WHERE p.invoice_id IS NULL
+        AND p.status = 'Completed'
+        AND ($1::uuid IS NULL
+             OR p.customer_id = $1::uuid
+             OR p.customer_id IS NULL)
+      ORDER BY (p.customer_id = $1::uuid) DESC NULLS LAST,
+               COALESCE(p.payment_date, p.paid_at::date) DESC, p.created_at DESC
+      LIMIT 100`, [customerId || null])
+  return rows
+}
+
+module.exports = {
+  recordSucceededIntent, reconcileInvoice, reconcileOrder, stripeAccountId, backfillFee,
+  attachPaymentToInvoice, unallocatedPayments,
+}

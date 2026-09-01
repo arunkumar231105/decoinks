@@ -235,19 +235,20 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
       { key: 'transaction_id', label: 'Transaction ID', render: r => common.empty(r, 'transaction_id') },
       { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
-      { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
+      // A payment entered by hand often has only "Received From" filled in — no
+      // customer was picked from the list, so `customer_name` is blank. Showing
+      // a dash next to a row that plainly knows who paid reads as a bug; fall
+      // back to the payer's name, which is the same person.
+      { key: 'customer', label: 'Customer Name', sortKey: ['customer_name', 'received_from_name'], render: r => <PersonCell name={common.empty(r, 'customer_name', 'received_from_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
       { key: 'received_from_name', label: 'Received From', render: r => common.empty(r, 'received_from_name', 'customer_name') },
       { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
       { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
-      { key: 'allocated_count', label: 'Applied To', render: r => Number(r.allocated_count || 0) > 1 ? `${r.allocated_count} orders` : common.empty(r, 'order_number') },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'reference_no', label: 'Reference No', render: r => common.empty(r, 'reference_no') },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
       { key: 'invoice_number', label: 'Invoice ID', render: r => common.empty(r, 'invoice_number') },
-      { key: 'recorded_by_name', label: 'Recorded By', render: r => common.empty(r, 'recorded_by_name') },
     ],
   },
 }
@@ -512,6 +513,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <div className="ew-actions">
         <label className="ew-search"><Search size={17}/><input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder={config.search}/>{search ? <button onClick={() => setSearch('')} aria-label="Clear search"><X size={15}/></button> : <kbd>Ctrl K</kbd>}</label>
         {(kind === 'quotations' || kind === 'orders') && <button className="ew-btn" onClick={handleImport}><Upload size={15}/>Import {config.title}</button>}
+        {kind === 'payments' && (
+          <button className="ew-btn" onClick={() => navigate('/payments/link')}
+                  title="Take a payment before the quotation and invoice exist">
+            <Link2 size={15}/>Payment Link
+          </button>
+        )}
         <button className="ew-btn" onClick={exportAll}><Download size={15}/>Export</button>
         <button className="ew-btn ew-primary" onClick={() => navigate(config.newPath)}><Plus size={16}/>{config.newLabel}</button>
       </div>

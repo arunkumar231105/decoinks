@@ -68,6 +68,7 @@ const OrderDetailPage        = page(() => import('../pages/OrderDetailPage'), 'O
 const NewShipmentPage        = page(() => import('../pages/NewShipmentPage'), 'NewShipmentPage')
 const NewPurchaseOrderPage   = page(() => import('../pages/NewPurchaseOrderPage'), 'NewPurchaseOrderPage')
 const NewPaymentPage         = page(() => import('../pages/NewPaymentPage'), 'NewPaymentPage')
+const PaymentLinkPage        = page(() => import('../pages/PaymentLinkPage'), 'PaymentLinkPage')
 const PurchaseOrderDetailPage= page(() => import('../pages/PurchaseOrderDetailPage'), 'PurchaseOrderDetailPage')
 const ProductsPage           = page(() => import('../pages/ProductsPage'), 'ProductsPage')
 const ResetPasswordPage      = page(() => import('../pages/ResetPasswordPage'), 'ResetPasswordPage')
@@ -227,6 +228,12 @@ export const router = createBrowserRouter([
                 path: '/payments',
                 element: <WorkflowListPage kind="payments" />,
                 handle: { title: 'Payments', subtitle: 'Record and track customer payments.' },
+              },
+              {
+                // Before '/payments/:id', or that route reads "link" as an id.
+                path: '/payments/link',
+                element: <PaymentLinkPage />,
+                handle: { title: 'Payment Link', subtitle: 'Take a payment before the invoice exists.' },
               },
               {
                 path: '/payments/new',

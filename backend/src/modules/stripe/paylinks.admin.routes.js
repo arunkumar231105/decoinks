@@ -106,6 +106,86 @@ router.post('/invoices/:id', requireRole('Admin', 'Manager', 'Sales'), wrap(asyn
   })
 }))
 
+/**
+ * A payment link taken in advance, before any quotation or invoice exists.
+ *
+ * The shop collects first and writes the paperwork afterwards, so this is the
+ * entry point for that: a customer, an item amount, a shipping amount, and a
+ * note about what it is for. The total is computed here — never taken from the
+ * request as a single figure — and written onto the link, so it is the server's
+ * number that Stripe is asked to charge.
+ */
+router.post('/advance', requireRole('Admin', 'Manager', 'Sales'), wrap(async (req, res) => {
+  const base = await payPageBase()
+  const { customerId, itemAmount, shippingAmount, currency, description } = req.body || {}
+
+  const { link, token, customer } = await paylinks.createStandalone({
+    customerId,
+    itemAmount,
+    shippingAmount,
+    currency,
+    description,
+    createdBy: req.user?.id || null,
+  })
+
+  res.json({
+    data: {
+      url: `${base}/pay/${token}`,
+      linkId: link.id,
+      customer: customer.name,
+      itemAmount: Number(link.item_amount),
+      shippingAmount: Number(link.shipping_amount),
+      amount: Number(link.amount),
+      currency: link.currency,
+      description: link.description,
+    },
+  })
+}))
+
+/** Advance links taken for a customer, so staff can see what is outstanding. */
+router.get('/advance', wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT pl.id, pl.amount, pl.item_amount, pl.shipping_amount, pl.currency, pl.description,
+            pl.status, pl.created_at, pl.paid_at, pl.first_opened_at,
+            c.name AS customer_name, p.payment_number
+       FROM payment_links pl
+       LEFT JOIN customers c ON c.id = pl.customer_id
+       LEFT JOIN payments  p ON p.id = pl.payment_id
+      WHERE pl.invoice_id IS NULL
+        AND ($1::uuid IS NULL OR pl.customer_id = $1::uuid)
+      ORDER BY pl.created_at DESC LIMIT 100`,
+    [req.query.customer_id || null])
+  res.json({ data: rows })
+}))
+
+/**
+ * Payments a customer has already made that no invoice has claimed.
+ *
+ * This is what the invoice form offers when staff are writing up work that was
+ * paid for in advance.
+ */
+router.get('/unallocated', wrap(async (req, res) => {
+  const recorder = require('./stripe.recorder')
+  res.json({ data: await recorder.unallocatedPayments(req.query.customer_id || null) })
+}))
+
+/**
+ * Apply an existing payment to an invoice.
+ *
+ * Only the link between the two records changes — no money moves — which is why
+ * this is safe long after the payment happened. The invoice's status is then
+ * recomputed from the ledger, so it becomes Paid on its own rather than by
+ * anyone asserting it.
+ */
+router.post('/apply', requireRole('Admin', 'Manager', 'Sales'), wrap(async (req, res) => {
+  const { paymentId, invoiceId } = req.body || {}
+  if (!paymentId || !invoiceId) {
+    return res.status(400).json({ error: 'Both a payment and an invoice are required.' })
+  }
+  const recorder = require('./stripe.recorder')
+  res.json({ data: await recorder.attachPaymentToInvoice(paymentId, invoiceId) })
+}))
+
 /** Kill the live link without issuing a replacement. */
 router.delete('/invoices/:id', requireRole('Admin', 'Manager'), wrap(async (req, res) => {
   const { rowCount } = await db.query(

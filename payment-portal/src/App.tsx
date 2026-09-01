@@ -57,7 +57,8 @@ export default function App() {
         if (status?.paid) {
           setPaid(true)
           setView(v => v ?? ({
-            invoiceNumber: status.invoiceNumber ?? '', orderNumber: null, customerName: null,
+            invoiceNumber: status.invoiceNumber ?? null, description: status.description ?? null,
+            orderNumber: null, customerName: null,
             amount: status.amount, currency: status.currency, issueDate: null, dueDate: null,
             expiresAt: null, publishableKey: '', testMode: false,
           }))
@@ -331,9 +332,17 @@ function Header({ view }: { view: PayView }) {
       )}
       <div className="flex items-start justify-between gap-5">
         <div className="min-w-0">
+          {/*
+            A payment taken before the invoice exists has no number to show, so
+            it is named by what staff said it was for. Rendering "Invoice" with
+            nothing after it made a working page look broken.
+          */}
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
-            Invoice {view.invoiceNumber}
+            {view.invoiceNumber ? `Invoice ${view.invoiceNumber}` : 'Payment request'}
           </div>
+          {!view.invoiceNumber && view.description && (
+            <div className="mt-1.5 text-[15px] font-medium leading-snug text-ink">{view.description}</div>
+          )}
           {view.customerName && <div className="mt-1.5 truncate text-[15px] font-medium text-ink">{view.customerName}</div>}
           {view.orderNumber && <div className="text-[13px] text-muted">Order {view.orderNumber}</div>}
           {due && <div className="mt-1 text-[12px] text-muted">Due {due}</div>}
@@ -394,12 +403,16 @@ function Success({ view }: { view: PayView | null }) {
         <h2 className="mt-6 text-[22px] font-semibold tracking-tight text-ink">Payment received</h2>
         {view && (
           <p className="mt-3 max-w-[24rem] text-sm leading-relaxed text-muted">
-            Thank you. <span className="font-medium text-ink">{money(view.amount, view.currency)}</span> has been paid
-            {view.invoiceNumber ? <> against invoice <span className="font-medium text-ink">{view.invoiceNumber}</span></> : null}.
+            Thank you. <span className="font-medium text-ink">{money(view.amount, view.currency)}</span> has been received
+            {view.invoiceNumber
+              ? <> against invoice <span className="font-medium text-ink">{view.invoiceNumber}</span></>
+              : view.description ? <> for <span className="font-medium text-ink">{view.description}</span></> : null}.
           </p>
         )}
         <p className="mt-5 max-w-[24rem] text-[13px] leading-relaxed text-muted">
-          A receipt is on its way to your email, and this invoice is now marked paid in your Decoinks account.
+          {view?.invoiceNumber
+            ? 'A receipt is on its way to your email, and this invoice is now marked paid in your Decoinks account.'
+            : 'A receipt is on its way to your email. We have recorded this payment against your account.'}
         </p>
         <a href="https://www.decoinks.com"
            className="mt-9 inline-flex h-11 items-center justify-center gap-1.5 rounded-btn bg-ink px-7 text-sm font-medium text-white transition hover:bg-black">
