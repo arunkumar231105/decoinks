@@ -62,16 +62,27 @@ const SERIES = [
   // in the book and a number from the middle of it.
   { key: 'quotations', table: 'quotations', column: 'quote_number', prefix: 'Q',
     altPrefix: 'QT', dateColumn: 'created_at', label: 'Quotations' },
-  // Invoices are deliberately absent. This shop numbers them by the buyer's
-  // initials — RFA-0115, KMO-0110 — so each customer has their own run and the
-  // series is not a single sequence that a date could order. Asking for one
-  // finds nothing under INV- and fails the check, which rolls the whole run
-  // back. invoice-numbers-follow-the-house-rule.js keeps that scheme instead.
+  // Payments have neither deleted_at nor source_system: nothing soft-deletes
+  // them, and they do not record where they were entered from.
+  { key: 'payments', table: 'payments', column: 'payment_number', prefix: 'PAY',
+    dateColumn: 'payment_date', label: 'Payments', softDeletes: false, hasSource: false },
+  // Invoices are handled by invoice-numbers-follow-the-house-rule.js, not
+  // because they are outside the date sequence — they are very much in it — but
+  // because their number carries the buyer's initials in front of it rather
+  // than a fixed prefix and a year, so it cannot be rebuilt from one template
+  // the way these four can.
   { key: 'orders', table: 'orders', column: 'order_number', prefix: 'ORD',
     dateColumn: 'order_date', label: 'Sales orders' },
   { key: 'purchase_orders', table: 'purchase_orders', column: 'po_number', prefix: 'PO',
     dateColumn: 'order_date', label: 'Purchase orders' },
 ]
+
+// Every series soft-deletes and records a source unless it says otherwise.
+for (const s of SERIES) {
+  if (s.softDeletes === undefined) s.softDeletes = true
+  if (s.hasSource === undefined) s.hasSource = true
+}
+const alive = s => (s.softDeletes ? 'deleted_at IS NULL AND ' : '')
 
 const YEAR = 2026
 const pad = n => String(n).padStart(4, '0')
@@ -94,9 +105,9 @@ async function main() {
     for (const s of chosen) {
       const { rows } = await client.query(`
         SELECT id, ${s.column} AS number, ${s.dateColumn} AS on_date, created_at,
-               source_system IS NULL AS entered_by_hand
+               ${s.hasSource ? 'source_system IS NULL' : 'TRUE'} AS entered_by_hand
           FROM ${s.table}
-         WHERE deleted_at IS NULL AND ${s.column} ~ $1
+         WHERE ${alive(s)}${s.column} ~ $1
          ORDER BY ${s.dateColumn}, created_at, id`, [seriesPattern(s)])
 
       const moves = rows
@@ -106,7 +117,7 @@ async function main() {
       // Anything in the table this pass will not touch — a different year, or a
       // shape the pattern does not match — must not be about to be overwritten.
       const { rows: [outsideRow] } = await client.query(
-        `SELECT count(*)::int AS n FROM ${s.table} WHERE deleted_at IS NULL AND ${s.column} !~ $1`,
+        `SELECT count(*)::int AS n FROM ${s.table} WHERE ${alive(s)}${s.column} !~ $1`,
         [seriesPattern(s)])
       const outside = outsideRow.n
 
@@ -149,6 +160,8 @@ async function main() {
     let parked = 0
     for (const p of plans) {
       const s2 = p.series
+      // A series with nothing soft-deleted has nothing parked to clear.
+      if (!s2.softDeletes) continue
       const { rowCount } = await client.query(
         `UPDATE ${s2.table} SET ${s2.column} = 'D-' || RIGHT(id::text, 12)
           WHERE deleted_at IS NOT NULL AND ${s2.column} ~ $1`,
@@ -219,7 +232,7 @@ async function main() {
         WITH n AS (
           SELECT CAST(SPLIT_PART(${s.column}, '-', 3) AS int) AS num,
                  ROW_NUMBER() OVER (ORDER BY ${s.dateColumn}, created_at, id) AS by_date
-            FROM ${s.table} WHERE deleted_at IS NULL AND ${s.column} ~ $1)
+            FROM ${s.table} WHERE ${alive(s)}${s.column} ~ $1)
         SELECT count(*)::int AS docs,
                count(*) FILTER (WHERE num <> by_date)::int AS out_of_place,
                MIN(num) AS lowest, MAX(num) AS highest,
