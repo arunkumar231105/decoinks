@@ -1,36 +1,48 @@
 /**
- * David Farrar and Robert Farrar are one buyer, at one address —
- * 748 Alcovy Mill Park, Lawrenceville, GA 30045. The owner says keep Robert.
+ * Two records, one buyer.
  *
- * Everything David holds moves across: the job he was invoiced for, its
- * purchase order, quote, invoice and payment, the two loose jobs that never
- * became orders, and 331 artwork files. The documents keep the numbers they
- * were issued under — an invoice the customer already holds does not get
+ * The same person gets entered twice under names that do not match — a maiden
+ * name and a married one, a first name written differently, a company against a
+ * person — and the book then splits their orders, their spend and their history
+ * between two customers that no list shows as related.
+ *
+ * Everything the losing record holds moves across: orders, quotes, invoices,
+ * purchase orders, payments, claims, artwork. The documents keep the numbers
+ * they were issued under — an invoice the customer already holds does not get
  * renumbered because the file it hangs on changed — but the name written on
- * each is brought into line, or the customer list would say Robert while the
- * invoice list still said David.
+ * each is brought into line, or the customer list would say one thing while the
+ * invoice list said another.
  *
  * Two things cannot simply move:
- *   - The address. Robert already holds the same one, so David's copy is
- *     dropped rather than duplicated.
- *   - The portal login. One login per customer is enforced, and Robert has his
- *     own, so David's is switched off rather than moved.
+ *   - The address, when the surviving record already holds the same one. The
+ *     copy is dropped rather than duplicated.
+ *   - The portal login. One per customer is enforced, so a second is switched
+ *     off rather than moved.
  *
- * MONEY IS NOT TOUCHED. See the note this prints about $45.25.
+ * MONEY IS NEVER TOUCHED. Where the same amount on the same day exists on both
+ * sides, that is printed for the owner to settle — merging makes such a thing
+ * visible, it does not create it.
  *
- * Dry run by default. Pass --apply to write.
+ * Usage:
+ *   node merge-two-customer-records.js --keep CUST-2026-0042 --drop CUST-2026-0030 [--apply]
  */
 const { query, pool } = require('../src/config/db')
 
-const KEEP = 'CUST-2026-0042'   // Robert Farrar
-const DROP = 'CUST-2026-0030'   // David Farrar
+const arg = name => {
+  const i = process.argv.indexOf(`--${name}`)
+  return i !== -1 ? process.argv[i + 1] : null
+}
+const KEEP = arg('keep')
+const DROP = arg('drop')
 
 async function main() {
   const apply = process.argv.includes('--apply')
 
   const keep = (await query(`SELECT id, name FROM customers WHERE customer_number = $1`, [KEEP])).rows[0]
   const drop = (await query(`SELECT id, name FROM customers WHERE customer_number = $1`, [DROP])).rows[0]
+  if (!KEEP || !DROP) throw new Error('--keep aur --drop dono chahiye (customer numbers)')
   if (!keep || !drop) throw new Error('dono customers nahi mile')
+  if (keep.id === drop.id) throw new Error('--keep aur --drop ek hi customer hain')
 
   const MOVES = [
     ['orders',               'customer_id'],
