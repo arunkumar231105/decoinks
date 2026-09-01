@@ -91,12 +91,19 @@ const STATUS_VALUES = [
   'Active', 'Inactive', 'Blocked',
 ]
 
+// Two people really can share a name, so the refusal can be overridden — but
+// only deliberately. Declared here because an undeclared key never reaches the
+// service: it is stripped on the way through.
+const allowDuplicate = { allow_duplicate_name: z.boolean().optional() }
+
 const createSchema = z.object({
   ...customerFields,
+  ...allowDuplicate,
   status: z.enum(STATUS_VALUES).optional(),
 })
 const updateSchema = z.object({
   ...Object.fromEntries(Object.entries(customerFields).map(([k, v]) => [k, v.optional()])),
+  ...allowDuplicate,
   status: z.enum(STATUS_VALUES).optional(),
 })  // no .strict() — unknown fields are safely stripped
 

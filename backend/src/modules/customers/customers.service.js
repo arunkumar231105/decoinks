@@ -342,15 +342,51 @@ async function insertContacts(client, customerId, contacts, createdBy) {
   }
 }
 
+// ── Not the same buyer twice ─────────────────────────────────────────────────
+// Nothing stopped the same person being entered again: the only uniqueness the
+// table carries is on e-mail, and most buyers here have none. Two records for
+// one person split their orders, their spend and their history in half.
+//
+// The name is compared the way a person reads it — case, spacing, punctuation
+// and accents ignored — so "hector garcia", "Héctor  García" and "Hector-Garcia"
+// are one name. Real people do share names, so this refuses and says who it
+// found rather than deciding; pass allow_duplicate_name to go ahead anyway.
+const NAME_KEY = `regexp_replace(lower(translate(btrim($COL$),
+  'áàâäãéèêëíìîïóòôöõúùûüñçÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇ',
+  'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC')), '[^a-z0-9]', '', 'g')`
+
+async function assertNotAlreadyOnFile({ name, email, exceptId = null, allow = false }) {
+  if (email) {
+    const { rows } = await query(
+      `SELECT customer_number, name FROM customers
+        WHERE deleted_at IS NULL AND lower(btrim(email)) = lower(btrim($1))
+          AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`, [email, exceptId])
+    if (rows[0]) throw Object.assign(
+      new Error(`${rows[0].customer_number} (${rows[0].name}) already uses this e-mail address.`),
+      { statusCode: 409 })
+  }
+  if (allow || !name) return
+  const { rows } = await query(
+    `SELECT customer_number, name FROM customers
+      WHERE deleted_at IS NULL
+        AND ${NAME_KEY.replace('$COL$', 'name')} = ${NAME_KEY.replace('$COL$', '$1')}
+        AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`, [name, exceptId])
+  if (rows[0]) throw Object.assign(
+    new Error(`${rows[0].customer_number} is already on file as "${rows[0].name}". ` +
+              `Open that customer instead, or confirm this is a different person of the same name.`),
+    { statusCode: 409 })
+}
+
 async function create({ lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,
   address_line1, city, state, zip, country, billing_address, same_as_shipping,
   buyer_type, internal_notes, source, created_by,
   first_name, middle_name, last_name, company_name, company_phone_number, mobile_number,
   preferred_language, customer_segment, tier, status,
   customer_type, job_title, payment_terms, credit_limit, assigned_agent_id,
-  external_customer_number, addresses = [], contacts = [] }) {
+  external_customer_number, allow_duplicate_name = false, addresses = [], contacts = [] }) {
   const displayName = name || [first_name, last_name].filter(Boolean).join(' ')
   if (!displayName) throw Object.assign(new Error('First name is required'), { statusCode: 400 })
+  await assertNotAlreadyOnFile({ name: displayName, email, allow: allow_duplicate_name })
   const customer_number = await getNextNumber('CUST', 'customers', 'customer_number')
   const client = await getClient()
   try {
@@ -427,6 +463,14 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
 }
 
 async function update(id, fields, actorId) {
+  // Renaming a customer onto a name the book already holds makes the same
+  // duplicate the other way round.
+  if (fields.name !== undefined || fields.email !== undefined) {
+    await assertNotAlreadyOnFile({
+      name: fields.name, email: fields.email, exceptId: id,
+      allow: fields.allow_duplicate_name === true,
+    })
+  }
   const allowed = [
     'name', 'email', 'phone', 'whatsapp', 'company', 'website', 'facebook_id', 'instagram_id',
     'address_line1', 'city', 'state', 'zip', 'country', 'billing_address', 'same_as_shipping',
