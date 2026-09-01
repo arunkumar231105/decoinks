@@ -40,10 +40,13 @@ async function main() {
   const moves = []
   for (const inv of mine) {
     const prefix = houseRule(inv.customer)
+    // An invoice already under the right prefix is already right. Without this
+    // the run recomputed a "next" number from a maximum that included the
+    // invoice itself, so every pass pushed the same invoices one higher.
+    if (inv.invoice_number.startsWith(`${prefix}-`)) continue
     const next = (highest.get(prefix) || 0) + 1
     highest.set(prefix, next)
-    const to = `${prefix}-${String(next).padStart(4, '0')}`
-    if (to !== inv.invoice_number) moves.push({ ...inv, to })
+    moves.push({ ...inv, to: `${prefix}-${String(next).padStart(4, '0')}` })
   }
 
   console.log(`\n${apply ? 'LIKH RAHA HOON' : 'DRY RUN'} — ${moves.length} invoice number badlenge\n`)

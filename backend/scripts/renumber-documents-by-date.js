@@ -62,8 +62,11 @@ const SERIES = [
   // in the book and a number from the middle of it.
   { key: 'quotations', table: 'quotations', column: 'quote_number', prefix: 'Q',
     altPrefix: 'QT', dateColumn: 'created_at', label: 'Quotations' },
-  { key: 'invoices', table: 'invoices', column: 'invoice_number', prefix: 'INV',
-    dateColumn: 'issue_date', label: 'Invoices' },
+  // Invoices are deliberately absent. This shop numbers them by the buyer's
+  // initials — RFA-0115, KMO-0110 — so each customer has their own run and the
+  // series is not a single sequence that a date could order. Asking for one
+  // finds nothing under INV- and fails the check, which rolls the whole run
+  // back. invoice-numbers-follow-the-house-rule.js keeps that scheme instead.
   { key: 'orders', table: 'orders', column: 'order_number', prefix: 'ORD',
     dateColumn: 'order_date', label: 'Sales orders' },
   { key: 'purchase_orders', table: 'purchase_orders', column: 'po_number', prefix: 'PO',
