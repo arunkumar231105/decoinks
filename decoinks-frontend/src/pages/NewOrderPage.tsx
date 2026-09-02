@@ -759,7 +759,6 @@ export function NewOrderPage() {
         sku:              variant?.sku_code ?? row.sku,
       }
     }))
-    setLinkingRowId(null)
   }
 
   const addApparel = (style?: ApparelCatalogStyle) => setApparel(prev => [...prev, { id: uid(), category: 'T-Shirt', item: style?.name ?? '', color: '', size: '', qty: 1, artworkNo: '', artworkSize: '', unitPrice: 0, frontImage: null, backImage: null, styleId: style?.id, styleCode: style?.sku, brand: style?.brand, productImage: style?.images?.[0]?.image_url ?? style?.image_url, styleDescription: style?.description, availableColors: style?.colors ?? [], availableSizes: style?.sizes ?? [], availableVariants: style?.variants ?? [] }])
@@ -1002,7 +1001,7 @@ export function NewOrderPage() {
         {!editOrderId && (
           <button className="no-topbar-btn no-topbar-draft" onClick={() => handleSave(true)} disabled={createOrder.isPending || updateOrder.isPending}><Save size={14} /> Save Draft</button>
         )}
-        <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to permanently delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
+        <button className="no-topbar-btn no-topbar-delete" onClick={() => editOrderId ? toast.info('Use the order details menu to delete this order') : navigate(-1)}><Trash2 size={14} /> Delete</button>
         {!editOrderId && (
           <div className="no-split-wrap">
             <button className="no-topbar-btn no-topbar-send" onClick={handleSendToCustomer} disabled={createOrder.isPending}>

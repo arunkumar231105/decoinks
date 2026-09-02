@@ -177,7 +177,8 @@ describe('GET /api/orders list date fallbacks', () => {
     await pool.query(
       `UPDATE orders
        SET entry_date = NULL, due_date = NULL, contact_name = NULL,
-           subtotal = 0, courier = NULL, tracking_number = NULL, assigned_to = NULL
+           subtotal = 0, courier = NULL, tracking_number = NULL, assigned_to = NULL,
+           order_stage = 'Sent', process_status = 'Delivered'
        WHERE id = $1`,
       [orderId]
     )
@@ -203,7 +204,10 @@ describe('GET /api/orders list date fallbacks', () => {
     expect(records[0]).toMatchObject({
       'Entry Date': expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       'Due Date': '2026-08-20',
-      Status: 'Delivered',
+      // Split in two: where the order stands with the customer, and where it
+      // stands in the shop. The single "Status" column no longer exists.
+      'Order Status': 'Sent',
+      'Process Status': 'Delivered',
       'Contact Name': 'Canonical Customer',
       'Contact Email': 'canonical@example.com',
       'Contact Phone': '404-555-0188',

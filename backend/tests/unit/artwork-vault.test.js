@@ -20,7 +20,11 @@ describe('Artwork Vault lifecycle naming', () => {
     ['Leads 2.0/260423_Jac_Jean/Artworks/AW-JCA01-0001-WRK-V3.ai', 'WRK', 'AW-JCA01-0001', 'In Design'],
     ['Leads 2.0/260423_Jac_Jean/Mockups/AW-JCA01-0001-MOCK.jpg', 'MOCK', 'AW-JCA01-0001', 'Mockup Ready'],
     ['Leads 2.0/260423_Jac_Jean/sent/AW-JCA01-0001-OUT.jpg', 'OUT', 'AW-JCA01-0001', 'Sent to Customer'],
-    ['Leads 2.0/260423_Jac_Jean/Gangsheets/AW-JCA01-0001-FNL.pdf', 'FNL', 'AW-JCA01-0001', 'Production Ready'],
+    // The code in the file name wins over the folder it sits in, and FNL is a
+    // final awaiting sign-off — FNLA is the approved one, GS the press-ready
+    // gang sheet. All 241 live gangsheet files are named GS accordingly.
+    ['Leads 2.0/260423_Jac_Jean/Gangsheets/AW-JCA01-0001-FNL.pdf', 'FNL', 'AW-JCA01-0001', 'Pending Approval'],
+    ['Leads 2.0/260423_Jac_Jean/Gangsheets/AW-JCA01-0001-GS.pdf',  'GS',  'AW-JCA01-0001', 'Production Ready'],
   ])('infers lifecycle identity for %s', (path, lifecycle, code, status) => {
     const fileName = path.split('/').pop()
     expect(vault.inferLifecycle(path, fileName)).toBe(lifecycle)

@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 const { validateTransition } = require('../../utils/stateMachine')
 
 // ── Calculations ──────────────────────────────────────────────────────────────
@@ -741,11 +742,14 @@ async function remove(id) {
   try {
     await client.query('BEGIN')
     const { rows: po } = await client.query(
-      `SELECT id FROM purchase_orders WHERE id = $1`, [id]
+      `SELECT id FROM purchase_orders WHERE id = $1 AND deleted_at IS NULL`, [id]
     )
     if (!po[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
-    // purchase_order_items, po_attachments, po_status_history, portal_po_visibility all ON DELETE CASCADE
-    await client.query(`DELETE FROM purchase_orders WHERE id = $1`, [id])
+    await assertNoDependents(client, id, [
+      { table: 'shipments', column: 'po_id', label: 'shipment' },
+    ], { subject: 'purchase order' })
+    if (!await softDelete(client, 'purchase_orders', id))
+      throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
     await client.query('COMMIT')
     return { id }
   } catch (err) {

@@ -12,6 +12,7 @@
 
 const { Router } = require('express')
 const rateLimit = require('express-rate-limit')
+const db = require('../../config/db')
 const paylinks = require('./paylinks.service')
 const stripeClient = require('./stripe.client')
 const logger = require('../../utils/logger')
@@ -38,9 +39,12 @@ router.get('/:token', wrap(async (req, res) => {
 
   res.json({
     data: {
-      ...paylinks.publicView(link, invoice),
+      ...(await paylinks.publicView(link, invoice)),
       publishableKey: stripeConfig.publishableKey,
       testMode: stripeConfig.testMode,
+      // Whether to offer PayPal beside the card form. Absent or unconfigured
+      // simply means the button is not rendered — the card path is unaffected.
+      paypal: await require('../paypal/paypal.client').getPublicConfig().catch(() => ({ enabled: false })),
     },
   })
 }))
@@ -76,25 +80,39 @@ router.post('/:token/intent', wrap(async (req, res) => {
     }
   }
 
+  // A standalone link is money taken before any invoice exists, so there is no
+  // invoice number to put on the customer's card statement or receipt — the
+  // description staff typed stands in for it.
+  const label = invoice
+    ? `Invoice ${invoice.invoice_number}${invoice.order_number ? ` — Order ${invoice.order_number}` : ''}`
+    : (link.description || 'Decoinks payment')
+
+  let receiptEmail = invoice?.billing_email || invoice?.customer_email || undefined
+  if (!receiptEmail && link.customer_id) {
+    const { rows } = await db.query(`SELECT email FROM customers WHERE id = $1`, [link.customer_id])
+    receiptEmail = rows[0]?.email || undefined
+  }
+
   const intent = await stripe.paymentIntents.create({
     amount: amountInCents,
     currency,
     // Lets Stripe offer whatever the customer's device and country support —
     // card, Apple Pay, Google Pay, Link — without us maintaining that list.
     automatic_payment_methods: { enabled: true },
-    description: `Invoice ${invoice.invoice_number}${invoice.order_number ? ` — Order ${invoice.order_number}` : ''}`,
+    description: label,
     statement_descriptor_suffix: 'DECOINKS',
     // Stripe emails the receipt itself, which is how the customer gets a
     // confirmation without this project having any mail transport of its own.
-    receipt_email: invoice.billing_email || invoice.customer_email || undefined,
+    receipt_email: receiptEmail,
     metadata: {
-      invoice_id: invoice.id,
-      invoice_number: invoice.invoice_number,
-      order_id: invoice.order_id || '',
-      order_number: invoice.order_number || '',
-      customer_id: invoice.customer_id || '',
+      invoice_id: invoice?.id || '',
+      invoice_number: invoice?.invoice_number || '',
+      order_id: invoice?.order_id || '',
+      order_number: invoice?.order_number || '',
+      customer_id: invoice?.customer_id || link.customer_id || '',
       payment_link_id: link.id,
-      source: 'decoinks_customer_portal',
+      link_description: link.description || '',
+      source: invoice ? 'decoinks_invoice_link' : 'decoinks_advance_link',
     },
   }, {
     // If the browser sends this twice — a double click, a retried request — the
@@ -121,9 +139,11 @@ router.get('/:token/status', wrap(async (req, res) => {
   const { link, invoice } = found
   res.json({
     data: {
-      paid: link.status === 'paid' || invoice?.status === 'Paid',
+      // A standalone link has no invoice, so its own status is the answer.
+      paid: link.status === 'paid' || (Boolean(link.invoice_id) && invoice?.status === 'Paid'),
       linkStatus: link.status,
       invoiceNumber: invoice?.invoice_number || null,
+      description: link.description || null,
       amount: Number(link.amount),
       currency: link.currency || 'USD',
       paidAt: link.paid_at,

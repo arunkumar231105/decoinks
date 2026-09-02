@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Mail,
   MessageCircle,
+  Images,
   MoreHorizontal,
   Package,
   Pencil,
@@ -25,6 +26,7 @@ import {
   Send,
   Trash2,
 } from 'lucide-react'
+import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -114,14 +116,23 @@ function InvoiceArtworkUpload({ imageUrl, label, onChange }: {
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [dropActive, setDropActive] = useState(false)
 
-  const upload = async (file: File) => {
+  // A file from the desktop or a file dragged out of the customer's Drive
+  // folder: both end up as artwork on this line, by different routes.
+  const upload = async (file: File | DriveFile) => {
     setUploading(true)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const response = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      onChange(response.data.url)
+      // A Drive pick is copied into the CRM's own storage server-side, so the
+      // invoice keeps a stable URL of its own.
+      const response = !(file instanceof File)
+        ? await api.post('/drive/attach', { file_id: file.id })
+        : await (() => {
+            const form = new FormData()
+            form.append('file', file)
+            return api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+          })()
+      onChange(response.data.url ?? response.data?.data?.url)
     } catch {
       toast.error('Artwork upload failed')
     } finally {
@@ -129,8 +140,31 @@ function InvoiceArtworkUpload({ imageUrl, label, onChange }: {
     }
   }
 
+  const accepts = (event: React.DragEvent) =>
+    event.dataTransfer.types.includes(DRIVE_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
+
+  const onDrop = (event: React.DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    setDropActive(false)
+    const payload = event.dataTransfer.getData(DRIVE_DRAG_TYPE)
+    if (payload) {
+      // A malformed payload is ignored rather than thrown: the drop came from
+      // outside this component and must never break the invoice form.
+      try { upload(JSON.parse(payload) as DriveFile) } catch { /* not our payload */ }
+      return
+    }
+    const file = event.dataTransfer.files?.[0]
+    if (file) upload(file)
+  }
+
   return (
-    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+    <div
+      className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}${dropActive ? ' dap-drop-active' : ''}`}
+      onDragOver={event => { if (accepts(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true) } }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={onDrop}
+    >
       <input ref={inputRef} type="file" accept="image/*" hidden onChange={e => {
         const file = e.target.files?.[0]
         if (file) upload(file)
@@ -167,9 +201,17 @@ function SupplierCombobox({ value, onChange, disabled = false }: { value: string
   const ref = useRef<HTMLDivElement>(null)
   const { data: suppliers = [] } = useQuery({
     queryKey: ['customers-for-invoice'],
-    queryFn: () => api.get('/customers', { params: { limit: 100 } }).then(r => r.data.data.rows),
+    queryFn: () => api.get('/customers', { params: { limit: 500 } }).then(r => r.data.data.rows),
   })
-  const filtered = suppliers.filter((c: any) => (c.name ?? '').toLowerCase().includes(value.toLowerCase()))
+  // A buyer is looked up by whatever the person typing happens to remember —
+  // the company on the invoice, the address they replied from, the number on
+  // the file. Matching the name alone found none of those.
+  const needle = value.trim().toLowerCase()
+  const filtered = needle
+    ? suppliers.filter((c: any) =>
+        [c.name, c.company_name, c.email, c.customer_number]
+          .filter(Boolean).some((f: string) => String(f).toLowerCase().includes(needle)))
+    : suppliers
   useEffect(() => {
     const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h)
@@ -184,12 +226,17 @@ function SupplierCombobox({ value, onChange, disabled = false }: { value: string
         style={{ width: '100%' }}
       />
       {open && filtered.length > 0 && (
-        <div className="no-customer-suggestions" style={{ top: '100%', zIndex: 999 }}>
-          {filtered.slice(0, 6).map((c: any) => (
+        // Every match, scrolled — the list used to stop at six, so a buyer
+        // further down could not be picked at all.
+        <div className="no-customer-suggestions"
+          style={{ top: '100%', zIndex: 999, maxHeight: 260, overflowY: 'auto' }}>
+          {filtered.map((c: any) => (
             <div key={c.id} className="no-customer-suggestion-item"
               onMouseDown={() => { onChange(c.name, c.id); setOpen(false) }}>
               <span className="no-cust-name">{c.name}</span>
-              {c.email && <span className="no-cust-email">{c.email}</span>}
+              {c.email
+                ? <span className="no-cust-email">{c.email}</span>
+                : c.company_name && <span className="no-cust-email">{c.company_name}</span>}
             </div>
           ))}
         </div>
@@ -450,6 +497,7 @@ export function NewInvoicePage() {
 
   // Items
   const [apparelItems, setApparelItems] = useState<ApparelItem[]>([])
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false)
   const [gangsheetItems, setGangsheetItems] = useState<GangsheetItem[]>([])
   const [transferItems, setTransferItems] = useState<TransferItem[]>([])
 
@@ -670,7 +718,8 @@ export function NewInvoicePage() {
       // the invoice becomes the customer's business.
       if (navigateAfterSave.current === 'send' && inv?.id) {
         navigateAfterSave.current = null
-        api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' })
+        Promise.resolve(chosenPayment ? applyChosenPayment(inv.id) : null)
+          .then(() => api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' }))
           // The invoice's payment link is created here, the moment it is sent,
           // so it exists from the invoice's own beginning and never changes
           // afterwards. Copy Link and the customer's Pay Now both return this
@@ -696,6 +745,10 @@ export function NewInvoicePage() {
         return
       }
       navigateAfterSave.current = null
+      if (chosenPayment && inv?.id) {
+        applyChosenPayment(inv.id).finally(() => navigate(`/invoices/${inv.id}`))
+        return
+      }
       toast.success(inv?._action === 'updated' ? 'Invoice updated' : 'Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
@@ -782,7 +835,6 @@ export function NewInvoicePage() {
         sku:              variant?.sku_code ?? row.sku,
       }
     }))
-    setLinkingRowId(null)
   }
 
   const addCatalogStyle = (style: CatalogStyle) => {
@@ -952,6 +1004,39 @@ export function NewInvoicePage() {
     }
     navigateAfterSave.current = 'receipt'
     saveMutation.mutate(buildPayload())
+  }
+
+  /* ── An advance payment this invoice can claim ────────────────────────────
+   *
+   * The shop often collects before the paperwork exists. Those payments sit in
+   * the ledger against the customer with no invoice attached; this offers them
+   * here so the invoice being written now can claim one.
+   *
+   * Applying it moves no money — it only records which invoice the payment
+   * settles — and the invoice's status is then recomputed from the ledger, so
+   * it becomes Paid on its own rather than by anyone asserting it.
+   */
+  const [advancePayments, setAdvancePayments] = useState<any[]>([])
+  const [chosenPayment, setChosenPayment] = useState('')
+
+  useEffect(() => {
+    if (!supplierId) { setAdvancePayments([]); setChosenPayment(''); return }
+    api.get('/payment-links/unallocated', { params: { customer_id: supplierId } })
+      .then(r => setAdvancePayments((r.data?.data ?? r.data) || []))
+      .catch(() => setAdvancePayments([]))
+  }, [supplierId])
+
+  const applyChosenPayment = async (invoiceId: string) => {
+    if (!chosenPayment) return
+    try {
+      await api.post('/payment-links/apply', { paymentId: chosenPayment, invoiceId })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success('Payment applied — this invoice is settled')
+    } catch (err: any) {
+      // The invoice is already saved; only the link to the payment failed, and
+      // saying so is better than a success message that hides it.
+      toast.apiError(err)
+    }
   }
 
   /* ── Payment link ─────────────────────────────────────────────────────────
@@ -1211,6 +1296,15 @@ export function NewInvoicePage() {
             <div className="ni-section-heading">
               <span className="ni-section-num">2</span>
               <h3>Invoice Items</h3>
+              <button
+                type="button"
+                className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                style={{ marginLeft: 'auto' }}
+                onClick={() => setDrivePickerOpen(open => !open)}
+                title="Show this customer's artworks from Google Drive"
+              >
+                <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+              </button>
             </div>
 
             {ratesLocked && (
@@ -1619,6 +1713,35 @@ export function NewInvoicePage() {
                   {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
+              {advancePayments.length > 0 && (
+                <div className="ni-payment-field">
+                  <label className="ni-payment-label">
+                    Already paid? Apply a payment ({advancePayments.length} unclaimed)
+                  </label>
+                  <select
+                    className="ni-info-select"
+                    style={{ width: '100%' }}
+                    value={chosenPayment}
+                    onChange={e => setChosenPayment(e.target.value)}
+                  >
+                    <option value="">Don't apply a payment</option>
+                    {advancePayments.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
+                        {p.payment_date ? ` · ${String(p.payment_date).slice(0, 10)}` : ''}
+                        {p.unassigned ? ` · no customer on it${p.customer_name ? ` (from ${p.customer_name})` : ''}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {chosenPayment && (
+                    <p style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
+                      Applied when you save. The invoice is marked paid from the ledger, so the figures
+                      have to agree — a payment larger than this invoice will be refused.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="ni-payment-field">
                 <label className="ni-payment-label">Payment Link</label>
                 <div className="ni-link-row">
@@ -1726,6 +1849,13 @@ export function NewInvoicePage() {
           <MessageCircle size={14} /> Send to Messenger
         </MenuItem>
       </Menu>
+
+      {/* The customer's Drive artworks, dragged onto the artwork cells above. */}
+      <DriveArtworkPicker
+        open={drivePickerOpen}
+        customerName={supplierText}
+        onClose={() => setDrivePickerOpen(false)}
+      />
 
     </div>
   )

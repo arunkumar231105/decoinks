@@ -9,6 +9,7 @@ import {
   Link2,
 } from 'lucide-react'
 import toast from '../../utils/toast'
+import { reportBulkDelete, confirmBulkDelete } from '../../utils/bulkDeleteResult'
 import { api } from '../../services/api'
 import { orderStage, processStatus } from '../../utils/orderStatus'
 import { copyText, downloadCsv } from '../../utils/actions'
@@ -48,6 +49,21 @@ const date = (value: any) => {
   if (!value) return '—'
   const raw = String(value)
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+/**
+ * Date with the time of day, when we actually know it.
+ *
+ * `payment_date` is a DATE column and carries no time; `paid_at` is a timestamp
+ * and does. So the time is shown only when the timestamp is there, rather than
+ * printing a made-up midnight beside every hand-entered payment.
+ */
+const dateTime = (row: AnyRow) => {
+  const stamp = row?.paid_at || row?.created_at
+  const day = date(pick(row, 'payment_date', 'paid_at'))
+  if (!stamp) return day
+  const d = new Date(String(stamp))
+  if (Number.isNaN(d.getTime())) return day
+  return `${day}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 const titleCase = (value: any) => String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, (s: string) => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')
@@ -235,19 +251,20 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'payment_number', label: 'Payment ID', render: r => <strong className="ew-link">{r.payment_number}</strong> },
       { key: 'transaction_id', label: 'Transaction ID', render: r => common.empty(r, 'transaction_id') },
       { key: 'payment_date', label: 'Payment Date', render: r => date(pick(r, 'payment_date', 'paid_at')) },
-      { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
+      // A payment entered by hand often has only "Received From" filled in — no
+      // customer was picked from the list, so `customer_name` is blank. Showing
+      // a dash next to a row that plainly knows who paid reads as a bug; fall
+      // back to the payer's name, which is the same person.
+      { key: 'customer', label: 'Customer Name', sortKey: ['customer_name', 'received_from_name'], render: r => <PersonCell name={common.empty(r, 'customer_name', 'received_from_name')} sub={common.empty(r, 'order_number', 'invoice_number')}/> },
       { key: 'received_from_name', label: 'Received From', render: r => common.empty(r, 'received_from_name', 'customer_name') },
       { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
       { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
-      { key: 'allocated_count', label: 'Applied To', render: r => Number(r.allocated_count || 0) > 1 ? `${r.allocated_count} orders` : common.empty(r, 'order_number') },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'reference_no', label: 'Reference No', render: r => common.empty(r, 'reference_no') },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
       { key: 'invoice_number', label: 'Invoice ID', render: r => common.empty(r, 'invoice_number') },
-      { key: 'recorded_by_name', label: 'Recorded By', render: r => common.empty(r, 'recorded_by_name') },
     ],
   },
 }
@@ -470,12 +487,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
   const deleteSelected = async () => {
     if (!selected.size) return
-    const noun = config.title.toLowerCase()
-    if (!window.confirm(`Permanently delete ${selected.size} ${noun}? This cannot be undone.`)) return
+    const noun = config.title.toLowerCase().replace(/s$/, '')
+    if (!confirmBulkDelete(selected.size, noun)) return
     try {
       const res = await api.post(`${config.api}/bulk-delete`, { ids: [...selected] })
-      const n = res.data?.data?.deleted ?? selected.size
-      toast.success(`${n} record${n === 1 ? '' : 's'} permanently deleted`)
+      // Some rows are refused, and the reason matters more than the count.
+      reportBulkDelete(res.data?.data, noun)
       setSelected(new Set()); setActive(null); setDetail(null); await load()
     } catch (error: any) { toast.error(error.response?.data?.message || 'Delete failed') }
   }
@@ -512,6 +529,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       <div className="ew-actions">
         <label className="ew-search"><Search size={17}/><input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder={config.search}/>{search ? <button onClick={() => setSearch('')} aria-label="Clear search"><X size={15}/></button> : <kbd>Ctrl K</kbd>}</label>
         {(kind === 'quotations' || kind === 'orders') && <button className="ew-btn" onClick={handleImport}><Upload size={15}/>Import {config.title}</button>}
+        {kind === 'payments' && (
+          <button className="ew-btn" onClick={() => navigate('/payments/link')}
+                  title="Take a payment before the quotation and invoice exist">
+            <Link2 size={15}/>Payment Link
+          </button>
+        )}
         <button className="ew-btn" onClick={exportAll}><Download size={15}/>Export</button>
         <button className="ew-btn ew-primary" onClick={() => navigate(config.newPath)}><Plus size={16}/>{config.newLabel}</button>
       </div>
@@ -669,13 +692,16 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
     <DrawerSection title="Payment Details" fields={[
       { label: 'Payment ID', value: first(row, 'payment_number') },
       { label: 'Transaction ID', value: first(row, 'transaction_id') },
-      { label: 'Payment Date', value: date(pick(row, 'payment_date', 'paid_at')) },
+      { label: 'Paid On', value: dateTime(row) },
       { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
       { label: 'Processor Fee', value: money(row.fee_amount) },
       { label: 'Net Received', value: <strong>{money(row.net_amount ?? row.amount)}</strong> },
       { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
       { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
-      { label: 'Reference No', value: first(row, 'reference_no') },
+      // "Reference No" is a bank or cheque reference, and a card payment has
+      // none — its reference is the Transaction ID above. Showing the invoice
+      // number here, or worse a description, only mislabelled them.
+      { label: 'For', value: first(row, 'reference_no', 'invoice_number', 'order_number') },
     ]}/>
     <DrawerSection title="Received" fields={[
       { label: 'Received From', value: first(row, 'received_from_name', 'customer_name') },

@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 const { validateTransition } = require('../../utils/stateMachine')
 
 const STAGES = ['initiated', 'quotation', 'artwork', 'gangsheet', 'payment', 'confirmed']
@@ -221,6 +222,7 @@ async function create({
   customer_name, supplier_id, source, description, assigned_to, created_by,
   company_name, email, phone, whatsapp,
   country, state, city, zip, shipping_address, billing_address,
+  delivery_date,
   buyer_type, internal_notes,
   instagram_id, facebook_id, priority, source_campaign, next_followup_date, last_contact_at,
   conversion_score, estimated_value, urgency, customer_intent, next_action,
@@ -238,17 +240,19 @@ async function create({
          (lead_number, supplier_id, customer_name, source, description, assigned_to,
           company_name, email, phone, whatsapp,
           country, state, city, zip, shipping_address, billing_address,
+          delivery_date,
           buyer_type, internal_notes, instagram_id, facebook_id, priority,
           source_campaign, next_followup_date, last_contact_at, conversion_score,
           estimated_value, urgency, customer_intent, next_action, auto_responded,
           auto_responded_at, qualified_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
        RETURNING *`,
       [
         lead_number, supplier_id || null, customer_name || null, source, description || null, assigned_to || null,
         company_name || null, email || null, phone || null, whatsapp || null,
         country || null, state || null, city || null, zip || null,
         shipping_address || null, billing_address || null,
+        delivery_date || null,
         buyer_type || null, internal_notes || null, instagram_id || null, facebook_id || null,
         priority || 'medium', source_campaign || null, next_followup_date || null, last_contact_at || null,
         conversion_score ?? null, estimated_value ?? null, urgency || null,
@@ -277,7 +281,7 @@ async function update(id, fields, actorId) {
     'customer_name', 'supplier_id', 'source', 'description', 'assigned_to', 'status', 'has_artwork',
     'company_name', 'email', 'phone', 'whatsapp',
     'country', 'state', 'city', 'zip', 'shipping_address', 'billing_address',
-    'buyer_type', 'internal_notes',
+    'delivery_date', 'buyer_type', 'internal_notes',
     'instagram_id', 'facebook_id', 'priority', 'source_campaign', 'next_followup_date', 'last_contact_at',
     'conversion_score', 'estimated_value', 'urgency', 'customer_intent', 'next_action',
     'auto_responded', 'auto_responded_at', 'qualified_at',
@@ -369,13 +373,15 @@ async function remove(id) {
   const client = await getClient()
   try {
     await client.query('BEGIN')
-    // Unlink quotations (no CASCADE on quotations.lead_id FK)
-    await client.query(`UPDATE quotations SET lead_id = NULL WHERE lead_id = $1`, [id])
-    // lead_comments, lead_attachments, lead_product_interest all ON DELETE CASCADE
-    const { rows } = await client.query(
-      `DELETE FROM leads WHERE id = $1 RETURNING id`, [id]
-    )
-    if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+    const { rows: found } = await client.query(
+      `SELECT id FROM leads WHERE id = $1 AND deleted_at IS NULL`, [id])
+    if (!found[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
+    // A lead that was quoted is where that quote came from.
+    await assertNoDependents(client, id, [
+      { table: 'quotations', column: 'lead_id', label: 'quotation' },
+    ], { subject: 'lead' })
+    if (!await softDelete(client, 'leads', id))
+      throw Object.assign(new Error('Lead not found'), { statusCode: 404 })
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')

@@ -34,6 +34,8 @@ const gdriveRoutes         = require('./modules/gdrive/gdrive.routes')
 const stripeWebhookRoutes  = require('./modules/stripe/webhook.routes')
 const payRoutes            = require('./modules/stripe/pay.routes')
 const payLinkAdminRoutes   = require('./modules/stripe/paylinks.admin.routes')
+const paypalRoutes         = require('./modules/paypal/paypal.routes')
+const paypalWebhookRoutes  = require('./modules/paypal/webhook.routes')
 
 const app = express()
 
@@ -119,6 +121,28 @@ app.use('/api/nextcloud',    nextcloudRoutes)
 app.use('/api/drive',        gdriveRoutes)
 app.use('/api/pay',          payRoutes)
 app.use('/api/payment-links', payLinkAdminRoutes)
+// Before the pay routes, which put a 30-a-minute rate limit on everything under
+// /api/paypal. PayPal's own deliveries would have been counted against a limit
+// meant for browsers, and a burst would have had us answering 429 to the one
+// caller whose message we cannot afford to drop.
+//
+// The parsed JSON body is fine here: PayPal verifies by sending the event back
+// to them, unlike Stripe, which signs the raw bytes and must be mounted ahead of
+// the JSON parser.
+app.use('/api/paypal/webhook', paypalWebhookRoutes)
+app.use('/api/paypal',       paypalRoutes)
+
+// An unmatched /api route used to fall through to Express's own handler, which
+// answers with an HTML page. The client reads HTML where JSON belongs as the
+// single-sign-on wall — the only other thing that returns it — so a missing
+// route told the user their session had ended and signed them out. Answer in
+// JSON, as every other API response does, and it reads as the 404 it is.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `No such endpoint: ${req.method} ${req.baseUrl}${req.path}`,
+  })
+})
 
 app.use(errorHandler)
 

@@ -42,7 +42,7 @@ async function createLead(extra = {}) {
   const res = await request(app)
     .post('/api/leads')
     .set('Authorization', `Bearer ${token}`)
-    .send({ supplier_name: 'Test Lead', source: 'Email', ...extra })
+    .send({ customer_name: 'Test Lead', source: 'Email', ...extra })
   return res.body.data
 }
 
@@ -59,7 +59,11 @@ async function createInvoice(extra = {}) {
   const res = await request(app)
     .post('/api/invoices')
     .set('Authorization', `Bearer ${token}`)
-    .send({ supplier_id: supplier.id, subtotal: 50, total: 50, ...extra })
+    .send({
+      supplier_id: supplier.id, subtotal: 50, total: 50,
+      items: [{ description: 'T-Shirt', qty: 10, unit_price: 5, amount: 50 }],
+      ...extra,
+    })
   return res.body.data
 }
 
@@ -90,7 +94,7 @@ async function createPO(extra = {}) {
 // ── LEAD DELETE ───────────────────────────────────────────────────────────────
 
 describe('DELETE /api/leads/:id', () => {
-  test('permanently deletes a lead with no linked quotation', async () => {
+  test('hides a lead with no linked quotation', async () => {
     const lead = await createLead()
     expect(lead.id).toBeDefined()
 
@@ -100,7 +104,8 @@ describe('DELETE /api/leads/:id', () => {
     expect(del.status).toBe(200)
     expect(del.body.success).toBe(true)
 
-    const { rows } = await pool.query(`SELECT id FROM leads WHERE id = $1`, [lead.id])
+    const { rows } = await pool.query(
+      `SELECT id FROM leads WHERE id = $1 AND deleted_at IS NULL`, [lead.id])
     expect(rows).toHaveLength(0)
   })
 
@@ -123,7 +128,8 @@ describe('DELETE /api/leads/:id', () => {
     expect(del.body.message).toMatch(/quotation/)
 
     // Lead still exists
-    const { rows } = await pool.query(`SELECT id FROM leads WHERE id = $1`, [lead.id])
+    const { rows } = await pool.query(
+      `SELECT id FROM leads WHERE id = $1 AND deleted_at IS NULL`, [lead.id])
     expect(rows).toHaveLength(1)
   })
 
@@ -135,10 +141,55 @@ describe('DELETE /api/leads/:id', () => {
   })
 })
 
+// ── BULK DELETE ───────────────────────────────────────────────────────────────
+
+describe('POST /bulk-delete reports what it could not remove', () => {
+  test('a quotation with an invoice is refused, and the reason is returned', async () => {
+    const quote = await createQuote()
+    await request(app)
+      .post(`/api/quotations/${quote.id}/convert-to-invoice`)
+      .set('Authorization', `Bearer ${token}`)
+
+    const res = await request(app)
+      .post('/api/quotations/bulk-delete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [quote.id] })
+
+    // 200 with nothing deleted — the list has to read `errors` to know why,
+    // which is exactly what it used to throw away.
+    expect(res.status).toBe(200)
+    expect(res.body.data.deleted).toBe(0)
+    expect(res.body.data.errors).toHaveLength(1)
+    expect(res.body.data.errors[0].message).toMatch(/invoice/i)
+    expect(res.body.data.errors[0].id).toBe(quote.id)
+  })
+
+  test('what can go, goes; what cannot is named', async () => {
+    const free = await createQuote()
+    const held = await createQuote()
+    await request(app)
+      .post(`/api/quotations/${held.id}/convert-to-invoice`)
+      .set('Authorization', `Bearer ${token}`)
+
+    const res = await request(app)
+      .post('/api/quotations/bulk-delete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [free.id, held.id] })
+
+    expect(res.body.data.deleted).toBe(1)
+    expect(res.body.data.errors).toHaveLength(1)
+    expect(res.body.data.errors[0].id).toBe(held.id)
+
+    const { rows } = await pool.query(
+      `SELECT id FROM quotations WHERE id = ANY($1) AND deleted_at IS NULL`, [[free.id, held.id]])
+    expect(rows.map(r => r.id)).toEqual([held.id])
+  })
+})
+
 // ── QUOTATION DELETE ──────────────────────────────────────────────────────────
 
 describe('DELETE /api/quotations/:id', () => {
-  test('permanently deletes a quotation and its items', async () => {
+  test('hides a quotation, keeping the work it describes', async () => {
     const quote = await createQuote()
     expect(quote.id).toBeDefined()
     const quoteId = quote.id
@@ -148,10 +199,12 @@ describe('DELETE /api/quotations/:id', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(del.status).toBe(200)
 
-    const { rows: q } = await pool.query(`SELECT id FROM quotations WHERE id = $1`, [quoteId])
+    const { rows: q } = await pool.query(
+      `SELECT id FROM quotations WHERE id = $1 AND deleted_at IS NULL`, [quoteId])
     expect(q).toHaveLength(0)
+    // The lines are kept with the row, so a delete can be undone.
     const { rows: items } = await pool.query(`SELECT id FROM quotation_items WHERE quotation_id = $1`, [quoteId])
-    expect(items).toHaveLength(0)
+    expect(items.length).toBeGreaterThan(0)
   })
 
   test('returns 409 when quotation has a linked invoice', async () => {
@@ -182,7 +235,7 @@ describe('DELETE /api/quotations/:id', () => {
 // ── INVOICE DELETE ────────────────────────────────────────────────────────────
 
 describe('DELETE /api/invoices/:id', () => {
-  test('permanently deletes a standalone invoice', async () => {
+  test('hides a standalone invoice', async () => {
     const inv = await createInvoice()
     expect(inv.id).toBeDefined()
 
@@ -191,7 +244,8 @@ describe('DELETE /api/invoices/:id', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(del.status).toBe(200)
 
-    const { rows } = await pool.query(`SELECT id FROM invoices WHERE id = $1`, [inv.id])
+    const { rows } = await pool.query(
+      `SELECT id FROM invoices WHERE id = $1 AND deleted_at IS NULL`, [inv.id])
     expect(rows).toHaveLength(0)
   })
 
@@ -216,7 +270,7 @@ describe('DELETE /api/invoices/:id', () => {
 // ── ORDER DELETE ──────────────────────────────────────────────────────────────
 
 describe('DELETE /api/orders/:id', () => {
-  test('permanently deletes an order and its items', async () => {
+  test('hides an order, keeping the work it describes', async () => {
     const supplier = await createSupplier()
     const order = await createOrder(supplier.id)
     expect(order.id).toBeDefined()
@@ -226,10 +280,11 @@ describe('DELETE /api/orders/:id', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(del.status).toBe(200)
 
-    const { rows } = await pool.query(`SELECT id FROM orders WHERE id = $1`, [order.id])
+    const { rows } = await pool.query(
+      `SELECT id FROM orders WHERE id = $1 AND deleted_at IS NULL`, [order.id])
     expect(rows).toHaveLength(0)
     const { rows: items } = await pool.query(`SELECT id FROM order_items_apparel WHERE order_id = $1`, [order.id])
-    expect(items).toHaveLength(0)
+    expect(items.length).toBeGreaterThan(0)
   })
 
   test('returns 409 when a purchase order is linked to the order', async () => {
@@ -253,7 +308,7 @@ describe('DELETE /api/orders/:id', () => {
 // ── PURCHASE ORDER DELETE ─────────────────────────────────────────────────────
 
 describe('DELETE /api/purchase-orders/:id', () => {
-  test('permanently deletes a PO and its child rows', async () => {
+  test('hides a PO, keeping its child rows', async () => {
     const po = await createPO()
     expect(po.id).toBeDefined()
 
@@ -262,10 +317,11 @@ describe('DELETE /api/purchase-orders/:id', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(del.status).toBe(200)
 
-    const { rows } = await pool.query(`SELECT id FROM purchase_orders WHERE id = $1`, [po.id])
+    const { rows } = await pool.query(
+      `SELECT id FROM purchase_orders WHERE id = $1 AND deleted_at IS NULL`, [po.id])
     expect(rows).toHaveLength(0)
     const { rows: items } = await pool.query(`SELECT id FROM purchase_order_items WHERE po_id = $1`, [po.id])
-    expect(items).toHaveLength(0)
+    expect(items.length).toBeGreaterThan(0)
   })
 
   test('idempotency — deleting twice returns 404 on second attempt', async () => {

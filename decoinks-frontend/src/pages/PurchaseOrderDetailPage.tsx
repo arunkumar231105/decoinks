@@ -748,7 +748,7 @@ export function PurchaseOrderDetailPage() {
                 className="lb-action-btn"
                 style={{ width: '100%', justifyContent: 'center', color: '#ef4444', borderColor: '#fecaca' }}
                 onClick={() => {
-                  if (window.confirm('Delete this purchase order? This action cannot be undone.')) {
+                  if (window.confirm('Delete this purchase order? It will be removed from the lists; anything still using it is refused.')) {
                     deleteMutation.mutate()
                   }
                 }}

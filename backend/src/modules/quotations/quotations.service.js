@@ -2,6 +2,8 @@ const { query, getClient } = require('../../config/db')
 const { getNextNumber, getNextInvoiceNumber } = require('../../utils/counter')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
+const { parseCsv, normaliseHeader } = require('../../utils/csv')
 
 function calcTotals(items, discountPct, taxPct = 0, estimatedShipping = 0, rushServices = 0) {
   // The subtotal is the exact rate x qty summed, rounded once at the end — the
@@ -114,7 +116,7 @@ async function getById(id) {
   const { rows } = await query(
     `SELECT q.*, c.name AS supplier_name FROM quotations q
      LEFT JOIN suppliers c ON c.id = q.supplier_id
-     WHERE q.id = $1`,
+     WHERE q.id = $1 AND q.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
@@ -311,7 +313,7 @@ async function updateStatus(id, status, actor) {
   const { rows: cur } = await query(
     `SELECT q.status,q.customer_name,q.total,
             COALESCE((SELECT SUM(qi.qty) FROM quotation_items qi WHERE qi.quotation_id=q.id),0) AS total_qty
-     FROM quotations q WHERE q.id=$1`, [id]
+     FROM quotations q WHERE q.id=$1 AND q.deleted_at IS NULL`, [id]
   )
   if (!cur[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
   if (actorUser) validateTransition('quotation', cur[0].status, status, actorUser)
@@ -460,15 +462,18 @@ async function remove(id) {
   try {
     await client.query('BEGIN')
     const { rows } = await client.query(
-      `SELECT id, quote_number FROM quotations WHERE id = $1`, [id]
+      `SELECT id, quote_number FROM quotations WHERE id = $1 AND deleted_at IS NULL`, [id]
     )
     if (!rows[0]) throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
 
-    // Unlink orders and invoices that reference this quotation (no CASCADE on their FKs)
-    await client.query(`UPDATE orders   SET quotation_id = NULL WHERE quotation_id = $1`, [id])
-    await client.query(`UPDATE invoices SET quote_id     = NULL WHERE quote_id     = $1`, [id])
-    await client.query(`DELETE FROM quotation_items WHERE quotation_id = $1`, [id])
-    await client.query(`DELETE FROM quotations WHERE id = $1`, [id])
+    // What grew out of this quote keeps pointing at it; the links are the
+    // record of where the work came from, so they are never quietly cut.
+    await assertNoDependents(client, id, [
+      { table: 'invoices', column: 'quote_id',     label: 'invoice' },
+      { table: 'orders',   column: 'quotation_id', label: 'sales order' },
+    ], { subject: 'quotation' })
+    if (!await softDelete(client, 'quotations', id))
+      throw Object.assign(new Error('Quotation not found'), { statusCode: 404 })
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')
@@ -502,6 +507,96 @@ async function convertToInvoice(quoteId, actorId) {
   const invoiceSvc = require('../invoices/invoices.service')
   const invoice = await invoiceSvc.create({ quote_id: quoteId, created_by: actorId })
   return { invoice, alreadyExisted: !!wasThereBefore.rows[0] }
+}
+
+// ── CSV import ───────────────────────────────────────────────────────────────
+// The importer below was written against six helpers that were never added, so
+// every upload died on the first of them. These are those helpers, built from
+// what the importer actually asks of them and from the template the Quotes page
+// hands out (getCsvTemplate, at the foot of this file).
+
+// Spelled the way the template spells them, plus the names the same column
+// tends to carry on a sheet that came from somewhere else. A header that is not
+// listed is ignored rather than guessed at. 'li_' marks a line-item field.
+const HEADER_MAP = {
+  customername: 'customer_name', customer: 'customer_name', name: 'customer_name',
+  companyname: 'company_name', company: 'company_name', business: 'company_name',
+  email: 'billing_email', billingemail: 'billing_email', emailaddress: 'billing_email',
+  phone: 'contact_number', contactnumber: 'contact_number', telephone: 'contact_number',
+  whatsapp: 'whatsapp', wechat: 'wechat',
+  category: 'customer_category', customercategory: 'customer_category',
+  source: 'customer_source', customersource: 'customer_source', leadsource: 'customer_source',
+  country: 'shipping_country', shippingcountry: 'shipping_country',
+  state: 'shipping_state', shippingstate: 'shipping_state', province: 'shipping_state',
+  city: 'shipping_city', shippingcity: 'shipping_city',
+  zip: 'zip_code', zipcode: 'zip_code', postcode: 'zip_code', postalcode: 'zip_code',
+  shippingaddress: 'shipping_address', address: 'shipping_address',
+  billingaddress: 'billing_address',
+  duedate: 'due_date', deliverydate: 'due_date', validuntil: 'due_date',
+  notes: 'internal_notes', internalnotes: 'internal_notes', remarks: 'internal_notes',
+  estimate: 'quote_estimate', quoteestimate: 'quote_estimate',
+  status: 'status',
+  ordertype: 'order_type', type: 'order_type', printtype: 'order_type',
+  // Line item
+  product: 'li_description', item: 'li_description', description: 'li_description',
+  artworkname: 'li_description',
+  qty: 'li_qty', quantity: 'li_qty', pieces: 'li_qty',
+  unitprice: 'li_unit_price', price: 'li_unit_price', rate: 'li_unit_price',
+  netamount: 'li_net_amount', amount: 'li_net_amount', linetotal: 'li_net_amount',
+  sizes: 'li_sizes', size: 'li_sizes',
+  colors: 'li_colors', colours: 'li_colors', color: 'li_colors', colour: 'li_colors',
+  artworkcount: 'li_artwork_count', artworks: 'li_artwork_count', noartworks: 'li_artwork_count',
+  width: 'li_width', length: 'li_length', height: 'li_length',
+}
+
+// The quote_status enum. Anything else is reported and the row falls back to Draft.
+const VALID_STATUSES = ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired']
+
+/**
+ * A date as a person typed it. Returns undefined when the text cannot be read
+ * as one — the caller reports that against the row rather than silently
+ * dropping a delivery date — and null when the cell is simply empty.
+ *
+ * Month-first, because the sheets this shop imports are US-written; a value
+ * that is unambiguously ISO is read as ISO.
+ */
+function parseDate(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+
+  const build = (y, m, d) => {
+    if (!(y >= 1900 && y <= 2200) || !(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return undefined
+    const date = new Date(Date.UTC(y, m - 1, d))
+    // Rejects the 31st of a 30-day month and the 29th of a common February,
+    // which Date would otherwise roll forward into the next month.
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return undefined
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+
+  let m = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/)
+  if (m) return build(+m[1], +m[2], +m[3])
+
+  m = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})$/)
+  if (m) {
+    const year = m[3].length === 2 ? 2000 + +m[3] : +m[3]
+    return build(year, +m[1], +m[2])
+  }
+  return undefined
+}
+
+/**
+ * A number as a person typed it. Returns { value, error }; on bad input the
+ * fallback is handed back with a message, so one unreadable cell describes
+ * itself instead of failing the whole import.
+ */
+function parseNum(value, fallback = null) {
+  const text = String(value ?? '').trim()
+  if (!text) return { value: fallback, error: null }
+  const cleaned = text.replace(/[$,\s]/g, '')
+  if (!/^-?\d*\.?\d+$/.test(cleaned)) return { value: fallback, error: `"${text}" is not a number` }
+  const num = Number(cleaned)
+  if (!Number.isFinite(num)) return { value: fallback, error: `"${text}" is not a number` }
+  return { value: num, error: null }
 }
 
 async function bulkParseAndProcess(csvBuffer, { dryRun = false, createdBy = null } = {}) {

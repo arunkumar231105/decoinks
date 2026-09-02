@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Package, Search } from 'lucide-react'
 import toast from '../utils/toast'
@@ -14,6 +15,11 @@ import type { ApparelCatalogStyle } from './ApparelCatalogPicker'
  * in on that line.
  *
  * index.css is protected, so the styling is inline.
+ *
+ * The panel is rendered into the document body rather than beside the button.
+ * The row lives inside a table that scrolls sideways, and a scroll container
+ * clips whatever overflows it — anchored to the cell, the list was sliced off
+ * after the first style. Anchored to the viewport instead, it opens in full.
  */
 
 const BTN: React.CSSProperties = {
@@ -23,8 +29,8 @@ const BTN: React.CSSProperties = {
   color: '#111827', textAlign: 'left',
 }
 const PANEL: React.CSSProperties = {
-  position: 'absolute', zIndex: 60, top: 'calc(100% + 4px)', left: 0,
-  width: 210, maxHeight: 300, overflow: 'hidden', display: 'flex',
+  position: 'fixed', zIndex: 4000, width: 210, maxHeight: 300,
+  overflow: 'hidden', display: 'flex',
   flexDirection: 'column', background: '#fff', border: '1px solid #d7dde5',
   borderRadius: 8, boxShadow: '0 12px 30px rgba(15,23,42,.16)',
 }
@@ -44,7 +50,9 @@ export function ApparelStyleSelect({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState('')
+  const [at, setAt] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const box = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
 
   // Every apparel style, once. The list is small enough to filter in the
   // browser, so typing does not wait on the network.
@@ -55,11 +63,40 @@ export function ApparelStyleSelect({
     staleTime: 5 * 60 * 1000,
   })
 
+  // The panel is no longer a descendant of the button, so a click inside it
+  // would otherwise read as a click away.
   useEffect(() => {
-    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    const away = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (box.current?.contains(t) || panel.current?.contains(t)) return
+      setOpen(false)
+    }
     document.addEventListener('mousedown', away)
     return () => document.removeEventListener('mousedown', away)
   }, [])
+
+  // Anchored to the viewport, the panel has to be told where the button went.
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const r = box.current?.getBoundingClientRect()
+      if (!r) return
+      const H = 300, W = 210
+      const below = window.innerHeight - r.bottom
+      setAt({
+        top: below < H + 8 && r.top > below ? Math.max(8, r.top - H - 4) : r.bottom + 4,
+        left: Math.max(8, Math.min(r.left, window.innerWidth - W - 8)),
+      })
+    }
+    place()
+    // Scrolling the table sideways moves the button out from under the panel.
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open])
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -103,8 +140,8 @@ export function ApparelStyleSelect({
         <ChevronDown size={13} style={{ flex: '0 0 auto', color: '#6b7280' }} />
       </button>
 
-      {open && !disabled && (
-        <div style={PANEL}>
+      {open && !disabled && createPortal(
+        <div ref={panel} style={{ ...PANEL, top: at.top, left: at.left }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px',
                         borderBottom: '1px solid #e8edf3' }}>
             <Search size={13} style={{ color: '#6b7280' }} />
@@ -125,7 +162,8 @@ export function ApparelStyleSelect({
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

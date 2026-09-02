@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 
 // Business rules shared by every aggregate below: an order counts when it is
 // not soft-deleted and not Draft/Cancelled; an invoice balance counts when it
@@ -341,15 +342,51 @@ async function insertContacts(client, customerId, contacts, createdBy) {
   }
 }
 
+// ── Not the same buyer twice ─────────────────────────────────────────────────
+// Nothing stopped the same person being entered again: the only uniqueness the
+// table carries is on e-mail, and most buyers here have none. Two records for
+// one person split their orders, their spend and their history in half.
+//
+// The name is compared the way a person reads it — case, spacing, punctuation
+// and accents ignored — so "hector garcia", "Héctor  García" and "Hector-Garcia"
+// are one name. Real people do share names, so this refuses and says who it
+// found rather than deciding; pass allow_duplicate_name to go ahead anyway.
+const NAME_KEY = `regexp_replace(lower(translate(btrim($COL$),
+  'áàâäãéèêëíìîïóòôöõúùûüñçÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇ',
+  'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC')), '[^a-z0-9]', '', 'g')`
+
+async function assertNotAlreadyOnFile({ name, email, exceptId = null, allow = false }) {
+  if (email) {
+    const { rows } = await query(
+      `SELECT customer_number, name FROM customers
+        WHERE deleted_at IS NULL AND lower(btrim(email)) = lower(btrim($1))
+          AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`, [email, exceptId])
+    if (rows[0]) throw Object.assign(
+      new Error(`${rows[0].customer_number} (${rows[0].name}) already uses this e-mail address.`),
+      { statusCode: 409 })
+  }
+  if (allow || !name) return
+  const { rows } = await query(
+    `SELECT customer_number, name FROM customers
+      WHERE deleted_at IS NULL
+        AND ${NAME_KEY.replace('$COL$', 'name')} = ${NAME_KEY.replace('$COL$', '$1')}
+        AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`, [name, exceptId])
+  if (rows[0]) throw Object.assign(
+    new Error(`${rows[0].customer_number} is already on file as "${rows[0].name}". ` +
+              `Open that customer instead, or confirm this is a different person of the same name.`),
+    { statusCode: 409 })
+}
+
 async function create({ lead_id, name, email, phone, whatsapp, company, website, facebook_id, instagram_id,
   address_line1, city, state, zip, country, billing_address, same_as_shipping,
   buyer_type, internal_notes, source, created_by,
   first_name, middle_name, last_name, company_name, company_phone_number, mobile_number,
   preferred_language, customer_segment, tier, status,
   customer_type, job_title, payment_terms, credit_limit, assigned_agent_id,
-  external_customer_number, addresses = [], contacts = [] }) {
+  external_customer_number, allow_duplicate_name = false, addresses = [], contacts = [] }) {
   const displayName = name || [first_name, last_name].filter(Boolean).join(' ')
   if (!displayName) throw Object.assign(new Error('First name is required'), { statusCode: 400 })
+  await assertNotAlreadyOnFile({ name: displayName, email, allow: allow_duplicate_name })
   const customer_number = await getNextNumber('CUST', 'customers', 'customer_number')
   const client = await getClient()
   try {
@@ -377,7 +414,12 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
         customer_segment || buyer_type || null, tier || null,
         customer_type || null, job_title || null, payment_terms || null,
         credit_limit ?? null, assigned_agent_id || null,
-        normalizeStatus(status) || 'prospect',
+        // 'active', not 'prospect'. A customer record is created when there is
+        // real business to attach to it, so treating every new one as a
+        // prospect meant the list said "prospect" about people who had already
+        // ordered. Whether they stay active is decided by
+        // scripts/refresh-customer-status.js, from whether they actually buy.
+        normalizeStatus(status) || 'active',
         middle_name || null, external_customer_number || null,
       ]
     )
@@ -426,6 +468,14 @@ async function create({ lead_id, name, email, phone, whatsapp, company, website,
 }
 
 async function update(id, fields, actorId) {
+  // Renaming a customer onto a name the book already holds makes the same
+  // duplicate the other way round.
+  if (fields.name !== undefined || fields.email !== undefined) {
+    await assertNotAlreadyOnFile({
+      name: fields.name, email: fields.email, exceptId: id,
+      allow: fields.allow_duplicate_name === true,
+    })
+  }
   const allowed = [
     'name', 'email', 'phone', 'whatsapp', 'company', 'website', 'facebook_id', 'instagram_id',
     'address_line1', 'city', 'state', 'zip', 'country', 'billing_address', 'same_as_shipping',
@@ -542,14 +592,16 @@ async function remove(id) {
     )
     if (!cust[0]) throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
 
-    // These are the only nullable customer FKs whose constraints use NO ACTION.
-    // All other verified customer references are handled by their FK SET NULL or
-    // CASCADE rules. Keeping this explicit avoids an expensive information_schema
-    // scan on every delete (which previously made one deletion take 10–20+ seconds).
-    await client.query(`UPDATE leads SET customer_id = NULL WHERE customer_id = $1`, [id])
-    await client.query(`UPDATE quotations SET customer_id = NULL WHERE customer_id = $1`, [id])
-
-    await client.query(`DELETE FROM customers WHERE id = $1`, [id])
+    // A buyer with history is that history's owner. Removing them used to clear
+    // quotations.customer_id, leaving documents that named someone the system
+    // no longer had.
+    await assertNoDependents(client, id, [
+      { table: 'orders',     column: 'customer_id', label: 'sales order' },
+      { table: 'invoices',   column: 'customer_id', label: 'invoice' },
+      { table: 'quotations', column: 'customer_id', label: 'quotation' },
+    ], { subject: 'customer' })
+    if (!await softDelete(client, 'customers', id))
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404 })
     await client.query('COMMIT')
     return { id }
   } catch (err) {

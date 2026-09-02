@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber, getNextInvoiceNumber } = require('../../utils/counter')
+const { assertNoDependents, softDelete } = require('../../utils/dependents')
 const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
@@ -205,7 +206,7 @@ async function getById(id) {
      LEFT JOIN suppliers s  ON s.id = i.supplier_id
      LEFT JOIN orders o     ON o.id = i.order_id
      LEFT JOIN users u      ON u.id = i.created_by
-     WHERE i.id = $1`,
+     WHERE i.id = $1 AND i.deleted_at IS NULL`,
     [id]
   )
   if (!rows[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
@@ -979,7 +980,7 @@ async function updateStatus(id, status, actor) {
 
   const { rows: cur } = await query(
     `SELECT i.status,i.total,COALESCE((SELECT SUM(ii.qty) FROM invoice_items ii WHERE ii.invoice_id=i.id),0) AS total_qty
-     FROM invoices i WHERE i.id=$1`,
+     FROM invoices i WHERE i.id=$1 AND i.deleted_at IS NULL`,
     [id]
   )
   if (!cur[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
@@ -1202,14 +1203,17 @@ async function remove(id, actorId) {
   try {
     await client.query('BEGIN')
     const { rows: inv } = await client.query(
-      `SELECT id, invoice_number FROM invoices WHERE id = $1`, [id]
+      `SELECT id, invoice_number FROM invoices WHERE id = $1 AND deleted_at IS NULL`, [id]
     )
     if (!inv[0]) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
-    // Unlink orders and delete payments before deleting invoice (RESTRICT FK)
-    await client.query(`UPDATE orders SET invoice_id = NULL WHERE invoice_id = $1`, [id])
-    await client.query(`DELETE FROM payments WHERE invoice_id = $1`, [id])
-    await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [id])
-    await client.query(`DELETE FROM invoices WHERE id = $1`, [id])
+    // Money received is not the invoice's to throw away: deleting one used to
+    // delete its payments outright.
+    await assertNoDependents(client, id, [
+      { table: 'orders',   column: 'invoice_id', label: 'sales order' },
+      { table: 'payments', column: 'invoice_id', label: 'payment', softDeletes: false },
+    ], { subject: 'invoice' })
+    if (!await softDelete(client, 'invoices', id))
+      throw Object.assign(new Error('Invoice not found'), { statusCode: 404 })
     await client.query('COMMIT')
     await logActivity(actorId, id, 'deleted', `Invoice ${inv[0].invoice_number} permanently deleted`).catch(() => {})
     return { id }

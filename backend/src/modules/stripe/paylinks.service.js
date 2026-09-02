@@ -248,6 +248,46 @@ async function getOrCreateForInvoice(invoiceId, opts = {}) {
   return { ...(await createForInvoice(invoiceId, opts)), reused: false }
 }
 
+/**
+ * A link with no invoice behind it — money taken before the paperwork.
+ *
+ * The shop's habit is to collect first and write the quotation and invoice
+ * afterwards, so the amount here is entered by staff rather than read off an
+ * invoice. It is still decided on the server and still written onto the link,
+ * so the customer cannot alter what they are charged; what changes is only
+ * where the figure came from.
+ *
+ * A customer is required. Without an invoice there is nothing else to say whose
+ * payment this is, and money that cannot be attributed is money nobody can
+ * account for later.
+ */
+async function createStandalone({ customerId, itemAmount = 0, shippingAmount = 0,
+                                  currency = 'USD', description = null, createdBy = null }) {
+  if (!customerId) throw fail('Choose a customer before generating a payment link.', 400, 'no_customer')
+
+  const { rows: cust } = await db.query(
+    `SELECT id, name FROM customers WHERE id = $1 AND deleted_at IS NULL`, [customerId])
+  if (!cust[0]) throw fail('That customer no longer exists.', 404, 'no_customer')
+
+  const item = +Number(itemAmount || 0).toFixed(2)
+  const shipping = +Number(shippingAmount || 0).toFixed(2)
+  const amount = +(item + shipping).toFixed(2)
+  if (!(amount > 0)) throw fail('The total must be more than zero.', 400, 'bad_amount')
+  if (item < 0 || shipping < 0) throw fail('Amounts cannot be negative.', 400, 'bad_amount')
+
+  const token = crypto.randomBytes(TOKEN_BYTES).toString('base64url')
+  const { rows } = await db.query(
+    `INSERT INTO payment_links
+       (token_hash, token_encrypted, customer_id, amount, item_amount, shipping_amount,
+        currency, description, created_by, sent_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+     RETURNING *`,
+    [hashToken(token), await encryptToken(token), customerId, amount, item, shipping,
+     (currency || 'USD').toUpperCase(), description || null, createdBy])
+
+  return { link: rows[0], token, customer: cust[0] }
+}
+
 /** The live link for an invoice, if one is outstanding. */
 async function findActiveForInvoice(invoiceId) {
   const { rows } = await db.query(
@@ -294,16 +334,20 @@ async function resolveByToken(token) {
     link.status = 'expired'
   }
 
-  const invoice = await getInvoice(link.invoice_id)
+  const invoice = link.invoice_id ? await getInvoice(link.invoice_id) : null
 
-  if (link.status === 'paid')    throw fail('This invoice has already been paid. Thank you!', 409, 'already_paid')
+  if (link.status === 'paid')    throw fail('This payment has already been made. Thank you!', 409, 'already_paid')
   if (link.status === 'expired') throw fail('This payment link has expired. Please ask us for a new one.', 410, 'expired')
   if (link.status === 'void')    throw fail('This payment link is no longer valid. Please ask us for a new one.', 410, 'void')
 
-  // The invoice can be settled by other means — a Zelle transfer entered by
-  // staff — after the link was sent. The link's own status would not know.
-  const problem = payableProblem(invoice)
-  if (problem) throw problem
+  // An invoice can be settled by other means — a Zelle transfer entered by
+  // staff — after the link was sent, and the link's own status would not know.
+  // A standalone link has no invoice to re-check; its own status is the whole
+  // truth, and that was checked above.
+  if (link.invoice_id) {
+    const problem = payableProblem(invoice)
+    if (problem) throw problem
+  }
 
   if (!link.first_opened_at) {
     await db.query(`UPDATE payment_links SET first_opened_at = NOW() WHERE id = $1`, [link.id])
@@ -324,7 +368,10 @@ async function peekByToken(token) {
   const { rows } = await db.query(
     `SELECT * FROM payment_links WHERE token_hash = $1 LIMIT 1`, [hashToken(token)])
   if (!rows[0]) return null
-  return { link: rows[0], invoice: await getInvoice(rows[0].invoice_id) }
+  return {
+    link: rows[0],
+    invoice: rows[0].invoice_id ? await getInvoice(rows[0].invoice_id) : null,
+  }
 }
 
 async function attachPaymentIntent(linkId, paymentIntentId) {
@@ -342,21 +389,32 @@ async function markPaid(linkId, { paymentId = null } = {}, client = db) {
 }
 
 /** Everything a link's public pay page may know. No ids that aren't needed. */
-function publicView(link, invoice) {
+async function publicView(link, invoice) {
+  // A standalone link has no invoice to name it, so it shows its own
+  // description and the customer it was made for.
+  let customerName = invoice?.customer_record_name || invoice?.customer_name || null
+  if (!customerName && link.customer_id) {
+    const { rows } = await db.query(`SELECT name FROM customers WHERE id = $1`, [link.customer_id])
+    customerName = rows[0]?.name || null
+  }
   return {
-    invoiceNumber: invoice.invoice_number,
-    orderNumber: invoice.order_number || null,
-    customerName: invoice.customer_record_name || invoice.customer_name || null,
+    invoiceNumber: invoice?.invoice_number || null,
+    description: link.description || null,
+    orderNumber: invoice?.order_number || null,
+    customerName,
     amount: Number(link.amount),
+    itemAmount: link.item_amount === null ? null : Number(link.item_amount),
+    shippingAmount: link.shipping_amount === null ? null : Number(link.shipping_amount),
     currency: link.currency || 'USD',
-    issueDate: invoice.issue_date,
-    dueDate: invoice.due_date,
+    issueDate: invoice?.issue_date || null,
+    dueDate: invoice?.due_date || null,
     expiresAt: link.expires_at,
   }
 }
 
 module.exports = {
   createForInvoice,
+  createStandalone,
   getOrCreateForInvoice,
   decryptToken,
   findActiveForInvoice,

@@ -289,7 +289,7 @@ export function CustomerDetailPage() {
               <button
                 className="lb-action-btn"
                 style={{ color: '#DC2626' }}
-                onClick={() => { if (window.confirm('Delete this customer? This cannot be undone.')) deleteMutation.mutate() }}
+                onClick={() => { if (window.confirm('Delete this customer? It will be removed from the lists; anything still using it is refused.')) deleteMutation.mutate() }}
                 disabled={deleteMutation.isPending}
               >
                 Delete

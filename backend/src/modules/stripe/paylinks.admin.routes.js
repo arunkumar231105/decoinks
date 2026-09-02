@@ -21,6 +21,76 @@ const paylinks = require('./paylinks.service')
 const router = Router()
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 
+/* ── Service routes, for the CRM ──────────────────────────────────────────
+ *
+ * Agents work in the CRM all day and should not have to open the Printshop to
+ * take a payment. These few routes let it ask for a link on their behalf.
+ *
+ * Authenticated by a secret of their own — deliberately not the SSO secret,
+ * which exists to prove a person signed in. Overloading it would mean one
+ * credential granting two unrelated powers, and rotating it for one reason
+ * would silently break the other.
+ *
+ * Mounted BEFORE `verifyToken` because the caller is a server, not a person
+ * with a staff login. They can do exactly two things — search customers and
+ * make a link — and nothing else in this file is reachable through them.
+ */
+function serviceAuth(req, res, next) {
+  const expected = (process.env.SERVICE_API_SECRET || '').trim()
+  if (!expected) return res.status(503).json({ error: 'Service access is not configured.' })
+  const given = req.get('x-decoinks-sso-secret') || ''
+  // Constant-time-ish: compare lengths first, then the whole string, so a
+  // wrong secret cannot be narrowed down by timing the response.
+  if (given.length !== expected.length || given !== expected) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+  next()
+}
+
+router.get('/service/customers', serviceAuth, wrap(async (req, res) => {
+  const q = String(req.query.search || '').trim()
+  const { rows } = await db.query(
+    `SELECT id, name, customer_number, email, phone
+       FROM customers
+      WHERE deleted_at IS NULL
+        AND ($1 = '' OR name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%'
+             OR customer_number ILIKE '%'||$1||'%' OR phone ILIKE '%'||$1||'%')
+      ORDER BY (name ILIKE $1||'%') DESC, name
+      LIMIT 25`, [q])
+  res.json({ data: rows })
+}))
+
+/** One customer by id — so the CRM can confirm the lead reached Printshop. */
+router.get('/service/customers/:id', serviceAuth, wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, name, customer_number, email FROM customers WHERE id = $1 AND deleted_at IS NULL`,
+    [req.params.id])
+  if (!rows[0]) return res.status(404).json({ error: 'That customer is not in Printshop yet.' })
+  res.json({ data: rows[0] })
+}))
+
+router.post('/service/advance', serviceAuth, wrap(async (req, res) => {
+  const base = await payPageBase()
+  const { customerId, itemAmount, shippingAmount, currency, description, createdBy } = req.body || {}
+
+  const { link, token, customer } = await paylinks.createStandalone({
+    customerId, itemAmount, shippingAmount, currency, description,
+    createdBy: createdBy || null,
+  })
+
+  res.json({
+    data: {
+      url: `${base}/pay/${token}`,
+      customer: customer.name,
+      amount: Number(link.amount),
+      itemAmount: Number(link.item_amount),
+      shippingAmount: Number(link.shipping_amount),
+      currency: link.currency,
+      description: link.description,
+    },
+  })
+}))
+
 router.use(verifyToken)
 
 /**
@@ -104,6 +174,86 @@ router.post('/invoices/:id', requireRole('Admin', 'Manager', 'Sales'), wrap(asyn
       invoiceNumber: invoice.invoice_number,
     },
   })
+}))
+
+/**
+ * A payment link taken in advance, before any quotation or invoice exists.
+ *
+ * The shop collects first and writes the paperwork afterwards, so this is the
+ * entry point for that: a customer, an item amount, a shipping amount, and a
+ * note about what it is for. The total is computed here — never taken from the
+ * request as a single figure — and written onto the link, so it is the server's
+ * number that Stripe is asked to charge.
+ */
+router.post('/advance', requireRole('Admin', 'Manager', 'Sales'), wrap(async (req, res) => {
+  const base = await payPageBase()
+  const { customerId, itemAmount, shippingAmount, currency, description } = req.body || {}
+
+  const { link, token, customer } = await paylinks.createStandalone({
+    customerId,
+    itemAmount,
+    shippingAmount,
+    currency,
+    description,
+    createdBy: req.user?.id || null,
+  })
+
+  res.json({
+    data: {
+      url: `${base}/pay/${token}`,
+      linkId: link.id,
+      customer: customer.name,
+      itemAmount: Number(link.item_amount),
+      shippingAmount: Number(link.shipping_amount),
+      amount: Number(link.amount),
+      currency: link.currency,
+      description: link.description,
+    },
+  })
+}))
+
+/** Advance links taken for a customer, so staff can see what is outstanding. */
+router.get('/advance', wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT pl.id, pl.amount, pl.item_amount, pl.shipping_amount, pl.currency, pl.description,
+            pl.status, pl.created_at, pl.paid_at, pl.first_opened_at,
+            c.name AS customer_name, p.payment_number
+       FROM payment_links pl
+       LEFT JOIN customers c ON c.id = pl.customer_id
+       LEFT JOIN payments  p ON p.id = pl.payment_id
+      WHERE pl.invoice_id IS NULL
+        AND ($1::uuid IS NULL OR pl.customer_id = $1::uuid)
+      ORDER BY pl.created_at DESC LIMIT 100`,
+    [req.query.customer_id || null])
+  res.json({ data: rows })
+}))
+
+/**
+ * Payments a customer has already made that no invoice has claimed.
+ *
+ * This is what the invoice form offers when staff are writing up work that was
+ * paid for in advance.
+ */
+router.get('/unallocated', wrap(async (req, res) => {
+  const recorder = require('./stripe.recorder')
+  res.json({ data: await recorder.unallocatedPayments(req.query.customer_id || null) })
+}))
+
+/**
+ * Apply an existing payment to an invoice.
+ *
+ * Only the link between the two records changes — no money moves — which is why
+ * this is safe long after the payment happened. The invoice's status is then
+ * recomputed from the ledger, so it becomes Paid on its own rather than by
+ * anyone asserting it.
+ */
+router.post('/apply', requireRole('Admin', 'Manager', 'Sales'), wrap(async (req, res) => {
+  const { paymentId, invoiceId } = req.body || {}
+  if (!paymentId || !invoiceId) {
+    return res.status(400).json({ error: 'Both a payment and an invoice are required.' })
+  }
+  const recorder = require('./stripe.recorder')
+  res.json({ data: await recorder.attachPaymentToInvoice(paymentId, invoiceId) })
 }))
 
 /** Kill the live link without issuing a replacement. */
