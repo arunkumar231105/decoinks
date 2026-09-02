@@ -177,3 +177,7 @@ router.delete('/:id/artworks/:artworkId', async (req, res) => {
 })
 
 module.exports = router
+// The create schema, so the CRM's service route validates a quotation exactly as
+// this one does. Exported rather than copied: two schemas for one payload is two
+// things to keep in step, and only one of them would be remembered.
+module.exports.createSchema = createSchema

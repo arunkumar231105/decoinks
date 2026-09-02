@@ -964,6 +964,16 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   const orderId = ordRows[0].id
   await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
 
+  // The invoice has to point back. The order already carries invoice_id, but
+  // the invoice page reads its own order_id to decide whether an order exists —
+  // so with only one side written it went on offering "convert to sales order"
+  // for an invoice that already had one, and the conversion was then refused
+  // because the other side could see it. One link, both directions.
+  await q.query(
+    `UPDATE invoices SET order_id = COALESCE(order_id, $2), updated_at = NOW() WHERE id = $1`,
+    [invoiceId, orderId]
+  )
+
   await q.query(
     `INSERT INTO pipeline_events
        (event_type, source_table, source_id, target_table, target_id, triggered_by, metadata)

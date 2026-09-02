@@ -34,6 +34,7 @@ const gdriveRoutes         = require('./modules/gdrive/gdrive.routes')
 const stripeWebhookRoutes  = require('./modules/stripe/webhook.routes')
 const payRoutes            = require('./modules/stripe/pay.routes')
 const payLinkAdminRoutes   = require('./modules/stripe/paylinks.admin.routes')
+const crmRoutes            = require('./modules/crm/crm.routes')
 const paypalRoutes         = require('./modules/paypal/paypal.routes')
 const paypalWebhookRoutes  = require('./modules/paypal/webhook.routes')
 
@@ -121,6 +122,9 @@ app.use('/api/nextcloud',    nextcloudRoutes)
 app.use('/api/drive',        gdriveRoutes)
 app.use('/api/pay',          payRoutes)
 app.use('/api/payment-links', payLinkAdminRoutes)
+// The CRM's door in. Guarded by the service secret, not a staff login — the
+// caller is the CRM's server acting for an agent who is in the chat, not here.
+app.use('/api/crm',          crmRoutes)
 // Before the pay routes, which put a 30-a-minute rate limit on everything under
 // /api/paypal. PayPal's own deliveries would have been counted against a limit
 // meant for browsers, and a burst would have had us answering 429 to the one

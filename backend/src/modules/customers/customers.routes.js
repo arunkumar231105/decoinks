@@ -207,3 +207,6 @@ router.delete('/:id/portal-access', requireRole('Admin', 'Manager'), async (req,
 })
 
 module.exports = router
+// Same reason as quotations: the CRM's service route validates a new customer
+// against this very schema.
+module.exports.createSchema = createSchema
