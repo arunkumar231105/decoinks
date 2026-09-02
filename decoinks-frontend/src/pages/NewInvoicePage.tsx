@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Mail,
   MessageCircle,
+  Images,
   MoreHorizontal,
   Package,
   Pencil,
@@ -25,6 +26,7 @@ import {
   Send,
   Trash2,
 } from 'lucide-react'
+import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -114,14 +116,23 @@ function InvoiceArtworkUpload({ imageUrl, label, onChange }: {
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [dropActive, setDropActive] = useState(false)
 
-  const upload = async (file: File) => {
+  // A file from the desktop or a file dragged out of the customer's Drive
+  // folder: both end up as artwork on this line, by different routes.
+  const upload = async (file: File | DriveFile) => {
     setUploading(true)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const response = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      onChange(response.data.url)
+      // A Drive pick is copied into the CRM's own storage server-side, so the
+      // invoice keeps a stable URL of its own.
+      const response = !(file instanceof File)
+        ? await api.post('/drive/attach', { file_id: file.id })
+        : await (() => {
+            const form = new FormData()
+            form.append('file', file)
+            return api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+          })()
+      onChange(response.data.url ?? response.data?.data?.url)
     } catch {
       toast.error('Artwork upload failed')
     } finally {
@@ -129,8 +140,31 @@ function InvoiceArtworkUpload({ imageUrl, label, onChange }: {
     }
   }
 
+  const accepts = (event: React.DragEvent) =>
+    event.dataTransfer.types.includes(DRIVE_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
+
+  const onDrop = (event: React.DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    setDropActive(false)
+    const payload = event.dataTransfer.getData(DRIVE_DRAG_TYPE)
+    if (payload) {
+      // A malformed payload is ignored rather than thrown: the drop came from
+      // outside this component and must never break the invoice form.
+      try { upload(JSON.parse(payload) as DriveFile) } catch { /* not our payload */ }
+      return
+    }
+    const file = event.dataTransfer.files?.[0]
+    if (file) upload(file)
+  }
+
   return (
-    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+    <div
+      className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}${dropActive ? ' dap-drop-active' : ''}`}
+      onDragOver={event => { if (accepts(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true) } }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={onDrop}
+    >
       <input ref={inputRef} type="file" accept="image/*" hidden onChange={e => {
         const file = e.target.files?.[0]
         if (file) upload(file)
@@ -463,6 +497,7 @@ export function NewInvoicePage() {
 
   // Items
   const [apparelItems, setApparelItems] = useState<ApparelItem[]>([])
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false)
   const [gangsheetItems, setGangsheetItems] = useState<GangsheetItem[]>([])
   const [transferItems, setTransferItems] = useState<TransferItem[]>([])
 
@@ -1261,6 +1296,15 @@ export function NewInvoicePage() {
             <div className="ni-section-heading">
               <span className="ni-section-num">2</span>
               <h3>Invoice Items</h3>
+              <button
+                type="button"
+                className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                style={{ marginLeft: 'auto' }}
+                onClick={() => setDrivePickerOpen(open => !open)}
+                title="Show this customer's artworks from Google Drive"
+              >
+                <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+              </button>
             </div>
 
             {ratesLocked && (
@@ -1805,6 +1849,13 @@ export function NewInvoicePage() {
           <MessageCircle size={14} /> Send to Messenger
         </MenuItem>
       </Menu>
+
+      {/* The customer's Drive artworks, dragged onto the artwork cells above. */}
+      <DriveArtworkPicker
+        open={drivePickerOpen}
+        customerName={supplierText}
+        onClose={() => setDrivePickerOpen(false)}
+      />
 
     </div>
   )

@@ -7,6 +7,7 @@ import {
   Edit3,
   MessageCircle,
   MessageSquare,
+  Images,
   Package,
   Plus,
   Save,
@@ -15,6 +16,7 @@ import {
   User2,
   X,
 } from 'lucide-react'
+import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useFormDraft } from '../hooks/useFormDraft'
@@ -839,11 +841,36 @@ function ImageUploadCell({
   imageUrl, label, onUpload, onRemove, uploading,
 }: {
   imageUrl?: string | null; label: string
-  onUpload: (file: File) => void; onRemove: () => void; uploading?: boolean
+  onUpload: (file: File | DriveFile) => void; onRemove: () => void; uploading?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [dropActive, setDropActive] = useState(false)
+
+  const accepts = (event: React.DragEvent) =>
+    event.dataTransfer.types.includes(DRIVE_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
+
+  const onDrop = (event: React.DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    setDropActive(false)
+    const payload = event.dataTransfer.getData(DRIVE_DRAG_TYPE)
+    if (payload) {
+      // A malformed payload is ignored rather than thrown: the drop came from
+      // outside this component and must never break the quote form.
+      try { onUpload(JSON.parse(payload) as DriveFile) } catch { /* not our payload */ }
+      return
+    }
+    const file = event.dataTransfer.files?.[0]
+    if (file) onUpload(file)
+  }
+
   return (
-    <div className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}`}>
+    <div
+      className={`nq-img-cell${uploading ? ' nq-img-uploading' : ''}${dropActive ? ' dap-drop-active' : ''}`}
+      onDragOver={event => { if (accepts(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true) } }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={onDrop}
+    >
       <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) { onUpload(f); e.target.value = '' } }} />
       {imageUrl ? (
@@ -993,6 +1020,7 @@ export function NewQuotationPage() {
   const [sameAsBilling, setSameAsBilling] = useState(false)
   const [activeTab, setActiveTab] = useState<QuoteTab>('apparel')
   const [apparelItems, setApparelItems] = useState<ApparelItem[]>(initialApparelItems)
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false)
   const [gangsheetRows, setGangsheetRows] = useState<GangsheetRow[]>(initialGangsheetRows)
   const [transferRows, setTransferRows] = useState<TransferRow[]>(initialTransferRows)
   const [otherCharges, setOtherCharges] = useState<OtherCharge[]>(initialOtherCharges)
@@ -1504,11 +1532,14 @@ export function NewQuotationPage() {
   const uploadItemImage = async (
     rowId: string,
     field: 'front_image' | 'back_image' | 'artwork_image',
-    file: File,
+    file: File | DriveFile,
     updater: (id: string, patch: Record<string, string | null>) => void
   ) => {
     setUploadingImg(prev => ({ ...prev, [`${rowId}-${field}`]: true }))
     const send = async () => {
+      // A Drive pick is copied into the CRM's own storage server-side, so the
+      // quote keeps a stable URL of its own rather than a link into Drive.
+      if (!(file instanceof File)) return api.post('/drive/attach', { file_id: file.id })
       const form = new FormData()
       form.append('file', file)
       const res = await api.post('/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -1525,7 +1556,7 @@ export function NewQuotationPage() {
         await new Promise(r => setTimeout(r, 800))
         res = await send()
       }
-      updater(rowId, { [field]: res.data.url })
+      updater(rowId, { [field]: res.data.url ?? res.data?.data?.url })
     } catch (error: any) {
       // Surface the real reason instead of a generic message, so the user knows
       // whether it was the file type, the size, or the connection.
@@ -1704,6 +1735,15 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <div><span className="nq-tab-section-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>👕 Items / Products</span><p className="nq-items-hint">Pick a style on each line — product, colours, sizes and SKU fill in automatically.</p></div>
+                <button
+                  type="button"
+                  className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                  style={{ marginLeft: 'auto' }}
+                  onClick={() => setDrivePickerOpen(open => !open)}
+                  title="Show this customer's artworks from Google Drive"
+                >
+                  <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+                </button>
               </div>
               <div className="nq-table-wrap"><table className="nq-table nq-apparel-table nq-catalog-items-table"><thead><tr><th>#</th><th style={{ minWidth: 140 }}>Style</th><th>Category</th><th>Product</th><th>Color</th><th>Size</th><th>SKU</th><th>Qty</th><th>Artwork</th><th>Unit Price</th><th>Amount</th><th>Weight</th><th></th></tr></thead><tbody>
                 {apparelItems.map((item, idx) => (
@@ -1741,6 +1781,15 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#fff7ed', color: '#c2410c' }}>🖨️ DTF Transfers</span>
+                <button
+                  type="button"
+                  className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                  style={{ marginLeft: 'auto' }}
+                  onClick={() => setDrivePickerOpen(open => !open)}
+                  title="Show this customer's artworks from Google Drive"
+                >
+                  <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+                </button>
               </div>
               <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Artwork No</th><th>Width (in)</th><th>Height (in)</th><th>Qty</th><th>Artwork</th><th>Rate (USD)</th><th>Amount (USD)</th><th></th></tr></thead><tbody>
                 {transferRows.map((row, idx) => (
@@ -1772,6 +1821,15 @@ export function NewQuotationPage() {
             <section className="nq-card">
               <div className="nq-section-header">
                 <span className="nq-tab-section-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>📐 Gangsheet</span>
+                <button
+                  type="button"
+                  className={`dap-open-btn${drivePickerOpen ? ' active' : ''}`}
+                  style={{ marginLeft: 'auto' }}
+                  onClick={() => setDrivePickerOpen(open => !open)}
+                  title="Show this customer's artworks from Google Drive"
+                >
+                  <Images size={13} /> {drivePickerOpen ? 'Hide Drive artworks' : 'Drive artworks'}
+                </button>
               </div>
               <div className="nq-table-wrap"><table className="nq-table"><thead><tr><th>#</th><th>Gangsheet Size</th><th>No. of Artworks</th><th>Qty Sheets</th><th>Front Artwork</th><th>Back Artwork</th><th>Unit Price (USD)</th><th>Total Amount (USD)</th><th></th></tr></thead><tbody>
                 {gangsheetRows.map((row, idx) => (
@@ -1822,6 +1880,13 @@ export function NewQuotationPage() {
           <TermsSection paymentTerms={paymentTerms} paymentMethod={paymentMethod} productionTime={productionTime} deliveryMethod={deliveryMethod} currency={currency} setPaymentTerms={setPaymentTerms} setPaymentMethod={setPaymentMethod} setProductionTime={setProductionTime} setDeliveryMethod={setDeliveryMethod} setCurrency={setCurrency} />
         </aside>
       </div>
+
+      {/* The customer's Drive artworks, dragged onto the artwork cells above. */}
+      <DriveArtworkPicker
+        open={drivePickerOpen}
+        customerName={customerText}
+        onClose={() => setDrivePickerOpen(false)}
+      />
 
       <ActionBar
         status={status}
