@@ -22,6 +22,7 @@ const { validate } = require('../../middleware/validate')
 const customersSvc = require('../customers/customers.service')
 const quotationsSvc = require('../quotations/quotations.service')
 const invoicesSvc = require('../invoices/invoices.service')
+const ordersSvc = require('../orders/orders.service')
 // The very schemas the Printshop screens post through, so a payload arriving
 // from the CRM is checked exactly as one typed into Printshop would be.
 const { createSchema: customerCreateSchema } = require('../customers/customers.routes')
@@ -208,6 +209,98 @@ router.patch('/invoices/:id/status', wrap(async (req, res) => {
   if (!actor) return res.status(503).json({ error: 'No Printshop user to attribute this change to.' })
   const invoice = await invoicesSvc.updateStatus(req.params.id, req.body.status, actor)
   res.json({ data: invoice })
+}))
+
+/* ── Orders → Purchase Orders (BlankTex blank-garment fulfillment) ─────────────
+ *
+ * BlankTex places the blank-garment order with the supplier (DIGI/RIIN) and then
+ * raises the Printshop purchase order against the apparel sales order it fulfils.
+ * Like the rest of this file, these hold none of the rules themselves: the PO is
+ * created by the very same `orders.service.convertToPO` the Printshop screen uses,
+ * so numbering, the po_orders link and pipeline events stay identical.
+ */
+
+/**
+ * The sales-order picker inside BlankTex's New Order form.
+ *
+ * Only apparel orders, and only ones that do NOT already have a purchase order —
+ * an order whose blanks are already on their way must not be picked and ordered a
+ * second time. Newest first, which is the one the agent means.
+ */
+router.get('/orders', wrap(async (req, res) => {
+  const type = String(req.query.type || 'apparel').trim()
+  const channel = String(req.query.channel || '').trim()
+  const search = String(req.query.search || '').trim()
+  const params = [type]
+  let where = `o.deleted_at IS NULL AND o.order_type = $1
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_orders po
+        LEFT JOIN po_orders poo ON poo.po_id = po.id
+        WHERE (po.order_id = o.id OR poo.order_id = o.id) AND po.deleted_at IS NULL
+      )`
+  if (channel) { params.push(channel); where += ` AND o.sales_channel = $${params.length}` }
+  if (search) {
+    params.push(`%${search}%`)
+    where += ` AND (o.order_number ILIKE $${params.length} OR cust.name ILIKE $${params.length})`
+  }
+  const { rows } = await db.query(
+    `SELECT o.id, o.order_number, o.order_type, o.sales_channel, o.status,
+            o.order_date, o.total, o.currency,
+            cust.name AS customer_name,
+            COALESCE((SELECT SUM(qty) FROM order_items_apparel WHERE order_id = o.id), 0)::int AS total_qty
+       FROM orders o
+       LEFT JOIN customers cust ON cust.id = o.customer_id
+      WHERE ${where}
+      ORDER BY o.order_date DESC NULLS LAST, o.created_at DESC
+      LIMIT 100`, params)
+  res.json({ data: rows })
+}))
+
+/**
+ * One order in full — items and artworks included — to auto-fill the BlankTex form.
+ *
+ * A sales order stores the ship-to as free text (`shipping_address`) plus the
+ * contact fields; the structured City/State/ZIP an API shipment needs lives on the
+ * customer. So the customer's default address is attached as `ship_to`, and
+ * BlankTex fills from the order first and falls back to it.
+ */
+router.get('/orders/:id', wrap(async (req, res) => {
+  const order = await ordersSvc.getById(req.params.id)
+  let ship_to = null
+  if (order.customer_id) {
+    const { rows } = await db.query(
+      `SELECT name, company_name, email, phone, mobile_number, company_phone_number,
+              address_line1, city, state, zip, country
+         FROM customers WHERE id = $1 AND deleted_at IS NULL`, [order.customer_id])
+    ship_to = rows[0] || null
+  }
+  res.json({ data: { ...order, ship_to } })
+}))
+
+/**
+ * Raise the purchase order against this sales order.
+ *
+ * Idempotent on purpose: convertToPO itself allows several POs per order (one per
+ * supplier), but from BlankTex a repeat call means the same blank order being
+ * confirmed twice, so if a PO already covers this order we return that one instead
+ * of creating a duplicate. Creating the PO is what makes the order read as
+ * "PO Issued" on Printshop's board — no order-status write is needed.
+ */
+router.post('/orders/:id/purchase-order', wrap(async (req, res) => {
+  const orderId = req.params.id
+  const { rows: existing } = await db.query(
+    `SELECT po.id, po.po_number, po.status, po.created_at
+       FROM purchase_orders po
+       LEFT JOIN po_orders poo ON poo.po_id = po.id
+      WHERE (po.order_id = $1 OR poo.order_id = $1) AND po.deleted_at IS NULL
+      ORDER BY po.created_at LIMIT 1`, [orderId])
+  if (existing[0]) return res.status(200).json({ data: existing[0], already_existed: true })
+
+  const actor = await resolveActor(req.body?.agent_email)
+  const { po } = await ordersSvc.convertToPO(orderId, actor?.id ?? null)
+  const { rows } = await db.query(
+    `SELECT id, po_number, status, created_at FROM purchase_orders WHERE id = $1`, [po.id])
+  res.status(201).json({ data: rows[0] || { id: po.id, po_number: po.po_number, status: po.status }, already_existed: false })
 }))
 
 module.exports = router

@@ -128,11 +128,16 @@ async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {})
       : { rows: [] }
 
     if (!existing.length) {
+      // Give it a payment number like every other payment has. Recording one
+      // from a sales order used to leave payment_number NULL, so the Payments
+      // list showed a blank Payment ID. getNextNumber runs in its own
+      // transaction, so it is safe to call inside this one.
+      const paymentNumber = await getNextNumber('PAY', 'payments', 'payment_number')
       await client.query(
-        `INSERT INTO payments (invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO payments (payment_number, invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
-          invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
+          paymentNumber, invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
           paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
         ]
       )
