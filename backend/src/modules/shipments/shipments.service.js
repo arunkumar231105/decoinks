@@ -78,7 +78,9 @@ async function stats() {
            OR (delivered_date IS NULL AND ${eff} NOT ILIKE '%deliver%' AND CURRENT_DATE > ${eta})
        ))::int AS delayed,
        COUNT(*) FILTER (WHERE ${eff} ~* 'fail|exception|return')::int AS needs_attention
-     FROM shipments`
+     -- A deleted shipment is not a parcel in flight. Without this the totals
+     -- would start counting them the moment anyone removed one.
+     FROM shipments WHERE deleted_at IS NULL`
   )
   return rows[0]
 }

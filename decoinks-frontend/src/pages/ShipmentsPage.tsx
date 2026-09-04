@@ -130,11 +130,10 @@ export function ShipmentsPage() {
     queryKey: ['shipments', 'all'],
     queryFn: () => api.get('/shipments', { params: { page: 1, limit: 1000 } }).then(r => r.data.data),
     placeholderData: keepPreviousData,
-  })
-  // Dashboard-card counts aggregated across ALL shipments (not just this page).
-  const { data: statsData } = useQuery({
-    queryKey: ['shipments-stats'],
-    queryFn: () => api.get('/shipments/stats').then(r => r.data.data),
+    // The courier sync runs every ten minutes; this picks up what it brought
+    // without anyone reloading the page.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   const allShipments: Shipment[] = data?.rows ?? []
@@ -245,23 +244,18 @@ export function ShipmentsPage() {
     if (s.delivered_date) return s.delivered_date > eta          // delivered late
     return !isDelivered(s) && todayStr > eta                     // overdue, still not delivered
   }
-  // Prefer the server-side aggregate (all shipments); fall back to page-computed.
-  const stats = statsData ? {
-    total: statsData.total,
-    active: statsData.active,
-    inTransit: statsData.in_transit,
-    delivered: statsData.delivered,
-    onTime: statsData.on_time,
-    delayed: statsData.delayed,
-    needsAttention: statsData.needs_attention,
-  } : {
-    total,
-    active: allShipments.filter(s => !isDelivered(s)).length,
-    inTransit: allShipments.filter(s => isTransit(s)).length,
-    delivered: allShipments.filter(s => isDelivered(s)).length,
-    onTime: allShipments.filter(isOnTime).length,
-    delayed: allShipments.filter(isDelayed).length,
-    needsAttention: allShipments.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
+  // Counted from the rows on screen, so the cards and the table always agree.
+  // They used to come from a separate call that knew nothing of the filters, so
+  // choosing a date range narrowed the table and left every card unchanged —
+  // seven numbers describing a different set of parcels than the one below them.
+  const stats = {
+    total: filtered.length,
+    active: filtered.filter(s => !isDelivered(s)).length,
+    inTransit: filtered.filter(s => isTransit(s)).length,
+    delivered: filtered.filter(s => isDelivered(s)).length,
+    onTime: filtered.filter(isOnTime).length,
+    delayed: filtered.filter(isDelayed).length,
+    needsAttention: filtered.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
