@@ -81,8 +81,12 @@ async function main() {
     try {
       const sh = t.rate?.object_id ? await shippo.shipmentBehindRate(t.rate.object_id) : null
       t._to = sh?.address_to ?? null
+      // Where it was posted from. The tracking API only learns this once the
+      // parcel is scanned, so a label bought this morning had no origin at all;
+      // the label itself has carried it since it was bought.
+      t._from = sh?.address_from ?? null
       t._parcel = Array.isArray(sh?.parcels) ? sh.parcels[0] : null
-    } catch { t._to = null }
+    } catch { t._to = null; t._from = null }
   }
 
   for (const t of fresh) {
@@ -141,10 +145,11 @@ async function main() {
                                 tracking_number, status, tracking_status, ship_date, delivered_date,
                                 weight_lbs, shipping_cost, recipient_name, address,
                                 ship_to_city, ship_to_state, ship_to_postal_code, label_url,
+                                address_from_city, address_from_state, address_from_postal_code,
                                 ship_source, notes, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7::shipment_status,$8,$9::date,
                  CASE WHEN $10::text = 'DELIVERED' THEN $9::date ELSE NULL END,
-                 $11,$12,$13,$14,$15,$16,$17,$18,'Decoinks Fulfillment',$19,NOW(),NOW())`,
+                 $11,$12,$13,$14,$15,$16,$17,$18,$20,$21,$22,'Decoinks Fulfillment',$19,NOW(),NOW())`,
         [`SHP-2026-${String(n[0].n).padStart(4, '0')}`, t._order?.id ?? null,
          t._order?.customer ?? to.name ?? null, t.rate?.provider ?? null,
          t.rate?.servicelevel_name ?? null, t.tracking_number,
@@ -153,7 +158,8 @@ async function main() {
          to.name ?? null,
          [to.street1, to.city, to.state, to.zip, 'United States'].filter(Boolean).join(', ') || null,
          to.city ?? null, to.state ?? null, to.zip ?? null, t.label_url ?? null,
-         t._order ? 'Pulled from the Shippo account' : `Pulled from the Shippo account — ${t._why}`])
+         t._order ? 'Pulled from the Shippo account' : `Pulled from the Shippo account — ${t._why}`,
+         t._from?.city ?? null, t._from?.state ?? null, t._from?.zip ?? null])
 
       if (t._order) {
         await query(
