@@ -22,6 +22,7 @@ const { validate } = require('../../middleware/validate')
 const customersSvc = require('../customers/customers.service')
 const quotationsSvc = require('../quotations/quotations.service')
 const invoicesSvc = require('../invoices/invoices.service')
+const paylinks = require('../stripe/paylinks.service')
 const ordersSvc = require('../orders/orders.service')
 // The very schemas the Printshop screens post through, so a payload arriving
 // from the CRM is checked exactly as one typed into Printshop would be.
@@ -301,6 +302,81 @@ router.post('/orders/:id/purchase-order', wrap(async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, po_number, status, created_at FROM purchase_orders WHERE id = $1`, [po.id])
   res.status(201).json({ data: rows[0] || { id: po.id, po_number: po.po_number, status: po.status }, already_existed: false })
+}))
+
+/* ── Invoice payment links ───────────────────────────────────────────────── */
+
+/**
+ * Where the pay page lives. Same source the Printshop admin route uses — a
+ * setting, so it can move without a redeploy — falling back to the env.
+ */
+async function payPageBase() {
+  const { rows } = await db.query(`SELECT value FROM settings WHERE key = 'pay_page_base_url'`)
+  const configured = (rows[0]?.value || process.env.PAY_PAGE_BASE_URL || '').trim()
+  if (!configured) return null
+  return configured.replace(/\/+$/, '')
+}
+
+/**
+ * The one payment link for an invoice, as the agent needs to see it in the CRM.
+ *
+ * The same row and the same URL the Printshop admin screen and the customer's
+ * Pay Now use — there is one link per invoice and this reads it, minting nothing.
+ * `payable` says whether the invoice can be collected online yet (a draft cannot,
+ * until it is finalised); `reason` says why not.
+ */
+router.get('/invoices/:id/payment-link', wrap(async (req, res) => {
+  const invoice = await paylinks.getInvoice(req.params.id)
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+  const link = await paylinks.findCurrentForInvoice(invoice.id)
+  const problem = paylinks.payableProblem(invoice)
+  const token = link ? await paylinks.decryptToken(link.token_encrypted) : null
+  const base = token ? await payPageBase() : null
+  res.json({ data: {
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    status: invoice.status,
+    payable: !problem,
+    reason: problem ? problem.message : null,
+    amount: Number(invoice.balance_due),
+    currency: invoice.currency || 'USD',
+    url: token && base ? `${base}/pay/${token}` : null,
+  } })
+}))
+
+/**
+ * Get (or mint) the invoice's payment link, so the agent can copy it or send it
+ * to the chat. A draft has no payable link, so this finalises it first — the
+ * agent is collecting, which is what Sent means — then hands back the one link
+ * Printshop keeps for that invoice. Re-minting is Printshop's job, not ours.
+ */
+router.post('/invoices/:id/payment-link', withoutAgent(require('zod').object({}).passthrough()), wrap(async (req, res) => {
+  const actor = await resolveActor(req.agentEmail)
+  const base = await payPageBase()
+  if (!base) return res.status(503).json({ error: 'The payment page address is not configured in Printshop.' })
+
+  let invoice = await paylinks.getInvoice(req.params.id)
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+
+  // A draft cannot be paid online. Finalise it — Draft → Sent — so a link can
+  // exist, using Printshop's own status rules (which stamp sent_at and fire the
+  // pipeline event). A settled or void invoice is left exactly as it is.
+  if (invoice.status === 'Draft') {
+    if (!actor) return res.status(503).json({ error: 'No Printshop user to finalise this invoice as.' })
+    await invoicesSvc.updateStatus(invoice.id, 'Sent', actor)
+    invoice = await paylinks.getInvoice(invoice.id)
+  }
+
+  const { link, token } = await paylinks.getOrCreateForInvoice(invoice.id, { createdBy: actor?.id || null })
+  await db.query(`UPDATE payment_links SET sent_at = NOW() WHERE id = $1`, [link.id])
+  res.json({ data: {
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    url: `${base}/pay/${token}`,
+    amount: Number(link.amount),
+    currency: link.currency,
+    expires_at: link.expires_at,
+  } })
 }))
 
 module.exports = router
