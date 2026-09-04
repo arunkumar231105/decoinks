@@ -472,9 +472,10 @@ async function create(data) {
     )
     invoice = invRows[0]
     if (!invoice) throw Object.assign(new Error('Linked invoice not found'), { statusCode: 404 })
-    if (invoice.status !== 'Paid') {
-      throw Object.assign(new Error('Sales orders can only be created from a fully paid invoice'), { statusCode: 409 })
-    }
+    // The owner removed the "fully paid" gate: a sales order can be raised from an
+    // invoice at any payment status (an order often goes into production against
+    // a deposit, before the balance is settled). The order still carries the
+    // invoice's payment figures, so what has and has not been paid is not lost.
     if (invoice.existing_order_id) {
       throw Object.assign(new Error('A sales order already exists for this invoice'), { statusCode: 409 })
     }
