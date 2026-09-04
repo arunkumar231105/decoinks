@@ -24,6 +24,7 @@ const quotationsSvc = require('../quotations/quotations.service')
 const invoicesSvc = require('../invoices/invoices.service')
 const paylinks = require('../stripe/paylinks.service')
 const ordersSvc = require('../orders/orders.service')
+const artworksSvc = require('../artworks/artworks.service')
 // The very schemas the Printshop screens post through, so a payload arriving
 // from the CRM is checked exactly as one typed into Printshop would be.
 const { createSchema: customerCreateSchema } = require('../customers/customers.routes')
@@ -377,6 +378,92 @@ router.post('/invoices/:id/payment-link', withoutAgent(require('zod').object({})
     currency: link.currency,
     expires_at: link.expires_at,
   } })
+}))
+
+/* ── Sales orders ────────────────────────────────────────────────────────── */
+
+/** The quotation/invoice becomes a sales order. Same service Printshop uses. */
+router.post('/orders/from-invoice/:invoiceId', wrap(async (req, res) => {
+  const actor = await resolveActor(req.body?.agent_email)
+  // Order type follows the invoice unless the caller names one.
+  let orderType = req.body?.order_type
+  if (!orderType) {
+    const { rows } = await db.query(`SELECT order_type FROM invoices WHERE id = $1`, [req.params.invoiceId])
+    orderType = rows[0]?.order_type || 'apparel'
+  }
+  const { order, alreadyExisted } = await invoicesSvc.convertToOrder(req.params.invoiceId, actor?.id ?? null, orderType)
+  res.status(alreadyExisted ? 200 : 201).json({ data: order, alreadyExisted })
+}))
+
+/** A sales order the agent starts directly. */
+router.post('/orders', wrap(async (req, res) => {
+  const actor = await resolveActor(req.body?.agent_email)
+  const { agent_email, ...payload } = req.body
+  const order = await ordersSvc.create({ ...payload, created_by: actor?.id ?? null })
+  res.status(201).json({ data: order })
+}))
+
+/** One order in full — items and artworks included. */
+router.get('/orders/:id', wrap(async (req, res) => {
+  res.json({ data: await ordersSvc.getById(req.params.id) })
+}))
+
+/** Every order this customer has. */
+router.get('/orders', wrap(async (req, res) => {
+  const customerId = String(req.query.customer_id || '').trim()
+  if (!customerId) return res.json({ data: [] })
+  const { rows } = await db.query(
+    `SELECT o.id, o.order_number, o.order_type, o.status, o.total, o.subtotal,
+            o.created_at, o.deadline, o.invoice_id, i.invoice_number
+       FROM orders o LEFT JOIN invoices i ON i.id = o.invoice_id
+      WHERE o.customer_id = $1 AND o.deleted_at IS NULL
+      ORDER BY o.created_at DESC LIMIT 50`, [customerId])
+  res.json({ data: rows })
+}))
+
+router.patch('/orders/:id/status', wrap(async (req, res) => {
+  const actor = await resolveActor(req.body?.agent_email)
+  const order = await ordersSvc.updateStatus(req.params.id, req.body.status, actor?.id ?? null)
+  res.json({ data: order })
+}))
+
+/* ── Order artwork (the one place artwork is captured) ──────────────────────
+ *
+ * Sent as base64 rather than multipart: the CRM has the image as a data URL
+ * already, and a JSON body crosses the service boundary without a file-upload
+ * middleware. The artwork service does the rest — MinIO, the AW- number, the
+ * version row — exactly as an upload through the Printshop screen would.
+ */
+router.get('/orders/:id/artworks', wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, artwork_no, name, file_url, thumbnail_url, file_type, status, created_at
+       FROM artworks WHERE order_id = $1 ORDER BY created_at`, [req.params.id])
+  res.json({ data: rows })
+}))
+
+router.post('/orders/:id/artworks', wrap(async (req, res) => {
+  const actor = await resolveActor(req.body?.agent_email)
+  const { name, dataBase64, fileName } = req.body || {}
+  if (!dataBase64) return res.status(400).json({ error: 'An artwork image is required.' })
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(String(dataBase64))
+  const mimetype = m ? m[1] : 'image/png'
+  const raw = m ? m[2] : String(dataBase64)
+  const buffer = Buffer.from(raw, 'base64')
+  const ext = (mimetype.split('/')[1] || 'png').replace('jpeg', 'jpg')
+  const originalname = fileName || `${(name || 'artwork').replace(/[^a-zA-Z0-9._-]/g, '_')}.${ext}`
+  const artwork = await artworksSvc.create({
+    name: name || originalname.replace(/\.[^.]+$/, ''),
+    order_id: req.params.id,
+    status: 'Pending Review',
+    uploaded_by: actor?.id ?? null,
+    file: { buffer, originalname, mimetype, size: buffer.length },
+  })
+  res.status(201).json({ data: artwork })
+}))
+
+router.delete('/orders/:id/artworks/:artworkId', wrap(async (req, res) => {
+  await artworksSvc.remove(req.params.artworkId)
+  res.json({ data: { ok: true } })
 }))
 
 module.exports = router
