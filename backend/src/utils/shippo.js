@@ -283,7 +283,57 @@ async function refundLabel(transactionId) {
   return { status: refund.status || 'QUEUED' }   // QUEUED | PENDING | SUCCESS | ERROR
 }
 
+// ── Reading back what the account has shipped ────────────────────────────────
+// Labels are not only bought from here. They are bought from Shippo's own
+// dashboard too, and until now nothing brought those back: the parcel went out
+// and the shop's own book never heard of it.
+
+async function shippoGet(path, timeoutMs = TIMEOUT_MS) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // `next` comes back as a whole URL, so a path and a link are both accepted.
+  const url = path.startsWith('http') ? path : `${SHIPPO_BASE}${path}`
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `ShippoToken ${SHIPPO_KEY}` },
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`Shippo ${res.status} on ${path}`)
+    return res.json()
+  } finally { clearTimeout(timer) }
+}
+
+/**
+ * Every purchased label, newest first. `rate` comes expanded, which carries the
+ * carrier, the service and what it cost; the address needs the shipment behind
+ * the rate, which shipmentBehindRate fetches.
+ *
+ * Shippo pages with a `next` link rather than a page number — asking for a page
+ * that does not exist is a 404, not an empty list — so the link is followed
+ * until it runs out. maxPages is a stop, not a target.
+ */
+async function listTransactions({ results = 100, maxPages = 20 } = {}) {
+  let url = `/transactions/?results=${results}&expand[]=rate`
+  const all = []
+  for (let page = 0; page < maxPages && url; page++) {
+    const body = await shippoGet(url)
+    all.push(...(body?.results ?? []))
+    url = body?.next || null
+  }
+  return all
+}
+
+/** Who a label was addressed to, and from where. */
+async function shipmentBehindRate(rateId) {
+  const rate = await shippoGet(`/rates/${rateId}`)
+  if (!rate?.shipment) return null
+  return typeof rate.shipment === 'string'
+    ? shippoGet(`/shipments/${rate.shipment}`)
+    : rate.shipment
+}
+
 module.exports = {
   fetchTracking, carrierToken, detectCarrier, isConfigured,
   getRates, buyLabel, refundLabel, labelConfigured, isTestLabelKey,
+  listTransactions, shipmentBehindRate,
 }

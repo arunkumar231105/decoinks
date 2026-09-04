@@ -25,7 +25,8 @@ async function list({ page = 1, limit = 10, status = '', search = '' }) {
   params.push(limit, offset)
   const { rows } = await query(
     `SELECT s.*, c.name AS supplier_name, o.order_number,
-            po.po_number, po.shipping_address AS po_shipping_address,
+            COALESCE(po.po_number, order_po.po_number) AS po_number,
+            po.shipping_address AS po_shipping_address,
             alloc.allocated_count,
             COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name,
             -- The carrier's own status wins when Shippo has reported one; the
@@ -36,6 +37,16 @@ async function list({ page = 1, limit = 10, status = '', search = '' }) {
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
      LEFT JOIN purchase_orders po ON po.id = s.po_id
+     -- A shipment belongs to a sales order OR a purchase order, never both —
+     -- the table's own check constraint says so. Nearly all of these go out to
+     -- customers against a sales order, which left the PO column empty on every
+     -- row. The purchase order behind the job is one step away through the
+     -- order, so that is what the column shows when there is no PO of its own.
+     LEFT JOIN LATERAL (
+       SELECT p.po_number FROM purchase_orders p
+        WHERE p.order_id = s.order_id AND p.deleted_at IS NULL
+        ORDER BY p.created_at LIMIT 1
+     ) order_po ON s.po_id IS NULL
      LEFT JOIN customers cust ON cust.id = o.customer_id
      LEFT JOIN LATERAL (
        SELECT COUNT(*)::INT AS allocated_count
@@ -75,12 +86,23 @@ async function stats() {
 async function getById(id) {
   const { rows } = await query(
     `SELECT s.*, c.name AS supplier_name, o.order_number,
-            po.po_number, po.shipping_address AS po_shipping_address,
+            COALESCE(po.po_number, order_po.po_number) AS po_number,
+            po.shipping_address AS po_shipping_address,
             COALESCE(s.customer_name, cust.name, s.recipient_name) AS customer_name
      FROM shipments s
      LEFT JOIN suppliers c ON c.id = s.supplier_id
      LEFT JOIN orders o ON o.id = s.order_id
      LEFT JOIN purchase_orders po ON po.id = s.po_id
+     -- A shipment belongs to a sales order OR a purchase order, never both —
+     -- the table's own check constraint says so. Nearly all of these go out to
+     -- customers against a sales order, which left the PO column empty on every
+     -- row. The purchase order behind the job is one step away through the
+     -- order, so that is what the column shows when there is no PO of its own.
+     LEFT JOIN LATERAL (
+       SELECT p.po_number FROM purchase_orders p
+        WHERE p.order_id = s.order_id AND p.deleted_at IS NULL
+        ORDER BY p.created_at LIMIT 1
+     ) order_po ON s.po_id IS NULL
      LEFT JOIN customers cust ON cust.id = o.customer_id
      WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [id]
