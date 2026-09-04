@@ -84,6 +84,19 @@ interface Shipment {
   shippo_transaction_id: string | null
 }
 
+// A delivery date the way a person says it: 4 Sep 26.
+//
+// Split rather than parsed. These are DATE columns and arrive as 2026-09-08,
+// which new Date() reads as midnight UTC — west of Greenwich that formats as
+// the 7th, so a promise made for Tuesday would read as Monday.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const fmtDay = (value?: string | null) => {
+  const m = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return value || '-'
+  const [, year, month, day] = m
+  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? month} ${year.slice(2)}`
+}
+
 // The effective status a row shows: live carrier/Shippo status if present,
 // otherwise the internal workflow status.
 const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
@@ -429,7 +442,7 @@ export function ShipmentsPage() {
                 </td>
                 <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
-                <td className="sh-muted">{s.estimated_delivery ?? '-'}</td>
+                <td className="sh-muted">{fmtDay(s.estimated_delivery)}</td>
                 <td className="sh-muted">{s.delivered_date ?? '-'}</td>
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td onClick={e => e.stopPropagation()}>
@@ -553,7 +566,7 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
     ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
     ['Last Scan', fmtLoc(s.last_scan_city, s.last_scan_state)],
     ['Original ETA', s.original_eta ?? '—'],
-    ['Estimated Delivery', s.estimated_delivery ?? '—'],
+    ['Estimated Delivery', s.estimated_delivery ? fmtDay(s.estimated_delivery) : '—'],
     ['Delivered', s.delivered_date ?? '—'],
     ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
   ]
