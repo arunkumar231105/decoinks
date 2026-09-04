@@ -25,6 +25,8 @@ const invoicesSvc = require('../invoices/invoices.service')
 const paylinks = require('../stripe/paylinks.service')
 const ordersSvc = require('../orders/orders.service')
 const artworksSvc = require('../artworks/artworks.service')
+const { uploadFile } = require('../../config/storage')
+const { readArtworkDimensions } = require('../../utils/artworkDimensions')
 // The very schemas the Printshop screens post through, so a payload arriving
 // from the CRM is checked exactly as one typed into Printshop would be.
 const { createSchema: customerCreateSchema } = require('../customers/customers.routes')
@@ -464,6 +466,25 @@ router.post('/orders/:id/artworks', wrap(async (req, res) => {
 router.delete('/orders/:id/artworks/:artworkId', wrap(async (req, res) => {
   await artworksSvc.remove(req.params.artworkId)
   res.json({ data: { ok: true } })
+}))
+
+// Generic per-line image upload for the CRM's order form — the same thing
+// Printshop's /api/upload/image does for its order lines (front/back artwork,
+// mockups, DTF artwork). Takes a base64 data URL, stores it in the same
+// 'item-images' bucket, and answers with { url, dimensions } so the line can
+// carry the stored URL exactly as Printshop's own form does.
+router.post('/upload-image', wrap(async (req, res) => {
+  const { dataBase64, fileName } = req.body || {}
+  if (!dataBase64) return res.status(400).json({ error: 'An image is required.' })
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(String(dataBase64))
+  const mimetype = m ? m[1] : 'image/png'
+  const buffer = Buffer.from(m ? m[2] : String(dataBase64), 'base64')
+  const ext = (mimetype.split('/')[1] || 'png').replace('jpeg', 'jpg')
+  const originalname = fileName || `line-image.${ext}`
+  let dimensions = null
+  try { dimensions = await readArtworkDimensions(buffer) } catch { /* dimensions are optional */ }
+  const url = await uploadFile(buffer, originalname, mimetype, 'item-images')
+  res.json({ data: { url, dimensions } })
 }))
 
 module.exports = router
