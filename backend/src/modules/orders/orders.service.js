@@ -459,7 +459,7 @@ async function create(data) {
 
   if (invoice_id) {
     const { rows: invRows } = await query(
-      `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.customer_id, i.supplier_id,
+      `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.amount_paid, i.customer_id, i.supplier_id,
               i.shipping_charges, i.rush_services,
               i.customer_name, i.billing_email, i.contact_number, i.shipping_address,
               existing_order.id AS existing_order_id
@@ -531,13 +531,19 @@ async function create(data) {
 
   // Resolve the amount received + effective payment status.
   const paidProvided  = amount_paid !== undefined && amount_paid !== null
+  // From an invoice, the order carries the invoice's REAL paid figure — not a
+  // hardcoded full-paid. Once the "must be fully paid" gate was removed, forcing
+  // Paid here recorded a payment the customer never made and marked an unpaid
+  // invoice Paid. An unpaid invoice now produces an unpaid order and no phantom
+  // payment; a genuinely paid one still reconciles to its existing payment.
+  const invoicePaid = invoice ? +Math.max(0, Math.min(Number(invoice.amount_paid || 0), totals.total)).toFixed(2) : 0
   const effectivePaid = invoice
-    ? totals.total
+    ? invoicePaid
     : paidProvided
     ? +Math.max(0, Math.min(Number(amount_paid), totals.total)).toFixed(2)
     : (payment_status === 'Paid' ? totals.total : 0)
   const effectiveStatus = invoice
-    ? 'Paid'
+    ? derivePaymentStatus(invoicePaid, totals.total, 'Unpaid')
     : paidProvided
     ? derivePaymentStatus(effectivePaid, totals.total, payment_status)
     : payment_status
