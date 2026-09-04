@@ -49,10 +49,18 @@ async function main() {
     `SELECT BTRIM(tracking_number) AS t FROM shipments
       WHERE NULLIF(BTRIM(tracking_number),'') IS NOT NULL`)).rows.map(r => r.t))
 
+  // Newest first, so once a whole page is already on file there is nothing
+  // older worth reading — this runs every ten minutes against an account that
+  // only grows, and reading all of it each time would get slower for ever.
   const fresh = []
-  const batch = await shippo.listTransactions({ results: 100, maxPages: PAGES })
-  const seen = batch.length
-  {
+  let seen = 0
+  let url = null
+  for (let page = 0; page < PAGES; page++) {
+    const { results: batch, next } = await shippo.listTransactionsPage({ url, results: 100 })
+    if (!batch.length) break
+    seen += batch.length
+    const before = fresh.length
+    {
     for (const t of batch) {
       // A label that failed to buy is not a parcel, and a test label is not a
       // parcel either.
@@ -62,6 +70,10 @@ async function main() {
       known.add(tracking)                       // the same label can list twice
       fresh.push(t)
     }
+    }
+    if (fresh.length === before && page > 0) break   // a page with nothing new
+    if (!next) break
+    url = next
   }
 
   // Only the new ones cost an extra call each.

@@ -312,6 +312,12 @@ async function shippoGet(path, timeoutMs = TIMEOUT_MS) {
  * that does not exist is a 404, not an empty list — so the link is followed
  * until it runs out. maxPages is a stop, not a target.
  */
+/** One page, and the link to the next — for callers that stop early. */
+async function listTransactionsPage({ url = null, results = 100 } = {}) {
+  const body = await shippoGet(url || `/transactions/?results=${results}&expand[]=rate`)
+  return { results: body?.results ?? [], next: body?.next || null }
+}
+
 async function listTransactions({ results = 100, maxPages = 20 } = {}) {
   let url = `/transactions/?results=${results}&expand[]=rate`
   const all = []
@@ -335,5 +341,5 @@ async function shipmentBehindRate(rateId) {
 module.exports = {
   fetchTracking, carrierToken, detectCarrier, isConfigured,
   getRates, buyLabel, refundLabel, labelConfigured, isTestLabelKey,
-  listTransactions, shipmentBehindRate,
+  listTransactions, listTransactionsPage, shipmentBehindRate,
 }
