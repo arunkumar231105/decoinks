@@ -73,8 +73,12 @@ async function recordCapture(order, linkId = null) {
     const { rows } = await db.query(`SELECT name FROM customers WHERE id = $1`, [link.customer_id])
     payerName = rows[0]?.name || null
   }
-  // PayPal's own name for the payer, when the shop has none of its own.
-  const paypalName = [order?.payer?.name?.given_name, order?.payer?.name?.surname].filter(Boolean).join(' ')
+  // Who actually paid, as PayPal reports them. Often not the customer: a
+  // colleague, a spouse, or a company account settles the bill. `customer_name`
+  // is who the money is FOR; this is who it came FROM, and conflating them made
+  // the Payments list credit every payment to the customer on the invoice.
+  const paidBy = [order?.payer?.name?.given_name, order?.payer?.name?.surname]
+    .filter(Boolean).join(' ').trim() || null
 
   const gross = Number(capture.amount?.value || 0)
   // PayPal reports its fee on the capture, so `fee_amount` is the real figure
@@ -92,9 +96,10 @@ async function recordCapture(order, linkId = null) {
     invoice_id: invoice?.id || null,
     order_id: invoice?.order_id || null,
     customer_id: invoice?.customer_id || link.customer_id || null,
-    customer_name: payerName || paypalName || null,
+    customer_name: payerName || paidBy || null,
     received_into_account_id: await paypalAccountId(),
-    received_from_name: payerName || paypalName || null,
+    // The payer first, the customer only when PayPal names nobody.
+    received_from_name: paidBy || payerName || null,
     notes: invoice
       ? `Online payment via PayPal (${id})`
       : `Advance payment via PayPal before invoicing${link.description ? ` — ${link.description}` : ''} (${id})`,
@@ -132,4 +137,53 @@ async function settle(payment, captureId, linkId) {
   }
 }
 
-module.exports = { recordCapture, paypalAccountId }
+/**
+ * Money that arrived at PayPal with no link behind it.
+ *
+ * A QR code, a PayPal.Me address or an invoice sent from PayPal itself is a
+ * transfer straight into the merchant account. It never touches our checkout,
+ * so it carries no `custom_id`, no link, and nothing that says which customer
+ * or invoice it belongs to — only who paid, how much, and when.
+ *
+ * So it is recorded exactly as far as the truth goes: a real payment against
+ * nobody, which staff then attach to an invoice from the dropdown on the
+ * invoice form. That is the same road an advance payment already travels, and
+ * it beats the alternatives — guessing a customer from a name, or leaving the
+ * money out of the books entirely because we cannot name them.
+ */
+async function recordUnlinkedPayment({ transactionId, amount, currency = 'USD', fee = 0,
+                                       payerName = null, payerEmail = null, paidAt = null,
+                                       source = 'PayPal' }) {
+  if (!transactionId || !(Number(amount) > 0)) {
+    logger.warn({ transactionId }, 'Unlinked PayPal payment missing an id or amount — not recorded')
+    return { payment: null, created: false, skipped: 'incomplete' }
+  }
+
+  const { rows: existing } = await db.query(
+    `SELECT * FROM payments WHERE transaction_id = $1 LIMIT 1`, [transactionId])
+  if (existing[0]) return { payment: existing[0], created: false }
+
+  const who = (payerName || payerEmail || null)
+  const payment = await paymentsService.create({
+    amount: Number(amount),
+    fee_amount: Number(fee) || 0,
+    payment_method: 'PayPal',
+    status: 'Completed',
+    transaction_id: transactionId,
+    payment_date: paidAt ? String(paidAt).slice(0, 10) : null,
+    // No customer and no invoice: this is what "unallocated" means, and the
+    // invoice form offers exactly these for an agent to claim.
+    invoice_id: null,
+    order_id: null,
+    customer_id: null,
+    customer_name: null,
+    received_from_name: who,
+    received_into_account_id: await paypalAccountId(),
+    notes: `${source} payment received with no payment link${payerEmail ? ` — ${payerEmail}` : ''} (${transactionId}). Not yet matched to a customer.`,
+  })
+
+  logger.info({ transactionId, paymentId: payment.id, who }, 'Unlinked PayPal payment recorded')
+  return { payment, created: true }
+}
+
+module.exports = { recordCapture, recordUnlinkedPayment, paypalAccountId }

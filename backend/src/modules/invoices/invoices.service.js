@@ -964,6 +964,16 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   const orderId = ordRows[0].id
   await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
 
+  // The invoice has to point back. The order already carries invoice_id, but
+  // the invoice page reads its own order_id to decide whether an order exists —
+  // so with only one side written it went on offering "convert to sales order"
+  // for an invoice that already had one, and the conversion was then refused
+  // because the other side could see it. One link, both directions.
+  await q.query(
+    `UPDATE invoices SET order_id = COALESCE(order_id, $2), updated_at = NOW() WHERE id = $1`,
+    [invoiceId, orderId]
+  )
+
   await q.query(
     `INSERT INTO pipeline_events
        (event_type, source_table, source_id, target_table, target_id, triggered_by, metadata)
@@ -1109,10 +1119,15 @@ async function recordPayment(id, { amount, payment_method, reference_no = null, 
   try {
     await client.query('BEGIN')
 
+    // Give it a payment number like every other payment has. Recording one from
+    // the invoice used to leave payment_number NULL, so the Payments list showed
+    // a blank Payment ID for it. getNextNumber runs in its own transaction, so
+    // it is safe to call inside this one.
+    const paymentNumber = await getNextNumber('PAY', 'payments', 'payment_number')
     await client.query(
-      `INSERT INTO payments (invoice_id, amount, payment_method, reference_no, notes, recorded_by)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [id, amount, payment_method, reference_no, notes, actorId || null]
+      `INSERT INTO payments (payment_number, invoice_id, amount, payment_method, reference_no, notes, recorded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [paymentNumber, id, amount, payment_method, reference_no, notes, actorId || null]
     )
 
     // Recalculate total paid from the payments table (source of truth)

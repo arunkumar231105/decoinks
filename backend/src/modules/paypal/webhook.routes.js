@@ -30,6 +30,7 @@ const router = Router()
 
 const HANDLED = new Set([
   'PAYMENT.CAPTURE.COMPLETED',
+  'PAYMENT.SALE.COMPLETED',
   'CHECKOUT.ORDER.APPROVED',
 ])
 
@@ -96,9 +97,42 @@ router.post('/', async (req, res) => {
         ? await paypal.api(`/v2/checkout/orders/${encodeURIComponent(orderId)}`)
         : { id: capture.id, purchase_units: [{ custom_id: capture.custom_id, payments: { captures: [capture] } }] }
 
-      await recorder.recordCapture(order, capture.custom_id || null)
+      // A capture with no link behind it is money from a QR code, a PayPal.Me
+      // address, or an invoice sent from PayPal — it never touched our checkout.
+      // Record it against nobody rather than dropping it; an agent claims it
+      // from the invoice form.
+      if (!capture.custom_id && !orderId) {
+        await recorder.recordUnlinkedPayment({
+          transactionId: capture.id,
+          amount: capture.amount?.value,
+          currency: capture.amount?.currency_code,
+          fee: capture.seller_receivable_breakdown?.paypal_fee?.value,
+          payerName: [event.resource?.payer?.name?.given_name, event.resource?.payer?.name?.surname]
+            .filter(Boolean).join(' ').trim() || null,
+          payerEmail: event.resource?.payer?.email_address || null,
+          paidAt: capture.create_time,
+        })
+      } else {
+        await recorder.recordCapture(order, capture.custom_id || null)
+      }
+    } else if (event.event_type === 'PAYMENT.SALE.COMPLETED') {
+      // The older event shape, which some merchant-level flows still send.
+      const sale = event.resource || {}
+      await recorder.recordUnlinkedPayment({
+        transactionId: sale.id,
+        amount: sale.amount?.total ?? sale.amount?.value,
+        currency: sale.amount?.currency ?? sale.amount?.currency_code,
+        fee: sale.transaction_fee?.value,
+        payerName: null,
+        payerEmail: null,
+        paidAt: sale.create_time,
+      })
     } else if (!HANDLED.has(event.event_type)) {
-      logger.debug({ type: event.event_type }, 'PayPal event ignored')
+      // Log the whole shape of anything we do not yet handle. A QR payment's
+      // event shape is not something to guess at — this captures the real one
+      // the first time it arrives.
+      logger.warn({ type: event.event_type, resource: event.resource },
+        'Unhandled PayPal event — shape captured for review')
     }
 
     await db.query(`UPDATE stripe_events SET processed_at = NOW(), error = NULL WHERE event_id = $1`, [id])

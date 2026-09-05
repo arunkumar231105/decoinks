@@ -456,7 +456,7 @@ function getInvoiceCounters(
 // invoices/orders use "bank_transfer"). Normalise known variants to this form's
 // option values on convert; any unknown/legacy value is returned unchanged so
 // nothing is lost (a fallback <option> renders it).
-const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'bank_transfer', 'cash', 'other']
+const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'bank_transfer', 'deposit', 'cash', 'other']
 const normalizePaymentMethod = (v?: string | null): string => {
   const raw = String(v ?? '').trim()
   if (!raw) return ''
@@ -520,7 +520,7 @@ export function NewInvoicePage() {
   const [shippingAddress, setShippingAddress] = useState('')
 
   // Payment
-  const [paymentTerms, setPaymentTerms] = useState('Due on Receipt')
+  const [paymentTerms, setPaymentTerms] = useState('Advance')
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [currency, setCurrency] = useState('USD - US Dollar')
   const [sendPaymentLink, setSendPaymentLink] = useState(false)
@@ -1688,6 +1688,7 @@ export function NewInvoicePage() {
                     setInvoiceStatus('Sent')
                   }
                 }}>
+                  <option>Advance</option>
                   <option>Net 15</option>
                   <option>Net 30</option>
                   <option>Due on Receipt</option>
@@ -1703,6 +1704,7 @@ export function NewInvoicePage() {
                   <option value="paypal">PayPal</option>
                   <option value="shopify">Shopify</option>
                   <option value="bank_transfer">Bank Transfer</option>
+                  <option value="deposit">Deposit</option>
                   <option value="cash">Cash</option>
                   <option value="other">Other</option>
                 </select>

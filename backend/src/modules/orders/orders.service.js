@@ -128,11 +128,16 @@ async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {})
       : { rows: [] }
 
     if (!existing.length) {
+      // Give it a payment number like every other payment has. Recording one
+      // from a sales order used to leave payment_number NULL, so the Payments
+      // list showed a blank Payment ID. getNextNumber runs in its own
+      // transaction, so it is safe to call inside this one.
+      const paymentNumber = await getNextNumber('PAY', 'payments', 'payment_number')
       await client.query(
-        `INSERT INTO payments (invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO payments (payment_number, invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
-          invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
+          paymentNumber, invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
           paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
         ]
       )
@@ -454,7 +459,7 @@ async function create(data) {
 
   if (invoice_id) {
     const { rows: invRows } = await query(
-      `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.customer_id, i.supplier_id,
+      `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.amount_paid, i.customer_id, i.supplier_id,
               i.shipping_charges, i.rush_services,
               i.customer_name, i.billing_email, i.contact_number, i.shipping_address,
               existing_order.id AS existing_order_id
@@ -467,9 +472,10 @@ async function create(data) {
     )
     invoice = invRows[0]
     if (!invoice) throw Object.assign(new Error('Linked invoice not found'), { statusCode: 404 })
-    if (invoice.status !== 'Paid') {
-      throw Object.assign(new Error('Sales orders can only be created from a fully paid invoice'), { statusCode: 409 })
-    }
+    // The owner removed the "fully paid" gate: a sales order can be raised from an
+    // invoice at any payment status (an order often goes into production against
+    // a deposit, before the balance is settled). The order still carries the
+    // invoice's payment figures, so what has and has not been paid is not lost.
     if (invoice.existing_order_id) {
       throw Object.assign(new Error('A sales order already exists for this invoice'), { statusCode: 409 })
     }
@@ -525,13 +531,19 @@ async function create(data) {
 
   // Resolve the amount received + effective payment status.
   const paidProvided  = amount_paid !== undefined && amount_paid !== null
+  // From an invoice, the order carries the invoice's REAL paid figure — not a
+  // hardcoded full-paid. Once the "must be fully paid" gate was removed, forcing
+  // Paid here recorded a payment the customer never made and marked an unpaid
+  // invoice Paid. An unpaid invoice now produces an unpaid order and no phantom
+  // payment; a genuinely paid one still reconciles to its existing payment.
+  const invoicePaid = invoice ? +Math.max(0, Math.min(Number(invoice.amount_paid || 0), totals.total)).toFixed(2) : 0
   const effectivePaid = invoice
-    ? totals.total
+    ? invoicePaid
     : paidProvided
     ? +Math.max(0, Math.min(Number(amount_paid), totals.total)).toFixed(2)
     : (payment_status === 'Paid' ? totals.total : 0)
   const effectiveStatus = invoice
-    ? 'Paid'
+    ? derivePaymentStatus(invoicePaid, totals.total, 'Unpaid')
     : paidProvided
     ? derivePaymentStatus(effectivePaid, totals.total, payment_status)
     : payment_status

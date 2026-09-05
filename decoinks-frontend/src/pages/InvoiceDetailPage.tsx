@@ -148,10 +148,26 @@ export function InvoiceDetailPage() {
     onError: (err) => toast.error(getApiError(err)),
   })
 
-  // Navigate to order form with invoice pre-populated instead of direct API call
+  // Ask the server to make the order, rather than opening a blank form that
+  // then tries to. Paying an invoice in full already raises its sales order, so
+  // one often exists by the time anyone presses this — the endpoint hands back
+  // whichever order belongs to the invoice, new or already there, and we go to
+  // it. Filling in the form first only to be told at save that the order exists
+  // is a wasted piece of work and reads as a failure.
+  const convertMutation = useMutation({
+    mutationFn: (order_type: string) =>
+      api.post(`/invoices/${id}/convert-to-order`, { order_type }).then(r => r.data),
+    onSuccess: (body: any) => {
+      const order = body?.data ?? body
+      toast.success(body?.message || `Order ${order?.order_number ?? ''} ready`)
+      navigate(`/orders/${order.id}`)
+    },
+    onError: (err) => toast.error(getApiError(err)),
+  })
+
   const handleConvertToOrder = (order_type: string) => {
     setOrderTypeModal(false)
-    navigate('/orders/new', { state: { fromInvoiceId: id, orderType: order_type } })
+    convertMutation.mutate(order_type)
   }
 
   // ── Helpers ──

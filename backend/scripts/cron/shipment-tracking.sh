@@ -6,6 +6,10 @@
 # root mailbox night after night.
 LOG=/var/log/decoinks-shipment-tracking.log
 echo "=== $(date -Is) ===" >> "$LOG"
+# Two halves of the same hour. First bring back any label the account bought
+# elsewhere — Shippo's own dashboard, another tool — because a parcel the book
+# has never heard of cannot be tracked. Then refresh what the couriers say.
+docker exec decoinks_backend node /app/scripts/pull-labels-from-shippo.js --apply >> "$LOG" 2>&1
 docker exec decoinks_backend node /app/scripts/sync-shipment-tracking.js --apply >> "$LOG" 2>&1
 # Keep the last 2000 lines; a year of hourly runs is otherwise a large file.
 tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"

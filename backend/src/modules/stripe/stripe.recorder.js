@@ -138,6 +138,11 @@ async function recordSucceededIntent(intent) {
   }
   const label = intent.metadata?.link_description || null
 
+  // Who actually paid, as it appears on the card. Often not the customer — a
+  // colleague or a company card settles the bill — so this is kept apart from
+  // `customer_name`, which is who the money is for.
+  const paidBy = (intent.latest_charge?.billing_details?.name || '').trim() || null
+
   const payment = await paymentsService.create({
     amount: dollars(intent.amount_received ?? intent.amount),
     fee_amount: feeFromIntent(intent),
@@ -150,7 +155,8 @@ async function recordSucceededIntent(intent) {
     customer_id: invoice?.customer_id || metaCustomerId || null,
     customer_name: payerName,
     received_into_account_id: await stripeAccountId(),
-    received_from_name: payerName,
+    // The payer first, the customer only when the card names nobody.
+    received_from_name: paidBy || payerName,
     notes: invoice
       ? `Online card payment via Stripe (${intentId})`
       : `Advance payment via Stripe before invoicing${label ? ` — ${label}` : ''} (${intentId})`,

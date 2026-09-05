@@ -151,3 +151,6 @@ router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).
 router.delete('/:id',           controller.remove)
 
 module.exports = router
+// The create schema, so the CRM's service route validates an invoice exactly as
+// this one does. Exported rather than copied.
+module.exports.createSchema = createSchema

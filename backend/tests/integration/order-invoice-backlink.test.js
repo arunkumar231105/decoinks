@@ -51,12 +51,18 @@ test('creating an order from an invoice sets invoices.order_id back-link', async
   expect(await invoiceOrderId(invId)).toBe(order.id)   // back-link now set → UI guard activates
 })
 
-test('an unpaid invoice cannot create a sales order', async () => {
+// The "fully paid" gate was removed on purpose: work often goes into
+// production against a deposit, long before the balance is settled. The test
+// used to assert the gate, so it began failing the moment the gate went.
+test('an invoice that is not yet paid can still raise its sales order', async () => {
   const invId = await seedInvoice('INV-BL-UNPAID', 'Draft')
-  await expect(
-    orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
-  ).rejects.toMatchObject({ statusCode: 409 })
-  expect(await invoiceOrderId(invId)).toBeNull()
+
+  const order = await orders.create({ invoice_id: invId, order_type: 'apparel', created_by: userId })
+
+  expect(order.invoice_id).toBe(invId)
+  expect(await invoiceOrderId(invId)).toBe(order.id)
+  // What has and has not been paid is carried over, not lost.
+  expect(Number(order.total)).toBe(100)
 })
 
 test('a second order cannot be created from the same paid invoice', async () => {

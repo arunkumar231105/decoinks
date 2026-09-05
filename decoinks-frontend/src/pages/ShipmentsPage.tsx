@@ -84,6 +84,19 @@ interface Shipment {
   shippo_transaction_id: string | null
 }
 
+// A delivery date the way a person says it: 4 Sep 26.
+//
+// Split rather than parsed. These are DATE columns and arrive as 2026-09-08,
+// which new Date() reads as midnight UTC — west of Greenwich that formats as
+// the 7th, so a promise made for Tuesday would read as Monday.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const fmtDay = (value?: string | null) => {
+  const m = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return value || '-'
+  const [, year, month, day] = m
+  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? month} ${year.slice(2)}`
+}
+
 // The effective status a row shows: live carrier/Shippo status if present,
 // otherwise the internal workflow status.
 const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
@@ -130,11 +143,10 @@ export function ShipmentsPage() {
     queryKey: ['shipments', 'all'],
     queryFn: () => api.get('/shipments', { params: { page: 1, limit: 1000 } }).then(r => r.data.data),
     placeholderData: keepPreviousData,
-  })
-  // Dashboard-card counts aggregated across ALL shipments (not just this page).
-  const { data: statsData } = useQuery({
-    queryKey: ['shipments-stats'],
-    queryFn: () => api.get('/shipments/stats').then(r => r.data.data),
+    // The courier sync runs every ten minutes; this picks up what it brought
+    // without anyone reloading the page.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   const allShipments: Shipment[] = data?.rows ?? []
@@ -245,23 +257,18 @@ export function ShipmentsPage() {
     if (s.delivered_date) return s.delivered_date > eta          // delivered late
     return !isDelivered(s) && todayStr > eta                     // overdue, still not delivered
   }
-  // Prefer the server-side aggregate (all shipments); fall back to page-computed.
-  const stats = statsData ? {
-    total: statsData.total,
-    active: statsData.active,
-    inTransit: statsData.in_transit,
-    delivered: statsData.delivered,
-    onTime: statsData.on_time,
-    delayed: statsData.delayed,
-    needsAttention: statsData.needs_attention,
-  } : {
-    total,
-    active: allShipments.filter(s => !isDelivered(s)).length,
-    inTransit: allShipments.filter(s => isTransit(s)).length,
-    delivered: allShipments.filter(s => isDelivered(s)).length,
-    onTime: allShipments.filter(isOnTime).length,
-    delayed: allShipments.filter(isDelayed).length,
-    needsAttention: allShipments.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
+  // Counted from the rows on screen, so the cards and the table always agree.
+  // They used to come from a separate call that knew nothing of the filters, so
+  // choosing a date range narrowed the table and left every card unchanged —
+  // seven numbers describing a different set of parcels than the one below them.
+  const stats = {
+    total: filtered.length,
+    active: filtered.filter(s => !isDelivered(s)).length,
+    inTransit: filtered.filter(s => isTransit(s)).length,
+    delivered: filtered.filter(s => isDelivered(s)).length,
+    onTime: filtered.filter(isOnTime).length,
+    delayed: filtered.filter(isDelayed).length,
+    needsAttention: filtered.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
   }
 
   // Server-side export: downloads the FULL filtered result set as CSV with
@@ -435,7 +442,7 @@ export function ShipmentsPage() {
                 </td>
                 <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
-                <td className="sh-muted">{s.estimated_delivery ?? '-'}</td>
+                <td className="sh-muted">{fmtDay(s.estimated_delivery)}</td>
                 <td className="sh-muted">{s.delivered_date ?? '-'}</td>
                 <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
                 <td onClick={e => e.stopPropagation()}>
@@ -559,7 +566,7 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
     ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
     ['Last Scan', fmtLoc(s.last_scan_city, s.last_scan_state)],
     ['Original ETA', s.original_eta ?? '—'],
-    ['Estimated Delivery', s.estimated_delivery ?? '—'],
+    ['Estimated Delivery', s.estimated_delivery ? fmtDay(s.estimated_delivery) : '—'],
     ['Delivered', s.delivered_date ?? '—'],
     ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
   ]
