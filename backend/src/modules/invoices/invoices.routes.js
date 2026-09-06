@@ -43,7 +43,11 @@ const createSchema = z.object({
   supplier_id:      z.string().uuid().optional().nullable(),
   customer_id:      z.string().uuid().optional().nullable(),
   issue_date:       z.string().optional().nullable(),
+  // Kept so existing callers do not break; the service sets it from the issue
+  // date regardless, because payment is due the day the invoice is raised.
   due_date:         z.string().optional().nullable(),
+  // Where the document has got to, as opposed to where the money has got to.
+  invoice_stage:    z.enum(['Draft', 'Saved', 'Sent']).optional().nullable(),
   subtotal:         z.number().nonnegative().optional(),
   discount_amt:     z.number().nonnegative().optional(),
   discount_pct:     z.number().nonnegative().optional(),
@@ -76,7 +80,11 @@ const createSchema = z.object({
 const updateSchema = z.object({
   supplier_id:      z.string().uuid().optional().nullable(),
   issue_date:       z.string().optional().nullable(),
+  // Kept so existing callers do not break; the service sets it from the issue
+  // date regardless, because payment is due the day the invoice is raised.
   due_date:         z.string().optional().nullable(),
+  // Where the document has got to, as opposed to where the money has got to.
+  invoice_stage:    z.enum(['Draft', 'Saved', 'Sent']).optional().nullable(),
   subtotal:         z.number().nonnegative().optional(),
   discount_amt:     z.number().nonnegative().optional(),
   discount_pct:     z.number().nonnegative().optional(),

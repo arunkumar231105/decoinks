@@ -147,8 +147,16 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void'],
     kpis: [
       { label: 'Total Invoices', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'blue' },
-      { label: 'Partially Paid', icon: Clock3, value: r => countStatus(r, 'partially paid'), tone: 'amber' },
+      // Counts the document's own stage now that the money has its own field —
+      // as a payment status "Sent" was never an answer to "has it been paid?".
+      { label: 'Sent', icon: Send,
+        value: r => r.filter(x => String(x.invoice_stage || '').toLowerCase() === 'sent').length, tone: 'blue' },
+      // Part-payment is not something this shop accepts, so the card that
+      // counted it could only ever read nought. What is worth seeing beside
+      // Paid is what has not been.
+      { label: 'Unpaid', icon: Clock3,
+        value: r => r.filter(x => !['paid', 'void'].includes(String(x.status || '').toLowerCase())).length,
+        tone: 'amber' },
       { label: 'Paid', icon: CircleDollarSign, value: r => countStatus(r, 'paid'), tone: 'green' },
       { label: 'Total Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
       { label: 'Balance Due', icon: Clock3, value: r => money(r.reduce((a, x) => a + Number(x.balance_due || 0), 0)), tone: 'purple' },
@@ -159,7 +167,17 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'customer', label: 'Customer', sortKey: ['customer_display_name', 'customer_name'], render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
       { key: 'invoice_date', label: 'Invoice Date', render: r => date(pick(r, 'invoice_date', 'issue_date')) },
       { key: 'due_date', label: 'Due Date', render: r => date(r.due_date) },
-      { key: 'payment', label: 'Payment Status', sortKey: ['payment_status', 'status'], render: r => <Badge>{common.empty(r, 'payment_status', 'status')}</Badge> },
+      // Two questions, two columns. Where the document has got to, and where
+      // the money has got to — `status` used to answer both at once, so "Sent"
+      // could mean either.
+      { key: 'invoice_stage', label: 'Invoice Status', render: r => <Badge>{common.empty(r, 'invoice_stage')}</Badge> },
+      // The shop is paid in full before the work starts, so this reads Paid or
+      // it reads Unpaid. A voided invoice is neither, and says so.
+      { key: 'payment', label: 'Payment Status', sortKey: ['payment_status', 'status'],
+        render: r => {
+          const raw = String(pick(r, 'payment_status', 'status') ?? '')
+          return <Badge>{raw === 'Void' ? 'Void' : raw === 'Paid' ? 'Paid' : 'Unpaid'}</Badge>
+        } },
       { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
       { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
