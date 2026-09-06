@@ -218,6 +218,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
       { key: 'delivery', label: 'Estimated Delivery', sortKey: ['expected_delivery_date', 'due_date'], render: r => date(pick(r, 'expected_delivery_date', 'due_date')) },
+      // One sales order can be bought against more than one purchase order —
+      // a job split between two factories — so the count is worth seeing.
+      { key: 'po_count', label: 'No of PO', numeric: true, render: r => Number(r.po_count || 0).toLocaleString() },
     ],
   },
   'purchase-orders': {
