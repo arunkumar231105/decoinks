@@ -391,6 +391,17 @@ export function InvoicePrintPage() {
   // Standalone artwork records and item images can represent the same files;
   // use the larger complete source rather than double-counting both stores.
   const totalArts = Math.max(itemArtworkTotal, invoiceArtworks.length)
+  // Artwork columns render only when there is artwork — no empty Front/Back
+  // Artwork columns on an invoice that carries none.
+  const apparelHasFront = !isDtf && !isGangsheet && items.some((item, idx) => {
+    const art = artworks[idx]
+    return (art?.file_url && art.file_type !== 'pdf') || item.front_image
+  })
+  const apparelHasBack = !isDtf && !isGangsheet && items.some((item, idx) => {
+    const artBack = artworks[idx + items.length]
+    return (artBack?.file_url && artBack.file_type !== 'pdf') || item.back_image
+  })
+  const apparelCols = 7 + (apparelHasFront ? 1 : 0) + (apparelHasBack ? 1 : 0)
 
   const payMethod = titleCase(invoice.payment_method || invoice.payments?.[0]?.method)
 
@@ -470,6 +481,8 @@ export function InvoicePrintPage() {
   const dtfFlat = dtfGroups.flatMap((g, gi) =>
     g.rows.map((row, ri) => ({ ...row, group: g, groupIdx: gi, rowIdx: ri }))
   )
+  // DTF artwork-thumbnail column only when a transfer actually has an image.
+  const dtfHasImage = dtfFlat.some((r) => (r.art?.file_url && r.art.file_type !== 'pdf') || r.item.front_image || r.item.artwork_image)
 
   return (
     <ArtworkLightboxProvider>
@@ -721,7 +734,7 @@ export function InvoicePrintPage() {
                     <span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
                   <th style={{ width: 90 }}>Artwork No</th>
-                  <th style={{ width: 88 }}>Artwork Thumbnail</th>
+                  {dtfHasImage && <th style={{ width: 88 }}>Artwork Thumbnail</th>}
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 82 }}>Qty<br />(Transfers)</th>
                   <th style={{ width: 76 }}>Rate<br />(USD)</th>
@@ -730,7 +743,7 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={dtfHasImage ? 8 : 7} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : dtfFlat.map((r, sno) => {
                   const frontUrl = (r.art?.file_url && r.art.file_type !== 'pdf') ? r.art.file_url : (r.item.front_image ?? r.item.artwork_image ?? null)
                   return (
@@ -742,9 +755,9 @@ export function InvoicePrintPage() {
                       </td>
                     )}
                     <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
-                    <td>
+                    {dtfHasImage && <td>
                       <ArtworkThumb src={frontUrl} alt="front" label={r.artNo} className="art-thumb" fallback={<div className="art-empty">🖼</div>} />
-                    </td>
+                    </td>}
                     <td style={{ fontWeight: 500 }}>{r.sizeStr}</td>
                     <td style={{ fontWeight: 600, color: '#111827' }}>{r.item.qty}</td>
                     {r.rowIdx === 0 && (
@@ -775,15 +788,15 @@ export function InvoicePrintPage() {
                   <th style={{ width: 68 }}>Color</th>
                   <th style={{ width: 58 }}>Qty<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(Shirts)</span></th>
                   <th style={{ width: 78 }}>Sizes<br /><span style={{ fontSize: 8, opacity: 0.75 }}>(Size Ratio)</span></th>
-                  <th style={{ width: 70 }}>Artwork Front</th>
-                  <th style={{ width: 70 }}>Artwork Back</th>
+                  {apparelHasFront && <th style={{ width: 70 }}>Artwork Front</th>}
+                  {apparelHasBack && <th style={{ width: 70 }}>Artwork Back</th>}
                   <th style={{ width: 74 }}>Unit Rate<br />({currency})</th>
                   <th style={{ width: 74 }}>Amount<br />({currency})</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={apparelCols} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : items.map((item, idx) => {
                   const art     = artworks[idx] ?? null
                   const artBack = artworks[idx + items.length] ?? null
@@ -811,12 +824,12 @@ export function InvoicePrintPage() {
                         <div style={{ color: '#64748b', fontSize: 8.5 }}>pcs</div>
                       </td>
                       <td style={{ fontSize: 10, fontWeight: 600 }}>{item.sizes || '—'}</td>
-                      <td>
+                      {apparelHasFront && <td>
                         <ArtworkThumb src={frontUrl} alt="front" label={`${art?.artwork_no || item.description} — Front`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
-                      </td>
-                      <td>
+                      </td>}
+                      {apparelHasBack && <td>
                         <ArtworkThumb src={backUrl} alt="back" label={`${artBack?.artwork_no || item.description} — Back`} className="art-thumb" fallback={<div className="art-empty">—</div>} />
-                      </td>
+                      </td>}
                       <td style={{ fontWeight: 500 }}>{rateIn(item.unit_price, currency)}</td>
                       <td style={{ fontWeight: 700 }}>{money(item.amount)}</td>
                     </tr>
@@ -839,7 +852,7 @@ export function InvoicePrintPage() {
                     </div>
                   </div>
                 </td>
-                <td style={{ width: '25%' }}>
+                {totalArts > 0 && <td style={{ width: '25%' }}>
                   <div className="stat-cell">
                     <div className="stat-icon">🖼</div>
                     <div>
@@ -847,7 +860,7 @@ export function InvoicePrintPage() {
                       <div className="stat-val">{totalArts}</div>
                     </div>
                   </div>
-                </td>
+                </td>}
                 <td style={{ width: '25%' }}>
                   <div className="stat-cell">
                     <div className="stat-icon">📦</div>
