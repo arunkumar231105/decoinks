@@ -254,6 +254,31 @@ async function ensureFolder(relPath) {
   return current
 }
 
+// Move a file to a new path (WebDAV MOVE). Overwrite is refused (Overwrite: F)
+// so a move into the Trash bin can never clobber a file already parked there —
+// the caller gets { taken: true } and picks a non-colliding name instead, the
+// same collision discipline putFileIfAbsent gives a save. The destination's
+// parent folder must already exist (ensureFolder it first).
+async function moveFile(fromRel, toRel) {
+  const cfg = getConfig()
+  let result
+  try {
+    result = await ncRequest(cfg, 'MOVE', davUrl(cfg, fromRel), {
+      headers: { Destination: davUrl(cfg, toRel), Overwrite: 'F' },
+      raw: true,
+    })
+  } catch (err) {
+    // ncRequest turns a 404 into a thrown NextcloudError before we see the
+    // status. A missing source means the file is already gone from Nextcloud
+    // (a stale vault row), so report that rather than failing the caller.
+    if (err && err.statusCode === 404) return { gone: true }
+    throw err
+  }
+  if (result.status === 412) return { taken: true }              // destination exists
+  if (![201, 204].includes(result.status)) throw new NextcloudError(`Move failed with status ${result.status}`, 502)
+  return { taken: false, path: toRel }
+}
+
 // Nextcloud preview (thumbnail) endpoint — proxied so the browser never needs
 // Nextcloud credentials. Falls back to the raw file on preview failure.
 //
@@ -275,4 +300,4 @@ async function getPreview(relPath, { width = 300, height = 300 } = {}) {
   return downloadFile(relPath)
 }
 
-module.exports = { testConnection, listFolder, scanWatched, searchModifiedSince, downloadFile, uploadFile, putFileAtPath, putFileIfAbsent, ensureFolder, getPreview }
+module.exports = { testConnection, listFolder, scanWatched, searchModifiedSince, downloadFile, uploadFile, putFileAtPath, putFileIfAbsent, ensureFolder, moveFile, getPreview }

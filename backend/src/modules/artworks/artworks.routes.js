@@ -2,7 +2,7 @@ const { Router } = require('express')
 const { z } = require('zod')
 const { verifyToken } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
-const { uploadArtwork, uploadStudioArtwork } = require('../../middleware/upload')
+const { uploadArtwork, uploadStudioArtwork, uploadVaultFile } = require('../../middleware/upload')
 const controller = require('./artworks.controller')
 const designTasksRoutes = require('./design-tasks.routes')
 const productionArtworkRoutes = require('./production-artwork.routes')
@@ -20,6 +20,9 @@ router.get('/studio/vault/revision',  controller.studioVaultRevision)  // live c
 router.get('/studio/thumb',           controller.studioPreview)        // Nextcloud thumbnail
 router.get('/studio/handoff',         controller.studioHandoff)        // vault token → asset token
 router.post('/studio/save',           uploadStudioArtwork, controller.studioSave)
+router.get('/studio/vault/pieces',    controller.studioVaultPieces)    // designs to attach an upload to
+router.post('/studio/vault/upload',   uploadVaultFile, controller.studioUpload) // add a file to a customer's Nextcloud folder
+router.post('/studio/vault/trash',    controller.studioTrash)          // move selection to Nextcloud Trash
 // Resized copy of a stored image, so a print layout does not embed the
 // full-resolution original. Reads only paths MinIO already serves publicly.
 router.get('/storage-thumb',          controller.storageThumb)

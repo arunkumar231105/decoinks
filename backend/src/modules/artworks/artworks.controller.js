@@ -168,6 +168,33 @@ async function studioSave(req, res, next) {
     return success(res, saved, `${saved.file_name} saved to Nextcloud`)
   } catch (err) { next(err) }
 }
+// Upload one file into the selected customer's Nextcloud folder. The type
+// (REF/SRC/WRK/FNL/FNLA) picks the destination sub-folder. Vault-token auth.
+async function studioUpload(req, res, next) {
+  try {
+    const saved = await studio.uploadToVault(
+      req.body.token || '', req.body.entity_key || '', req.body.lifecycle_code || 'SRC',
+      req.file, req.body.attach_to || null)
+    return success(res, saved, `${saved.file_name} uploaded to Nextcloud`)
+  } catch (err) { next(err) }
+}
+// One row per design for the upload modal's "which source is this?" picker.
+async function studioVaultPieces(req, res, next) {
+  try {
+    return success(res, await studio.vaultPieces(req.query.token || '', req.query.entity_key || ''))
+  } catch (err) { next(err) }
+}
+// Move selected vault files to the Nextcloud Trash bin (out of Leads 2.0 / PO)
+// and drop their index rows. Vault-token auth, like the rest of the studio grid.
+async function studioTrash(req, res, next) {
+  try {
+    const result = await studio.trashAssets(req.body.token || '', req.body.ids || [])
+    const message = result.failed_count
+      ? `${result.trashed_count} moved to Trash, ${result.failed_count} could not be moved`
+      : `${result.trashed_count} file${result.trashed_count === 1 ? '' : 's'} moved to Trash`
+    return success(res, result, message)
+  } catch (err) { next(err) }
+}
 
 module.exports = {
   storageThumb,
@@ -175,5 +202,5 @@ module.exports = {
   vaultList, vaultStats, vaultFacets, vaultRevision, vaultDetail, vaultSync, vaultSetCover,
   vaultBulkUpdate, vaultLinkAsset, vaultExport,
   studioToken, studioVault, studioVaultFacets, studioVaultRevision, studioPreview, studioHandoff,
-  studioAsset, studioContent, studioSave,
+  studioAsset, studioContent, studioSave, studioUpload, studioVaultPieces, studioTrash,
 }
