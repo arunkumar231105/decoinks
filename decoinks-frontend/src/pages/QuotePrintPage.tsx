@@ -775,7 +775,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
         <tr>
           <th style={{ width: 40 }}>S.No</th>
           <th className="left">Item Description<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
-          <th style={{ width: 90 }}>Artwork No</th>
+          {hasImage && <th style={{ width: 90 }}>Artwork No</th>}
           {hasImage && <th style={{ width: 100 }}>Artwork Thumbnail</th>}
           <th style={{ width: 120 }}>Artwork Size<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(Width x Height)</span></th>
           <th style={{ width: 70 }}>Qty</th>
@@ -791,7 +791,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
               <div className="item-main">DTF Transfers</div>
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>}
-            <td><span className="aw-no">{row.artNo}</span></td>
+            {hasImage && <td><span className="aw-no">{row.artNo}</span></td>}
             {hasImage && <td>
               <ArtworkThumb src={row.image} alt={row.artNo} label={row.artNo} className="art-img" fallback={<div className="art-empty">—</div>} />
             </td>}

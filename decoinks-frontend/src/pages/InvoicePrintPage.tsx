@@ -733,7 +733,7 @@ export function InvoicePrintPage() {
                     Item Description<br />
                     <span style={{ fontSize: 8, opacity: 0.75 }}>(DTF Transfers)</span>
                   </th>
-                  <th style={{ width: 90 }}>Artwork No</th>
+                  {dtfHasImage && <th style={{ width: 90 }}>Artwork No</th>}
                   {dtfHasImage && <th style={{ width: 88 }}>Artwork Thumbnail</th>}
                   <th style={{ width: 100 }}>Artwork Size<br />(IN)</th>
                   <th style={{ width: 82 }}>Qty<br />(Transfers)</th>
@@ -743,7 +743,7 @@ export function InvoicePrintPage() {
               </thead>
               <tbody>
                 {dtfFlat.length === 0 ? (
-                  <tr><td colSpan={dtfHasImage ? 8 : 7} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
+                  <tr><td colSpan={dtfHasImage ? 8 : 6} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items found</td></tr>
                 ) : dtfFlat.map((r, sno) => {
                   const frontUrl = (r.art?.file_url && r.art.file_type !== 'pdf') ? r.art.file_url : (r.item.front_image ?? r.item.artwork_image ?? null)
                   return (
@@ -754,7 +754,7 @@ export function InvoicePrintPage() {
                         {r.group.desc || 'DTF Transfers'}
                       </td>
                     )}
-                    <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>
+                    {dtfHasImage && <td style={{ fontWeight: 600, color: '#374151', fontSize: 10.5 }}>{r.artNo}</td>}
                     {dtfHasImage && <td>
                       <ArtworkThumb src={frontUrl} alt="front" label={r.artNo} className="art-thumb" fallback={<div className="art-empty">🖼</div>} />
                     </td>}
