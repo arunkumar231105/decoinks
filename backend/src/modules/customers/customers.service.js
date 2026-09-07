@@ -510,6 +510,18 @@ async function update(id, fields, actorId) {
     }
   }
 
+  // One company, two columns. `company` is the original; `company_name` came
+  // later with the New/Edit Customer form, and create() has always written the
+  // same value to both. update() wrote only whichever one the caller sent, so
+  // after an edit the two disagreed and each screen showed whichever column it
+  // happened to read — the edit form looked like it had saved nothing. Whatever
+  // arrives here settles both.
+  if (fields.company_name !== undefined || fields.company !== undefined) {
+    const companyValue = fields.company_name !== undefined ? fields.company_name : fields.company
+    fields.company_name = companyValue
+    fields.company = companyValue
+  }
+
   const sets = []
   const params = []
   for (const key of allowed) {

@@ -512,33 +512,8 @@ async function create(fields_in) {
     })
   }
 
-  // "Paid" selected on the create form must be represented by a real ledger
-  // payment, not only by a visual status. This keeps amount_paid, balance_due,
-  // invoice status and every preview/PDF in agreement.
   let createdInvoice = rows[0]
-  if (fields.mark_paid) {
-    if (total > 0) {
-      createdInvoice = await recordPayment(
-        rows[0].id,
-        {
-          amount: total,
-          payment_method: fields.payment_method || 'other',
-          notes: 'Full payment recorded when invoice was created',
-        },
-        created_by
-      )
-    } else {
-      const paidResult = await query(
-        `UPDATE invoices
-         SET status = 'Paid', amount_paid = 0, balance_due = 0,
-             paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [rows[0].id]
-      )
-      createdInvoice = paidResult.rows[0]
-    }
-  }
+  if (fields.mark_paid) createdInvoice = await markInvoicePaid(rows[0].id)
 
   await cacheDel('dashboard:stats')
   return createdInvoice
@@ -698,29 +673,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
       })
 
       let createdInvoice = rows[0]
-      if (fields.mark_paid) {
-        if (total > 0) {
-          createdInvoice = await recordPayment(
-            rows[0].id,
-            {
-              amount: total,
-              payment_method: fields.payment_method || 'other',
-              notes: 'Full payment recorded when invoice was created',
-            },
-            created_by
-          )
-        } else {
-          const paidResult = await query(
-            `UPDATE invoices
-             SET status = 'Paid', amount_paid = 0, balance_due = 0,
-                 paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
-             WHERE id = $1
-             RETURNING *`,
-            [rows[0].id]
-          )
-          createdInvoice = paidResult.rows[0]
-        }
-      }
+      if (fields.mark_paid) createdInvoice = await markInvoicePaid(rows[0].id)
 
       await cacheDel('dashboard:stats')
       createdInvoice._action = 'created'   // signal to UI: newly created (not synced)
@@ -1114,6 +1067,25 @@ async function updateStatus(id, status, actor) {
   } finally {
     client.release()
   }
+}
+
+// "Paid" on the create form is a statement about the document, not a receipt.
+// It used to write a payments row, so an invoice raised for money that had
+// already arrived through a payment link produced a second, invented payment
+// for the same job — the duplicate the shop kept finding in the Payments list.
+// The ledger has exactly two authors now: someone recording a payment by hand,
+// and a payment link settling. amount_paid and balance_due follow that ledger
+// through the sync_invoice_payment_totals trigger, so neither is written here.
+async function markInvoicePaid(invoiceId) {
+  const { rows } = await query(
+    `UPDATE invoices
+        SET status = 'Paid', balance_due = 0,
+            paid_at = COALESCE(paid_at, NOW()), updated_at = NOW()
+      WHERE id = $1
+      RETURNING *`,
+    [invoiceId]
+  )
+  return rows[0]
 }
 
 async function recordPayment(id, { amount, payment_method, reference_no = null, notes = null }, actorId) {
