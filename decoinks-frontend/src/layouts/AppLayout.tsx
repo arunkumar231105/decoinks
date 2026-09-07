@@ -67,6 +67,7 @@ const boardNav = [
 ]
 
 const systemNav = [
+  { label: 'Prompt Management', path: '/prompts', icon: Sparkles },
   { label: 'Users & Roles', path: '/settings/users', icon: Users },
   { label: 'Portal Access', path: '/settings/portal-access', icon: KeyRound },
   { label: 'Settings', path: '/settings/general', icon: Settings },
