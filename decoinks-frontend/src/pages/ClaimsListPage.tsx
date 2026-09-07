@@ -56,14 +56,15 @@ export function ClaimsListPage() {
           <table className="leads-table cw-table">
             <thead><tr>
               <th>Claim No.</th><th>Raised</th><th>Customer</th><th>Sales Order</th>
+              <th>PO Number</th>
               <th>Category</th><th className="cw-num">Claimed</th><th className="cw-num">Approved</th>
-              <th>Decision</th><th>Status</th>
+              <th>Decision</th><th>Approved By</th><th>Approved Date</th><th>Status</th>
             </tr></thead>
             <tbody>
               {list.isLoading && Array.from({ length: 6 }).map((_, i) =>
-                <tr key={i}><td colSpan={9}><Skeleton height={34}/></td></tr>)}
+                <tr key={i}><td colSpan={12}><Skeleton height={34}/></td></tr>)}
               {!list.isLoading && !rows.length && (
-                <tr><td colSpan={9}>
+                <tr><td colSpan={12}>
                   <div className="leads-state">
                     <strong>No claims yet.</strong>
                     <p>Raise one against a sales order when a customer reports a problem.</p>
@@ -77,10 +78,17 @@ export function ClaimsListPage() {
                   <td>{date(c.created_at)}</td>
                   <td>{c.customer_name ?? '—'}<small className="leads-cell-sub">{c.customer_number ?? ''}</small></td>
                   <td>{c.order_number ?? '—'}</td>
+                  {/* The purchase order the work was bought against — which is
+                      what tells you which factory has to answer for it. */}
+                  <td>{c.po_number ?? '—'}</td>
                   <td>{c.claim_category}<small className="leads-cell-sub">{c.sub_issue ?? ''}</small></td>
                   <td className="cw-num">{money(c.claimed_amount)}</td>
                   <td className="cw-num">{money(c.approved_amount)}</td>
                   <td>{c.decision}</td>
+                  {/* Who settled it, and when — a decision with no name on it
+                      is not much of a record. */}
+                  <td>{c.responsible_admin_name ?? '—'}</td>
+                  <td>{c.approval_date ? date(c.approval_date) : '—'}</td>
                   <td><span className={`leads-pill st-${String(c.status).toLowerCase().replace(/\s+/g, '-')}`}>{c.status}</span></td>
                 </tr>
               ))}
