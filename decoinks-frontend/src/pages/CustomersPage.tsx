@@ -48,7 +48,9 @@ export function CustomersPage(){
   const s=stats.data
   const metrics:[string,string,any,string][] = s?[
     ['Total Customers',Number(s.total_customers).toLocaleString(),Users,'Current total'],
-    ['New Customers',Number(s.new_customers).toLocaleString(),UserPlus,period==='all'?`vs ${Number(s.new_customers_prev)} last month`:'Created in selected period'],
+    // On All Time this counts everyone ever added, so comparing it against a
+    // single month says nothing; it only reads as a comparison for a period.
+    ['New Customers',Number(s.new_customers).toLocaleString(),UserPlus,period==='all'?'All time':'Created in selected period'],
     ['Active Customers',Number(s.active_customers).toLocaleString(),BadgeCheck,pct(Number(s.active_customers))],
     ['Repeat Customers',Number(s.repeat_customers).toLocaleString(),Repeat,pct(Number(s.repeat_customers))],
     ['Avg. Order Value',money(s.avg_order_value),CircleDollarSign,'Eligible orders'],

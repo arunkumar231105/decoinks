@@ -147,8 +147,16 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void'],
     kpis: [
       { label: 'Total Invoices', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Sent', icon: Send, value: r => countStatus(r, 'sent'), tone: 'blue' },
-      { label: 'Partially Paid', icon: Clock3, value: r => countStatus(r, 'partially paid'), tone: 'amber' },
+      // Counts the document's own stage now that the money has its own field —
+      // as a payment status "Sent" was never an answer to "has it been paid?".
+      { label: 'Sent', icon: Send,
+        value: r => r.filter(x => String(x.invoice_stage || '').toLowerCase() === 'sent').length, tone: 'blue' },
+      // Part-payment is not something this shop accepts, so the card that
+      // counted it could only ever read nought. What is worth seeing beside
+      // Paid is what has not been.
+      { label: 'Unpaid', icon: Clock3,
+        value: r => r.filter(x => !['paid', 'void'].includes(String(x.status || '').toLowerCase())).length,
+        tone: 'amber' },
       { label: 'Paid', icon: CircleDollarSign, value: r => countStatus(r, 'paid'), tone: 'green' },
       { label: 'Total Amount', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'blue' },
       { label: 'Balance Due', icon: Clock3, value: r => money(r.reduce((a, x) => a + Number(x.balance_due || 0), 0)), tone: 'purple' },
@@ -159,7 +167,17 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'customer', label: 'Customer', sortKey: ['customer_display_name', 'customer_name'], render: r => <PersonCell name={common.empty(r, 'customer_display_name', 'customer_name')} sub={common.empty(r, 'company')}/> },
       { key: 'invoice_date', label: 'Invoice Date', render: r => date(pick(r, 'invoice_date', 'issue_date')) },
       { key: 'due_date', label: 'Due Date', render: r => date(r.due_date) },
-      { key: 'payment', label: 'Payment Status', sortKey: ['payment_status', 'status'], render: r => <Badge>{common.empty(r, 'payment_status', 'status')}</Badge> },
+      // Two questions, two columns. Where the document has got to, and where
+      // the money has got to — `status` used to answer both at once, so "Sent"
+      // could mean either.
+      { key: 'invoice_stage', label: 'Invoice Status', render: r => <Badge>{common.empty(r, 'invoice_stage')}</Badge> },
+      // The shop is paid in full before the work starts, so this reads Paid or
+      // it reads Unpaid. A voided invoice is neither, and says so.
+      { key: 'payment', label: 'Payment Status', sortKey: ['payment_status', 'status'],
+        render: r => {
+          const raw = String(pick(r, 'payment_status', 'status') ?? '')
+          return <Badge>{raw === 'Void' ? 'Void' : raw === 'Paid' ? 'Paid' : 'Unpaid'}</Badge>
+        } },
       { key: 'items_total', label: 'Item Charges', numeric: true, render: r => money(r.items_total) },
       { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Total', numeric: true, render: r => <strong>{money(r.total)}</strong> },
@@ -200,6 +218,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
       { key: 'delivery', label: 'Estimated Delivery', sortKey: ['expected_delivery_date', 'due_date'], render: r => date(pick(r, 'expected_delivery_date', 'due_date')) },
+      // One sales order can be bought against more than one purchase order —
+      // a job split between two factories — so the count is worth seeing.
+      { key: 'po_count', label: 'No of PO', numeric: true, render: r => Number(r.po_count || 0).toLocaleString() },
     ],
   },
   'purchase-orders': {
@@ -208,10 +229,18 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Pending Approval', 'Approved', 'Sent', 'Accepted', 'In Production', 'Shipped', 'Partially Received', 'Received', 'Closed', 'Cancelled'],
     kpis: [
       { label: 'Total Purchase Orders', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'In Transit', icon: Truck, value: r => r.filter(x => String(x.tracking_status || '').toLowerCase() === 'in transit').length, tone: 'amber' },
-      { label: 'Approved / Sent', icon: Send, value: r => countStatus(r, 'approved', 'sent'), tone: 'blue' },
+      { label: 'Approved', icon: Send, value: r => countStatus(r, 'approved'), tone: 'blue' },
+      // Issued means it has left this office — sent to the factory or beyond.
+      // Nothing counted it, so the step between approving and production had
+      // no number of its own.
+      { label: 'PO Issued', icon: Send,
+        value: r => countStatus(r, 'sent', 'accepted', 'in production', 'shipped', 'partially received', 'received', 'closed'),
+        tone: 'blue' },
       { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
       { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
+      // The courier's word, which is how the shipments and orders lists read it.
+      { label: 'In Transit', icon: Truck,
+        value: r => r.filter(x => /transit/i.test(String(x.tracking_status || ''))).length, tone: 'amber' },
       { label: 'Received / Closed', icon: PackageCheck, value: r => countStatus(r, 'received', 'closed'), tone: 'green' },
       { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(pick(x, 'grand_total', 'total') || 0), 0)), tone: 'green' },
     ],
@@ -221,14 +250,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       // unnumbered when PO-2026-0125 down to 0001 was sitting right behind it.
       // The supplier's reference is worth seeing, so it keeps its own column.
       { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'po_number')}</strong> },
-      { key: 'source_po_number', label: 'Supplier Ref', render: r => common.empty(r, 'source_po_number') },
       { key: 'order_date', label: 'PO Date', render: r => date(r.order_date) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
       { key: 'status', label: 'Status', render: common.status },
-      { key: 'shipping', label: 'Shipping By', sortKey: ['shipping_by', 'shipping_method'], render: r => common.empty(r, 'shipping_by', 'shipping_method') },
       { key: 'service', label: 'Service Type', render: r => common.empty(r, 'service_type') },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_id', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
@@ -805,7 +832,13 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   const instructions = String(pick(row, 'terms_conditions', 'notes') || '').split(/\n|•/).map((text: string) => text.trim().replace(/^[-*]\s*/, '')).filter(Boolean)
   return <>
     <DrawerSection title="PO Details" fields={[
-      { label: 'PO #', value: first(row, 'source_po_number', 'po_number') }, { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
+      // Our own number first — this showed the factory's reference under the
+      // heading "PO #", so the panel named the PO something we never call it.
+      // The supplier's reference is worth seeing, and now that it has no column
+      // of its own this is where it reads.
+      { label: 'PO #', value: first(row, 'po_number') },
+      { label: 'Supplier Ref', value: first(row, 'source_po_number') },
+      { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
       { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
       { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
     ]}/>

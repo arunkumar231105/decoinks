@@ -5,6 +5,10 @@ const { cacheDel } = require('../../config/redis')
 const { logPipelineEvent } = require('../../utils/pipelineEvents')
 const { validateTransition } = require('../../utils/stateMachine')
 
+// A document is drafted, finished, then sent. Paid and Overdue are not
+// stages — they describe the money, and live in `status`.
+const STAGES = ['Draft', 'Saved', 'Sent']
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Shipping and rush are billed on top of the goods, exactly as the quotation
@@ -352,9 +356,16 @@ async function create(fields_in) {
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, resolvedShipping, resolvedRush)
   const totalQty    = await resolveInvoiceQuantity(items, quote_id, order_id)
   assertPositiveInvoice(total, totalQty)
-  const balance_due = total
+  // This shop is paid in full before the work starts, so an invoice never
+  // carries a balance. It is still born a draft: a draft is a document being
+  // written, not a claim on anyone, and the quote→invoice sync may rewrite it
+  // until it is issued. amount_paid follows the payment, not the drafting.
+  const balance_due = 0
+  const amount_paid = 0
   const resolvedIssueDate = issue_date || new Date().toISOString().slice(0, 10)
-  const resolvedDueDate = due_date || resolvedIssueDate
+  // Due the day it is raised. A later date was only ever a blank filled in out
+  // of habit, and it made invoices look overdue that had already been paid.
+  const resolvedDueDate = resolvedIssueDate
   const resolvedBillingAddress = bestAddress(
     fields.billing_address,
     quoteData?.billing_address,
@@ -392,8 +403,9 @@ async function create(fields_in) {
         notes, customer_notes, sales_agent_name, created_by,
         customer_name, billing_email, contact_number, billing_address, shipping_address,
         order_type, payment_terms, payment_method, currency, rush_services, rush_charges,
-        shipping_charges, discount_type, discount_value)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+        shipping_charges, discount_type, discount_value, invoice_stage)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
+             COALESCE($35, 'Draft'))
      RETURNING *`,
     [
       invoice_number,
@@ -404,7 +416,7 @@ async function create(fields_in) {
       Number(fields.discount_pct ?? (fields.discount_type === 'percentage' ? fields.discount_value : 0)) || 0,
       resolvedDiscountAmt,
       Number(fields.tax_pct) || 0,
-      resolvedTaxAmt, total, 0, balance_due,
+      resolvedTaxAmt, total, amount_paid, balance_due,
       notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
       // Contact fields: explicit value wins, otherwise fall back to the quotation's
       resolvedCustomerName || null,
@@ -421,6 +433,9 @@ async function create(fields_in) {
       Number(fields.shipping_charges ?? quoteData?.estimated_shipping ?? 0),
       fields.discount_type || quoteData?.discount_type || 'percentage',
       Number(fields.discount_value ?? quoteData?.discount_value ?? 0),
+      // Where the document itself has got to, which is a separate question from
+      // where the money has got to.
+      STAGES.includes(fields.invoice_stage) ? fields.invoice_stage : null,
     ]
   )
 
@@ -649,8 +664,9 @@ async function createOrSyncInvoiceFromQuote(ctx) {
          RETURNING *`,
         [
           invoice_number, `INV-INT-${invoice_number}`, quote_id, order_id || null, resolvedSupplierId, resolvedCustomerId,
-          issue_date || new Date().toISOString().split('T')[0], due_date || null,
-          resolvedSubtotal, discountPct, resolvedDiscountAmt, taxPct, resolvedTaxAmt, total, 0, balance_due,
+          issue_date || new Date().toISOString().split('T')[0],
+          issue_date || new Date().toISOString().split('T')[0],
+          resolvedSubtotal, discountPct, resolvedDiscountAmt, taxPct, resolvedTaxAmt, total, 0, 0,
           notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null, fields.sales_agent_name || null, created_by,
           resolvedCustomerName || null,
           fields.billing_email   ?? quoteData?.billing_email   ?? null,
@@ -778,7 +794,13 @@ async function createOrSyncInvoiceFromQuote(ctx) {
 }
 
 async function update(id, fields) {
-  const allowed = ['supplier_id', 'issue_date', 'due_date', 'subtotal', 'discount_pct', 'discount_amt', 'tax_pct', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
+  // The stage is editable; the due date is not — it follows the issue date, so
+  // it is set below rather than accepted from the caller.
+  if (fields.invoice_stage !== undefined && !STAGES.includes(fields.invoice_stage)) {
+    throw Object.assign(
+      new Error(`Invoice stage must be one of: ${STAGES.join(', ')}`), { statusCode: 422 })
+  }
+  const allowed = ['supplier_id', 'issue_date', 'invoice_stage', 'subtotal', 'discount_pct', 'discount_amt', 'tax_pct', 'tax_amt', 'notes', 'customer_notes', 'sales_agent_name', 'quote_id', 'customer_name', 'billing_email', 'contact_number', 'billing_address', 'shipping_address', 'payment_terms', 'payment_method', 'currency', 'rush_services', 'rush_charges', 'shipping_charges', 'discount_type', 'discount_value']
   const sets = []
   const params = []
 
@@ -787,6 +809,11 @@ async function update(id, fields) {
       params.push(key === 'billing_address' || key === 'shipping_address' ? normalizeAddress(fields[key]) : fields[key])
       sets.push(`${key} = $${params.length}`)
     }
+  }
+  // Due the day it is raised, so moving the issue date moves it too.
+  if (fields.issue_date !== undefined) {
+    params.push(fields.issue_date)
+    sets.push(`due_date = $${params.length}`)
   }
   // Rewriting only the lines is a legitimate edit — the header may be unchanged.
   if (!sets.length && !Array.isArray(fields.items)) {

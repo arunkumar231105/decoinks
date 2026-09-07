@@ -6,9 +6,6 @@ const { assertNoDependents, softDelete } = require('../../utils/dependents')
 // not soft-deleted and not Draft/Cancelled; an invoice balance counts when it
 // is positive and the invoice is not Void.
 const ELIGIBLE_ORDERS = `ord.deleted_at IS NULL AND ord.status NOT IN ('Draft', 'Cancelled')`
-// Revenue-bearing orders only — free samples and $0 draft rows should not
-// drag the average order value down; they represent activity, not revenue.
-const REVENUE_ORDERS = `${ELIGIBLE_ORDERS} AND ord.total > 0`
 const OPEN_INVOICES = `inv.customer_id = c.id AND inv.status <> 'Void' AND COALESCE(inv.balance_due, 0) > 0`
 
 const STATUSES = ['prospect', 'active', 'inactive', 'blocked', 'archived']
@@ -174,55 +171,63 @@ async function list(options = {}) {
 }
 
 async function getStats(filters = {}) {
-  const { where, params } = buildFilters({
-    ...filters,
-    has_balance: undefined, has_overdue: undefined,
-    min_orders: '', max_orders: '', min_spent: '', max_spent: '',
-  })
-  // KPI cards describe the same customer cohort as the table. Aggregate-only
-  // filters (order/spend thresholds) are intentionally handled by the list;
-  // the quick period presets and ordinary customer filters are applied here.
-  const customerPredicate = where.replace(/^WHERE\s+/i, '')
-  // A "new customer" is one who came in through a lead conversion — a manual
-  // add or a bulk import is not new business, it is just data entry. The
-  // lead_id link is set only by the lead→customer conversion service.
-  const newCustomersSql = filters.date_from || filters.date_to
-    ? 'COUNT(*) FILTER (WHERE lead_id IS NOT NULL)::INT'
-    : "COUNT(*) FILTER (WHERE lead_id IS NOT NULL AND created_at >= date_trunc('month', CURRENT_DATE))::INT"
+  // Each card is scoped the way its own caption promises.
+  //
+  //   Total Customers   "Current total"              the whole book
+  //   Active Customers  "Current total"              the whole book
+  //   Repeat Customers  "% of total"                 the whole book
+  //   New Customers     "Created in selected period" the period
+  //   Total Order Value "Selected period"            the period
+  //   Avg. Order Value  value / orders               the period
+  //
+  // They did not. Every card was scoped to customers created inside the period,
+  // so Today read Total Customers 0 with ninety-four on file, and the order
+  // cards answered "what have customers created this quarter spent, ever?" —
+  // a question nobody asks.
+  const period = []
+  const periodParams = []
+  if (filters.date_from) { periodParams.push(filters.date_from); period.push(`>= $${periodParams.length}::date`) }
+  if (filters.date_to)   { periodParams.push(filters.date_to);   period.push(`<  $${periodParams.length}::date + INTERVAL '1 day'`) }
+  const inPeriod = column => period.length ? period.map(p => `${column} ${p}`).join(' AND ') : 'TRUE'
+
   const [customers, orders, balance] = await Promise.all([
     query(`SELECT
         COUNT(*)::INT AS total_customers,
-        ${newCustomersSql} AS new_customers,
-        COUNT(*) FILTER (WHERE lead_id IS NOT NULL
-                           AND created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
-                           AND created_at < date_trunc('month', CURRENT_DATE))::INT AS new_customers_prev,
-        COUNT(*) FILTER (WHERE status = 'active')::INT AS active_customers
-      FROM customers c WHERE ${customerPredicate}`, params),
-    query(`WITH per_customer AS (
-        SELECT ord.customer_id,
-               COUNT(*) AS order_count,
-               SUM(ord.total) AS spent,
-               COUNT(*) FILTER (WHERE ord.total > 0) AS paid_order_count,
-               SUM(ord.total) FILTER (WHERE ord.total > 0) AS paid_spent
+        COUNT(*) FILTER (WHERE status = 'active')::INT AS active_customers,
+        -- A customer added inside the period. Not "converted from a lead":
+        -- that counted thirty of ninety-four and left the other sixty-four
+        -- looking like they had never arrived.
+        COUNT(*) FILTER (WHERE ${inPeriod('created_at')})::INT AS new_customers,
+        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+                           AND created_at <  date_trunc('month', CURRENT_DATE))::INT AS new_customers_prev
+      FROM customers c WHERE c.deleted_at IS NULL`, periodParams),
+
+    query(`WITH in_period AS (
+        SELECT ord.customer_id, COUNT(*) AS order_count, SUM(ord.total) AS spent
         FROM orders ord
-        JOIN customers c ON c.id = ord.customer_id AND ${customerPredicate}
-        WHERE ${ELIGIBLE_ORDERS}
+        WHERE ${ELIGIBLE_ORDERS} AND ${inPeriod('ord.order_date')}
+        GROUP BY ord.customer_id
+      ), ever AS (
+        SELECT ord.customer_id, COUNT(*) AS order_count
+        FROM orders ord WHERE ${ELIGIBLE_ORDERS}
         GROUP BY ord.customer_id
       )
       SELECT
-        COUNT(*) FILTER (WHERE order_count > 1)::INT AS repeat_customers,
-        -- Average revenue per order, ignoring free/sample rows so the KPI
-        -- reflects real order value, not activity.
-        COALESCE(ROUND(SUM(paid_spent) / NULLIF(SUM(paid_order_count), 0), 2), 0) AS avg_order_value,
-        COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value,
-        -- What this cohort is worth in total, as opposed to lifetime_value,
-        -- which is the same money divided by head count.
-        COALESCE(SUM(spent), 0)::NUMERIC(14,2) AS total_order_value
-      FROM per_customer`, params),
+        -- "% of total", so it is measured against the same whole book Total
+        -- Customers counts, not against the orders inside the period.
+        (SELECT COUNT(*) FILTER (WHERE order_count > 1)::INT FROM ever) AS repeat_customers,
+        COALESCE(SUM(spent), 0)::NUMERIC(14,2) AS total_order_value,
+        -- What the shop took, divided by how many orders it took. Free work is
+        -- an order the shop filled, so it belongs in the count; leaving it out
+        -- made the average describe a set of orders the total did not.
+        COALESCE(ROUND(SUM(spent) / NULLIF(SUM(order_count), 0), 2), 0) AS avg_order_value,
+        COALESCE(ROUND(AVG(spent), 2), 0) AS lifetime_value
+      FROM in_period`, periodParams),
+
     query(`SELECT COALESCE(SUM(inv.balance_due), 0)::NUMERIC(14,2) AS outstanding_balance
       FROM invoices inv
-      JOIN customers c ON c.id = inv.customer_id AND ${customerPredicate}
-      WHERE ${OPEN_INVOICES}`, params),
+      JOIN customers c ON c.id = inv.customer_id AND c.deleted_at IS NULL
+      WHERE ${OPEN_INVOICES}`),
   ])
   return { ...customers.rows[0], ...orders.rows[0], ...balance.rows[0] }
 }

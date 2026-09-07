@@ -36,4 +36,24 @@ const uploadClaimFile = multer({
     : cb(new Error(`${file.mimetype} is not accepted. Use an image, a PDF or a video.`), false),
 }).single('file')
 
-module.exports = { uploadArtwork, uploadAttachment, uploadStudioArtwork, uploadClaimFile }
+// Manual vault uploads bring the shop's real source artwork — .ai, .psd, .eps,
+// .tiff — not just the flattened images the studio save filter allows. Browsers
+// label these inconsistently (often application/octet-stream), so the accepted
+// set is wide; the route is staff-only behind Authentik. Cap matches the studio
+// ceiling for large print-resolution sources.
+const vaultUploadMimes = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'image/gif',
+  'image/tiff', 'image/avif', 'image/bmp', 'image/vnd.adobe.photoshop',
+  'application/pdf', 'application/postscript', 'application/illustrator',
+  'application/octet-stream', '', undefined,
+]
+const vaultUploadMaxBytes = parseInt(process.env.VAULT_UPLOAD_MAX_FILE_SIZE_MB || '200', 10) * 1024 * 1024
+const uploadVaultFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: vaultUploadMaxBytes },
+  fileFilter: (_req, file, cb) => vaultUploadMimes.includes(file.mimetype)
+    ? cb(null, true)
+    : cb(new Error(`File type ${file.mimetype} not allowed`), false),
+}).single('file')
+
+module.exports = { uploadArtwork, uploadAttachment, uploadStudioArtwork, uploadClaimFile, uploadVaultFile }

@@ -365,14 +365,24 @@ async function getOverview({ date_from, date_to } = {}) {
       FROM days d ORDER BY d.d`, [p.prev_from, p.prev_to]),
 
     // Recents
-    query(`SELECT pay.paid_at, pay.amount, pay.payment_method::text AS method,
-        COALESCE(c.name, i.customer_name, '—') AS customer,
-        i.invoice_number, i.id AS invoice_id, o.order_number
+    // Eighty-four of the payments on file carry no invoice_id — money taken
+    // against an order, or recorded on its own — and an inner join to invoices
+    // hid every one of them. The five most recent were four Stripe payments and
+    // one older invoice-linked row, so the card showed the wrong five.
+    // Dated the same way the rest of this file dates a payment.
+    query(`SELECT COALESCE(pay.paid_at::date, pay.payment_date, pay.created_at::date) AS paid_at,
+        pay.amount, pay.payment_method::text AS method,
+        COALESCE(c.name, cust.name, NULLIF(BTRIM(pay.received_from_name), ''), i.customer_name, '—') AS customer,
+        i.invoice_number, i.id AS invoice_id, COALESCE(o.order_number, po.order_number) AS order_number
       FROM payments pay
-      JOIN invoices i ON i.id = pay.invoice_id
+      LEFT JOIN invoices i ON i.id = pay.invoice_id
       LEFT JOIN customers c ON c.id = i.customer_id
+      LEFT JOIN customers cust ON cust.id = pay.customer_id
       LEFT JOIN orders o ON o.id = i.order_id
-      ORDER BY pay.paid_at DESC LIMIT 5`),
+      LEFT JOIN orders po ON po.id = pay.order_id
+      ORDER BY COALESCE(pay.paid_at::date, pay.payment_date, pay.created_at::date) DESC,
+               pay.created_at DESC
+      LIMIT 5`),
 
     query(`SELECT po.id, po.po_number, COALESCE(po.order_date, po.created_at::date) AS po_date,
         po.status::text AS status, o.order_number AS source_order, s.name AS vendor

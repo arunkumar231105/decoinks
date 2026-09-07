@@ -301,7 +301,6 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
             COALESCE(o.due_date, o.order_date) AS due_date,
             c.name AS supplier_name, cust.name AS customer_name, u.name AS agent_name,
             COALESCE(item_totals.total_qty, 0)::INT AS total_qty,
-            latest_shipment.status AS tracking_status,
             COALESCE(NULLIF(BTRIM(o.tracking_number), ''), latest_shipment.tracking_number) AS display_tracking_number,
             COALESCE(NULLIF(BTRIM(o.contact_name), ''), cust.name) AS export_contact_name,
             COALESCE(NULLIF(BTRIM(o.contact_email), ''), cust.email) AS export_contact_email,
@@ -334,12 +333,30 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
             -- Fall back to the combined status for any row written before the
             -- split columns existed, so an export is never blank here.
             COALESCE(o.order_stage, CASE WHEN o.status = 'Draft' THEN 'Draft' ELSE 'Sent' END) AS export_order_stage,
-            COALESCE(o.process_status, CASE o.status::text
-              WHEN 'Confirmed'     THEN 'Pushed'
-              WHEN 'Ready to Ship' THEN 'Completed'
-              WHEN 'Draft'         THEN NULL
-              ELSE o.status::text
-            END) AS export_process_status,
+            -- Where the work has actually got to, read off the chain itself:
+            -- a job with no purchase order is waiting for one, a pushed PO is
+            -- on the factory floor, a parcel with a tracking number has left.
+            -- Stored process_status was whatever someone last typed, so it went
+            -- stale the moment the next thing happened.
+            CASE
+              WHEN latest_shipment.delivered_date IS NOT NULL
+                OR latest_shipment.tracking_status = 'DELIVERED'
+                OR latest_shipment.status = 'Delivered'
+                OR o.status = 'Delivered'                       THEN 'Delivered'
+              WHEN latest_shipment.tracking_number IS NOT NULL
+                OR NULLIF(BTRIM(o.tracking_number), '') IS NOT NULL
+                OR po_roll.po_rank >= 4                          THEN 'Shipped'
+              WHEN po_roll.po_rank = 3                           THEN 'In Production'
+              WHEN COALESCE(po_roll.po_count, 0) > 0             THEN 'PO Issued'
+              ELSE 'PO to be Issued'
+            END AS export_process_status,
+            COALESCE(po_roll.po_count, 0) AS po_count,
+            -- What the courier says, preferred over the shop's own word for it,
+            -- which is the same rule the shipments list follows.
+            COALESCE(NULLIF(BTRIM(latest_shipment.tracking_status), ''),
+                     latest_shipment.status::text) AS tracking_status,
+            COALESCE(latest_shipment.original_eta, latest_shipment.estimated_delivery)
+              AS expected_delivery_date,
             COALESCE(
               NULLIF(BTRIM(o.courier), ''), latest_shipment.carrier,
               CASE
@@ -374,7 +391,8 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
        ) order_quantities
      ) item_totals ON TRUE
      LEFT JOIN LATERAL (
-       SELECT status, carrier, tracking_number
+       SELECT status, carrier, tracking_number,
+              tracking_status, original_eta, estimated_delivery, delivered_date
        FROM shipments
        WHERE order_id = o.id AND deleted_at IS NULL
        ORDER BY created_at DESC
@@ -388,6 +406,18 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
        ORDER BY po.created_at DESC
        LIMIT 1
      ) latest_po ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT COUNT(DISTINCT po.id)::INT AS po_count,
+              -- The furthest any of them has got. A job split across two
+              -- factories is as far along as its leading half.
+              MAX(CASE po.status::text
+                    WHEN 'Closed'        THEN 5 WHEN 'Shipped' THEN 4
+                    WHEN 'In Production' THEN 3 WHEN 'Sent'    THEN 2
+                    WHEN 'Draft'         THEN 1 ELSE 0 END) AS po_rank
+       FROM purchase_orders po
+       LEFT JOIN po_orders poo ON poo.po_id = po.id
+       WHERE (po.order_id = o.id OR poo.order_id = o.id) AND po.deleted_at IS NULL
+     ) po_roll ON TRUE
      ${where}
      ORDER BY o.order_date DESC, o.created_at DESC, o.order_number DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,

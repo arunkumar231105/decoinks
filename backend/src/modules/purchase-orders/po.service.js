@@ -205,10 +205,22 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             cust.name   AS customer_name,
             o.order_number,
             COALESCE(NULLIF(o.order_type::text, ''), NULLIF(po.print_type, '')) AS product_type,
-            latest_shipment.status AS tracking_status,
+            -- What the courier says, preferred over the shop's own word for it —
+            -- the same rule the shipments and orders lists follow.
+            COALESCE(NULLIF(BTRIM(latest_shipment.tracking_status), ''),
+                     latest_shipment.status::text) AS tracking_status,
             COALESCE(po.tracking_number, latest_shipment.tracking_number) AS display_tracking_number,
-            -- Service level (Ground / 2nd Day Air / …) lives on the shipment, not the PO.
-            latest_shipment.service_type,
+            -- Service level lives on the shipment, not the PO, and on its own it
+            -- reads "Ground" — which ground, whose? The carrier goes in front,
+            -- so the column says UPS Ground or USPS Priority Mail.
+            NULLIF(BTRIM(CONCAT_WS(' ',
+              NULLIF(BTRIM(COALESCE(latest_shipment.carrier, po.carrier, po.shipping_method)), ''),
+              NULLIF(BTRIM(latest_shipment.service_type), ''))), '') AS service_type,
+            -- When it is due. The PO's own date when someone set one, otherwise
+            -- the courier's estimate, which is the only one that ever updates.
+            COALESCE(po.expected_date,
+                     latest_shipment.original_eta,
+                     latest_shipment.estimated_delivery) AS expected_date,
             u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s  ON s.id  = po.supplier_id
@@ -219,10 +231,12 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
      LEFT JOIN LATERAL (
        -- Prefer the shipment matching the PO's own tracking number; fall back to
        -- the order's most recent shipment.
-       SELECT sh.status, sh.tracking_number, sh.service_type
+       SELECT sh.status, sh.tracking_number, sh.service_type, sh.carrier,
+              sh.tracking_status, sh.original_eta, sh.estimated_delivery
        FROM shipments sh
-       WHERE sh.order_id = po.order_id
-          OR (NULLIF(TRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number)
+       WHERE sh.deleted_at IS NULL
+         AND (sh.order_id = po.order_id
+              OR (NULLIF(TRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number))
        ORDER BY (sh.tracking_number = po.tracking_number) DESC, sh.created_at DESC
        LIMIT 1
      ) latest_shipment ON TRUE
