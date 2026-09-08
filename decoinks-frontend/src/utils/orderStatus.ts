@@ -12,6 +12,7 @@ type OrderLike = {
   status?: string | null
   order_stage?: string | null
   process_status?: string | null
+  export_process_status?: string | null
 }
 
 const PROCESS_FROM_STATUS: Record<string, string> = {
@@ -28,6 +29,13 @@ export function orderStage(order: OrderLike): string {
 }
 
 export function processStatus(order: OrderLike): string {
+  // The server reads this off the chain itself on every request — no purchase
+  // order means the job is waiting for one, a pushed PO means it is on the
+  // factory floor, a parcel with a tracking number means it has left. Prefer
+  // that over the stored process_status, which is whatever someone last typed
+  // and goes stale the moment the next thing happens: an order in transit was
+  // still being shown as "In Production" because this reader never asked.
+  if (order.export_process_status) return order.export_process_status
   if (order.process_status) return order.process_status
   const status = String(order.status || '')
   return PROCESS_FROM_STATUS[status] || status || '—'
