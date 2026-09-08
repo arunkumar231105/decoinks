@@ -133,3 +133,67 @@ describe('a customer has one company, whichever column a screen reads', () => {
     expect(rows[0].company_name).toBeNull()
   })
 })
+
+describe('one payment can cover more than one job', () => {
+  test('a payment split across two orders settles both invoices, and neither twice', async () => {
+    const { rows: cust } = await pool.query(
+      `INSERT INTO customers (customer_number, name) VALUES ('CUST-SPLIT-1', 'Brooke Wylie') RETURNING id`)
+    const customerId = cust[0].id
+
+    const made = []
+    for (const n of [1, 2]) {
+      const { rows: inv } = await pool.query(
+        `INSERT INTO invoices (invoice_number, customer_id, customer_name, subtotal, total,
+                               amount_paid, balance_due, status, issue_date, due_date)
+         VALUES ($1, $2, 'Brooke Wylie', 240, 240, 0, 0, 'Draft', CURRENT_DATE, CURRENT_DATE)
+         RETURNING id`, [`BWY-SPLIT-${n}`, customerId])
+      const { rows: ord } = await pool.query(
+        `INSERT INTO orders (order_number, customer_id, invoice_id, order_type, order_date, total, status)
+         VALUES ($1, $2, $3, 'dtf', CURRENT_DATE, 240, 'Confirmed') RETURNING id`,
+        [`ORD-SPLIT-${n}`, customerId, inv[0].id])
+      await pool.query(`UPDATE invoices SET order_id = $2 WHERE id = $1`, [inv[0].id, ord[0].id])
+      made.push({ invoiceId: inv[0].id, orderId: ord[0].id })
+    }
+
+    // payments.order_id names one order only (uq_payments_one_per_order), so
+    // the first takes it and every share — the first one included — is written
+    // as an allocation. Leaving the first share implicit would lose it:
+    // recalc_invoice_paid stops counting a payment through its own invoice as
+    // soon as it has any allocation at all.
+    const { rows: pay } = await pool.query(
+      `INSERT INTO payments (payment_number, customer_id, invoice_id, order_id, amount, payment_method)
+       VALUES ('PAY-SPLIT-0001', $1, $2, $3, 480, 'Stripe') RETURNING id`,
+      [customerId, made[0].invoiceId, made[0].orderId])
+
+    for (const m of made) {
+      await pool.query(
+        `INSERT INTO payment_allocations (payment_id, order_id, invoice_id, allocated_amount)
+         VALUES ($1,$2,$3,240)`, [pay[0].id, m.orderId, m.invoiceId])
+    }
+
+    for (const m of made) {
+      const { rows } = await pool.query(
+        `SELECT amount_paid, balance_due FROM invoices WHERE id = $1`, [m.invoiceId])
+      expect(Number(rows[0].amount_paid)).toBe(240)
+      expect(Number(rows[0].balance_due)).toBe(0)
+    }
+  })
+
+  test('the shares may not add up to more than the payment', async () => {
+    const { rows: cust } = await pool.query(
+      `INSERT INTO customers (customer_number, name) VALUES ('CUST-SPLIT-2', 'Over Allocator') RETURNING id`)
+    const { rows: inv } = await pool.query(
+      `INSERT INTO invoices (invoice_number, customer_id, customer_name, subtotal, total,
+                             amount_paid, balance_due, status, issue_date, due_date)
+       VALUES ('OVR-0001', $1, 'Over Allocator', 100, 100, 0, 0, 'Draft', CURRENT_DATE, CURRENT_DATE)
+       RETURNING id`, [cust[0].id])
+    const { rows: pay } = await pool.query(
+      `INSERT INTO payments (payment_number, customer_id, amount, payment_method)
+       VALUES ('PAY-SPLIT-0002', $1, 100, 'Stripe') RETURNING id`, [cust[0].id])
+
+    await expect(pool.query(
+      `INSERT INTO payment_allocations (payment_id, invoice_id, allocated_amount)
+       VALUES ($1, $2, 150)`, [pay[0].id, inv[0].id])
+    ).rejects.toThrow(/exceeds the payment amount/)
+  })
+})

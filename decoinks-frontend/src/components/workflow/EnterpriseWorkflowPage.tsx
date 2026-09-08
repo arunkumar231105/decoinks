@@ -209,7 +209,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'subtotal', label: 'Subtotal', numeric: true, render: r => money(r.subtotal) },
       { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Order Value', numeric: true, render: r => <strong>{money(r.total)}</strong> },
-      { key: 'paid', label: 'Paid Amount', numeric: true, sortKey: ['amount_paid', 'payment_received'], render: r => money(pick(r, 'amount_paid', 'payment_received')) },
+      // The server works the paid figure out from the payment ledger on every
+      // request — a payment on the order, or a share of one split across two
+      // jobs. The order's own amount_paid is a copy that stops being true the
+      // moment the money is recorded anywhere else, which is how two jobs paid
+      // by one $480 payment both sat here reading $0.
+      { key: 'paid', label: 'Paid Amount', numeric: true, sortKey: ['export_amount_paid', 'amount_paid', 'payment_received'], render: r => money(pick(r, 'export_amount_paid', 'amount_paid', 'payment_received')) },
       { key: 'method', label: 'Payment Method', sortKey: 'payment_method', render: r => common.empty(r, 'payment_method') },
       // Order Status is where the document is; Process Status is where the job
       // is. Both fall back to the combined status for any row not yet split.
@@ -634,7 +639,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     {active && <>
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
       <div className="ew-drawer-actions">{editFor(active) && <button onClick={editFor(active)!} title="Open this record in its form"><Pencil size={16}/><span>Edit</span></button>}{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
