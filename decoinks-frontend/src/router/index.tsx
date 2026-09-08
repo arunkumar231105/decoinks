@@ -81,8 +81,7 @@ const QuotesListPage         = page(() => import('../pages/QuotesListPage'), 'Qu
 const NewQuotationPage       = page(() => import('../pages/NewQuotationPage'), 'NewQuotationPage')
 const ShipmentsPage          = page(() => import('../pages/ShipmentsPage'), 'ShipmentsPage')
 const ClaimsListPage         = page(() => import('../pages/ClaimsListPage'), 'ClaimsListPage')
-const PromptsListPage        = page(() => import('../pages/PromptsListPage'), 'PromptsListPage')
-const PromptDetailPage       = page(() => import('../pages/PromptDetailPage'), 'PromptDetailPage')
+const PromptsWorkspacePage   = page(() => import('../pages/PromptsWorkspacePage'), 'PromptsWorkspacePage')
 const NewClaimPage           = page(() => import('../pages/NewClaimPage'), 'NewClaimPage')
 const ArtworkLibraryPage     = page(() => import('../pages/ArtworkLibraryPage'), 'ArtworkLibraryPage')
 const SetupPage              = page(() => import('../pages/SetupPage'), 'SetupPage')
@@ -319,13 +318,13 @@ export const router = createBrowserRouter([
               },
               {
                 path: '/prompts',
-                element: <PromptsListPage />,
-                handle: { title: 'Prompt Management', subtitle: 'Manage the instructions, variables and models behind every AI feature.' },
+                element: <PromptsWorkspacePage />,
+                handle: { title: 'Prompt Management', subtitle: 'Manage and version control all AI prompts used in Artwork Studio.' },
               },
               {
                 path: '/prompts/:id',
-                element: <PromptDetailPage />,
-                handle: { title: 'Prompt Management', subtitle: 'Edit a draft, review its variables, publish or roll back a version.' },
+                element: <PromptsWorkspacePage />,
+                handle: { title: 'Prompt Management', subtitle: 'Manage and version control all AI prompts used in Artwork Studio.' },
               },
               {
                 path: '/settings/general',
