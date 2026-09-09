@@ -101,6 +101,13 @@ const fmtDay = (value?: string | null) => {
 // otherwise the internal workflow status.
 const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
 
+// The courier's line can run long ("ARRIVED AT USPS REGIONAL FACILITY"), so the
+// cell holds one line and the full text — details and the sub-status sentence
+// behind it — is on hover. index.css is protected, so this rides here.
+const DETAILS_CELL: React.CSSProperties = {
+  maxWidth: 190, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+}
+
 // Map both internal statuses and Shippo statuses to a colour class.
 function statusClass(raw: string): string {
   const v = (raw || '').toUpperCase()
@@ -130,6 +137,11 @@ export function ShipmentsPage() {
     ['Service Type', s => s.service_type], ['Ship-To Address', s => s.address],
     ['City', s => s.ship_to_city], ['State', s => s.ship_to_state],
     ['Postal Code', s => s.ship_to_postal_code], ['Status', s => effectiveStatus(s)],
+    // TRANSIT says the parcel is moving; it does not say whether it is sitting
+    // in a hub or already on the van. That is the courier's own line — "Loaded
+    // on Delivery Vehicle", "On the Way", "Out For Delivery" — and it was only
+    // readable by opening the row, so it goes next to the status it explains.
+    ['Details', s => s.status_details],
     ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
     ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
     ['Tracking ID', s => s.tracking_number],
@@ -416,12 +428,12 @@ export function ShipmentsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={16} className="sh-empty">Loading…</td>
+                <td colSpan={17} className="sh-empty">Loading…</td>
               </tr>
             )}
             {!isLoading && rowsToShow.length === 0 && (
               <tr>
-                <td colSpan={16} className="sh-empty">No shipments found.</td>
+                <td colSpan={17} className="sh-empty">No shipments found.</td>
               </tr>
             )}
             {!isLoading && rowsToShow.map(s => (
@@ -439,6 +451,10 @@ export function ShipmentsPage() {
                   <span className={cn('sh-status', statusClass(effectiveStatus(s)))}>
                     {effectiveStatus(s)}
                   </span>
+                </td>
+                <td className="sh-muted" style={DETAILS_CELL}
+                    title={[s.status_details, s.substatus].filter(Boolean).join(' — ') || undefined}>
+                  {s.status_details ?? '-'}
                 </td>
                 <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
