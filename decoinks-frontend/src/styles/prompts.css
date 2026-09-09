@@ -18,7 +18,16 @@
 /* ── Left pane ──────────────────────────────────────────────────────────── */
 
 .pm-left { display: grid; gap: 14px; min-width: 0; }
-.pm-left-head h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: -.025em; }
+.pm-left-head h2 {
+  margin: 0 0 4px;
+  display: flex; align-items: center; gap: 9px;
+  font-size: 22px; letter-spacing: -.02em;
+}
+.pm-left-head h2 span {
+  padding: 2px 9px; border-radius: 999px;
+  background: #f1f5f9; color: #475569;
+  font-size: 12.5px; font-weight: 650;
+}
 .pm-left-head p { margin: 0; color: #64748b; font-size: 13.5px; }
 
 .pm-searchrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
@@ -56,10 +65,13 @@
 
 .pm-card {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 12px;
+  /* The chips on the right are given only what they need, so the name and key
+     keep the rest. They used to stack into a ragged column that set the card's
+     height, which is why every card in the list was a different size. */
+  grid-template-columns: 40px minmax(0, 1fr) max-content;
+  gap: 11px;
   align-items: start;
-  padding: 13px;
+  padding: 11px 12px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #fff;
@@ -73,15 +85,18 @@
 .pm-card.selected { border-color: #2563eb; background: #f5f9ff; box-shadow: 0 0 0 1px #2563eb inset; }
 
 .pm-icon {
-  width: 44px; height: 44px;
+  width: 40px; height: 40px;
   display: grid; place-items: center;
   border-radius: 11px;
   color: #fff;
 }
-.pm-card-body { min-width: 0; display: grid; gap: 5px; }
-.pm-card-body > b { font-size: 14.5px; font-weight: 650; line-height: 1.25; }
-.pm-card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.pm-card-right { display: grid; gap: 8px; justify-items: end; }
+.pm-card-body { min-width: 0; display: grid; gap: 3px; align-content: start; }
+.pm-card-body > b { font-size: 14px; font-weight: 650; line-height: 1.3; }
+.pm-card-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 3px; }
+.pm-card-meta:empty { display: none; }
+/* Top-aligned with the name, so the version reads as a label on the title
+   rather than floating somewhere down the side of the card. */
+.pm-card-right { display: grid; gap: 5px; justify-items: end; align-content: start; }
 
 .pm-key {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

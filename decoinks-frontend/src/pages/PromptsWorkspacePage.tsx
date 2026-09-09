@@ -110,7 +110,11 @@ export function PromptsWorkspacePage() {
     <div className="pm-workspace">
       <div className="pm-left">
         <div className="pm-left-head">
-          <h2>Prompt Management</h2>
+          {/* The reference screens put "Prompt Management" here because their
+              chrome carries no page title. This app's topbar already does, so
+              repeating it stacked the same words twice down the left. The slot
+              keeps its place and labels what is actually under it. */}
+          <h2>Prompts {rows.length > 0 && <span>{rows.length}</span>}</h2>
           <p>Manage and version control all AI prompts used in Artwork Studio.</p>
         </div>
 
@@ -162,16 +166,26 @@ export function PromptsWorkspacePage() {
                 <span className="pm-key">{r.prompt_key}</span>
                 <span className="pm-card-meta">
                   {r.module_name && <span className="pm-chip module">{r.module_name}</span>}
+                  {r.production_version && r.draft_version && (
+                    <span className="pm-chip draft" title="A draft is open on this prompt">
+                      Draft v{r.draft_version}
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="pm-card-right">
-                <span className={`pm-chip ${r.production_version ? 'version' : 'muted'}`}>
-                  {r.production_version ? `v${r.production_version}` : 'Not published'}
-                </span>
+                {/* One version, not three chips stacked into a ragged column.
+                    The live version is what the card is about; an unpublished
+                    prompt shows the draft it is still being written as, which
+                    says the same thing as "Not published" and says which one. */}
+                {r.production_version
+                  ? <span className="pm-chip version" title="Live version">v{r.production_version}</span>
+                  : r.draft_version
+                    ? <span className="pm-chip draft" title="Draft — not published yet">v{r.draft_version}</span>
+                    : <span className="pm-chip muted">No version</span>}
                 <span className={`pm-chip ${r.status === 'Active' ? 'active' : r.status === 'Disabled' ? 'disabled' : 'archived'}`}>
                   {r.status}
                 </span>
-                {r.draft_version && <span className="pm-chip draft">v{r.draft_version}</span>}
               </span>
             </button>
           ))}
