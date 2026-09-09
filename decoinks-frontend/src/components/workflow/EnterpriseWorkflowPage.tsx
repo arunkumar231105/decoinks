@@ -15,7 +15,8 @@ import { orderStage, processStatus } from '../../utils/orderStatus'
 import { copyText, downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
-import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
+import { periodRange, type PeriodKey } from '../../utils/period'
+import { PeriodTabs } from '../PeriodTabs'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -571,9 +572,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <button className="ew-btn ew-primary" onClick={() => navigate(config.newPath)}><Plus size={16}/>{config.newLabel}</button>
       </div>
 
-      <div className="ew-period" role="group" aria-label="Date period">
-        {PERIOD_TABS.map(([value, label]) => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
-      </div>
+      <PeriodTabs className="ew-period" period={period} onChange={setPeriod} />
 
       <section className="ew-kpis">
         {config.kpis.map(({ label, icon: Icon, value, tone }) => <article className="ew-kpi" key={label}>

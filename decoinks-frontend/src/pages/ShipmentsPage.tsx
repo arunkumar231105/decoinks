@@ -36,6 +36,8 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
+import { periodRange, type PeriodKey } from '../utils/period'
+import { PeriodTabs } from '../components/PeriodTabs'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
 import { LabelModal } from '../components/LabelModal'
 
@@ -125,6 +127,7 @@ export function ShipmentsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('All')
+  const [period, setPeriod] = useState<PeriodKey>('all')
   // Newest ship date first by default, matching the other modules; the SHP
   // series is one pick away for reading the list in sequence.
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'>('date_desc')
@@ -163,6 +166,10 @@ export function ShipmentsPage() {
 
   const allShipments: Shipment[] = data?.rows ?? []
 
+  // The chosen range as two dates. Empty ends mean no bound, which is what
+  // "All Time" resolves to.
+  const [periodFrom, periodTo] = periodRange(period)
+
   const filtered = allShipments.filter((s) => {
     const matchesStatus = statusFilter === 'All' || effectiveStatus(s) === statusFilter
     const q = search.toLowerCase()
@@ -170,7 +177,13 @@ export function ShipmentsPage() {
       (s.order_number ?? '').toLowerCase().includes(q) ||
       (s.customer_name ?? '').toLowerCase().includes(q) ||
       (s.tracking_number ?? '').toLowerCase().includes(q)
-    return matchesStatus && matchesSearch
+    // A parcel with no ship date has no place in a dated range, so it shows
+    // only when no range is set rather than being quietly counted in every one.
+    const day = (s.ship_date ?? '').slice(0, 10)
+    const matchesPeriod =
+      (!periodFrom && !periodTo) ||
+      (!!day && (!periodFrom || day >= periodFrom) && (!periodTo || day <= periodTo))
+    return matchesStatus && matchesSearch && matchesPeriod
   })
 
   // Rows with no value for the chosen key stay at the bottom either way, rather
@@ -351,10 +364,14 @@ export function ShipmentsPage() {
         </button>
         <div className="sh-date-range">
           <Calendar size={13} />
-          <span>Apr 1, 2026 - May 3, 2026</span>
-          <ChevronDown size={12} />
+          <span>{periodFrom || periodTo
+            ? `${fmtDay(periodFrom)} – ${fmtDay(periodTo)}`
+            : 'All dates'}</span>
         </div>
       </div>
+
+      <PeriodTabs className="leads-period" period={period}
+        onChange={p => { setPeriod(p); setPage(1) }} />
 
       {/* Stats */}
       <div className="sh-stats">
