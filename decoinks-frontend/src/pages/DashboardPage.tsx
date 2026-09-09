@@ -11,6 +11,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { api } from '../services/api'
+import { RECENT_PERIODS, periodRange } from '../utils/period'
 
 // ── Types (mirror /dashboard/overview) ──────────────────────────────────────
 type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number; orders_covered?: number; reached?: number }
@@ -40,14 +41,23 @@ const fmtRange = (a: string, b: string) => `${fmtDay(a)} – ${fmtDay(b)}`
 const pctOf = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : '0%')
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-type Tab = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'alltime' | 'custom'
-const TAB_LABELS: Record<Tab, string> = {
+// The named tabs are this page's own — Daily, Weekly and the rest. The rolling
+// ranges beside them are the same ones every list page offers, taken from the
+// shared helper rather than worked out again here, so "last 15 days" means the
+// same thing on the dashboard as it does on Orders.
+type RecentKey = (typeof RECENT_PERIODS)[number][0]
+type Tab = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'alltime' | 'custom' | RecentKey
+const TAB_LABELS: Record<string, string> = {
   daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
   quarterly: 'Quarterly', yearly: 'Yearly', alltime: 'All Time', custom: 'Custom',
 }
 const TAB_ORDER: Tab[] = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'alltime', 'custom']
+const RECENT_KEYS = RECENT_PERIODS.map(([k]) => k) as RecentKey[]
+const isRecent = (tab: Tab): tab is RecentKey => (RECENT_KEYS as string[]).includes(tab)
+
 function tabRange(tab: Tab): { from: string; to: string } {
   const today = new Date()
+  if (isRecent(tab)) { const [from, to] = periodRange(tab); return { from, to } }
   if (tab === 'daily') return { from: iso(today), to: iso(today) }
   if (tab === 'weekly') { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: iso(f), to: iso(today) } }
   if (tab === 'quarterly') { const q = Math.floor(today.getMonth() / 3) * 3; return { from: iso(new Date(today.getFullYear(), q, 1)), to: iso(today) } }
@@ -235,6 +245,27 @@ export function DashboardPage() {
               {TAB_LABELS[t]}
             </button>
           ))}
+          <select
+            aria-label="Rolling date range"
+            value={isRecent(tab) ? tab : ''}
+            onChange={e => { if (e.target.value) setTab(e.target.value as Tab) }}
+            style={{
+              height: 30, marginLeft: 6, padding: '0 8px',
+              border: `1px solid ${isRecent(tab) ? '#2563eb' : '#e2e8f0'}`,
+              borderRadius: 7,
+              background: isRecent(tab) ? '#2563eb' : '#fff',
+              color: isRecent(tab) ? '#fff' : '#334155',
+              font: 'inherit', fontSize: 12.5, fontWeight: 650,
+              cursor: 'pointer', maxWidth: 140,
+            }}
+          >
+            <option value="">Recent…</option>
+            {RECENT_PERIODS.map(([value, label]) => (
+              <option key={value} value={value} style={{ color: '#0f172a', background: '#fff' }}>
+                {label}
+              </option>
+            ))}
+          </select>
         </div>
         {tab === 'custom' && (
           <div className="dsb-dates">
