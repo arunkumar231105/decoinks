@@ -9,15 +9,28 @@
   display: grid;
   grid-template-columns: 400px minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
   color: #0f172a;
   font-size: 14px;
+  /* Each pane holds its own scroll and the page holds none. Letting the whole
+     workspace grow with the form meant the page scrolled AND the list scrolled,
+     so choosing a prompt scrolled the list you were choosing from out of sight
+     and left two bars fighting each other. The figure clears the app's topbar
+     and the content padding around this. */
+  height: calc(100vh - 150px);
+  min-height: 520px;
 }
 
 /* ── Left pane ──────────────────────────────────────────────────────────── */
 
-.pm-left { display: grid; gap: 14px; min-width: 0; }
+.pm-left {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
 .pm-left-head h2 {
   margin: 0 0 4px;
   display: flex; align-items: center; gap: 9px;
@@ -61,7 +74,17 @@
   min-width: 0;
 }
 
-.pm-list { display: grid; gap: 8px; max-height: calc(100vh - 300px); overflow-y: auto; padding-right: 2px; }
+.pm-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  /* A card is the full width of the column; without this the scrollbar eats
+     into it and every card sits a few pixels short of the one above. */
+  scrollbar-gutter: stable;
+}
 
 .pm-card {
   display: grid;
@@ -149,6 +172,9 @@
 
 .pm-right {
   min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   border: 1px solid #e2e8f0;
   border-radius: 14px;
   background: #fff;
@@ -192,7 +218,15 @@
 }
 .pm-tabbar-actions { display: flex; gap: 8px; padding: 8px 0; }
 
-.pm-body { padding: 18px 20px 22px; display: grid; gap: 16px; }
+.pm-body {
+  padding: 18px 20px 22px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 
 /* ── Field blocks ───────────────────────────────────────────────────────── */
 
@@ -382,8 +416,11 @@ textarea.pm-input { height: auto; min-height: 70px; padding: 10px 11px; line-hei
 }
 
 @media (max-width: 1150px) {
-  .pm-workspace { grid-template-columns: minmax(0, 1fr); }
+  .pm-workspace { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
+  .pm-left { grid-template-rows: none; }
   .pm-list { max-height: 340px; }
+  .pm-right { grid-template-rows: none; }
+  .pm-body { overflow-y: visible; }
   .pm-two-col { grid-template-columns: minmax(0, 1fr); }
   .pm-grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
