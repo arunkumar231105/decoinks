@@ -356,12 +356,13 @@ async function create(fields_in) {
   const total       = calcTotal(resolvedSubtotal, resolvedDiscountAmt, resolvedTaxAmt, resolvedShipping, resolvedRush)
   const totalQty    = await resolveInvoiceQuantity(items, quote_id, order_id)
   assertPositiveInvoice(total, totalQty)
-  // This shop is paid in full before the work starts, so an invoice never
-  // carries a balance. It is still born a draft: a draft is a document being
-  // written, not a claim on anyone, and the quote→invoice sync may rewrite it
-  // until it is issued. amount_paid follows the payment, not the drafting.
-  const balance_due = 0
+  // Nothing is paid when an invoice is raised, so all of it is due. The
+  // balance falls to zero when the money arrives — a payment recorded against
+  // it, a payment link settling, or the invoice raised as Paid (mark_paid).
+  // Born at zero, an unpaid invoice read "Balance $0.00" in the list and its
+  // preview showed nothing owed.
   const amount_paid = 0
+  const balance_due = total
   const resolvedIssueDate = issue_date || new Date().toISOString().slice(0, 10)
   // Due the day it is raised. A later date was only ever a blank filled in out
   // of habit, and it made invoices look overdue that had already been paid.
@@ -425,7 +426,7 @@ async function create(fields_in) {
       resolvedBillingAddress,
       resolvedShippingAddress,
       order_type || quoteData?.order_type || null,
-      fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+      fields.payment_terms || 'Advance',   // the shop is paid before the work starts
       fields.payment_method || quoteData?.payment_method || null,
       fields.currency       || quoteData?.currency       || 'USD',
       Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
@@ -648,7 +649,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
           fields.contact_number  ?? quoteData?.contact_number  ?? null,
           resolvedBillingAddress, resolvedShippingAddress,
           order_type || quoteData?.order_type || null,
-          fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+          fields.payment_terms || 'Advance',
           fields.payment_method || quoteData?.payment_method || null,
           fields.currency       || quoteData?.currency       || 'USD',
           Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
@@ -721,7 +722,7 @@ async function createOrSyncInvoiceFromQuote(ctx) {
         resolvedSubtotal, discountPct, resolvedDiscountAmt, taxPct, resolvedTaxAmt,
         total, balance_due, notes || null, fields.customer_notes ?? quoteData?.customer_notes ?? null,
         fields.sales_agent_name || null,
-        fields.payment_terms  || quoteData?.payment_terms  || 'Due on Receipt',
+        fields.payment_terms || 'Advance',
         fields.payment_method || quoteData?.payment_method || null,
         fields.currency       || quoteData?.currency       || 'USD',
         Number(fields.rush_services ?? quoteData?.rush_services ?? 0),
@@ -747,6 +748,11 @@ async function createOrSyncInvoiceFromQuote(ctx) {
 }
 
 async function update(id, fields) {
+  // Setting the terms to Paid while editing does what it does on create.
+  if (fields.mark_paid) {
+    const saved = await update(id, { ...fields, mark_paid: undefined })
+    return ['Paid', 'Void'].includes(saved.status) ? saved : markInvoicePaid(id)
+  }
   // The stage is editable; the due date is not — it follows the issue date, so
   // it is set below rather than accepted from the caller.
   if (fields.invoice_stage !== undefined && !STAGES.includes(fields.invoice_stage)) {
@@ -758,6 +764,9 @@ async function update(id, fields) {
   const params = []
 
   for (const key of allowed) {
+    // The form sends quote_id: null for an invoice it did not raise from a
+    // quote; that must not unlink one that was.
+    if (key === 'quote_id' && !fields[key]) continue
     if (fields[key] !== undefined) {
       params.push(key === 'billing_address' || key === 'shipping_address' ? normalizeAddress(fields[key]) : fields[key])
       sets.push(`${key} = $${params.length}`)

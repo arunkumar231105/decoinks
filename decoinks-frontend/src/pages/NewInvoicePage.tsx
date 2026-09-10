@@ -593,7 +593,9 @@ export function NewInvoicePage() {
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
     if (sourceQuote.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceQuote.payment_method))
-    if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
+    // A new invoice starts on Advance, whatever the quote said — the shop is
+    // paid before the work starts. An invoice being edited keeps its own terms.
+    if (editInvoiceId && sourceQuote.payment_terms) setPaymentTerms(sourceQuote.payment_terms)
     // The select holds "USD - US Dollar" and the record holds "USD". Without
     // this the currency was never read back, so editing any invoice quietly
     // reset it to dollars — invisible while every invoice is in dollars, and
