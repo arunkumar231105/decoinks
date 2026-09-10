@@ -14,7 +14,15 @@ const COLUMNS = `
   acc.account_name AS received_into_account, acc.account_type AS received_into_type,
   alloc.allocated_total, alloc.allocated_count,
   COALESCE(NULLIF(TRIM(p.customer_name), ''), c.name, i.customer_name, o.shipping_name) AS customer_name,
-  i.invoice_number, o.order_number, u.name AS recorded_by_name`
+  -- A payment spread over several jobs holds order_id on one of them at most
+  -- (uq_payments_one_per_order), and the rest of the link lives in
+  -- payment_allocations. Reading order_id alone showed those payments as
+  -- belonging to no order at all, on screen and in every export taken from it.
+  -- Allocations first: a payment that has any lists every order it covers there,
+  -- the one holding order_id included, so a $480 split two ways names both jobs
+  -- instead of only the one that happened to take the column.
+  i.invoice_number, COALESCE(alloc.allocated_orders, o.order_number) AS order_number,
+  u.name AS recorded_by_name`
 
 const FROM = `
   FROM payments p
@@ -25,8 +33,11 @@ const FROM = `
   LEFT JOIN payment_accounts acc ON acc.id = p.received_into_account_id
   LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(a.allocated_amount), 0)::NUMERIC(12,2) AS allocated_total,
-           COUNT(*)::INT AS allocated_count
-    FROM payment_allocations a WHERE a.payment_id = p.id
+           COUNT(*)::INT AS allocated_count,
+           string_agg(DISTINCT ao.order_number, ', ' ORDER BY ao.order_number) AS allocated_orders
+    FROM payment_allocations a
+    LEFT JOIN orders ao ON ao.id = a.order_id AND ao.deleted_at IS NULL
+    WHERE a.payment_id = p.id
   ) alloc ON TRUE`
 
 function buildWhere(f = {}) {
@@ -39,6 +50,7 @@ function buildWhere(f = {}) {
       `(p.payment_number ILIKE $${n} OR p.reference_no ILIKE $${n} OR p.payment_method ILIKE $${n}
         OR COALESCE(p.customer_name, '') ILIKE $${n} OR COALESCE(c.name, '') ILIKE $${n}
         OR COALESCE(i.invoice_number, '') ILIKE $${n} OR COALESCE(o.order_number, '') ILIKE $${n}
+        OR COALESCE(alloc.allocated_orders, '') ILIKE $${n}
         OR COALESCE(p.received_from_name, '') ILIKE $${n} OR COALESCE(p.sender_bank_name, '') ILIKE $${n}
         OR COALESCE(p.transaction_id, '') ILIKE $${n}
         OR COALESCE(acc.account_name, '') ILIKE $${n})`)
@@ -46,7 +58,10 @@ function buildWhere(f = {}) {
   if (f.status && f.status !== 'All') add(f.status, n => `p.status = $${n}`)
   if (f.payment_method) add(f.payment_method, n => `p.payment_method = $${n}`)
   if (f.customer_id) add(f.customer_id, n => `p.customer_id = $${n}`)
-  if (f.order_id) add(f.order_id, n => `p.order_id = $${n}`)
+  // An order's payments include the shares of payments spread across it.
+  if (f.order_id) add(f.order_id, n =>
+    `(p.order_id = $${n} OR EXISTS (SELECT 1 FROM payment_allocations fa
+                                    WHERE fa.payment_id = p.id AND fa.order_id = $${n}))`)
   if (f.account_id) add(f.account_id, n => `p.received_into_account_id = $${n}`)
   if (f.date_from) add(f.date_from, n => `COALESCE(p.payment_date, p.paid_at::date) >= $${n}::date`)
   if (f.date_to) add(f.date_to, n => `COALESCE(p.payment_date, p.paid_at::date) <= $${n}::date`)
