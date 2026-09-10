@@ -6,11 +6,15 @@ import { api } from '../services/api'
 import toast from '../utils/toast'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
+import { SearchableSelect } from '../components/SearchableSelect'
+import { toIsoDate } from '../utils/period'
 
 const METHODS = ['Bank Transfer', 'Cash', 'Card', 'PayPal', 'Zelle', 'Stripe', 'Shopify', 'Cheque', 'Other']
 const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 
-const today = () => new Date().toISOString().slice(0, 10)
+// The shop's own calendar day. toISOString() is UTC, so from early evening in
+// the US it already reads tomorrow.
+const today = () => toIsoDate(new Date())
 
 interface Option { id: string; label: string }
 
@@ -38,7 +42,7 @@ export function NewPaymentPage() {
   const qc = useQueryClient()
   const { id } = useParams<{ id?: string }>()
   const isEdit = !!id
-  const [form, setForm] = useState({ ...EMPTY })
+  const [form, setForm] = useState(() => ({ ...EMPTY, payment_date: today() }))
   const [saving, setSaving] = useState(false)
   const set = (key: keyof typeof form, value: string) => setForm(v => ({ ...v, [key]: value }))
 
@@ -50,6 +54,10 @@ export function NewPaymentPage() {
         id: String(c.id), label: String(c.display_name || c.name || '—'),
       }))),
   })
+  // Alphabetical, so browsing without typing lands where you expect.
+  const customerOptions = customers
+    .map(c => ({ value: c.id, label: c.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 
   // The company's own receiving accounts — a lookup, so a renamed account
   // updates everywhere at once.
@@ -87,9 +95,17 @@ export function NewPaymentPage() {
   }, [existing])
 
   // Keep a half-filled payment across a refresh (create mode only).
+  //
+  // Everything comes back except the date. The draft is written on every visit,
+  // so a stale one is almost always waiting — and it carried the date of the
+  // first time the form was opened, which is why a new payment kept opening
+  // dated weeks back. A payment is recorded today unless someone says otherwise.
   const { restored, clearDraft } = useFormDraft(
     'payment:new', form,
-    saved => setForm(f => ({ ...f, ...(saved as typeof EMPTY) })),
+    saved => {
+      const { payment_date: _stale, ...rest } = saved as typeof EMPTY
+      setForm(f => ({ ...f, ...rest, payment_date: today() }))
+    },
     { enabled: !isEdit },
   )
 
@@ -235,10 +251,13 @@ export function NewPaymentPage() {
               </select>
             </div>
             <div className="al-field"><label>Customer</label>
-              <select className="al-input" value={form.customer_id} onChange={e => set('customer_id', e.target.value)}>
-                <option value="">— Select customer —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.customer_id}
+                options={customerOptions}
+                onChange={v => set('customer_id', v)}
+                placeholder="— Select customer —"
+                searchPlaceholder="Search customer…"
+              />
             </div>
             {/* The sales order is chosen from the ORDER form, not here. Money
                 lands before the order is keyed in, so the order is raised
