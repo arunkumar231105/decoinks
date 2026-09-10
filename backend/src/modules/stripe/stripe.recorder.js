@@ -99,9 +99,12 @@ async function reconcileOrder(client, orderId) {
 async function recordSucceededIntent(intent) {
   const intentId = intent.id
 
-  // Already booked? Then this is a redelivery. Reconcile and leave.
+  // Already booked? Then this is a redelivery. Reconcile and leave. Two charges
+  // for one job may be booked as one payment; the second intent is kept in
+  // reference_no, and must not be booked a second time either.
   const { rows: existing } = await db.query(
-    `SELECT * FROM payments WHERE transaction_id = $1 LIMIT 1`, [intentId])
+    `SELECT * FROM payments WHERE transaction_id = $1 OR reference_no = $1
+      ORDER BY (transaction_id = $1) DESC LIMIT 1`, [intentId])
 
   if (existing[0]) {
     await settleDerived(existing[0], intentId)
