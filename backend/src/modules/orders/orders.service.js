@@ -573,7 +573,7 @@ async function create(data) {
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         resolvedOrderDate, resolvedDueDate,
-        payment_terms || 'Due on Receipt', payment_method || null, effectiveStatus, currency,
+        payment_terms || 'Advance', payment_method || null, effectiveStatus, currency,
         effectivePaid, payment_reference || null, payment_date || null,
         resolvedRush, resolvedShipping, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,

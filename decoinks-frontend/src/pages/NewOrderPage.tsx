@@ -65,7 +65,8 @@ const parseDimensions = (value?: string | null) => {
   const match = String(value ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
   return { width: match?.[1] ?? '', height: match?.[2] ?? '' }
 }
-const PAYMENT_TERMS = ['Advance', 'Due on Receipt', 'Net 15', 'Net 30', 'Net 60', 'Paid']
+// The shop is paid before the work starts; Due on Receipt was retired for Advance.
+const PAYMENT_TERMS = ['Advance', 'Net 15', 'Net 30', 'Net 60', 'Paid']
 const PAYMENT_STATUSES: PaymentStatus[] = ['Unpaid', 'Partial', 'Paid', 'Refunded']
 
 const PAYMENT_STATUS_STYLES: Record<PaymentStatus, { bg: string; color: string }> = {

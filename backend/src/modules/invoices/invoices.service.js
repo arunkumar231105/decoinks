@@ -765,8 +765,9 @@ async function update(id, fields) {
 
   for (const key of allowed) {
     // The form sends quote_id: null for an invoice it did not raise from a
-    // quote; that must not unlink one that was.
-    if (key === 'quote_id' && !fields[key]) continue
+    // quote; that must not unlink one that was. Nor can an invoice be its own
+    // quote — an older form sent the invoice's id here.
+    if (key === 'quote_id' && (!fields[key] || fields[key] === id)) continue
     if (fields[key] !== undefined) {
       params.push(key === 'billing_address' || key === 'shipping_address' ? normalizeAddress(fields[key]) : fields[key])
       sets.push(`${key} = $${params.length}`)

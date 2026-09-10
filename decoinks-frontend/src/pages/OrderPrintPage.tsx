@@ -871,7 +871,7 @@ export function OrderPrintPage() {
             ) : (
               <>
                 <div className="pay-detail-row"><strong>Payment Status:</strong> {order.payment_status}</div>
-                <div className="pay-detail-row"><strong>Payment Terms:</strong> {order.payment_terms || 'Due on Receipt'}</div>
+                <div className="pay-detail-row"><strong>Payment Terms:</strong> {order.payment_terms || 'Advance'}</div>
                 {order.payment_method && <div className="pay-detail-row"><strong>Method:</strong> {payMethodDisplay}</div>}
               </>
             )}

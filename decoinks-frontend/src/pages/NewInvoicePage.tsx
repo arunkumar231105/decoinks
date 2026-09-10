@@ -551,7 +551,7 @@ export function NewInvoicePage() {
   const hydrateFrom = useMemo(() => {
     if (sourceQuote) return sourceQuote
     if (!editingInvoice) return undefined
-    return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined }
+    return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined, _isInvoice: true }
   }, [sourceQuote, editingInvoice])
 
   // The hydration below deliberately drops the source's status — an Approved
@@ -581,7 +581,13 @@ export function NewInvoicePage() {
     if (sourceQuote.billing_address) setBillingAddress(sourceQuote.billing_address)
     if (sourceQuote.shipping_address) setShippingAddress(sourceQuote.shipping_address)
     // Quote ref
-    if (sourceQuote.quote_number)  { setQuoteText(sourceQuote.quote_number); setQuoteId(sourceQuote.id) }
+    // An invoice being edited carries its quote as quote_id; its own id is the
+    // invoice's. Taking id here sent the invoice as its own quote, and every
+    // save failed with "Referenced record does not exist".
+    if (sourceQuote.quote_number)  {
+      setQuoteText(sourceQuote.quote_number)
+      setQuoteId(sourceQuote._isInvoice ? (sourceQuote.quote_id ?? '') : sourceQuote.id)
+    }
     // Order type
     if (sourceQuote.order_type) {
       setOrderType(sourceQuote.order_type as OrderType)
@@ -1693,7 +1699,6 @@ export function NewInvoicePage() {
                   <option>Advance</option>
                   <option>Net 15</option>
                   <option>Net 30</option>
-                  <option>Due on Receipt</option>
                   <option>Paid</option>
                 </select>
               </div>
