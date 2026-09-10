@@ -300,6 +300,7 @@ export function PromptsWorkspacePage() {
 
       {creating && (
         <PromptFormModal
+          defaultModuleId={moduleId}
           onClose={() => setCreating(false)}
           onSaved={(id) => { qc.invalidateQueries({ queryKey: ['prompts'] }); setCreating(false); nav(`/prompts/${id}`) }}
         />
@@ -380,18 +381,28 @@ function PromptMenu({
 
 /* ── New / edit prompt ────────────────────────────────────────────────────── */
 
+// Mirrors promptKeyFor in prompts.service.js. This is only the preview; the
+// server makes the real key, adding _2, _3… if the name is already taken.
+const keyPart = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+
 function PromptFormModal({
-  prompt, onClose, onSaved,
+  prompt, defaultModuleId, onClose, onSaved,
 }: {
   prompt?: Prompt
+  // The module the list is filtered to: a prompt started there belongs there.
+  defaultModuleId?: string
   onClose: () => void
   onSaved: (id: string) => void
 }) {
   const editing = Boolean(prompt)
+  const modules = useQuery({
+    queryKey: ['prompt-modules'],
+    queryFn: () => api.get('/prompts/modules').then(r => r.data.data as PromptModule[]),
+  })
   const [form, setForm] = useState({
     name: prompt?.name ?? '',
     prompt_key: prompt?.prompt_key ?? '',
-    module_id: prompt?.module_id ?? '',
+    module_id: prompt?.module_id ?? defaultModuleId ?? '',
     description: prompt?.description ?? '',
     used_in: prompt?.used_in ?? '',
     status: prompt?.status ?? 'Active',
@@ -408,15 +419,21 @@ function PromptFormModal({
       }
       return editing
         ? api.put(`/prompts/${prompt!.id}`, body).then(r => r.data.data as Prompt)
-        : api.post('/prompts', { ...body, prompt_key: form.prompt_key.trim().toUpperCase() })
-            .then(r => r.data.data as Prompt)
+        : api.post('/prompts', body).then(r => r.data.data as Prompt)
     },
-    onSuccess: (p) => { toast.success(editing ? 'Prompt updated' : 'Prompt created with an empty draft'); onSaved(p.id) },
+    onSuccess: (p) => {
+      toast.success(editing ? 'Prompt updated' : `Prompt ${p.prompt_key} created with an empty draft`)
+      onSaved(p.id)
+    },
     onError: (err) => toast.error(apiMessage(err, 'Could not save the prompt')),
   })
 
   const set = (k: keyof typeof form) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
-  const ready = form.name.trim() && (editing || /^[A-Za-z0-9._-]+$/.test(form.prompt_key.trim()))
+  const moduleKey = (modules.data ?? []).find(m => m.id === form.module_id)?.key
+  const keyPreview = editing
+    ? form.prompt_key
+    : moduleKey && keyPart(form.name) ? `AIS.${keyPart(moduleKey)}.${keyPart(form.name)}` : ''
+  const ready = form.name.trim() && (editing || form.module_id)
 
   return (
     <div className="pm-modal-backdrop" onClick={onClose}>
@@ -434,12 +451,13 @@ function PromptFormModal({
 
           <div className="pm-field">
             <label>Prompt Key</label>
-            <input className="pm-input" value={form.prompt_key} disabled={editing} onChange={set('prompt_key')}
-              placeholder="AIS.RECREATE.GENERATE" style={{ fontFamily: 'ui-monospace, monospace' }} />
+            <input className="pm-input" value={keyPreview} disabled readOnly
+              placeholder={form.module_id ? 'Type the prompt name' : 'Choose a module first'}
+              style={{ fontFamily: 'ui-monospace, monospace' }} />
             <small>
               {editing
                 ? 'The key is how the application asks for this prompt, so it never changes.'
-                : 'How the application asks for this prompt. Letters, numbers, dots, dashes and underscores only — it is a contract with the code and cannot be changed later.'}
+                : 'Made from the module and the name. It is how the application asks for this prompt, so it cannot be changed later.'}
             </small>
           </div>
 
