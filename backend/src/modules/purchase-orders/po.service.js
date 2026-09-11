@@ -213,21 +213,36 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             -- Two statuses, as a sales order has (utils/poStatus.ts reads them).
             -- PO Status is where the document is: anything past Draft has gone
             -- to the factory, so it is Sent whatever po_stage last said.
+            -- A draft whose work has moved on — the factory has made a label
+            -- for it — is not a draft any more: it reads Saved at least.
             CASE WHEN po.status::text NOT IN ('Draft', 'Pending Approval', 'Approved') THEN 'Sent'
+                 WHEN COALESCE(po.po_stage, 'Draft') = 'Draft' AND COALESCE(parcel_roll.rank, 0) >= 2 THEN 'Saved'
                  ELSE COALESCE(po.po_stage, 'Draft') END AS export_po_stage,
+            -- Where the PO stands in the factory's own system. The factory's
+            -- feed writes factory_status; until it has, a PO being produced or
+            -- shipped has plainly been pushed, and one that is not has not.
+            CASE WHEN po.status = 'Cancelled' THEN NULL
+                 ELSE COALESCE(po.factory_status,
+                   CASE WHEN po.status IN ('In Production', 'Shipped', 'Partially Received', 'Received', 'Closed')
+                          OR COALESCE(parcel_roll.rank, 0) >= 2 THEN 'Pushed'
+                        ELSE 'To be Pushed' END) END AS export_factory_status,
             -- Process Status is where the work is, read off the PO and its
             -- parcel each time — the stored status was never moved on after the
             -- factory shipped, so it said In Production for delivered work.
+            -- A PO that exists has been issued; it moves on from there. A label
+            -- without a courier scan is still the factory's, so In Production.
+            -- The courier's word decides once there is a parcel: a label not
+            -- yet scanned is Pre Transit (waiting for scan), a scanned one In
+            -- Transit. Shipped is the factory saying so before any parcel is on
+            -- record.
             CASE
               WHEN po.status = 'Cancelled' THEN 'Cancelled'
-              WHEN latest_shipment.status = 'Delivered'
-                OR UPPER(COALESCE(latest_shipment.tracking_status, '')) = 'DELIVERED'
-                OR po.status IN ('Received', 'Partially Received', 'Closed') THEN 'Delivered'
-              WHEN COALESCE(NULLIF(BTRIM(po.tracking_number), ''), latest_shipment.tracking_number) IS NOT NULL
-                OR po.status = 'Shipped' THEN 'Shipped'
+              WHEN parcel_roll.rank = 4 OR po.status IN ('Received', 'Partially Received', 'Closed') THEN 'Delivered'
+              WHEN parcel_roll.rank = 3 THEN 'In Transit'
+              WHEN parcel_roll.rank = 2 THEN 'Pre Transit'
+              WHEN po.status = 'Shipped' THEN 'Shipped'
               WHEN po.status = 'In Production' THEN 'In Production'
-              WHEN po.status::text NOT IN ('Draft', 'Pending Approval', 'Approved') OR po.po_stage = 'Sent' THEN 'PO Issued'
-              ELSE '—'
+              ELSE 'PO Issued'
             END AS export_process_status,
             -- Service level lives on the shipment, not the PO, and on its own it
             -- reads "Ground" — which ground, whose? The carrier goes in front,
@@ -256,9 +271,27 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
        WHERE sh.deleted_at IS NULL
          AND (sh.order_id = po.order_id
               OR (NULLIF(TRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number))
-       ORDER BY (sh.tracking_number = po.tracking_number) DESC, sh.created_at DESC
+       -- NULLS LAST: a shipment row with no tracking number compares as NULL,
+       -- and NULL sorts first in DESC, so an empty row beat the real parcel.
+       ORDER BY (sh.tracking_number = po.tracking_number) DESC NULLS LAST, sh.created_at DESC
        LIMIT 1
      ) latest_shipment ON TRUE
+     LEFT JOIN LATERAL (
+       -- How far the parcels have got, the furthest of them. Every parcel
+       -- counts, not only the newest: a job with a stray empty shipment row
+       -- beside its delivered one read Pending, and a label nobody has handed
+       -- to the courier yet is not a parcel on its way.
+       SELECT MAX(CASE
+                WHEN sh.status = 'Delivered' OR sh.delivered_date IS NOT NULL
+                  OR UPPER(COALESCE(sh.tracking_status, '')) = 'DELIVERED'              THEN 4
+                WHEN sh.status IN ('In Transit', 'Picked Up', 'Exception')
+                  OR UPPER(COALESCE(sh.tracking_status, '')) IN ('TRANSIT', 'OUT_FOR_DELIVERY', 'FAILURE', 'RETURNED') THEN 3
+                WHEN NULLIF(BTRIM(sh.tracking_number), '') IS NOT NULL                 THEN 2
+                ELSE 0 END) AS rank
+       FROM shipments sh
+       WHERE sh.deleted_at IS NULL AND (sh.po_id = po.id OR sh.order_id = po.order_id
+              OR (NULLIF(BTRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number))
+     ) parcel_roll ON TRUE
      ${where}
      ORDER BY po.order_date DESC, po.created_at DESC, po.po_number DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -737,6 +770,22 @@ async function update(id, data) {
 
 // ── Status update ─────────────────────────────────────────────────────────────
 
+const NOT_YET_SENT = ['Draft', 'Pending Approval', 'Approved']
+const PAST_THE_FACTORY_DOOR = ['In Production', 'Shipped', 'Partially Received', 'Received', 'Closed']
+const FACTORY_STATUSES = ['To be Pushed', 'Factory Audit', 'Anti Review', 'Pushed']
+
+/** Where the PO stands in the factory's own system — written by its feed. */
+async function setFactoryStatus(id, factoryStatus) {
+  if (!FACTORY_STATUSES.includes(factoryStatus)) {
+    throw Object.assign(new Error(`Factory status must be one of: ${FACTORY_STATUSES.join(', ')}`), { statusCode: 422 })
+  }
+  const { rows } = await query(
+    `UPDATE purchase_orders SET factory_status = $2, updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL RETURNING id, po_number, factory_status`, [id, factoryStatus])
+  if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
+  return rows[0]
+}
+
 async function updateStatus(id, status, actor, comment) {
   const changedBy = typeof actor === 'string' ? actor : actor.id
   const actorUser = typeof actor === 'string' ? null   : actor
@@ -748,10 +797,24 @@ async function updateStatus(id, status, actor, comment) {
       `SELECT status FROM purchase_orders WHERE id = $1 AND deleted_at IS NULL`, [id]
     )
     if (!current[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
+    // A draft has not gone to the factory, so it cannot be in production or
+    // beyond. Said plainly here, for every caller, rather than left to the
+    // state machine's generic refusal.
+    if (NOT_YET_SENT.includes(current[0].status) && PAST_THE_FACTORY_DOOR.includes(status)) {
+      throw Object.assign(new Error(
+        `A ${current[0].status.toLowerCase()} purchase order cannot move to ${status}. Save it and send it to the factory first.`),
+        { statusCode: 422 })
+    }
     if (actorUser) validateTransition('po', current[0].status, status, actorUser)
 
+    // Once its status has moved, a PO is no longer a draft document: its PO
+    // Status becomes Saved (it reads Sent once it has gone past Draft).
     const { rows } = await client.query(
-      `UPDATE purchase_orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+      `UPDATE purchase_orders
+          SET status = $1::po_status,
+              po_stage = CASE WHEN $1::text <> 'Draft' AND COALESCE(po_stage, 'Draft') = 'Draft' THEN 'Saved' ELSE po_stage END,
+              updated_at = NOW()
+        WHERE id = $2 RETURNING *`,
       [status, id]
     )
 
@@ -861,6 +924,7 @@ async function sendToPortal(poId, sentByUserId, overrideSupplierId) {
 }
 
 module.exports = {
+  setFactoryStatus,
   list, getImportSummary, getById, create, update, updateStatus, remove,
   listAttachments, addAttachment, removeAttachment,
   getStatusHistory, sendToPortal,
