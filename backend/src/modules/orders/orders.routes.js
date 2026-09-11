@@ -208,6 +208,16 @@ router.post('/:id/send-to-portal', async (req, res) => {
   }
 })
 
+// What the supplier reported back from the portal. Read-only: the portal's
+// status updates are the vendor's own account of the job and never move
+// orders.status, which stays with the state machine.
+router.get('/:id/portal-updates', async (req, res, next) => {
+  try {
+    const updates = await portalSvc.getOrderStatusUpdatesForStaff(req.params.id)
+    res.json({ success: true, data: updates })
+  } catch (err) { next(err) }
+})
+
 router.get('/:id/portal-status', async (req, res) => {
   try {
     const db = require('../../config/db')

@@ -3,22 +3,23 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, ChevronRight, Download, X,
-  Package, ShoppingCart, BarChart2, XCircle, Clock, CheckCircle, PauseCircle,
+  Package, ShoppingCart, BarChart2, XCircle, Clock, CheckCircle, Truck,
 } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+// The statuses an order can actually hold, per the order state machine.
 const STATUS_BADGE: Record<string, string> = {
-  'In Production': 'bg-blue-50 text-blue-700',
-  Shipped:         'bg-orange-50 text-orange-700',
-  Completed:       'bg-green-50 text-green-700',
-  'On Hold':       'bg-yellow-50 text-yellow-700',
-  Cancelled:       'bg-red-50 text-red-700',
   Draft:           'bg-gray-100 text-gray-600',
   Confirmed:       'bg-emerald-50 text-emerald-700',
+  'In Production': 'bg-blue-50 text-blue-700',
+  QC:              'bg-violet-50 text-violet-700',
+  'Ready to Ship': 'bg-amber-50 text-amber-700',
+  Shipped:         'bg-orange-50 text-orange-700',
   Delivered:       'bg-teal-50 text-teal-700',
+  Cancelled:       'bg-red-50 text-red-700',
 }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -27,7 +28,7 @@ const TYPE_BADGE: Record<string, string> = {
   dtf:       'bg-orange-50 text-orange-700',
 }
 
-const STATUSES  = ['All', 'Draft', 'Confirmed', 'In Production', 'Ready to Ship', 'Shipped', 'Delivered', 'Completed', 'On Hold', 'Cancelled']
+const STATUSES  = ['All', 'Draft', 'Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled']
 const TYPES     = ['All', 'apparel', 'gangsheet', 'dtf']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ interface Order {
 
 interface Counts {
   total: number; gangsheet: number; apparel: number; dtf: number
-  cancelled: number; inProduction: number; completed: number; onHold: number
+  cancelled: number; inProduction: number; shipped: number; delivered: number
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ export default function OrdersPage() {
   const orders: Order[] = data?.orders ?? []
   const total           = data?.total  ?? 0
   const pages           = Math.max(1, Math.ceil(total / 10))
-  const counts: Counts  = data?.counts ?? { total: 0, gangsheet: 0, apparel: 0, dtf: 0, cancelled: 0, inProduction: 0, completed: 0, onHold: 0 }
+  const counts: Counts  = data?.counts ?? { total: 0, gangsheet: 0, apparel: 0, dtf: 0, cancelled: 0, inProduction: 0, shipped: 0, delivered: 0 }
 
   const hasFilters = search || status !== 'All' || type !== 'All' || dateFrom || dateTo
 
@@ -120,8 +121,8 @@ export default function OrdersPage() {
     { label: 'Custom T-shirts', value: counts.apparel,      icon: ShoppingCart, bg: 'bg-blue-50',  color: 'text-blue-600' },
     { label: 'Cancelled',       value: counts.cancelled,    icon: XCircle,     bg: 'bg-red-50',    color: 'text-red-500' },
     { label: 'In Production',   value: counts.inProduction, icon: Clock,       bg: 'bg-orange-50', color: 'text-orange-600' },
-    { label: 'Completed',       value: counts.completed,    icon: CheckCircle, bg: 'bg-green-50',  color: 'text-green-600' },
-    { label: 'On Hold',         value: counts.onHold,       icon: PauseCircle, bg: 'bg-yellow-50', color: 'text-yellow-600' },
+    { label: 'Shipped',         value: counts.shipped,      icon: Truck,       bg: 'bg-yellow-50', color: 'text-yellow-600' },
+    { label: 'Delivered',       value: counts.delivered,    icon: CheckCircle, bg: 'bg-green-50',  color: 'text-green-600' },
   ]
 
   return (

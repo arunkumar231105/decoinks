@@ -31,6 +31,12 @@ interface Order {
   total_weight_lbs?: number; total_weight_g?: number
 }
 
+/** One line a vendor reported from the Fulfillment Portal. */
+interface SupplierUpdate {
+  id: string; status: string; notes: string|null; submitted_at: string
+  supplier_id: string; supplier_name: string|null
+}
+
 const fmt = (value: unknown) => Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const date = (value?: string|null) => value ? new Date(value).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
 const orderTypeName = (type: string) => type === 'dtf' ? 'DTF Transfers' : type === 'gangsheet' ? 'DTF Gangsheet' : 'Custom Printed Apparel'
@@ -56,6 +62,14 @@ export function OrderDetailPage() {
 
   const { data: order, isLoading } = useQuery<Order>({
     queryKey: ['order', id], queryFn: () => api.get(`/orders/${id}`).then(r => r.data.data), enabled: !!id,
+  })
+
+  // What the vendor reported from the Fulfillment Portal. Read-only here: these
+  // are the supplier's own account of the job, not a status the order moves on.
+  const { data: supplierUpdates = [] } = useQuery<SupplierUpdate[]>({
+    queryKey: ['order-portal-updates', id],
+    queryFn: () => api.get(`/orders/${id}/portal-updates`).then(r => r.data.data ?? []),
+    enabled: !!id,
   })
 
   const statusMutation = useMutation({
@@ -160,13 +174,14 @@ export function OrderDetailPage() {
           </section>
 
           <section className="so-card so-tabs-card">
-            <div className="so-tabs">{['Production Information','Artwork',`Purchase Orders (${pos.length})`,'Production Jobs','QC / QA','Packing','Shipments','Activity Timeline'].map(tab=><button className={cn(activeTab===tab&&'active')} onClick={()=>setActiveTab(tab)} key={tab}>{tab}</button>)}</div>
+            <div className="so-tabs">{['Production Information','Artwork',`Purchase Orders (${pos.length})`,`Supplier Updates (${supplierUpdates.length})`,'Production Jobs','QC / QA','Packing','Shipments','Activity Timeline'].map(tab=><button className={cn(activeTab===tab&&'active')} onClick={()=>setActiveTab(tab)} key={tab}>{tab}</button>)}</div>
             {activeTab === 'Production Information' && <div className="so-production-grid"><div><small>Production Method</small><strong>{order.production_method || orderTypeName(order.order_type)}</strong></div><div><small>Print Facility</small><strong>{order.production_facility || 'Decoinks Production'}</strong></div><div><small>Assigned Team</small><strong>{order.assigned_team || (order.order_type === 'dtf' ? 'DTF Team' : 'Production Team')}</strong></div><div><small>Priority</small><strong>{order.production_priority || 'Normal'}</strong></div><div><small>Estimated Production Time</small><strong>{order.estimated_production_time || '1 - 2 Business Days'}</strong></div><div><small>Workflow</small><strong>{orderTypeName(order.order_type)} Workflow</strong></div><div><small>Packing Instructions</small><strong>{order.packing_instructions || '—'}</strong></div><div><small>Shipping Instructions</small><strong>{order.shipping_instructions || '—'}</strong></div></div>}
             {activeTab === 'Artwork' && <div className="so-gallery">{artworks.length ? artworks.map(a=><a href={a.file_url} target="_blank" rel="noreferrer" key={a.id}>{a.thumbnail_url || a.file_url ? <img src={a.thumbnail_url || a.file_url} alt={a.name}/> : <ImageIcon/>}<strong>{a.artwork_no}</strong><small>{a.status}</small></a>) : <p>No separate artwork records. Item artwork previews are shown above.</p>}</div>}
             {activeTab.startsWith('Purchase Orders') && <div className="so-list">{pos.length ? pos.map(po=><Link to={`/purchase-orders/${po.id}`} key={po.id}>{po.po_number}<span>{po.status}</span></Link>) : <button onClick={()=>navigate('/purchase-orders/new',{state:{fromOrderId:order.id}})}>Generate Purchase Order</button>}</div>}
+            {activeTab.startsWith('Supplier Updates') && <div className="so-list">{supplierUpdates.length ? supplierUpdates.map(u=><div key={u.id}><strong>{u.status}{u.supplier_name ? ` · ${u.supplier_name}` : ''}</strong><span>{u.notes ? `${u.notes} · ` : ''}{date(u.submitted_at)}</span></div>) : <p>No supplier has reported progress from the portal for this order.</p>}</div>}
             {activeTab === 'Shipments' && <div className="so-list">{shipments.length ? shipments.map(s=><div key={s.id}><strong>{s.shipment_number}</strong><span>{s.carrier || '—'} · {s.tracking_number || 'No tracking'} · {s.status}</span></div>) : <p>No shipment created yet.</p>}</div>}
             {activeTab === 'Activity Timeline' && <div className="so-list">{(order.activities || []).map((a,i)=><div key={i}><strong>{a.description}</strong><span>{date(a.created_at)}</span></div>)}</div>}
-            {!['Production Information','Artwork','Shipments','Activity Timeline'].includes(activeTab) && !activeTab.startsWith('Purchase Orders') && <p className="so-empty">This stage will populate automatically when its workflow starts.</p>}
+            {!['Production Information','Artwork','Shipments','Activity Timeline'].includes(activeTab) && !activeTab.startsWith('Purchase Orders') && !activeTab.startsWith('Supplier Updates') && <p className="so-empty">This stage will populate automatically when its workflow starts.</p>}
           </section>
 
           <section className="so-stats"><div><CalendarDays/><span>Total Pieces<strong>{totalQty} pcs</strong></span></div>{order.order_type === 'apparel' && <div><Box/><span>Total Weight<strong>{order.total_weight_lbs ? `${order.total_weight_lbs} lbs` : '—'}</strong></span></div>}<div><Wrench/><span>Total Print Locations<strong>{order.total_print_locations || itemArtworkCount || '—'}</strong></span></div><div><ImageIcon/><span>Total Artwork<strong>{totalArtwork}</strong></span></div><div><Factory/><span>Estimated Production Time<strong>{order.estimated_production_time || '1 - 2 Days'}</strong></span></div><div><Truck/><span>Estimated Ship Date<strong>{date(requiredDate)}</strong></span></div></section>
