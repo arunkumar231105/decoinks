@@ -210,6 +210,25 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             COALESCE(NULLIF(BTRIM(latest_shipment.tracking_status), ''),
                      latest_shipment.status::text) AS tracking_status,
             COALESCE(po.tracking_number, latest_shipment.tracking_number) AS display_tracking_number,
+            -- Two statuses, as a sales order has (utils/poStatus.ts reads them).
+            -- PO Status is where the document is: anything past Draft has gone
+            -- to the factory, so it is Sent whatever po_stage last said.
+            CASE WHEN po.status::text NOT IN ('Draft', 'Pending Approval', 'Approved') THEN 'Sent'
+                 ELSE COALESCE(po.po_stage, 'Draft') END AS export_po_stage,
+            -- Process Status is where the work is, read off the PO and its
+            -- parcel each time — the stored status was never moved on after the
+            -- factory shipped, so it said In Production for delivered work.
+            CASE
+              WHEN po.status = 'Cancelled' THEN 'Cancelled'
+              WHEN latest_shipment.status = 'Delivered'
+                OR UPPER(COALESCE(latest_shipment.tracking_status, '')) = 'DELIVERED'
+                OR po.status IN ('Received', 'Partially Received', 'Closed') THEN 'Delivered'
+              WHEN COALESCE(NULLIF(BTRIM(po.tracking_number), ''), latest_shipment.tracking_number) IS NOT NULL
+                OR po.status = 'Shipped' THEN 'Shipped'
+              WHEN po.status = 'In Production' THEN 'In Production'
+              WHEN po.status::text NOT IN ('Draft', 'Pending Approval', 'Approved') OR po.po_stage = 'Sent' THEN 'PO Issued'
+              ELSE '—'
+            END AS export_process_status,
             -- Service level lives on the shipment, not the PO, and on its own it
             -- reads "Ground" — which ground, whose? The carrier goes in front,
             -- so the column says UPS Ground or USPS Priority Mail.
@@ -536,10 +555,10 @@ async function create(data) {
           total_discount, total_tax, freight_charges, other_charges, grand_total, order_id,
           po_type, supplier_contact_id, communication_method, payment_status,
           ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes,
-          customer_id)
+          customer_id, po_stage)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34,$35,$36,$37)
+               $31,$32,$33,$34,$35,$36,$37,$38)
        RETURNING *`,
       [
         po_number,
@@ -579,6 +598,7 @@ async function create(data) {
         carrier || null,
         tracking_notes || null,
         data.customer_id || null,
+        data.po_stage || 'Draft',
       ]
     )
     const po = rows[0]
@@ -664,6 +684,7 @@ async function update(id, data) {
          carrier              = COALESCE($33, carrier),
          tracking_notes       = COALESCE($34, tracking_notes),
          shipping_labels      = COALESCE($35, shipping_labels),
+         po_stage             = COALESCE($36, po_stage),
          updated_at        = NOW()
        WHERE id = $28 AND deleted_at IS NULL
        RETURNING *`,
@@ -679,6 +700,7 @@ async function update(id, data) {
         data.ship_source ?? null, data.ship_date ?? null, data.estimated_delivery ?? null,
         data.tracking_number ?? null, data.carrier ?? null, data.tracking_notes ?? null,
         data.shipping_labels ?? null,
+        data.po_stage ?? null,
       ]
     )
     if (!rows[0]) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 })
