@@ -79,6 +79,14 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   supplier_id:      z.string().uuid().optional().nullable(),
+  // The invoice form sends one body whether it is creating or editing, and
+  // strict() refused every edit over these four ("Unrecognized key(s)").
+  // update() writes quote_id only when it names one, acts on mark_paid, and
+  // leaves the customer and order type as the invoice was raised.
+  customer_id:      z.string().uuid().optional().nullable(),
+  quote_id:         z.string().uuid().optional().nullable(),
+  order_type:       z.enum(['apparel', 'gangsheet', 'dtf']).optional().nullable(),
+  mark_paid:        z.boolean().optional(),
   issue_date:       z.string().optional().nullable(),
   // Kept so existing callers do not break; the service sets it from the issue
   // date regardless, because payment is due the day the invoice is raised.

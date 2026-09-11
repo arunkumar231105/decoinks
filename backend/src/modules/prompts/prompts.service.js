@@ -78,14 +78,39 @@ async function getPrompt(id) {
   return { ...rows[0], versions }
 }
 
+// AIS.<module>.<name> — "Artwork Reconstruction" in Recreation is
+// AIS.RECREATION.ARTWORK_RECONSTRUCTION. The screen shows the same thing as a
+// preview; this is the one that counts, because only it can see which keys
+// are taken.
+const keyPart = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+function promptKeyFor(moduleKey, name) {
+  return `AIS.${keyPart(moduleKey)}.${keyPart(name)}`.slice(0, 112)
+}
+
+async function freeKey(client, base) {
+  const { rows } = await client.query(
+    `SELECT prompt_key FROM prompts WHERE prompt_key = $1 OR prompt_key LIKE $1 || '\\_%'`, [base])
+  const taken = new Set(rows.map(r => r.prompt_key))
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`
+}
+
 /** A new capability. Improving an existing one is a version, not a prompt. */
 async function createPrompt({ name, prompt_key, module_id, description, used_in, created_by }) {
-  if (!name || !prompt_key) {
-    throw Object.assign(new Error('A prompt needs a name and a key'), { statusCode: 422 })
+  if (!name || (!prompt_key && !module_id)) {
+    throw Object.assign(new Error('A prompt needs a name and a module'), { statusCode: 422 })
   }
   const client = await getClient()
   try {
     await client.query('BEGIN')
+    // The key is made from the module it is created in, not typed: the admin
+    // names the prompt and picks where it lives, and the key follows.
+    if (!prompt_key) {
+      const { rows: m } = await client.query(`SELECT key FROM prompt_modules WHERE id = $1`, [module_id])
+      if (!m[0]) throw Object.assign(new Error('That module does not exist'), { statusCode: 422 })
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['prompt-key'])
+      prompt_key = await freeKey(client, promptKeyFor(m[0].key, name))
+    }
     const { rows } = await client.query(
       `INSERT INTO prompts (name, prompt_key, module_id, description, used_in, created_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

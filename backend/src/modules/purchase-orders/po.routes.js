@@ -92,6 +92,9 @@ const createSchema = z.object({
   fragments:          z.array(fragmentSchema).optional(),
   artwork_ids:        z.array(z.string().uuid()).optional(),
   items:              z.array(itemSchema).optional().default([]),
+  // Where the document is: Draft, Saved, Sent. The form writes Draft on Save
+  // Draft and Saved on Save PO; Sent follows the PO leaving for the factory.
+  po_stage:           z.enum(['Draft', 'Saved', 'Sent']).optional().nullable(),
 })
 
 const updateSchema = createSchema.partial().extend({

@@ -96,5 +96,23 @@ export const fmtDateTime = (v?: string | null) =>
   v ? new Date(v).toLocaleString('en-US',
     { day: 'numeric', month: 'short', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : '—'
 
+// "Aug 28, 2026 02:15 PM" — the version table shows the minute a version went
+// live, because two versions can be published on the same day.
+export const fmtStamp = (v?: string | null) =>
+  v ? new Date(v).toLocaleString('en-US',
+    { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
+
+// A stable colour per module, so a prompt keeps the same tile every time the
+// list is drawn. Derived from the name rather than stored: a colour is not a
+// fact about the prompt, and one more column is one more thing to disagree.
+const TILE_COLOURS = ['#2563eb', '#1e293b', '#7c3aed', '#0369a1', '#dc2626',
+                      '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#be123c']
+export const tileColour = (seed?: string | null) => {
+  const key = String(seed ?? '')
+  let hash = 0
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  return TILE_COLOURS[hash % TILE_COLOURS.length]
+}
+
 export const apiMessage = (err: any, fallback: string) =>
   err?.response?.data?.message ?? fallback

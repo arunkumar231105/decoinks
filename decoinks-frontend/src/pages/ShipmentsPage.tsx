@@ -36,6 +36,8 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
+import { periodRange, type PeriodKey } from '../utils/period'
+import { PeriodTabs } from '../components/PeriodTabs'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
 import { LabelModal } from '../components/LabelModal'
 
@@ -101,6 +103,13 @@ const fmtDay = (value?: string | null) => {
 // otherwise the internal workflow status.
 const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
 
+// The courier's line can run long ("ARRIVED AT USPS REGIONAL FACILITY"), so the
+// cell holds one line and the full text — details and the sub-status sentence
+// behind it — is on hover. index.css is protected, so this rides here.
+const DETAILS_CELL: React.CSSProperties = {
+  maxWidth: 190, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+}
+
 // Map both internal statuses and Shippo statuses to a colour class.
 function statusClass(raw: string): string {
   const v = (raw || '').toUpperCase()
@@ -118,6 +127,7 @@ export function ShipmentsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('All')
+  const [period, setPeriod] = useState<PeriodKey>('all')
   // Newest ship date first by default, matching the other modules; the SHP
   // series is one pick away for reading the list in sequence.
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'>('date_desc')
@@ -130,6 +140,11 @@ export function ShipmentsPage() {
     ['Service Type', s => s.service_type], ['Ship-To Address', s => s.address],
     ['City', s => s.ship_to_city], ['State', s => s.ship_to_state],
     ['Postal Code', s => s.ship_to_postal_code], ['Status', s => effectiveStatus(s)],
+    // TRANSIT says the parcel is moving; it does not say whether it is sitting
+    // in a hub or already on the van. That is the courier's own line — "Loaded
+    // on Delivery Vehicle", "On the Way", "Out For Delivery" — and it was only
+    // readable by opening the row, so it goes next to the status it explains.
+    ['Details', s => s.status_details],
     ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
     ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
     ['Tracking ID', s => s.tracking_number],
@@ -151,6 +166,10 @@ export function ShipmentsPage() {
 
   const allShipments: Shipment[] = data?.rows ?? []
 
+  // The chosen range as two dates. Empty ends mean no bound, which is what
+  // "All Time" resolves to.
+  const [periodFrom, periodTo] = periodRange(period)
+
   const filtered = allShipments.filter((s) => {
     const matchesStatus = statusFilter === 'All' || effectiveStatus(s) === statusFilter
     const q = search.toLowerCase()
@@ -158,7 +177,13 @@ export function ShipmentsPage() {
       (s.order_number ?? '').toLowerCase().includes(q) ||
       (s.customer_name ?? '').toLowerCase().includes(q) ||
       (s.tracking_number ?? '').toLowerCase().includes(q)
-    return matchesStatus && matchesSearch
+    // A parcel with no ship date has no place in a dated range, so it shows
+    // only when no range is set rather than being quietly counted in every one.
+    const day = (s.ship_date ?? '').slice(0, 10)
+    const matchesPeriod =
+      (!periodFrom && !periodTo) ||
+      (!!day && (!periodFrom || day >= periodFrom) && (!periodTo || day <= periodTo))
+    return matchesStatus && matchesSearch && matchesPeriod
   })
 
   // Rows with no value for the chosen key stay at the bottom either way, rather
@@ -339,10 +364,14 @@ export function ShipmentsPage() {
         </button>
         <div className="sh-date-range">
           <Calendar size={13} />
-          <span>Apr 1, 2026 - May 3, 2026</span>
-          <ChevronDown size={12} />
+          <span>{periodFrom || periodTo
+            ? `${fmtDay(periodFrom)} – ${fmtDay(periodTo)}`
+            : 'All dates'}</span>
         </div>
       </div>
+
+      <PeriodTabs className="leads-period" period={period}
+        onChange={p => { setPeriod(p); setPage(1) }} />
 
       {/* Stats */}
       <div className="sh-stats">
@@ -416,12 +445,12 @@ export function ShipmentsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={16} className="sh-empty">Loading…</td>
+                <td colSpan={17} className="sh-empty">Loading…</td>
               </tr>
             )}
             {!isLoading && rowsToShow.length === 0 && (
               <tr>
-                <td colSpan={16} className="sh-empty">No shipments found.</td>
+                <td colSpan={17} className="sh-empty">No shipments found.</td>
               </tr>
             )}
             {!isLoading && rowsToShow.map(s => (
@@ -439,6 +468,10 @@ export function ShipmentsPage() {
                   <span className={cn('sh-status', statusClass(effectiveStatus(s)))}>
                     {effectiveStatus(s)}
                   </span>
+                </td>
+                <td className="sh-muted" style={DETAILS_CELL}
+                    title={[s.status_details, s.substatus].filter(Boolean).join(' — ') || undefined}>
+                  {s.status_details ?? '-'}
                 </td>
                 <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
                 <td className="sh-muted">{s.last_scan_state ?? '-'}</td>

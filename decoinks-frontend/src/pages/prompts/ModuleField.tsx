@@ -49,13 +49,12 @@ export function ModuleField({
       <div className="pm-field">
         <label>New Module</label>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input value={name} autoFocus placeholder="Reconstruction"
-            style={{ fontFamily: 'inherit' }}
+          <input className="pm-input" value={name} autoFocus placeholder="Reconstruction"
             onChange={e => setName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && name.trim()) create.mutate() }} />
-          <button className="pm-btn primary" disabled={!name.trim() || create.isPending}
+          <button className="pm-btn primary icon" disabled={!name.trim() || create.isPending}
             onClick={() => create.mutate()}><Check size={16} /></button>
-          <button className="pm-btn" onClick={() => { setAdding(false); setName('') }}>
+          <button className="pm-btn icon" onClick={() => { setAdding(false); setName('') }}>
             <X size={16} />
           </button>
         </div>
@@ -67,6 +66,7 @@ export function ModuleField({
     <div className="pm-field">
       <label>Module</label>
       <select
+        className="pm-input"
         value={value}
         onChange={e => {
           if (e.target.value === CREATE) { setAdding(true); return }

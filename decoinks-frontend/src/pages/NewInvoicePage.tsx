@@ -551,7 +551,7 @@ export function NewInvoicePage() {
   const hydrateFrom = useMemo(() => {
     if (sourceQuote) return sourceQuote
     if (!editingInvoice) return undefined
-    return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined }
+    return { ...editingInvoice, estimated_shipping: editingInvoice.shipping_charges, status: undefined, _isInvoice: true }
   }, [sourceQuote, editingInvoice])
 
   // The hydration below deliberately drops the source's status — an Approved
@@ -581,7 +581,13 @@ export function NewInvoicePage() {
     if (sourceQuote.billing_address) setBillingAddress(sourceQuote.billing_address)
     if (sourceQuote.shipping_address) setShippingAddress(sourceQuote.shipping_address)
     // Quote ref
-    if (sourceQuote.quote_number)  { setQuoteText(sourceQuote.quote_number); setQuoteId(sourceQuote.id) }
+    // An invoice being edited carries its quote as quote_id; its own id is the
+    // invoice's. Taking id here sent the invoice as its own quote, and every
+    // save failed with "Referenced record does not exist".
+    if (sourceQuote.quote_number)  {
+      setQuoteText(sourceQuote.quote_number)
+      setQuoteId(sourceQuote._isInvoice ? (sourceQuote.quote_id ?? '') : sourceQuote.id)
+    }
     // Order type
     if (sourceQuote.order_type) {
       setOrderType(sourceQuote.order_type as OrderType)
@@ -593,7 +599,9 @@ export function NewInvoicePage() {
     if (sourceQuote.estimated_shipping) setShippingCharges(Number(sourceQuote.estimated_shipping))
     if (sourceQuote.rush_services)    setRushServices(Number(sourceQuote.rush_services))
     if (sourceQuote.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceQuote.payment_method))
-    if (sourceQuote.payment_terms)    setPaymentTerms(sourceQuote.payment_terms)
+    // A new invoice starts on Advance, whatever the quote said — the shop is
+    // paid before the work starts. An invoice being edited keeps its own terms.
+    if (editInvoiceId && sourceQuote.payment_terms) setPaymentTerms(sourceQuote.payment_terms)
     // The select holds "USD - US Dollar" and the record holds "USD". Without
     // this the currency was never read back, so editing any invoice quietly
     // reset it to dollars — invisible while every invoice is in dollars, and
@@ -1691,7 +1699,6 @@ export function NewInvoicePage() {
                   <option>Advance</option>
                   <option>Net 15</option>
                   <option>Net 30</option>
-                  <option>Due on Receipt</option>
                   <option>Paid</option>
                 </select>
               </div>

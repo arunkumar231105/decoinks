@@ -112,10 +112,13 @@ async function getDashboard(supplierId) {
 
   const TYPE_COLORS = { apparel: '#3B82F6', gangsheet: '#8B5CF6', dtf: '#EA580C' };
   const STATUS_COLORS = {
+    Draft:           '#94A3B8',
+    Confirmed:       '#0EA5E9',
     'In Production': '#3B82F6',
+    QC:              '#8B5CF6',
+    'Ready to Ship': '#F59E0B',
     Shipped:         '#EA580C',
-    Completed:       '#16A34A',
-    'On Hold':       '#EAB308',
+    Delivered:       '#16A34A',
     Cancelled:       '#DC2626',
   };
 
@@ -139,11 +142,13 @@ async function getDashboard(supplierId) {
     })),
     trendData:    trendRes.rows.map((r) => ({ date: r.date, orders: parseInt(r.orders) })),
     recentOrders: recentRes.rows,
+    // Same vocabulary as the state machine — a snapshot built from statuses an
+    // order never holds reads as four zeroes next to a non-zero order count.
     productionSnapshot: [
-      { label: 'In Production', count: counts['In Production'] ?? 0, color: '#3B82F6' },
-      { label: 'Shipped',       count: counts['Shipped'] ?? 0,       color: '#EA580C' },
-      { label: 'On Hold',       count: counts['On Hold'] ?? 0,       color: '#EAB308' },
-      { label: 'Completed',     count: counts['Completed'] ?? 0,     color: '#16A34A' },
+      { label: 'Awaiting Production', count: (counts['Draft'] ?? 0) + (counts['Confirmed'] ?? 0), color: '#EAB308' },
+      { label: 'In Production',       count: (counts['In Production'] ?? 0) + (counts['QC'] ?? 0), color: '#3B82F6' },
+      { label: 'Shipped',             count: (counts['Ready to Ship'] ?? 0) + (counts['Shipped'] ?? 0), color: '#EA580C' },
+      { label: 'Delivered',           count: counts['Delivered'] ?? 0, color: '#16A34A' },
     ].map((s) => ({ ...s, pct: totalOrders > 0 ? Math.round((s.count / totalOrders) * 100) : 0 })),
   };
 }
@@ -182,6 +187,9 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
       `SELECT COUNT(*) FROM portal_order_visibility pov JOIN orders o ON o.id = pov.order_id WHERE ${where}`,
       params
     ),
+    // The order state machine runs Draft → Confirmed → In Production → QC →
+    // Ready to Ship → Shipped → Delivered (or Cancelled). 'Completed' and
+    // 'On Hold' are not statuses an order can hold, so count the ones it can.
     db.query(
       `SELECT
          COUNT(*)                                               AS total,
@@ -190,8 +198,8 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
          COUNT(*) FILTER (WHERE o.order_type = 'dtf')          AS dtf,
          COUNT(*) FILTER (WHERE o.status = 'Cancelled')        AS cancelled,
          COUNT(*) FILTER (WHERE o.status = 'In Production')    AS in_production,
-         COUNT(*) FILTER (WHERE o.status = 'Delivered')        AS completed,
-         COUNT(*) FILTER (WHERE o.status = 'Shipped')          AS on_hold
+         COUNT(*) FILTER (WHERE o.status = 'Shipped')          AS shipped,
+         COUNT(*) FILTER (WHERE o.status = 'Delivered')        AS delivered
        FROM portal_order_visibility pov
        JOIN orders o ON o.id = pov.order_id
        WHERE ${baseConditions.join(' AND ')}`,
@@ -210,8 +218,8 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
       dtf:          parseInt(agg.dtf),
       cancelled:    parseInt(agg.cancelled),
       inProduction: parseInt(agg.in_production),
-      completed:    parseInt(agg.completed),
-      onHold:       parseInt(agg.on_hold),
+      shipped:      parseInt(agg.shipped),
+      delivered:    parseInt(agg.delivered),
     },
   };
 }
@@ -459,10 +467,86 @@ async function addTracking(supplierId, poId, { tracking_number, carrier, trackin
     `UPDATE purchase_orders
      SET tracking_number = $1, carrier = $2, tracking_notes = $3, updated_at = NOW()
      WHERE id = $4
-     RETURNING id, tracking_number, carrier, tracking_notes`,
+     RETURNING id, po_number, order_id, tracking_number, carrier, tracking_notes`,
     [tracking_number || null, carrier || null, tracking_notes || null, poId]
   );
+  await recordSupplierParcel(rows[0]);
   return rows[0];
+}
+
+/**
+ * A tracking number the factory hands in becomes a parcel the shop can see.
+ *
+ * Until now this landed on the purchase order and stopped there, so a job the
+ * factory had already sent showed no shipment at all: nothing in the Shipments
+ * list, no courier status, no delivery estimate, and the ten-minute tracking
+ * sync never looked at it because it only follows shipment rows.
+ *
+ * It is attached to the PO's sales order rather than to the PO itself. The
+ * factories here print and post straight to the customer — of the 110 purchase
+ * orders carrying a tracking number, 107 carry the very number the customer's
+ * own parcel has — so this is the customer's parcel, arriving through the
+ * factory's hands. chk_shipments_target_xor would in any case refuse a row that
+ * named both.
+ *
+ * Idempotent, and quiet about it: a tracking number already on file is left
+ * alone, and one sitting loose is joined to the order rather than copied.
+ * Failure here never fails the upload — the factory has done its part, and the
+ * tracking is safely on the purchase order either way.
+ */
+async function recordSupplierParcel(po) {
+  const tracking = String(po?.tracking_number ?? '').trim();
+  if (!tracking || !po?.order_id) return;
+
+  try {
+    const { rows: seen } = await db.query(
+      `SELECT id, order_id FROM shipments WHERE tracking_number = $1 AND deleted_at IS NULL LIMIT 1`,
+      [tracking]
+    );
+    if (seen[0]) {
+      if (!seen[0].order_id) {
+        await db.query(
+          `UPDATE shipments SET order_id = $2, updated_at = NOW() WHERE id = $1`,
+          [seen[0].id, po.order_id]
+        );
+      }
+      return;
+    }
+
+    const { rows: ord } = await db.query(
+      `SELECT o.id, o.shipping_address, o.shipping_name,
+              COALESCE(c.name, o.contact_name) AS customer_name,
+              c.city, c.state, c.zip
+         FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+        WHERE o.id = $1 AND o.deleted_at IS NULL`,
+      [po.order_id]
+    );
+    if (!ord[0]) return;
+    const o = ord[0];
+
+    const { rows: n } = await db.query(
+      `SELECT COALESCE(MAX(NULLIF(split_part(shipment_number, '-', 3), '')::INT), 0) + 1 AS n
+         FROM shipments WHERE shipment_number LIKE 'SHP-2026-%'`
+    );
+    const number = `SHP-2026-${String(n[0].n).padStart(4, '0')}`;
+
+    await db.query(
+      `INSERT INTO shipments (shipment_number, order_id, recipient_name, customer_name,
+                              carrier, tracking_number, status, ship_date, address,
+                              ship_to_city, ship_to_state, ship_to_postal_code,
+                              ship_source, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$3,$4,$5,'Label Created'::shipment_status,CURRENT_DATE,$6,$7,$8,$9,
+               'Supplier', $10, NOW(), NOW())`,
+      [number, o.id, o.customer_name ?? o.shipping_name ?? null, po.carrier || null, tracking,
+       o.shipping_address ?? null, o.city ?? null, o.state ?? null, o.zip ?? null,
+       `Handed in by the factory on ${po.po_number}. The courier's own status follows on the next tracking sync.`]
+    );
+  } catch (err) {
+    // The upload has already succeeded and the number is on the purchase order.
+    // Losing the shipment row is worth a log, not a failed upload the factory
+    // would have to repeat.
+    console.error('[portal] could not record the factory parcel as a shipment:', err.message);
+  }
 }
 
 // ── Status Updates ────────────────────────────────────────────────────────────
@@ -498,6 +582,27 @@ async function getStatusUpdates(supplierId, orderId) {
   return rows;
 }
 
+/**
+ * Every supplier update on one order, for staff.
+ *
+ * getStatusUpdates is deliberately scoped to the supplier that wrote the rows —
+ * a vendor may only read its own. Staff need the whole thread on the order,
+ * including which supplier sent each line, so this is a separate reader rather
+ * than a widened one.
+ */
+async function getOrderStatusUpdatesForStaff(orderId) {
+  const { rows } = await db.query(
+    `SELECT psu.id, psu.status, psu.notes, psu.submitted_at,
+            psu.supplier_id, s.name AS supplier_name
+     FROM portal_status_updates psu
+     JOIN suppliers s ON s.id = psu.supplier_id
+     WHERE psu.order_id = $1
+     ORDER BY psu.submitted_at DESC`,
+    [orderId]
+  );
+  return rows;
+}
+
 module.exports = {
   loginSupplier,
   getDashboard,
@@ -513,6 +618,7 @@ module.exports = {
   sendOrderToPortal,
   submitStatusUpdate,
   getStatusUpdates,
+  getOrderStatusUpdatesForStaff,
   updatePOStatus,
   addTracking,
 };

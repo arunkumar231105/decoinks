@@ -117,6 +117,19 @@ interface CustomerAddress {
   contact_person?: string | null
 }
 
+// The same fact is kept in more than one column here (company/company_name,
+// company_phone_number/phone, the flat address columns beside the structured
+// ones). `??` only steps past null and undefined, so an empty string in the
+// first column swallowed the value in the second and the edit form opened
+// blank on records that plainly had the data. This takes the first one that
+// actually holds something.
+const firstFilled = (...values: unknown[]) => {
+  for (const v of values) {
+    if (v !== null && v !== undefined && String(v).trim() !== '') return String(v)
+  }
+  return ''
+}
+
 export function NewCustomerPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -164,27 +177,27 @@ export function NewCustomerPage() {
     const addrs: CustomerAddress[] = existing.addresses ?? []
     const ship = addrs.find(a => a.address_type === 'shipping')
     const bill = addrs.find(a => a.address_type === 'billing')
-    const shipCountry = resolveCountry(ship?.country ?? existing.country) || 'United States'
+    const shipCountry = resolveCountry(firstFilled(ship?.country, existing.country)) || 'United States'
     const billCountry = resolveCountry(bill?.country) || 'United States'
     setForm({
-      first_name: existing.first_name ?? (existing.name?.split(' ')[0] ?? ''),
+      first_name: firstFilled(existing.first_name, existing.name?.split(' ')[0]),
       middle_name: existing.middle_name ?? '',
-      last_name: existing.last_name ?? (existing.name?.split(' ').slice(1).join(' ') ?? ''),
+      last_name: firstFilled(existing.last_name, existing.name?.split(' ').slice(1).join(' ')),
       external_customer_number: existing.external_customer_number ?? '',
-      company_name: existing.company_name ?? existing.company ?? '',
+      company_name: firstFilled(existing.company_name, existing.company),
       email: existing.email ?? '',
-      company_phone_number: existing.company_phone_number ?? existing.phone ?? '',
+      company_phone_number: firstFilled(existing.company_phone_number, existing.phone),
       whatsapp_number: existing.whatsapp ?? '',
       mobile_number: existing.mobile_number ?? '',
       preferred_language: existing.preferred_language ?? 'en',
-      customer_segment: existing.customer_segment ?? existing.buyer_type ?? 'retail',
-      tier: existing.tier ?? 'Standard',
+      customer_segment: firstFilled(existing.customer_segment, existing.buyer_type) || 'retail',
+      tier: firstFilled(existing.tier) || 'Standard',
       shipping_contact_person: ship?.contact_person ?? '',
-      shipping_line1: ship?.line1 ?? existing.address_line1 ?? '',
+      shipping_line1: firstFilled(ship?.line1, existing.address_line1),
       shipping_line2: ship?.line2 ?? '',
-      shipping_city: ship?.city ?? existing.city ?? '',
-      shipping_state: stateCodeFor(shipCountry, ship?.state ?? existing.state),
-      shipping_zipcode: ship?.zipcode ?? existing.zip ?? '',
+      shipping_city: firstFilled(ship?.city, existing.city),
+      shipping_state: stateCodeFor(shipCountry, firstFilled(ship?.state, existing.state)),
+      shipping_zipcode: firstFilled(ship?.zipcode, existing.zip),
       shipping_country: shipCountry,
       billing_contact_person: bill?.contact_person ?? '',
       billing_line1: bill?.line1 ?? '',

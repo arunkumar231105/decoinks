@@ -188,7 +188,7 @@ async function create({
         shipping_country || null, shipping_state || null, shipping_city || null, zip_code || null,
         normalizeAddress(shipping_address), normalizeAddress(billing_address), due_date || null, sales_agent_id || null,
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
-        estimated_shipping || 0, rush_services || 0, payment_terms || 'Due on Receipt',
+        estimated_shipping || 0, rush_services || 0, payment_terms || 'Advance',
         payment_method || null, customer_notes || null, customer_id || null,
       ]
     )

@@ -86,15 +86,19 @@ function customerAddress(customer) {
   ].filter(Boolean).join(', '))
 }
 
-// Mirror an order's "payment received" onto its linked invoice's payment
-// ledger — the single source of truth the dashboard and invoice balance read.
-// `targetPaid` is the TOTAL amount received for the order. We only ever add the
-// positive delta as a new payment row (never remove historical payments), then
-// re-derive the invoice status from the resulting ledger total. The
-// sync_invoice_payment_totals DB trigger keeps amount_paid / balance_due synced.
-async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {}) {
+// Settle the linked invoice's payment state from what the sales order says.
+//
+// This used to write a payments row for the difference, which is how the same
+// money came to be recorded twice: once by the payment link that actually took
+// it, and once by the sales order raised afterwards for the same job. A
+// payments row is money that arrived, and only two things may write one — a
+// person recording it by hand, and a payment link settling. The order gets to
+// say whether the job is paid; it does not get to invent the receipt.
+//
+// amount_paid and balance_due belong to that ledger and are maintained by the
+// sync_invoice_payment_totals trigger, so only the status is settled here.
+async function settleInvoiceFromOrder(client, invoiceId, targetPaid) {
   if (!invoiceId) return
-  const { paymentMethod, reference, paymentDate, actorId, note } = opts
 
   const { rows } = await client.query(
     `SELECT id, total, status FROM invoices WHERE id = $1 FOR UPDATE`,
@@ -108,55 +112,25 @@ async function reconcileInvoicePayment(client, invoiceId, targetPaid, opts = {})
     `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = $1`,
     [invoiceId]
   )
-  const alreadyPaid = +Number(payRows[0].paid).toFixed(2)
+  const ledgerPaid = +Number(payRows[0].paid).toFixed(2)
 
-  // Never let the order record more than the invoice total.
-  const want  = +Math.max(0, Math.min(Number(targetPaid) || 0, total)).toFixed(2)
-  const delta = +(want - alreadyPaid).toFixed(2)
+  // The order's figure and the ledger disagree whenever the order is raised
+  // before the money is recorded, or after. Whichever is further along wins,
+  // so neither a recorded payment nor the order's own word is thrown away.
+  const claimed = +Math.max(0, Math.min(Number(targetPaid) || 0, total)).toFixed(2)
+  const paid    = Math.max(ledgerPaid, claimed)
 
-  if (delta > 0.009) {
-    // The sales order this invoice belongs to, so the payment written here is
-    // attached to the order and not left floating against the invoice alone.
-    const { rows: ordRows } = await client.query(
-      `SELECT id FROM orders WHERE invoice_id = $1 AND deleted_at IS NULL LIMIT 1`, [invoiceId])
-    const orderId = ordRows[0]?.id || null
-
-    // One payment per sales order. An order that already has one is settled;
-    // writing a second is how the same money came to be recorded twice.
-    const { rows: existing } = orderId
-      ? await client.query(`SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`, [orderId])
-      : { rows: [] }
-
-    if (!existing.length) {
-      // Give it a payment number like every other payment has. Recording one
-      // from a sales order used to leave payment_number NULL, so the Payments
-      // list showed a blank Payment ID. getNextNumber runs in its own
-      // transaction, so it is safe to call inside this one.
-      const paymentNumber = await getNextNumber('PAY', 'payments', 'payment_number')
-      await client.query(
-        `INSERT INTO payments (payment_number, invoice_id, order_id, amount, payment_method, reference_no, payment_date, notes, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          paymentNumber, invoiceId, orderId, delta, paymentMethod || 'other', reference || null,
-          paymentDate || null, note || 'Payment recorded from sales order', actorId || null,
-        ]
-      )
-    }
-  }
-
-  const finalPaid = +Math.max(alreadyPaid, want).toFixed(2)
-  const status = finalPaid >= total && total > 0 ? 'Paid'
-    : finalPaid > 0 ? 'Partially Paid'
+  const status = paid >= total && total > 0 ? 'Paid'
+    : paid > 0 ? 'Partially Paid'
     : invoice.status
+
   await client.query(
     `UPDATE invoices
-     SET amount_paid = $2,
-         balance_due = GREATEST(total - $2, 0),
-         status      = $3,
-         paid_at     = CASE WHEN $3 = 'Paid'::invoice_status THEN COALESCE(paid_at, NOW()) ELSE paid_at END,
-         updated_at  = NOW()
+     SET status     = $2,
+         paid_at    = CASE WHEN $2 = 'Paid'::invoice_status THEN COALESCE(paid_at, NOW()) ELSE paid_at END,
+         updated_at = NOW()
      WHERE id = $1`,
-    [invoiceId, finalPaid, status]
+    [invoiceId, status]
   )
 }
 
@@ -599,7 +573,7 @@ async function create(data) {
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         resolvedOrderDate, resolvedDueDate,
-        payment_terms || 'Due on Receipt', payment_method || null, effectiveStatus, currency,
+        payment_terms || 'Advance', payment_method || null, effectiveStatus, currency,
         effectivePaid, payment_reference || null, payment_date || null,
         resolvedRush, resolvedShipping, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
@@ -612,9 +586,7 @@ async function create(data) {
     if (invoice_id && items.length === 0) await insertInvoiceItems(client, order.id, invoice_id, order_type)
     else await insertItems(client, order.id, order_type, items)
     if (invoice_id && (effectivePaid > 0 || effectiveStatus === 'Paid')) {
-      await reconcileInvoicePayment(client, invoice_id, effectivePaid, {
-        paymentMethod: payment_method, reference: payment_reference, paymentDate: payment_date, actorId: created_by,
-      })
+      await settleInvoiceFromOrder(client, invoice_id, effectivePaid)
     }
     // Back-link the invoice to this order (circular FK orders.invoice_id ↔
     // invoices.order_id). Without this the invoice UI never learns an order was
@@ -785,12 +757,7 @@ async function update(id, data, actorId) {
       await insertItems(client, id, order_type, items)
     }
     if (existing.invoice_id && (targetPaid > 0 || markPaid)) {
-      await reconcileInvoicePayment(client, existing.invoice_id, targetPaid, {
-        paymentMethod: data.payment_method ?? existing.payment_method,
-        reference: data.payment_reference ?? existing.payment_reference,
-        paymentDate: data.payment_date ?? existing.payment_date,
-        actorId,
-      })
+      await settleInvoiceFromOrder(client, existing.invoice_id, targetPaid)
     }
     await client.query('COMMIT')
     return getById(id)

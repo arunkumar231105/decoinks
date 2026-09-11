@@ -516,13 +516,13 @@ export function QuotePrintPage() {
               <div className="stat-val">{totalItems}</div>
             </div>
           </div>
-          <div className="stat-cell">
+          {totalArt > 0 && <div className="stat-cell">
             <div className="stat-icon-wrap">🖼️</div>
             <div>
               <div className="stat-lbl">Total Artworks</div>
               <div className="stat-val">{totalArt}</div>
             </div>
-          </div>
+          </div>}
           <div className="stat-cell">
             <div className="stat-icon-wrap">📦</div>
             <div>
@@ -660,6 +660,11 @@ export function QuotePrintPage() {
 const fmt2 = (value: number | string | null | undefined) => (Number(value ?? 0) || 0).toFixed(2)
 
 function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[] }) {
+  // Artwork columns render only when a line actually has artwork — no empty
+  // Front/Back Artwork columns on a quote that carries none.
+  const hasFront = items.some(i => i.front_image)
+  const hasBack = items.some(i => i.back_image)
+  const cols = 8 + (hasFront ? 1 : 0) + (hasBack ? 1 : 0)
   return (
     <table className="items-tbl">
       <thead>
@@ -678,8 +683,8 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
             Sizes<br />
             <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(Size Ratio)</span>
           </th>
-          <th style={{ width: 76 }}>Front Artwork</th>
-          <th style={{ width: 76 }}>Back Artwork</th>
+          {hasFront && <th style={{ width: 76 }}>Front Artwork</th>}
+          {hasBack && <th style={{ width: 76 }}>Back Artwork</th>}
           <th style={{ width: 84 }}>
             Unit Price<br />
             <span style={{ fontWeight: 400, fontSize: 8, opacity: 0.75 }}>(USD)</span>
@@ -693,7 +698,7 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
       <tbody>
         {items.length === 0 ? (
           <tr>
-            <td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td>
+            <td colSpan={cols} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No items</td>
           </tr>
         ) : items.map((item, idx) => {
           // Apparel front/back images are stored inline on the item row,
@@ -726,12 +731,12 @@ function ApparelTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwo
                 <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 400 }}>pcs</span>
               </td>
               <td style={{ fontSize: 11, lineHeight: 1.6 }}>{item.sizes || '—'}</td>
-              <td>
+              {hasFront && <td>
                 <ArtworkThumb src={frontUrl} alt="front artwork" label={`${item.artwork_no || item.description} — Front`} className="art-img" fallback={<div className="art-empty">—</div>} />
-              </td>
-              <td>
+              </td>}
+              {hasBack && <td>
                 <ArtworkThumb src={backUrl} alt="back artwork" label={`${item.artwork_no || item.description} — Back`} className="art-img" fallback={<div className="art-empty">—</div>} />
-              </td>
+              </td>}
               <td style={{ fontWeight: 600 }}>$ {rate(item.unit_price)}</td>
               <td style={{ fontWeight: 700 }}>$ {fmt2(item.amount)}</td>
             </tr>
@@ -762,6 +767,7 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
     while (index + span < rows.length && Number(rows[index + span].item.unit_price) === Number(rows[index].item.unit_price)) span++
     return span
   }
+  const hasImage = rows.some(r => r.image)
 
   return (
     <table className="items-tbl">
@@ -769,8 +775,8 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
         <tr>
           <th style={{ width: 40 }}>S.No</th>
           <th className="left">Item Description<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(DTF Transfers)</span></th>
-          <th style={{ width: 90 }}>Artwork No</th>
-          <th style={{ width: 100 }}>Artwork Thumbnail</th>
+          {hasImage && <th style={{ width: 90 }}>Artwork No</th>}
+          {hasImage && <th style={{ width: 100 }}>Artwork Thumbnail</th>}
           <th style={{ width: 120 }}>Artwork Size<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(Width x Height)</span></th>
           <th style={{ width: 70 }}>Qty</th>
           <th style={{ width: 80 }}>Rate<br /><span style={{ fontWeight: 400, fontSize: 8 }}>(USD)</span></th>
@@ -785,10 +791,10 @@ function DtfTable({ items, artworks }: { items: QuoteItem[]; artworks: Artwork[]
               <div className="item-main">DTF Transfers</div>
               <div className="item-sub">Premium Quality DTF · Ready to Press · Full Color</div>
             </td>}
-            <td><span className="aw-no">{row.artNo}</span></td>
-            <td>
+            {hasImage && <td><span className="aw-no">{row.artNo}</span></td>}
+            {hasImage && <td>
               <ArtworkThumb src={row.image} alt={row.artNo} label={row.artNo} className="art-img" fallback={<div className="art-empty">—</div>} />
-            </td>
+            </td>}
             <td style={{ fontWeight: 600, fontSize: 11 }}>{row.size}</td>
             <td style={{ fontWeight: 600 }}>{row.item.qty} pcs</td>
             {rateSpanAt(idx) > 0 && <td rowSpan={rateSpanAt(idx)} style={{ verticalAlign: 'middle', fontWeight: 700 }}>$ {rate(row.item.unit_price)}</td>}

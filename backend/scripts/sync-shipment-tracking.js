@@ -80,6 +80,20 @@ async function main() {
         if (s.order_id && s.order_status !== 'Delivered') {
           await query(`UPDATE orders SET status = 'Delivered', updated_at = NOW() WHERE id = $1`, [s.order_id])
           ordersMoved++
+          // The order is delivered, so the purchase orders behind it are done.
+          // Nothing moved them before, and delivered orders piled up with POs
+          // still reading In Production.
+          const { rows: closed } = await query(
+            `UPDATE purchase_orders p SET status = 'Closed', updated_at = NOW()
+               FROM (SELECT id, status::text AS was FROM purchase_orders
+                      WHERE order_id = $1 AND deleted_at IS NULL AND status NOT IN ('Closed', 'Cancelled')) x
+              WHERE p.id = x.id
+              RETURNING p.id, x.was`, [s.order_id])
+          for (const c of closed) {
+            await query(
+              `INSERT INTO po_status_history (po_id, from_status, to_status, changed_by, comment)
+               VALUES ($1, $2, 'Closed', NULL, $3)`, [c.id, c.was, `${s.order_number} was delivered`])
+          }
           console.log(`  ${s.tracking_number.padEnd(24)} ${s.status} -> ${nowStatus}   ${s.order_number} bhi Delivered`)
         } else {
           console.log(`  ${s.tracking_number.padEnd(24)} ${s.status} -> ${nowStatus}`)

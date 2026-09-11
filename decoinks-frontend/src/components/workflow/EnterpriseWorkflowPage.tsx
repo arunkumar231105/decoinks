@@ -12,10 +12,12 @@ import toast from '../../utils/toast'
 import { reportBulkDelete, confirmBulkDelete } from '../../utils/bulkDeleteResult'
 import { api } from '../../services/api'
 import { orderStage, processStatus } from '../../utils/orderStatus'
+import { poStage, poProcessStatus } from '../../utils/poStatus'
 import { copyText, downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
-import { PERIOD_TABS, periodRange, type PeriodKey } from '../../utils/period'
+import { periodRange, type PeriodKey } from '../../utils/period'
+import { PeriodTabs } from '../PeriodTabs'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -196,6 +198,11 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
       { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
       { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'delivered'), tone: 'green' },
+      // Sold but not yet bought: no purchase order has been raised for it, so
+      // nothing has gone to a factory.
+      { label: 'Pending PO', icon: Clock3,
+        value: r => r.filter(x => Number(x.po_count || 0) === 0 && String(x.status || '').toLowerCase() !== 'cancelled').length,
+        tone: 'amber' },
     ],
     columns: [
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
@@ -209,7 +216,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'subtotal', label: 'Subtotal', numeric: true, render: r => money(r.subtotal) },
       { key: 'shipping', label: 'Shipping Charges', numeric: true, sortKey: 'shipping_charges', render: r => money(r.shipping_charges) },
       { key: 'total', label: 'Order Value', numeric: true, render: r => <strong>{money(r.total)}</strong> },
-      { key: 'paid', label: 'Paid Amount', numeric: true, sortKey: ['amount_paid', 'payment_received'], render: r => money(pick(r, 'amount_paid', 'payment_received')) },
+      // The server works the paid figure out from the payment ledger on every
+      // request — a payment on the order, or a share of one split across two
+      // jobs. The order's own amount_paid is a copy that stops being true the
+      // moment the money is recorded anywhere else, which is how two jobs paid
+      // by one $480 payment both sat here reading $0.
+      { key: 'paid', label: 'Paid Amount', numeric: true, sortKey: ['export_amount_paid', 'amount_paid', 'payment_received'], render: r => money(pick(r, 'export_amount_paid', 'amount_paid', 'payment_received')) },
       { key: 'method', label: 'Payment Method', sortKey: 'payment_method', render: r => common.empty(r, 'payment_method') },
       // Order Status is where the document is; Process Status is where the job
       // is. Both fall back to the combined status for any row not yet split.
@@ -229,20 +241,19 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     statuses: ['Draft', 'Pending Approval', 'Approved', 'Sent', 'Accepted', 'In Production', 'Shipped', 'Partially Received', 'Received', 'Closed', 'Cancelled'],
     kpis: [
       { label: 'Total Purchase Orders', icon: FileText, value: (_, t) => t, tone: 'blue' },
-      { label: 'Approved', icon: Send, value: r => countStatus(r, 'approved'), tone: 'blue' },
-      // Issued means it has left this office — sent to the factory or beyond.
-      // Nothing counted it, so the step between approving and production had
-      // no number of its own.
-      { label: 'PO Issued', icon: Send,
-        value: r => countStatus(r, 'sent', 'accepted', 'in production', 'shipped', 'partially received', 'received', 'closed'),
-        tone: 'blue' },
-      { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
-      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
-      // The courier's word, which is how the shipments and orders lists read it.
-      { label: 'In Transit', icon: Truck,
-        value: r => r.filter(x => /transit/i.test(String(x.tracking_status || ''))).length, tone: 'amber' },
-      { label: 'Received / Closed', icon: PackageCheck, value: r => countStatus(r, 'received', 'closed'), tone: 'green' },
-      { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(pick(x, 'grand_total', 'total') || 0), 0)), tone: 'green' },
+      // PO Status — where the document is.
+      { label: 'Draft / Saved', icon: FileText, value: r => r.filter(x => poStage(x) !== 'Sent').length, tone: 'amber' },
+      { label: 'Sent', icon: Send, value: r => r.filter(x => poStage(x) === 'Sent').length, tone: 'blue' },
+      // Process Status — where the work is, from the PO and its parcel. The
+      // stored status was never moved on after the factory shipped, so these
+      // cards counted delivered work as still in production.
+      { label: 'PO Issued', icon: Send, value: r => r.filter(x => poProcessStatus(x) === 'PO Issued').length, tone: 'blue' },
+      { label: 'In Production', icon: Box, value: r => r.filter(x => poProcessStatus(x) === 'In Production').length, tone: 'purple' },
+      { label: 'Shipped', icon: Truck, value: r => r.filter(x => poProcessStatus(x) === 'Shipped').length, tone: 'amber' },
+      { label: 'Delivered', icon: PackageCheck, value: r => r.filter(x => poProcessStatus(x) === 'Delivered').length, tone: 'green' },
+      // grand_total when it was worked out, total otherwise: purchase orders
+      // raised without line items carry grand_total 0, and counted as nothing.
+      { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + (Number(x.grand_total) || Number(x.total) || 0), 0)), tone: 'green' },
     ],
     columns: [
       // Our own number, not the supplier's. This column showed source_po_number
@@ -255,7 +266,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
-      { key: 'status', label: 'Status', render: common.status },
+      { key: 'po_stage', label: 'PO Status', sortKey: r => poStage(r), render: r => <Badge>{poStage(r)}</Badge> },
+      { key: 'process_status', label: 'Process Status', sortKey: r => poProcessStatus(r), render: r => <Badge>{poProcessStatus(r)}</Badge> },
       { key: 'service', label: 'Service Type', render: r => common.empty(r, 'service_type') },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_id', 'tracking_number') },
       { key: 'tracking_status', label: 'Tracking Status', render: r => <Badge>{common.empty(r, 'tracking_status')}</Badge> },
@@ -472,7 +484,9 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       if (kind === 'purchase-orders') {
         try { extras.attachments = (await api.get(`/purchase-orders/${row.id}/attachments`)).data.data || [] } catch { extras.attachments = [] }
       }
-      setDetail({ ...record, ...extras })
+      // The list row first: it carries what the list works out (a PO's two
+      // statuses, the courier's word) that the record on its own does not.
+      setDetail({ ...row, ...record, ...extras })
     } catch { /* list data remains useful */ }
   }
   const pathFor = (row: AnyRow) => kind === 'quotations' ? `/quotes/${row.id}` : `${config.api}/${row.id}`
@@ -566,9 +580,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <button className="ew-btn ew-primary" onClick={() => navigate(config.newPath)}><Plus size={16}/>{config.newLabel}</button>
       </div>
 
-      <div className="ew-period" role="group" aria-label="Date period">
-        {PERIOD_TABS.map(([value, label]) => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
-      </div>
+      <PeriodTabs className="ew-period" period={period} onChange={setPeriod} />
 
       <section className="ew-kpis">
         {config.kpis.map(({ label, icon: Icon, value, tone }) => <article className="ew-kpi" key={label}>
@@ -634,7 +646,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     {active && <>
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges"><Badge>{titleCase(active.status)}</Badge>{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && active.payment_status && <Badge>{titleCase(active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges">{kind === 'purchase-orders' ? <><Badge>{poStage(active)}</Badge><Badge>{poProcessStatus(active)}</Badge></> : <Badge>{titleCase(active.status)}</Badge>}{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
       <div className="ew-drawer-actions">{editFor(active) && <button onClick={editFor(active)!} title="Open this record in its form"><Pencil size={16}/><span>Edit</span></button>}{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
@@ -840,7 +852,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Supplier Ref', value: first(row, 'source_po_number') },
       { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
       { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
-      { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) },
+      { label: 'PO Status', value: <Badge>{poStage(row)}</Badge> }, { label: 'Process Status', value: <Badge>{poProcessStatus(row)}</Badge> },
     ]}/>
     <DrawerSection title="Order Details" fields={[
       { label: 'Order Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'No. of Artworks', value: row.order_total_artworks ?? row.total_artworks ?? row.artworks?.length ?? '—' },

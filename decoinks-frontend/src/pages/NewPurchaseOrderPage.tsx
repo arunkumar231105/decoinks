@@ -732,7 +732,11 @@ export function NewPurchaseOrderPage() {
 
   const saveMutation = useMutation({
     mutationFn: async ({ thenView }: { thenView: boolean }) => {
-      const payload = await buildPayload()
+      // PO Status: Save Draft keeps it a Draft, Save PO marks it Saved. A PO
+      // that has already gone to the factory stays Sent whichever is pressed.
+      const alreadySent = existingPO && (existingPO.po_stage === 'Sent'
+        || !['Draft', 'Pending Approval', 'Approved'].includes(existingPO.status || 'Draft'))
+      const payload = { ...(await buildPayload()), ...(alreadySent ? {} : { po_stage: thenView ? 'Saved' : 'Draft' }) }
       const res = isEdit
         ? await api.put(`/purchase-orders/${editId}`, payload)
         : await api.post('/purchase-orders', payload)
