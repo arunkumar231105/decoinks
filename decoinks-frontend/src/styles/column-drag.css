@@ -1,0 +1,9 @@
+/* useColumnDrag: headers that can be dragged, and the column being dragged. */
+th[data-col][draggable="true"] { cursor: grab; user-select: none; }
+th[data-col][draggable="true"]:active { cursor: grabbing; }
+[data-col][data-dragging="true"] { opacity: .45; }
+
+/* Shipments paints its rows on the cells only on hover; a frozen cell needs
+   its own background or the scrolled cells show through it. */
+.sh-table td[data-col] { background: #fff; }
+.sh-row:hover td[data-col] { background: #f9fafb; }

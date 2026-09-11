@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useColumnDrag } from '../hooks/useColumnDrag'
+import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -149,6 +151,30 @@ export function ShipmentsPage() {
     ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
     ['Tracking ID', s => s.tracking_number],
   ]
+  // What each column draws, by the same label. The columns can be dragged into
+  // another order by their headers (hooks/useColumnDrag).
+  const CELLS: Record<string, { className?: string; style?: CSSProperties; title?: (s: Shipment) => string | undefined; render: (s: Shipment) => ReactNode }> = {
+    'Ship Date': { className: 'sh-muted', render: s => s.ship_date ?? '-' },
+    'Customer Name': { className: 'sh-customer', render: s => s.customer_name ?? '-' },
+    'PO #': { className: 'sh-muted', render: s => s.po_number ?? '-' },
+    'Carrier': { className: 'sh-muted', render: s => s.carrier ?? '-' },
+    'Service Type': { className: 'sh-muted', render: s => s.service_type ?? '-' },
+    'Ship-To Address': { className: 'sh-muted', render: s => s.address ?? '-' },
+    'City': { className: 'sh-muted', render: s => s.ship_to_city ?? '-' },
+    'State': { className: 'sh-muted', render: s => s.ship_to_state ?? '-' },
+    'Postal Code': { className: 'sh-muted', render: s => s.ship_to_postal_code ?? '-' },
+    'Status': { render: s => <span className={cn('sh-status', statusClass(effectiveStatus(s)))}>{effectiveStatus(s)}</span> },
+    'Details': { className: 'sh-muted', style: DETAILS_CELL,
+      title: s => [s.status_details, s.substatus].filter(Boolean).join(' — ') || undefined,
+      render: s => s.status_details ?? '-' },
+    'Last Scan City': { className: 'sh-muted', render: s => s.last_scan_city ?? '-' },
+    'Last Scan State': { className: 'sh-muted', render: s => s.last_scan_state ?? '-' },
+    'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(s.estimated_delivery) },
+    'Delivered Date': { className: 'sh-muted', render: s => s.delivered_date ?? '-' },
+    'Tracking ID': { render: s => <span className="sh-awb">{s.tracking_number ?? '-'}</span> },
+  }
+  // Shipments has never frozen a column; dragging does not change that.
+  const columnDrag = useColumnDrag(SORT_COLUMNS.map(([label]) => label), { frozen: 0 })
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -333,6 +359,9 @@ export function ShipmentsPage() {
         <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'In Transit' : 'All')}>
           <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
         </button>
+        <ColumnHideMenu variant="button" buttonClassName="lb-action-btn"
+          columns={SORT_COLUMNS.map(([label]) => ({ key: label, label }))}
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
         <select className="sh-per-page" aria-label="Sort shipments"
                 value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
           <option value="date_desc">Ship date: newest first</option>
@@ -428,11 +457,11 @@ export function ShipmentsPage() {
 
       {/* Table */}
       <div className="sh-table-wrap">
-        <table className="sh-table">
+        <table ref={columnDrag.tableRef} className="sh-table">
           <thead>
             <tr>
-              {SORT_COLUMNS.map(([label]) => (
-                <th key={label}>
+              {columnDrag.visible.map((label, i) => (
+                <th key={label} {...columnDrag.headProps(label, i)}>
                   <button style={SORT_BTN} aria-label={`Sort by ${label}`}
                     onClick={() => setColSort(c => ({ key: label, dir: c?.key === label && c.dir === 'desc' ? 'asc' : 'desc' }))}>
                     {label} {colSort?.key !== label ? <ArrowDownUp size={11}/> : colSort.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>}
@@ -455,29 +484,10 @@ export function ShipmentsPage() {
             )}
             {!isLoading && rowsToShow.map(s => (
               <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
-                <td className="sh-muted">{s.ship_date ?? '-'}</td>
-                <td className="sh-customer">{s.customer_name ?? '-'}</td>
-                <td className="sh-muted">{s.po_number ?? '-'}</td>
-                <td className="sh-muted">{s.carrier ?? '-'}</td>
-                <td className="sh-muted">{s.service_type ?? '-'}</td>
-                <td className="sh-muted">{s.address ?? '-'}</td>
-                <td className="sh-muted">{s.ship_to_city ?? '-'}</td>
-                <td className="sh-muted">{s.ship_to_state ?? '-'}</td>
-                <td className="sh-muted">{s.ship_to_postal_code ?? '-'}</td>
-                <td>
-                  <span className={cn('sh-status', statusClass(effectiveStatus(s)))}>
-                    {effectiveStatus(s)}
-                  </span>
-                </td>
-                <td className="sh-muted" style={DETAILS_CELL}
-                    title={[s.status_details, s.substatus].filter(Boolean).join(' — ') || undefined}>
-                  {s.status_details ?? '-'}
-                </td>
-                <td className="sh-muted">{s.last_scan_city ?? '-'}</td>
-                <td className="sh-muted">{s.last_scan_state ?? '-'}</td>
-                <td className="sh-muted">{fmtDay(s.estimated_delivery)}</td>
-                <td className="sh-muted">{s.delivered_date ?? '-'}</td>
-                <td><span className="sh-awb">{s.tracking_number ?? '-'}</span></td>
+                {columnDrag.visible.map((label, i) => {
+                  const c = CELLS[label]
+                  return <td key={label} {...columnDrag.cellProps(label, i, c.style)} className={c.className} title={c.title?.(s)}>{c.render(s)}</td>
+                })}
                 <td onClick={e => e.stopPropagation()}>
                   <button
                     className="lb-icon-btn"

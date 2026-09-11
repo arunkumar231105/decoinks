@@ -12,7 +12,10 @@ import toast from '../../utils/toast'
 import { reportBulkDelete, confirmBulkDelete } from '../../utils/bulkDeleteResult'
 import { api } from '../../services/api'
 import { orderStage, processStatus } from '../../utils/orderStatus'
-import { poStage, poProcessStatus } from '../../utils/poStatus'
+import { poStage, poProcessStatus, poFactoryStatus } from '../../utils/poStatus'
+import '../../styles/workflow-grid.css'
+import { useColumnDrag } from '../../hooks/useColumnDrag'
+import { ColumnHideMenu } from '../ColumnHideMenu'
 import { copyText, downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
@@ -44,7 +47,11 @@ const SORT_BTN: React.CSSProperties = {
   fontWeight: 'inherit', textTransform: 'inherit', display: 'flex',
   alignItems: 'center', gap: 4, cursor: 'pointer', width: '100%',
 }
-type Kpi = { label: string; icon: typeof Users; value: (rows: AnyRow[], total: number) => string | number; tone: string }
+// What a card may need beyond the list's own rows — the Purchase Orders page
+// counts sales orders that have no PO yet, which are by definition not rows of
+// the PO list.
+type KpiContext = { pendingPo: number }
+type Kpi = { label: string; icon: typeof Users; value: (rows: AnyRow[], total: number, ctx: KpiContext) => string | number; tone: string }
 
 const money = (value: any) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const date = (value: any) => {
@@ -194,15 +201,14 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     kpis: [
       { label: 'Orders', icon: ShoppingBag, value: (_, t) => t, tone: 'blue' },
       { label: 'Order Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.total || 0), 0)), tone: 'purple' },
-      { label: 'Confirmed', icon: BadgeCheck, value: r => countStatus(r, 'confirmed'), tone: 'green' },
-      { label: 'In Production', icon: Box, value: r => countStatus(r, 'In Production'), tone: 'purple' },
-      { label: 'Shipped', icon: Truck, value: r => countStatus(r, 'Shipped'), tone: 'blue' },
-      { label: 'Delivered', icon: PackageCheck, value: r => countStatus(r, 'delivered'), tone: 'green' },
-      // Sold but not yet bought: no purchase order has been raised for it, so
-      // nothing has gone to a factory.
-      { label: 'Pending PO', icon: Clock3,
-        value: r => r.filter(x => Number(x.po_count || 0) === 0 && String(x.status || '').toLowerCase() !== 'cancelled').length,
-        tone: 'amber' },
+      // Where the work is, read off the chain on every request (processStatus)
+      // rather than the stored status, which nothing moved on once the factory
+      // shipped — so these cards counted delivered jobs as in production.
+      { label: 'Pending PO', icon: Clock3, value: r => r.filter(x => processStatus(x) === 'PO to be Issued').length, tone: 'amber' },
+      { label: 'PO Issued', icon: BadgeCheck, value: r => r.filter(x => processStatus(x) === 'PO Issued').length, tone: 'blue' },
+      { label: 'In Production', icon: Box, value: r => r.filter(x => processStatus(x) === 'In Production').length, tone: 'purple' },
+      { label: 'Shipped', icon: Truck, value: r => r.filter(x => processStatus(x) === 'Shipped').length, tone: 'blue' },
+      { label: 'Delivered', icon: PackageCheck, value: r => r.filter(x => processStatus(x) === 'Delivered').length, tone: 'green' },
     ],
     columns: [
       { key: 'order_number', label: 'Order ID', render: r => <strong className="ew-link">{r.order_number}</strong> },
@@ -243,13 +249,17 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Total Purchase Orders', icon: FileText, value: (_, t) => t, tone: 'blue' },
       // PO Status — where the document is.
       { label: 'Draft / Saved', icon: FileText, value: r => r.filter(x => poStage(x) !== 'Sent').length, tone: 'amber' },
-      { label: 'Sent', icon: Send, value: r => r.filter(x => poStage(x) === 'Sent').length, tone: 'blue' },
+      // Sales orders no purchase order covers yet — the same count as the
+      // Pending PO card on Sales Orders, for the same period.
+      { label: 'Pending PO', icon: Clock3, value: (_, __, ctx) => ctx.pendingPo, tone: 'amber' },
       // Process Status — where the work is, from the PO and its parcel. The
       // stored status was never moved on after the factory shipped, so these
       // cards counted delivered work as still in production.
       { label: 'PO Issued', icon: Send, value: r => r.filter(x => poProcessStatus(x) === 'PO Issued').length, tone: 'blue' },
       { label: 'In Production', icon: Box, value: r => r.filter(x => poProcessStatus(x) === 'In Production').length, tone: 'purple' },
-      { label: 'Shipped', icon: Truck, value: r => r.filter(x => poProcessStatus(x) === 'Shipped').length, tone: 'amber' },
+      // A parcel with a label and no courier scan yet, and one on its way.
+      { label: 'Pre Transit', icon: Clock3, value: r => r.filter(x => poProcessStatus(x) === 'Pre Transit').length, tone: 'amber' },
+      { label: 'In Transit', icon: Truck, value: r => r.filter(x => poProcessStatus(x) === 'In Transit').length, tone: 'blue' },
       { label: 'Delivered', icon: PackageCheck, value: r => r.filter(x => poProcessStatus(x) === 'Delivered').length, tone: 'green' },
       // grand_total when it was worked out, total otherwise: purchase orders
       // raised without line items carry grand_total 0, and counted as nothing.
@@ -262,11 +272,14 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       // The supplier's reference is worth seeing, so it keeps its own column.
       { key: 'po_number', label: 'PO #', render: r => <strong className="ew-link">{common.empty(r, 'po_number')}</strong> },
       { key: 'order_date', label: 'PO Date', render: r => date(r.order_date) },
-      { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
+      // Whose job the PO is for — the vendor alone does not say. Every PO
+      // carries its customer, copied from the sales order it was raised for.
+      { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name', 'contact_name')} sub={common.empty(r, 'order_number')}/> },
       { key: 'vendor', label: 'Vendor', render: r => <PersonCell name={common.empty(r, 'display_vendor_name', 'vendor_name', 'supplier_name')} sub={common.empty(r, 'vendor_country', 'country')}/> },
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
       { key: 'po_stage', label: 'PO Status', sortKey: r => poStage(r), render: r => <Badge>{poStage(r)}</Badge> },
+      { key: 'factory_status', label: 'Factory Status', sortKey: r => poFactoryStatus(r), render: r => <Badge>{poFactoryStatus(r)}</Badge> },
       { key: 'process_status', label: 'Process Status', sortKey: r => poProcessStatus(r), render: r => <Badge>{poProcessStatus(r)}</Badge> },
       { key: 'service', label: 'Service Type', render: r => common.empty(r, 'service_type') },
       { key: 'tracking', label: 'Tracking ID', render: r => common.empty(r, 'display_tracking_number', 'tracking_id', 'tracking_number') },
@@ -319,6 +332,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const navigate = useNavigate()
   const [saved] = useState<Partial<SavedFilters>>(() => readFilters(kind))
   const [allRows, setAllRows] = useState<AnyRow[]>([])
+  const [salesOrders, setSalesOrders] = useState<AnyRow[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(saved.pageSize ?? PAGE_SIZE)
   const [search, setSearch] = useState(saved.search ?? '')
@@ -344,8 +358,6 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const [quoteImport, setQuoteImport] = useState(false)
   const [orderImport, setOrderImport] = useState(false)
   const [colSort, setColSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
-  const [columnsOpen, setColumnsOpen] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(config.columns.map(c => c.key)))
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
@@ -355,6 +367,12 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       setAllRows(data.data.rows || [])
     } catch { toast.error(`Failed to load ${config.title.toLowerCase()}`) }
     finally { setLoading(false) }
+    if (kind === 'purchase-orders') {
+      try {
+        const { data } = await api.get('/orders', { params: { page: 1, limit: 1000 } })
+        setSalesOrders(data.data.rows || [])
+      } catch { setSalesOrders([]) }
+    }
   }
 
   // Persist the current view so returning from an edit lands back on it.
@@ -374,7 +392,6 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const mountedKind = useRef(kind)
   useEffect(() => {
     setPage(1); setActive(null); setDetail(null); setSelected(new Set())
-    setVisibleColumns(new Set(config.columns.map(c => c.key)))
     if (mountedKind.current === kind) return          // first run: lazy state already did it
     mountedKind.current = kind
     const next = readFilters(kind)
@@ -389,7 +406,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault(); searchInputRef.current?.focus()
       }
-      if (event.key === 'Escape') { setColumnsOpen(false); setActive(null); setDetail(null) }
+      if (event.key === 'Escape') { setActive(null); setDetail(null) }
     }
     window.addEventListener('keydown', shortcut)
     return () => window.removeEventListener('keydown', shortcut)
@@ -416,6 +433,19 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     if (periodRangeMemo[1] && rowDate > periodRangeMemo[1]) return false
     return true
   }), [allRows, search, status, customer, product, source, group, periodRangeMemo, config.dateKey])
+
+  // Sales orders waiting for a purchase order, in the selected period by their
+  // order date — read the same way the Sales Orders page reads it.
+  const kpiContext = useMemo<KpiContext>(() => ({
+    pendingPo: salesOrders.filter(o => {
+      if (processStatus(o) !== 'PO to be Issued') return false
+      const d = o.order_date ? String(o.order_date).slice(0, 10) : ''
+      if ((periodRangeMemo[0] || periodRangeMemo[1]) && !d) return false
+      if (periodRangeMemo[0] && d < periodRangeMemo[0]) return false
+      if (periodRangeMemo[1] && d > periodRangeMemo[1]) return false
+      return true
+    }).length,
+  }), [salesOrders, periodRangeMemo])
 
   const dateOf = (row: AnyRow) => {
     const raw = pick(row, config.dateKey, 'created_at', 'issue_date', 'invoice_date', 'order_date', 'po_date')
@@ -461,7 +491,16 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const total = sortedRows.length
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const rows = sortedRows.slice((page - 1) * pageSize, page * pageSize)
-  const shownColumns = config.columns.filter(c => visibleColumns.has(c.key))
+  // Columns can be dragged into any order by their header (hooks/useColumnDrag).
+  // Purchase Orders keeps its first three frozen — PO #, date and customer by
+  // default; every other list freezes its first column, as it always has. Not
+  // saved: a hard refresh brings back the page's own order.
+  const columnDrag = useColumnDrag(config.columns.map(c => c.key),
+    { frozen: kind === 'purchase-orders' ? 3 : 1, cellBackground: 'inherit' })
+  const shownColumns = useMemo(() => {
+    const byKey = new Map(config.columns.map(c => [c.key, c] as const))
+    return columnDrag.visible.map(k => byKey.get(k)).filter((c): c is Column => Boolean(c))
+  }, [columnDrag.visible, config.columns])
   const unique = (values: string[]) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const customers = useMemo(() => unique(allRows.map(customerOf)), [allRows])
   const products = useMemo(() => unique(allRows.map(productOf)), [allRows])
@@ -582,9 +621,9 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
 
       <PeriodTabs className="ew-period" period={period} onChange={setPeriod} />
 
-      <section className="ew-kpis">
+      <section className={`ew-kpis${config.kpis.length > 8 ? ' ew-kpis-wide' : ''}`}>
         {config.kpis.map(({ label, icon: Icon, value, tone }) => <article className="ew-kpi" key={label}>
-          <span className={`ew-kpi-icon ew-${tone}`}><Icon size={19}/></span><span><small>{label}</small><strong>{value(filteredRows, total)}</strong><em>{period === 'all' ? 'All-time total' : 'Selected period'}</em></span>
+          <span className={`ew-kpi-icon ew-${tone}`}><Icon size={19}/></span><span><small>{label}</small><strong>{value(filteredRows, total, kpiContext)}</strong><em>{period === 'all' ? 'All-time total' : 'Selected period'}</em></span>
         </article>)}
       </section>
 
@@ -601,6 +640,8 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
           <option value="num_desc">Number: high to low</option>
           <option value="num_asc">Number: low to high</option>
         </select></label>
+        <ColumnHideMenu columns={config.columns.map(c => ({ key: c.key, label: c.label }))}
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
 
@@ -609,13 +650,13 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <select aria-label="Update selected status" disabled={!selected.size} defaultValue="" onChange={e => { updateSelectedStatus(e.target.value); e.currentTarget.value = '' }}><option value="" disabled>Update status…</option>{config.statuses.map(s => <option key={s}>{s}</option>)}</select>
         <button className="ew-btn" disabled={!selected.size} onClick={() => downloadCsv(`${kind}-selected.csv`, allRows.filter(r => selected.has(r.id)))}><Download size={14}/>Export selected</button>
         <button className="ew-btn ew-danger" disabled={!selected.size} onClick={deleteSelected}><Trash2 size={14}/>Delete selected</button><span/>
-        <div className="ew-columns"><button className="ew-btn" onClick={() => setColumnsOpen(v => !v)}>Columns <ChevronDown size={13}/></button>{columnsOpen && <div className="ew-columns-menu"><header><strong>Visible columns</strong><button onClick={() => setColumnsOpen(false)}><X size={14}/></button></header>{config.columns.map(c => <label key={c.key}><input type="checkbox" checked={visibleColumns.has(c.key)} onChange={() => setVisibleColumns(current => { const next = new Set(current); next.has(c.key) ? next.delete(c.key) : next.add(c.key); return next })}/>{c.label}</label>)}</div>}</div>
+        
       </section>
 
       <section className="ew-table-card">
-        <div className="ew-table-scroll"><table className="ew-table"><thead><tr>
+        <div className="ew-table-scroll"><table ref={columnDrag.tableRef} className="ew-table"><thead><tr>
           <th><input type="checkbox" checked={allChecked} onChange={() => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))}/></th>
-          {shownColumns.map(c => <th key={c.key} className={c.numeric ? 'numeric' : ''}>
+          {shownColumns.map((c, index) => <th key={c.key} {...columnDrag.headProps(c.key, index)} className={c.numeric ? 'numeric' : ''}>
             <button style={{ ...SORT_BTN, justifyContent: c.numeric ? 'flex-end' : 'flex-start' }}
               onClick={() => setColSort(s => ({ key: c.key, dir: s?.key === c.key && s.dir === 'desc' ? 'asc' : 'desc' }))}
               aria-label={`Sort by ${c.label}`}>
@@ -627,7 +668,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
           {!loading && rows.length === 0 && <tr><td className="ew-empty" colSpan={shownColumns.length + 2}><strong>No matching records</strong><span>Try changing the period or clearing your filters.</span><button onClick={clearFilters}>Clear filters</button></td></tr>}
           {!loading && rows.map(row => <tr key={row.id} className={active?.id === row.id ? 'active' : ''} onClick={() => openDetail(row)}>
             <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)}/></td>
-            {shownColumns.map(c => <td key={c.key} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
+            {shownColumns.map((c, index) => <td key={c.key} {...columnDrag.cellProps(c.key, index)} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
             <td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
               {kind === 'invoices' && (
                 <CopyPayLinkButton
@@ -646,7 +687,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     {active && <>
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges">{kind === 'purchase-orders' ? <><Badge>{poStage(active)}</Badge><Badge>{poProcessStatus(active)}</Badge></> : <Badge>{titleCase(active.status)}</Badge>}{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges">{kind === 'purchase-orders' ? <><Badge>{poStage(active)}</Badge><Badge>{poFactoryStatus(active)}</Badge><Badge>{poProcessStatus(active)}</Badge></> : <Badge>{titleCase(active.status)}</Badge>}{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
       <div className="ew-drawer-actions">{editFor(active) && <button onClick={editFor(active)!} title="Open this record in its form"><Pencil size={16}/><span>Edit</span></button>}{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
@@ -853,7 +894,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
       { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
       { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) },
-      { label: 'PO Status', value: <Badge>{poStage(row)}</Badge> }, { label: 'Process Status', value: <Badge>{poProcessStatus(row)}</Badge> },
+      { label: 'PO Status', value: <Badge>{poStage(row)}</Badge> }, { label: 'Factory Status', value: <Badge>{poFactoryStatus(row)}</Badge> },
+      { label: 'Process Status', value: <Badge>{poProcessStatus(row)}</Badge> },
     ]}/>
     <DrawerSection title="Order Details" fields={[
       { label: 'Order Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'No. of Artworks', value: row.order_total_artworks ?? row.total_artworks ?? row.artworks?.length ?? '—' },

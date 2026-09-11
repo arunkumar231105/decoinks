@@ -1,0 +1,14 @@
+/*
+ * List grids (Quotations, Invoices, Sales Orders, Purchase Orders, Payments).
+ * Column dragging and freezing live in hooks/useColumnDrag. Kept out of
+ * index.css, which is a protected file.
+ */
+
+/* A long customer name ends in an ellipsis rather than widening a frozen block. */
+.ew-table .ew-person strong,
+.ew-table .ew-person small { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Purchase Orders has nine cards; on a wide screen they stay on one row. */
+@media (min-width: 1280px) {
+  .ew-kpis.ew-kpis-wide { grid-template-columns: repeat(9, minmax(104px, 1fr)); }
+}

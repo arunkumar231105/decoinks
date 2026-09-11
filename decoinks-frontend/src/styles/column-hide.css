@@ -1,0 +1,44 @@
+/* ColumnHideMenu — the Hide Columns control in each list's filter bar. */
+.ch-field { display: grid; gap: 5px; min-width: 150px; }
+.ch-field > span { font-size: 10px; font-weight: 800; color: #4c5a72; }
+
+.ch-trigger {
+  width: 100%; height: 38px; display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 11px; border: 1px solid #dce4ef; border-radius: 6px; background: #fff;
+  color: #152342; font: 600 12px inherit; white-space: nowrap; cursor: pointer;
+  transition: border-color .15s ease;
+}
+.ch-trigger > span { flex: 1; text-align: left; }
+.ch-trigger:hover { border-color: #a8b8cd; }
+.leads-filter .ch-trigger { height: 44px; font-size: 15px; border-radius: 9px; padding: 0 12px; }
+
+.ch-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: #0866e9; color: #fff; font-size: 11px; line-height: 18px; text-align: center;
+}
+
+.ch-panel {
+  position: fixed; z-index: 4000; width: 270px; max-height: min(440px, 70vh);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #fff; border: 1px solid #d7dde5; border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .18);
+  animation: chIn .14s ease-out;
+}
+.ch-panel header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 13px; border-bottom: 1px solid #edf0f4; font-size: 13px; color: #0f172a;
+}
+.ch-panel header button { border: 0; background: none; color: #0866e9; font: 700 12px inherit; cursor: pointer; }
+.ch-panel header button:disabled { color: #94a3b8; cursor: default; }
+.ch-panel p { margin: 0; padding: 9px 13px 4px; font-size: 11px; line-height: 1.4; color: #64748b; }
+.ch-list { overflow: auto; padding: 4px 6px 8px; }
+.ch-list label {
+  display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px;
+  font-size: 13px; color: #263550; cursor: pointer; user-select: none;
+}
+.ch-list label:hover { background: #f3f7fc; }
+.ch-list label.is-hidden span { color: #94a3b8; text-decoration: line-through; }
+.ch-list input { width: 15px; height: 15px; margin: 0; accent-color: #0866e9; cursor: pointer; }
+.ch-list input:disabled { cursor: not-allowed; }
+
+@keyframes chIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
