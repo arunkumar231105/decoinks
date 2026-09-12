@@ -16,6 +16,7 @@ import { poStage, poProcessStatus, poFactoryStatus } from '../../utils/poStatus'
 import '../../styles/workflow-grid.css'
 import { useColumnDrag } from '../../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../ColumnHideMenu'
+import { ColumnFreezeField } from '../ColumnFreezeField'
 import { copyText, downloadCsv } from '../../utils/actions'
 import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
@@ -495,9 +496,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const rows = sortedRows.slice((page - 1) * pageSize, page * pageSize)
   // Columns can be dragged into any order by their header (hooks/useColumnDrag).
-  // Purchase Orders keeps its first three frozen — PO #, date and customer by
-  // default; every other list freezes its first column, as it always has. Not
-  // saved: a hard refresh brings back the page's own order.
+  // How many stay frozen is the user's to set from the filter bar; Purchase
+  // Orders starts with three — PO #, date and customer — and every other list
+  // with its first column. Not saved: a hard refresh brings back the page's own
+  // order and number.
   const columnDrag = useColumnDrag(config.columns.map(c => c.key),
     { frozen: kind === 'purchase-orders' ? 3 : 1, cellBackground: 'inherit' })
   const shownColumns = useMemo(() => {
@@ -645,6 +647,8 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         </select></label>
         <ColumnHideMenu columns={config.columns.map(c => ({ key: c.key, label: c.label }))}
           hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+        <ColumnFreezeField value={columnDrag.frozenCount} max={columnDrag.visible.length}
+          shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>
       </section>
 

@@ -8,6 +8,7 @@ import { ClaimDetailsDrawer } from '../components/claims/ClaimDetailsDrawer'
 import '../styles/claims.css'
 import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
+import { ColumnFreezeField } from '../components/ColumnFreezeField'
 
 const STATUSES = ['All', 'Draft', 'Raised', 'Under Review', 'Approved', 'Refunded', 'Closed', 'Rejected']
 const money = (v: any) => v == null ? '—'
@@ -73,6 +74,8 @@ export function ClaimsListPage() {
         <ColumnHideMenu wrapperClassName="leads-filter"
           columns={Object.entries(cols).map(([key, c]) => ({ key, label: String(c.head) }))}
           hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+        <ColumnFreezeField className="leads-filter" value={columnDrag.frozenCount}
+          max={columnDrag.visible.length} shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         <button className="leads-btn primary" onClick={() => nav('/claims/new')}>
           <Plus size={18}/> New Claim
         </button>

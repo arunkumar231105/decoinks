@@ -6,16 +6,18 @@ import '../styles/column-drag.css'
  *
  *   - While a header is dragged the others slide aside to make room (each
  *     column's cells are animated from where they were to where they now are).
- *   - The first `frozen` columns (each page says how many; 0 for none) stay
- *     put while the grid scrolls sideways, whichever columns they are after a
- *     drag. Where each one ends is measured
- *     from the header as drawn, so any widths work; on a narrow screen fewer
- *     are frozen, so the frozen block never takes more than ~60% of the grid.
+ *   - The first `frozenCount` columns stay put while the grid scrolls
+ *     sideways, whichever columns they are after a drag. The page gives the
+ *     starting number (`frozen`; 0 for none) and the user changes it from the
+ *     filter bar (`setFrozenCount`, components/ColumnFreezeField). Where each
+ *     one ends is measured from the header as drawn, so any widths work; on a
+ *     narrow screen fewer are frozen, so the frozen block never takes more than
+ *     ~70% of the grid — `frozenShown` says how many actually are.
  *   - Columns can be hidden and shown again (`toggleHidden`, `showAll`); the
  *     page draws `visible`, which is `order` less the hidden ones. At least one
  *     column always stays.
  *   - Nothing is saved. A hard refresh brings back the page's own order, with
- *     every column shown.
+ *     every column shown and the page's own number frozen.
  *
  * A page renders its columns in `visible`, spreads `headProps(key, i)` on each
  * header cell and `cellProps(key, i)` on each body cell, and puts `tableRef` on
@@ -104,6 +106,14 @@ export function useColumnDrag(
   }
 
   // ── Frozen columns ────────────────────────────────────────────────────────
+  const [frozenWanted, setFrozenWanted] = useState(frozen)
+  // A page that changes its columns (or its own default) starts from its own number.
+  useEffect(() => { setFrozenWanted(frozen) }, [signature, frozen]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Never more than the columns on show: hiding columns lowers it with them.
+  const frozenCount = Math.max(0, Math.min(frozenWanted, visible.length))
+  const setFrozenCount = (n: number) =>
+    setFrozenWanted(Number.isFinite(n) ? Math.max(0, Math.min(Math.trunc(n), visible.length)) : 0)
+
   const [lefts, setLefts] = useState<number[]>([])
   useLayoutEffect(() => {
     const table = tableRef.current
@@ -113,9 +123,9 @@ export function useColumnDrag(
       const first = heads.findIndex(th => th.dataset.col)
       if (first < 0) return
       let x = heads.slice(0, first).reduce((w, th) => w + th.offsetWidth, 0)
-      const budget = (table.parentElement?.clientWidth || window.innerWidth) * 0.6
+      const budget = (table.parentElement?.clientWidth || window.innerWidth) * 0.7
       const next: number[] = []
-      for (let i = first; i < heads.length && next.length < frozen; i++) {
+      for (let i = first; i < heads.length && next.length < frozenCount; i++) {
         if (!heads[i].dataset.col) break
         if (next.length && x + heads[i].offsetWidth > budget) break
         next.push(x)
@@ -175,5 +185,8 @@ export function useColumnDrag(
     style: { ...style, ...frozenStyle(index, false) },
   })
 
-  return { order, visible, hidden, toggleHidden, showAll, tableRef, headProps, cellProps }
+  return {
+    order, visible, hidden, toggleHidden, showAll, tableRef, headProps, cellProps,
+    frozenCount, frozenShown: lefts.length, setFrozenCount,
+  }
 }

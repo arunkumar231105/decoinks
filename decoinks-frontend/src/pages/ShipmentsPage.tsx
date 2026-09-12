@@ -1,6 +1,8 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
+import { ColumnFreezeField } from '../components/ColumnFreezeField'
+import '../styles/shipment-filters.css'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -11,7 +13,6 @@ import {
   ChevronRight,
   Clock,
   Download,
-  Filter,
   MapPin,
   MoreVertical,
   Package,
@@ -38,7 +39,7 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import toast from '../utils/toast'
 import { downloadCsv, printPanel } from '../utils/actions'
-import { periodRange, type PeriodKey } from '../utils/period'
+import { periodRange, toIsoDate, type PeriodKey } from '../utils/period'
 import { PeriodTabs } from '../components/PeriodTabs'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
 import { LabelModal } from '../components/LabelModal'
@@ -86,6 +87,13 @@ interface Shipment {
   label_url: string | null
   label_status: string | null
   shippo_transaction_id: string | null
+  supplier_name?: string | null
+  ship_source?: string | null
+  allocated_count?: number | null
+  weight_lbs?: number | null
+  is_return?: boolean | null
+  notes?: string | null
+  created_at?: string | null
 }
 
 // A delivery date the way a person says it: 4 Sep 26.
@@ -104,6 +112,66 @@ const fmtDay = (value?: string | null) => {
 // The effective status a row shows: live carrier/Shippo status if present,
 // otherwise the internal workflow status.
 const effectiveStatus = (s: Shipment) => s.tracking_status || s.status || '-'
+
+// The stage a parcel is at, as the Status filter and the cards count it. The
+// carrier's word wins when Shippo has one; before the first scan the shop's own
+// status stands in. Pre Transit — a label made, waiting for the carrier's first
+// scan — is a stage of its own and not a kind of in transit: the In Transit
+// card used to match "TRANSIT" inside "PRE_TRANSIT" and counted both.
+const STAGES = ['Pending', 'Pre Transit', 'In Transit', 'Delivered', 'Failure', 'Returned'] as const
+type Stage = typeof STAGES[number]
+const stageOf = (s: Shipment): Stage => {
+  switch ((s.tracking_status || '').trim().toUpperCase()) {
+    case 'DELIVERED': return 'Delivered'
+    case 'TRANSIT': return 'In Transit'
+    case 'PRE_TRANSIT': return 'Pre Transit'
+    case 'FAILURE': return 'Failure'
+    case 'RETURNED': return 'Returned'
+  }
+  switch (s.status) {
+    case 'Delivered': return 'Delivered'
+    case 'In Transit': case 'Picked Up': return 'In Transit'
+    case 'Label Created': return 'Pre Transit'
+    case 'Exception': return 'Failure'
+    default: return 'Pending'
+  }
+}
+
+// Promised delivery date: the original ETA if known, else the current estimate.
+const promisedEta = (s: Shipment) => s.original_eta || s.estimated_delivery
+const isOnTime = (s: Shipment) => {
+  const eta = promisedEta(s)
+  return Boolean(s.delivered_date && eta && s.delivered_date <= eta)
+}
+const isDelayed = (s: Shipment, today: string) => {
+  const eta = promisedEta(s)
+  if (!eta) return false
+  if (s.delivered_date) return s.delivered_date > eta             // delivered late
+  return stageOf(s) !== 'Delivered' && today > eta                // overdue, still not delivered
+}
+
+const NO_FILTERS = { stage: 'All', timing: 'All', carrier: 'All', service: 'All', customer: 'All', state: 'All' }
+type Filters = typeof NO_FILTERS
+
+// The export file: the same readable columns the server's export has always
+// used, taken from the rows the filters leave.
+const EXPORT_COLUMNS: ReadonlyArray<readonly [string, (s: Shipment) => unknown]> = [
+  ['Shipment No', s => s.shipment_number], ['Ship Date', s => s.ship_date],
+  ['Stage', s => stageOf(s)], ['Status', s => effectiveStatus(s)], ['Tracking Status', s => s.tracking_status],
+  ['Details', s => s.status_details], ['Carrier', s => s.carrier], ['Service Type', s => s.service_type],
+  ['Tracking No', s => s.tracking_number],
+  ['Customer Name', s => s.customer_name], ['Recipient Name', s => s.recipient_name],
+  ['Ship To Address', s => (s.address ?? '').trim() || s.po_shipping_address], ['Ship To City', s => s.ship_to_city],
+  ['Ship To State', s => s.ship_to_state], ['Ship To Postal Code', s => s.ship_to_postal_code],
+  ['Order No', s => s.order_number], ['PO No', s => s.po_number],
+  ['Orders On Parcel', s => s.allocated_count],
+  ['Supplier', s => s.supplier_name], ['Ship Source', s => s.ship_source],
+  ['Weight (lbs)', s => s.weight_lbs], ['Shipping Cost', s => s.shipping_cost],
+  ['Estimated Delivery', s => s.estimated_delivery], ['Original ETA', s => s.original_eta],
+  ['Delivered Date', s => s.delivered_date],
+  ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
+  ['Is Return', s => s.is_return], ['Notes', s => s.notes], ['Created At', s => s.created_at],
+]
 
 // The courier's line can run long ("ARRIVED AT USPS REGIONAL FACILITY"), so the
 // cell holds one line and the full text — details and the sub-status sentence
@@ -128,8 +196,11 @@ export function ShipmentsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState<string>('All')
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const setFilter = (key: keyof Filters, value: string) => { setFilters(f => ({ ...f, [key]: value })); setPage(1) }
   const [period, setPeriod] = useState<PeriodKey>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   // Newest ship date first by default, matching the other modules; the SHP
   // series is one pick away for reading the list in sequence.
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'num_desc' | 'num_asc'>('date_desc')
@@ -173,7 +244,7 @@ export function ShipmentsPage() {
     'Delivered Date': { className: 'sh-muted', render: s => s.delivered_date ?? '-' },
     'Tracking ID': { render: s => <span className="sh-awb">{s.tracking_number ?? '-'}</span> },
   }
-  // Shipments has never frozen a column; dragging does not change that.
+  // Shipments starts with no column frozen; the filter bar sets how many.
   const columnDrag = useColumnDrag(SORT_COLUMNS.map(([label]) => label), { frozen: 0 })
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
@@ -193,24 +264,51 @@ export function ShipmentsPage() {
   const allShipments: Shipment[] = data?.rows ?? []
 
   // The chosen range as two dates. Empty ends mean no bound, which is what
-  // "All Time" resolves to.
-  const [periodFrom, periodTo] = periodRange(period)
+  // "All Time" resolves to; Custom takes the two dates in the filter bar.
+  const [periodFrom, periodTo] = periodRange(period, dateFrom, dateTo)
+  const todayStr = toIsoDate(new Date())
 
-  const filtered = allShipments.filter((s) => {
-    const matchesStatus = statusFilter === 'All' || effectiveStatus(s) === statusFilter
-    const q = search.toLowerCase()
-    const matchesSearch =
-      (s.order_number ?? '').toLowerCase().includes(q) ||
-      (s.customer_name ?? '').toLowerCase().includes(q) ||
-      (s.tracking_number ?? '').toLowerCase().includes(q)
+  // What each dropdown offers comes from every parcel on file, so a choice
+  // never disappears from its own list once another filter is set.
+  const choices = useMemo(() => {
+    const unique = (pick: (s: Shipment) => string | null | undefined) =>
+      [...new Set(allShipments.map(s => (pick(s) ?? '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+    return {
+      carriers: unique(s => s.carrier), services: unique(s => s.service_type),
+      customers: unique(s => s.customer_name), states: unique(s => s.ship_to_state?.toUpperCase()),
+    }
+  }, [allShipments])
+
+  // Every filter but Stage. The cards and the counts beside each stage are
+  // taken from these rows, so choosing In Transit narrows the table to the
+  // parcels on the move while the cards still say how many sit at every stage.
+  const q = search.trim().toLowerCase()
+  const scoped = allShipments.filter((s) => {
+    const matchesSearch = !q || [s.shipment_number, s.order_number, s.po_number, s.customer_name, s.tracking_number]
+      .some(v => (v ?? '').toLowerCase().includes(q))
     // A parcel with no ship date has no place in a dated range, so it shows
     // only when no range is set rather than being quietly counted in every one.
     const day = (s.ship_date ?? '').slice(0, 10)
     const matchesPeriod =
       (!periodFrom && !periodTo) ||
       (!!day && (!periodFrom || day >= periodFrom) && (!periodTo || day <= periodTo))
-    return matchesStatus && matchesSearch && matchesPeriod
+    const same = (value: string | null | undefined, chosen: string) =>
+      chosen === 'All' || (value ?? '').trim().toUpperCase() === chosen.toUpperCase()
+    const matchesTiming = filters.timing === 'All'
+      || (filters.timing === 'On Time' ? isOnTime(s) : isDelayed(s, todayStr))
+    return matchesSearch && matchesPeriod && matchesTiming
+      && same(s.carrier, filters.carrier) && same(s.service_type, filters.service)
+      && same(s.customer_name, filters.customer) && same(s.ship_to_state, filters.state)
   })
+  const stageCounts = Object.fromEntries(STAGES.map(st => [st, 0])) as Record<Stage, number>
+  for (const s of scoped) stageCounts[stageOf(s)]++
+  const filtered = filters.stage === 'All' ? scoped : scoped.filter(s => stageOf(s) === filters.stage)
+  const anyFilter = Object.values(filters).some(v => v !== 'All') || Boolean(q) || period !== 'all'
+  const clearFilters = () => {
+    setFilters(NO_FILTERS); setSearch(''); setPeriod('all'); setDateFrom(''); setDateTo('')
+    setColSort(null); setPage(1)
+  }
 
   // Rows with no value for the chosen key stay at the bottom either way, rather
   // than jumping to the top of an ascending list.
@@ -293,55 +391,25 @@ export function ShipmentsPage() {
     ].join('\n'),
   )
 
-  const isDelivered = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('DELIVER')
-  const isTransit = (s: Shipment) => effectiveStatus(s).toUpperCase().includes('TRANSIT')
-  // Promised delivery date: the original ETA if known, else the current estimate.
-  const promisedEta = (s: Shipment) => s.original_eta || s.estimated_delivery
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const isOnTime = (s: Shipment) => {
-    const eta = promisedEta(s)
-    return Boolean(s.delivered_date && eta && s.delivered_date <= eta)
-  }
-  const isDelayed = (s: Shipment) => {
-    const eta = promisedEta(s)
-    if (!eta) return false
-    if (s.delivered_date) return s.delivered_date > eta          // delivered late
-    return !isDelivered(s) && todayStr > eta                     // overdue, still not delivered
-  }
-  // Counted from the rows on screen, so the cards and the table always agree.
-  // They used to come from a separate call that knew nothing of the filters, so
-  // choosing a date range narrowed the table and left every card unchanged —
-  // seven numbers describing a different set of parcels than the one below them.
+  // Counted from the rows the filters leave (all but Stage, see `scoped`), so
+  // the cards describe the same parcels as the table below them. They used to
+  // come from a separate call that knew nothing of the filters.
   const stats = {
-    total: filtered.length,
-    active: filtered.filter(s => !isDelivered(s)).length,
-    inTransit: filtered.filter(s => isTransit(s)).length,
-    delivered: filtered.filter(s => isDelivered(s)).length,
-    onTime: filtered.filter(isOnTime).length,
-    delayed: filtered.filter(isDelayed).length,
-    needsAttention: filtered.filter(s => effectiveStatus(s).toUpperCase().match(/FAIL|EXCEPTION|RETURN/)).length,
+    total: scoped.length,
+    active: scoped.length - stageCounts.Delivered,
+    preTransit: stageCounts['Pre Transit'],
+    inTransit: stageCounts['In Transit'],
+    delivered: stageCounts.Delivered,
+    onTime: scoped.filter(isOnTime).length,
+    delayed: scoped.filter(s => isDelayed(s, todayStr)).length,
+    needsAttention: stageCounts.Failure + stageCounts.Returned,
   }
 
-  // Server-side export: downloads the FULL filtered result set as CSV with
-  // readable column headers, the same way every other module's Export works,
-  // rather than only the rows currently rendered.
-  const exportAll = async () => {
-    try {
-      const res = await api.get('/shipments/export', {
-        params: { search, status: statusFilter === 'All' ? '' : statusFilter },
-        responseType: 'blob',
-      })
-      const url = URL.createObjectURL(res.data as Blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `shipments-${new Date().toISOString().slice(0, 10)}.csv`
-      link.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      // Fall back to exporting what is on screen if the endpoint is unavailable.
-      downloadCsv('shipments.csv', filtered as unknown as Record<string, unknown>[])
-    }
-  }
+  // Every parcel the filters leave, in the order the table shows — every page
+  // of it, not only the ten on screen. Made here rather than by /shipments/export
+  // because the filters live on this page and the server knows none of them.
+  const exportAll = () => downloadCsv(`shipments-${todayStr}.csv`,
+    sortedAll.map(s => Object.fromEntries(EXPORT_COLUMNS.map(([head, get]) => [head, get(s) ?? '']))))
 
   return (
     <div className="sh-page">
@@ -356,19 +424,6 @@ export function ShipmentsPage() {
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <button className="lb-action-btn" onClick={() => setStatusFilter(statusFilter === 'All' ? 'In Transit' : 'All')}>
-          <Filter size={13} /> {statusFilter === 'All' ? 'Filter' : statusFilter}
-        </button>
-        <ColumnHideMenu variant="button" buttonClassName="lb-action-btn"
-          columns={SORT_COLUMNS.map(([label]) => ({ key: label, label }))}
-          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
-        <select className="sh-per-page" aria-label="Sort shipments"
-                value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
-          <option value="date_desc">Ship date: newest first</option>
-          <option value="date_asc">Ship date: oldest first</option>
-          <option value="num_desc">Number: high to low</option>
-          <option value="num_asc">Number: low to high</option>
-        </select>
         <button className="lb-action-btn" onClick={() => setShowLabel(true)}>
           <Tag size={13} /> Create Label
         </button>
@@ -419,6 +474,13 @@ export function ShipmentsPage() {
           </div>
         </div>
         <div className="sh-stat">
+          <div className="sh-stat-icon sh-stat-icon-amber"><Tag size={18} /></div>
+          <div>
+            <span>Pre Transit</span>
+            <strong>{stats.preTransit}</strong>
+          </div>
+        </div>
+        <div className="sh-stat">
           <div className="sh-stat-icon sh-stat-icon-purple"><Truck size={18} /></div>
           <div>
             <span>In Transit</span>
@@ -454,6 +516,70 @@ export function ShipmentsPage() {
           </div>
         </div>
       </div>
+
+      {/* Filters */}
+      <section className="sh-filters" aria-label="Shipment filters">
+        <label><span>Stage</span>
+          <select value={filters.stage} onChange={e => setFilter('stage', e.target.value)}>
+            <option value="All">All stages ({scoped.length})</option>
+            {STAGES.map(st => <option key={st} value={st}>{st} ({stageCounts[st]})</option>)}
+          </select>
+        </label>
+        <label><span>Delivery</span>
+          <select value={filters.timing} onChange={e => setFilter('timing', e.target.value)}>
+            <option value="All">All</option>
+            <option value="On Time">Delivered on time</option>
+            <option value="Delayed">Delayed or overdue</option>
+          </select>
+        </label>
+        <label><span>Carrier</span>
+          <select value={filters.carrier} onChange={e => setFilter('carrier', e.target.value)}>
+            <option value="All">All carriers</option>
+            {choices.carriers.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </label>
+        <label><span>Service Type</span>
+          <select value={filters.service} onChange={e => setFilter('service', e.target.value)}>
+            <option value="All">All services</option>
+            {choices.services.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </label>
+        <label><span>Customer</span>
+          <select value={filters.customer} onChange={e => setFilter('customer', e.target.value)}>
+            <option value="All">All customers</option>
+            {choices.customers.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </label>
+        <label><span>Ship-To State</span>
+          <select value={filters.state} onChange={e => setFilter('state', e.target.value)}>
+            <option value="All">All states</option>
+            {choices.states.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </label>
+        {period === 'custom' && <>
+          <label><span>Ship Date From</span>
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => { setDateFrom(e.target.value); setPage(1) }} />
+          </label>
+          <label><span>Ship Date To</span>
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => { setDateTo(e.target.value); setPage(1) }} />
+          </label>
+        </>}
+        <label><span>Sort By</span>
+          <select aria-label="Sort shipments" value={colSort ? '' : sortBy}
+            onChange={e => { setColSort(null); setSortBy(e.target.value as typeof sortBy); setPage(1) }}>
+            {colSort && <option value="" disabled>Sorted by {colSort.key}</option>}
+            <option value="date_desc">Ship date: newest first</option>
+            <option value="date_asc">Ship date: oldest first</option>
+            <option value="num_desc">Number: high to low</option>
+            <option value="num_asc">Number: low to high</option>
+          </select>
+        </label>
+        <ColumnHideMenu columns={SORT_COLUMNS.map(([label]) => ({ key: label, label }))}
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+        <ColumnFreezeField value={columnDrag.frozenCount} max={columnDrag.visible.length}
+          shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
+        <button type="button" className="sh-clear" onClick={clearFilters} disabled={!anyFilter}>Clear Filters</button>
+      </section>
 
       {/* Table */}
       <div className="sh-table-wrap">

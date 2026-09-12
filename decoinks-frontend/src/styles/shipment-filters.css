@@ -1,0 +1,33 @@
+/* Shipments: the filter bar between the cards and the grid, drawn like the
+   filter bars on the other lists. index.css is protected, so it lives here. */
+.sh-filters {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end; gap: 12px; padding: 12px 14px 18px;
+  border: 1px solid #dfe6ef; border-radius: 12px; background: #fff;
+  box-shadow: 0 3px 14px rgba(15, 23, 42, .04);
+}
+.sh-filters label { display: grid; gap: 7px; min-width: 0; }
+.sh-filters label > span,
+.sh-filters .ch-field > span,
+.sh-filters .cf-field > span { font-size: 12px; font-weight: 800; color: #475569; }
+.sh-filters .ch-field, .sh-filters .cf-field { min-width: 0; gap: 7px; }
+.sh-filters select, .sh-filters label > input {
+  width: 100%; height: 38px; border: 1px solid #dce4ef; border-radius: 6px; background: #fff;
+  padding: 0 11px; color: #152342; font: 600 12px inherit; outline: 0;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.sh-filters select:focus, .sh-filters label > input:focus {
+  border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .1);
+}
+.sh-clear {
+  height: 38px; padding: 0 14px; border: 1px solid #dbe3ee; border-radius: 7px; background: #fff;
+  color: #0d1b3e; font: 700 12px inherit; white-space: nowrap; cursor: pointer; transition: .18s ease;
+}
+.sh-clear:hover:not(:disabled) { border-color: #a8b8cd; background: #f8fafc; }
+.sh-clear:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Eight cards now (Pre Transit joined them); on a wide screen they share one
+   row, and wrap rather than squeeze when the row runs out. */
+@media (min-width: 901px) {
+  .sh-page .sh-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
