@@ -279,6 +279,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'order', label: 'Source Order', render: r => common.empty(r, 'order_number', 'source_order_number') },
       { key: 'product', label: 'Product Type', render: r => titleCase(common.empty(r, 'product_type', 'order_type', 'print_type')) },
       { key: 'po_stage', label: 'PO Status', sortKey: r => poStage(r), render: r => <Badge>{poStage(r)}</Badge> },
+      // Whether this PO took the whole sales order or a part of it.
+      { key: 'po_scope', label: 'Full / Partial', sortKey: 'po_scope',
+        render: r => <Badge>{r.po_scope === 'full' ? 'Full PO' : r.po_scope === 'partial' ? 'Partial PO' : '—'}</Badge> },
       { key: 'factory_status', label: 'Factory Status', sortKey: r => poFactoryStatus(r), render: r => <Badge>{poFactoryStatus(r)}</Badge> },
       { key: 'process_status', label: 'Process Status', sortKey: r => poProcessStatus(r), render: r => <Badge>{poProcessStatus(r)}</Badge> },
       { key: 'service', label: 'Service Type', render: r => common.empty(r, 'service_type') },
@@ -894,7 +897,9 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'PO Issued Date', value: date(row.order_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) },
       { label: 'Sales Order No', value: coveredOrders.map((order: AnyRow) => order.order_number).filter(Boolean).join(', ') || first(row, 'order_number') }, { label: 'Supplier Name', value: first(row, 'supplier_name', 'vendor_name') },
       { label: 'Product Type', value: titleCase(first(row, 'print_type', 'po_type')) },
-      { label: 'PO Status', value: <Badge>{poStage(row)}</Badge> }, { label: 'Factory Status', value: <Badge>{poFactoryStatus(row)}</Badge> },
+      { label: 'PO Status', value: <Badge>{poStage(row)}</Badge> },
+      { label: 'Full / Partial', value: <Badge>{row.po_scope === 'full' ? 'Full PO' : row.po_scope === 'partial' ? 'Partial PO' : '—'}</Badge> },
+      { label: 'Factory Status', value: <Badge>{poFactoryStatus(row)}</Badge> },
       { label: 'Process Status', value: <Badge>{poProcessStatus(row)}</Badge> },
     ]}/>
     <DrawerSection title="Order Details" fields={[

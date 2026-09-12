@@ -72,6 +72,16 @@ export function OrderDetailPage() {
     enabled: !!id,
   })
 
+  // What this order still has left to buy: one sales order can be bought in
+  // several purchase orders (backend po.issue.js), so the tab says what is
+  // issued and whether another PO can be raised.
+  const { data: issuePlan } = useQuery<{ orders: { total_qty: number; issued: number; available: number; fully_issued: boolean }[] }>({
+    queryKey: ['order-issue-plan', id],
+    queryFn: () => api.get('/purchase-orders/issue-plan', { params: { order_ids: id } }).then(r => r.data.data),
+    enabled: !!id,
+  })
+  const issue = issuePlan?.orders?.[0]
+
   const statusMutation = useMutation({
     mutationFn: (status: string) => api.patch(`/orders/${id}/status`, { status }),
     onSuccess: (_data, status) => { toast.success(`Order moved to ${status}`); queryClient.invalidateQueries({ queryKey: ['order', id] }) },
@@ -177,7 +187,11 @@ export function OrderDetailPage() {
             <div className="so-tabs">{['Production Information','Artwork',`Purchase Orders (${pos.length})`,`Supplier Updates (${supplierUpdates.length})`,'Production Jobs','QC / QA','Packing','Shipments','Activity Timeline'].map(tab=><button className={cn(activeTab===tab&&'active')} onClick={()=>setActiveTab(tab)} key={tab}>{tab}</button>)}</div>
             {activeTab === 'Production Information' && <div className="so-production-grid"><div><small>Production Method</small><strong>{order.production_method || orderTypeName(order.order_type)}</strong></div><div><small>Print Facility</small><strong>{order.production_facility || 'Decoinks Production'}</strong></div><div><small>Assigned Team</small><strong>{order.assigned_team || (order.order_type === 'dtf' ? 'DTF Team' : 'Production Team')}</strong></div><div><small>Priority</small><strong>{order.production_priority || 'Normal'}</strong></div><div><small>Estimated Production Time</small><strong>{order.estimated_production_time || '1 - 2 Business Days'}</strong></div><div><small>Workflow</small><strong>{orderTypeName(order.order_type)} Workflow</strong></div><div><small>Packing Instructions</small><strong>{order.packing_instructions || '—'}</strong></div><div><small>Shipping Instructions</small><strong>{order.shipping_instructions || '—'}</strong></div></div>}
             {activeTab === 'Artwork' && <div className="so-gallery">{artworks.length ? artworks.map(a=><a href={a.file_url} target="_blank" rel="noreferrer" key={a.id}>{a.thumbnail_url || a.file_url ? <img src={a.thumbnail_url || a.file_url} alt={a.name}/> : <ImageIcon/>}<strong>{a.artwork_no}</strong><small>{a.status}</small></a>) : <p>No separate artwork records. Item artwork previews are shown above.</p>}</div>}
-            {activeTab.startsWith('Purchase Orders') && <div className="so-list">{pos.length ? pos.map(po=><Link to={`/purchase-orders/${po.id}`} key={po.id}>{po.po_number}<span>{po.status}</span></Link>) : <button onClick={()=>navigate('/purchase-orders/new',{state:{fromOrderId:order.id}})}>Generate Purchase Order</button>}</div>}
+            {activeTab.startsWith('Purchase Orders') && <div className="so-list">
+              {issue && <div><strong>Total {issue.total_qty} pcs · Issued {issue.issued} · Available {issue.available}</strong><span>{issue.fully_issued ? 'Fully issued — every piece is on a purchase order' : 'A purchase order can still be raised for what is left'}</span></div>}
+              {pos.map(po=><Link to={`/purchase-orders/${po.id}`} key={po.id}>{po.po_number}<span>{po.status}{po.po_scope ? ` · ${po.po_scope === 'full' ? 'Full' : 'Partial'}` : ''}</span></Link>)}
+              {!issue?.fully_issued && <button onClick={()=>navigate('/purchase-orders/new',{state:{fromOrderId:order.id}})}>Generate Purchase Order</button>}
+            </div>}
             {activeTab.startsWith('Supplier Updates') && <div className="so-list">{supplierUpdates.length ? supplierUpdates.map(u=><div key={u.id}><strong>{u.status}{u.supplier_name ? ` · ${u.supplier_name}` : ''}</strong><span>{u.notes ? `${u.notes} · ` : ''}{date(u.submitted_at)}</span></div>) : <p>No supplier has reported progress from the portal for this order.</p>}</div>}
             {activeTab === 'Shipments' && <div className="so-list">{shipments.length ? shipments.map(s=><div key={s.id}><strong>{s.shipment_number}</strong><span>{s.carrier || '—'} · {s.tracking_number || 'No tracking'} · {s.status}</span></div>) : <p>No shipment created yet.</p>}</div>}
             {activeTab === 'Activity Timeline' && <div className="so-list">{(order.activities || []).map((a,i)=><div key={i}><strong>{a.description}</strong><span>{date(a.created_at)}</span></div>)}</div>}

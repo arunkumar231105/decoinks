@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { assertIssuable } = require('./po.issue')
 const { assertNoDependents, softDelete } = require('../../utils/dependents')
 const { validateTransition } = require('../../utils/stateMachine')
 
@@ -43,7 +44,8 @@ async function getPoItemCols(client) {
        AND column_name IN ('artwork_count','front_image','back_image','artwork_size',
                            'category','brand','color','size','artwork_id','artwork_size_front','artwork_size_back',
                            'artwork_no','catalog_style_id','catalog_color_id','catalog_size_id',
-                           'catalog_sku','product_image','style_description','front_mockup','back_mockup')`
+                           'catalog_sku','product_image','style_description','front_mockup','back_mockup',
+                           'source_line_id','source_line_table')`
   )
   const _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
@@ -69,6 +71,10 @@ async function insertItems(client, poId, items) {
     if (cols.has('artwork_size_front')) { extraCols.push('artwork_size_front'); extraVals.push(item.artwork_size_front || null) }
     if (cols.has('artwork_size_back'))  { extraCols.push('artwork_size_back');  extraVals.push(item.artwork_size_back  || null) }
     for (const key of ['artwork_no','catalog_style_id','catalog_color_id','catalog_size_id','catalog_sku','product_image','style_description','front_mockup','back_mockup']) {
+      if (cols.has(key)) { extraCols.push(key); extraVals.push(item[key] || null) }
+    }
+    // Which sales order line this line issues, and so how many of it are left.
+    for (const key of ['source_line_id','source_line_table']) {
       if (cols.has(key)) { extraCols.push(key); extraVals.push(item[key] || null) }
     }
 
@@ -202,7 +208,9 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
     `SELECT po.*,
             COALESCE(po.vendor_name, s.name, os.name, o.contact_name) AS display_vendor_name,
             s.name      AS supplier_name,
-            cust.name   AS customer_name,
+            -- A purchase order raised from a sales order belongs to that
+            -- order's customer; older imports carry their own copy.
+            COALESCE(cust.name, ocust.name) AS customer_name,
             o.order_number,
             COALESCE(NULLIF(o.order_type::text, ''), NULLIF(po.print_type, '')) AS product_type,
             -- What the courier says, preferred over the shop's own word for it —
@@ -260,6 +268,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
      LEFT JOIN suppliers s  ON s.id  = po.supplier_id
      LEFT JOIN customers cust ON cust.id = po.customer_id
      LEFT JOIN orders   o  ON o.id  = po.order_id
+     LEFT JOIN customers ocust ON ocust.id = o.customer_id
      LEFT JOIN suppliers os ON os.id = o.supplier_id
      LEFT JOIN users    u  ON u.id  = po.created_by
      LEFT JOIN LATERAL (
@@ -269,7 +278,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
               sh.tracking_status, sh.original_eta, sh.estimated_delivery
        FROM shipments sh
        WHERE sh.deleted_at IS NULL
-         AND (sh.order_id = po.order_id
+         AND (sh.from_po_id = po.id OR sh.po_id = po.id OR sh.order_id = po.order_id
               OR (NULLIF(TRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number))
        -- NULLS LAST: a shipment row with no tracking number compares as NULL,
        -- and NULL sorts first in DESC, so an empty row beat the real parcel.
@@ -289,7 +298,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
                 WHEN NULLIF(BTRIM(sh.tracking_number), '') IS NOT NULL                 THEN 2
                 ELSE 0 END) AS rank
        FROM shipments sh
-       WHERE sh.deleted_at IS NULL AND (sh.po_id = po.id OR sh.order_id = po.order_id
+       WHERE sh.deleted_at IS NULL AND (sh.from_po_id = po.id OR sh.po_id = po.id OR sh.order_id = po.order_id
               OR (NULLIF(BTRIM(po.tracking_number), '') IS NOT NULL AND sh.tracking_number = po.tracking_number))
      ) parcel_roll ON TRUE
      ${where}
@@ -331,8 +340,9 @@ async function getById(id) {
             sc.phone AS contact_phone, sc.wechat_id AS contact_wechat,
             u.name AS created_by_name, b.name AS buyer_name,
             o.order_number AS order_number,
-            cust.name AS customer_name, cust.email AS customer_email,
-            cust.phone AS customer_phone
+            COALESCE(cust.name, ocust.name) AS customer_name,
+            COALESCE(cust.email, ocust.email) AS customer_email,
+            COALESCE(cust.phone, ocust.phone) AS customer_phone
      FROM purchase_orders po
      LEFT JOIN suppliers s          ON s.id  = po.supplier_id
      LEFT JOIN supplier_contacts sc ON sc.id = po.supplier_contact_id
@@ -340,6 +350,7 @@ async function getById(id) {
      LEFT JOIN users b ON b.id = po.buyer_id
      LEFT JOIN orders o ON o.id = po.order_id
      LEFT JOIN customers cust ON cust.id = po.customer_id
+     LEFT JOIN customers ocust ON ocust.id = o.customer_id
      WHERE po.id = $1 AND po.deleted_at IS NULL`,
     [id]
   )
@@ -501,8 +512,15 @@ async function upsertPoShipment(client, po, ship, orderIds, actorId) {
   const hasTracking = !!(ship.tracking_number && String(ship.tracking_number).trim())
   const status = hasTracking ? 'In Transit' : (ship.ship_date ? 'Label Created' : 'Pending')
 
+  // A shipment row carries either a sales order or a purchase order, never
+  // both (chk_shipments_target_xor). Every parcel in the book carries the sales
+  // order — the orders list, the shipments list and the courier sync all read
+  // it there — so that stays the target and from_po_id says which purchase
+  // order handed it in, which is how this same parcel is found again.
   const { rows: existing } = await client.query(
-    `SELECT id FROM shipments WHERE po_id = $1 ORDER BY created_at LIMIT 1`, [po.id]
+    `SELECT id, po_id FROM shipments
+      WHERE from_po_id = $1 OR po_id = $1
+      ORDER BY created_at LIMIT 1`, [po.id]
   )
 
   let shipmentId
@@ -510,7 +528,8 @@ async function upsertPoShipment(client, po, ship, orderIds, actorId) {
     shipmentId = existing[0].id
     await client.query(
       `UPDATE shipments SET
-         order_id           = COALESCE($2, order_id),
+         from_po_id         = COALESCE(from_po_id, $11),
+         order_id           = CASE WHEN po_id IS NULL THEN COALESCE($2, order_id) ELSE order_id END,
          supplier_id        = COALESCE($3, supplier_id),
          ship_source        = COALESCE($4, ship_source),
          carrier            = COALESCE($5, carrier),
@@ -523,17 +542,19 @@ async function upsertPoShipment(client, po, ship, orderIds, actorId) {
        WHERE id = $1`,
       [shipmentId, primaryOrderId, po.supplier_id || null, ship.ship_source || null, ship.carrier || null,
        ship.tracking_number || null, ship.ship_date || null, ship.estimated_delivery || null,
-       ship.tracking_notes || null, status]
+       ship.tracking_notes || null, status, po.id]
     )
   } else {
     const shipment_number = await getNextNumber('SHP', 'shipments', 'shipment_number')
     const { rows } = await client.query(
       `INSERT INTO shipments
-         (shipment_number, order_id, supplier_id, po_id, ship_source, status,
+         (shipment_number, order_id, supplier_id, po_id, from_po_id, ship_source, status,
           carrier, tracking_number, ship_date, estimated_delivery, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id`,
-      [shipment_number, primaryOrderId, po.supplier_id || null, po.id, ship.ship_source || null, status,
+      [shipment_number, primaryOrderId, po.supplier_id || null,
+       primaryOrderId ? null : po.id,          // the order is the target when there is one
+       po.id, ship.ship_source || null, status,
        ship.carrier || null, ship.tracking_number || null, ship.ship_date || null,
        ship.estimated_delivery || null, ship.tracking_notes || null, actorId || null]
     )
@@ -573,12 +594,24 @@ async function create(data) {
   const order_ids = data.order_ids || (order_id ? [order_id] : [])
   assertOrderCount(po_type, order_ids)
 
+  // Whose job it is. A PO raised from a sales order carries that order's
+  // customer, so the list says whose it is without being told twice.
+  let customerId = data.customer_id || null
+  if (!customerId && order_ids.length) {
+    const { rows: fromOrder } = await query(
+      `SELECT customer_id FROM orders WHERE id = $1 AND deleted_at IS NULL`, [order_ids[0]])
+    customerId = fromOrder[0]?.customer_id || null
+  }
+
   const po_number = await getNextNumber('PO', 'purchase_orders', 'po_number')
   const { subtotal, total_discount, total_tax, grand_total } = calcTotals(items, freight_charges, other_charges)
 
   const client = await getClient()
   try {
     await client.query('BEGIN')
+    // One sales order can be bought in several purchase orders; no purchase
+    // order may issue more than the order has left (po.issue.js).
+    await assertIssuable({ client, orderIds: order_ids, scope: data.po_scope, items })
     const { rows } = await client.query(
       `INSERT INTO purchase_orders
          (po_number, vendor_name, order_date, expected_date, subtotal, total, notes, created_by,
@@ -630,11 +663,15 @@ async function create(data) {
         tracking_number || null,
         carrier || null,
         tracking_notes || null,
-        data.customer_id || null,
+        customerId,
         data.po_stage || 'Draft',
       ]
     )
     const po = rows[0]
+    // Full (everything the order has left) or partial (a stated number a line).
+    if (data.po_scope) {
+      await client.query(`UPDATE purchase_orders SET po_scope = $2 WHERE id = $1`, [po.id, data.po_scope])
+    }
     await insertItems(client, po.id, items)
     if (order_ids.length)   await replaceOrders(client, po.id, order_ids)
     if (fragments.length)   await replaceFragments(client, po.id, fragments)
@@ -681,6 +718,16 @@ async function update(id, data) {
   const client = await getClient()
   try {
     await client.query('BEGIN')
+    // Only when the lines are being rewritten: a header-only edit issues nothing.
+    if (Array.isArray(data.items)) {
+      await assertIssuable({
+        client, orderIds: effectiveOrderIds, items: data.items,
+        scope: data.po_scope ?? existing.po_scope, excludePoId: id,
+      })
+    }
+    if (data.po_scope !== undefined) {
+      await client.query(`UPDATE purchase_orders SET po_scope = $2 WHERE id = $1`, [id, data.po_scope])
+    }
     const { rows } = await client.query(
       `UPDATE purchase_orders SET
          vendor_name       = COALESCE($1,  vendor_name),
@@ -925,6 +972,7 @@ async function sendToPortal(poId, sentByUserId, overrideSupplierId) {
 
 module.exports = {
   setFactoryStatus,
+  issuePlan: require('./po.issue').issuePlan,
   list, getImportSummary, getById, create, update, updateStatus, remove,
   listAttachments, addAttachment, removeAttachment,
   getStatusHistory, sendToPortal,

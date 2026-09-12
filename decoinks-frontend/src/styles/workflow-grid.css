@@ -12,3 +12,8 @@
 @media (min-width: 1280px) {
   .ew-kpis.ew-kpis-wide { grid-template-columns: repeat(9, minmax(104px, 1fr)); }
 }
+
+/* A name needs room: with a dozen columns the browser was squeezing the
+   customer and vendor cells until "DIGI" read "D…". The grid scrolls instead. */
+.ew-table th[data-col="customer"], .ew-table td[data-col="customer"],
+.ew-table th[data-col="vendor"],   .ew-table td[data-col="vendor"] { min-width: 158px; }

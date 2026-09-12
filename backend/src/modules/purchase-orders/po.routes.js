@@ -22,6 +22,9 @@ const itemSchema = z.object({
   required_by_date: z.string().optional().nullable(),
   remarks:          z.string().optional().nullable(),
   sort_order:       z.number().int().min(0).optional(),
+  // The sales order line this line issues, so the pieces left can be counted.
+  source_line_id:    z.string().uuid().optional().nullable(),
+  source_line_table: z.enum(['order_items_apparel', 'order_items_dtf', 'order_items_gangsheet']).optional().nullable(),
   product_id:       z.string().uuid().optional().nullable(),
   artwork_count:    z.number().int().min(0).optional().nullable(),
   artwork_size:     z.string().optional().nullable(),
@@ -92,6 +95,8 @@ const createSchema = z.object({
   fragments:          z.array(fragmentSchema).optional(),
   artwork_ids:        z.array(z.string().uuid()).optional(),
   items:              z.array(itemSchema).optional().default([]),
+  // Everything the sales order has left, or a stated number a line.
+  po_scope:           z.enum(['full', 'partial']).optional().nullable(),
   // Where the document is: Draft, Saved, Sent. The form writes Draft on Save
   // Draft and Saved on Save PO; Sent follows the PO leaving for the factory.
   po_stage:           z.enum(['Draft', 'Saved', 'Sent']).optional().nullable(),
@@ -135,6 +140,9 @@ const attachmentSchema = z.object({
 router.get('/',                           controller.list)
 router.get('/export',                     controller.exportCsv)
 router.get('/summary',                    controller.summary)
+// What the given sales orders still have left to buy — Total Qty, Issued and
+// Available a line. ?order_ids=a,b and optionally ?exclude_po_id= when editing.
+router.get('/issue-plan',                 controller.issuePlan)
 router.get('/:id',                        controller.getOne)
 router.post('/',                          validate(createSchema),     controller.create)
 router.put('/:id',                        validate(updateSchema),     controller.update)
