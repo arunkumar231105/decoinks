@@ -259,9 +259,18 @@ function fileExtension(fileName, mime) {
 }
 
 // The customer's folder is everything above the first stage folder in the path.
+//
+// A name missing from this list is read as part of the customer's folder, and
+// then an upload for that customer is filed inside it. Thumbnails caused this:
+// every save writes one, so the newest file for a customer was often a
+// thumbnail, and the next upload landed in <customer>/Thumbnails/<stage>/.
+// `final_files` and `reference_files` were missing too, though the upload and
+// save kinds below already name them.
+const STAGE_FOLDER = /^(references?|reference_files|refs?|artworks?|working|versions?|mock-?ups?|sent|outgoing|gang-?sheets?|finals?|final_files|production|combos?|documents?|thumb(nail)?s?|ai[ _-]?artwork)$/i
+
 function customerFolder(assetPath) {
   const parts = String(assetPath || '').split('/').filter(Boolean)
-  const marker = parts.findIndex(part => /^(references?|refs?|artworks?|working|versions?|mockups?|sent|outgoing|gangsheets?|finals?|production|combos?|documents?)$/i.test(part))
+  const marker = parts.findIndex(part => STAGE_FOLDER.test(part))
   return (marker > 0 ? parts.slice(0, marker) : parts.slice(0, -1)).join('/')
 }
 
