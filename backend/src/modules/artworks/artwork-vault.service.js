@@ -23,6 +23,23 @@ let lastSyncAt = 0
 const TYPE_CODES = 'FNLA|SRC|REF|WRK|MOCK|OUT|FNL|GS|MU'
 const NAMED_CODE = new RegExp(`(AW-[A-Z0-9]+-[0-9]{4})-(${TYPE_CODES})(?:[^A-Z]|$)`, 'i')
 
+// The same name with the number padded to five (AW-KM01-00011-FNLA.png). A
+// stretch of files was written that way by hand. The strict pattern above could
+// not read them, so their type was guessed from the folder instead: 34 approved
+// finals sitting in Artworks were all recorded as work-in-progress, and would
+// never appear under Approved.
+//
+// This reads them; it does not bless them. naming_convention_valid still uses
+// the strict pattern, so they stay flagged as off-standard and the names can be
+// put right later without anyone having to rediscover which ones they were.
+const LOOSE_CODE = new RegExp(`(AW-[A-Z0-9]+-[0-9]{4,6})-(${TYPE_CODES})(?:[^A-Z]|$)`, 'i')
+
+// A design's number is four digits. Extra padding is dropped so the five-digit
+// spelling and the four-digit one mean the same design rather than two.
+function normaliseCode(code) {
+  return String(code).toUpperCase().replace(/-([0-9]{4,6})$/, (_, n) => '-' + String(Number(n)).padStart(4, '0'))
+}
+
 // Only these reach production. FNL is deliberately excluded: per the shop's
 // standard a final is "sent for sign-off, not yet approved" — it becomes the
 // production master only once the customer approves it and it is saved as FNLA.
@@ -32,7 +49,7 @@ function inferLifecycle(path, fileName = '') {
   const fullPath = String(path || '')
   if (/(^|\/)(documents?|invoices?|quotes?)(\/|$)/i.test(fullPath)) return null
   const name = String(fileName || fullPath.split('/').pop() || '')
-  const named = name.match(NAMED_CODE)
+  const named = name.match(NAMED_CODE) || name.match(LOOSE_CODE)
   if (named) return named[2].toUpperCase()
   if (/(^|\/)(references?|refs?)(\/|$)/i.test(fullPath)) return 'SRC'
   if (/(^|\/)(artworks?|working|versions?)(\/|$)/i.test(fullPath)) return 'WRK'
@@ -47,8 +64,14 @@ function inferLifecycle(path, fileName = '') {
 }
 
 function inferArtworkCode(fileName) {
-  const match = String(fileName || '').match(NAMED_CODE)
-  return match ? match[1].toUpperCase() : null
+  const name = String(fileName || '')
+  const match = name.match(NAMED_CODE) || name.match(LOOSE_CODE)
+  return match ? normaliseCode(match[1]) : null
+}
+
+// Strictly the shop's standard — what naming_convention_valid reports.
+function isStandardName(fileName) {
+  return NAMED_CODE.test(String(fileName || ''))
 }
 
 function inferType(path, fileName = '') {
@@ -104,7 +127,7 @@ function indexRecord(file) {
     mime_type: file.mime_type || null, file_size_bytes: file.size || 0, etag: file.etag || null,
     file_id: file.fileid || null, asset_type: inferType(file.path, file.name),
     artwork_code: inferArtworkCode(file.name), lifecycle_code,
-    naming_convention_valid: Boolean(inferArtworkCode(file.name)), status: inferStatus(lifecycle_code),
+    naming_convention_valid: isStandardName(file.name), status: inferStatus(lifecycle_code),
     production_ready: PRODUCTION_CODES.has(lifecycle_code), order_type: inferOrderType(file.path),
     version_no: inferVersion(file.name), modified_at: file.modified || null,
   }
