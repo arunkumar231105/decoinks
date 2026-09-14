@@ -22,6 +22,10 @@ const COLUMNS = `
   -- the one holding order_id included, so a $480 split two ways names both jobs
   -- instead of only the one that happened to take the column.
   i.invoice_number, COALESCE(alloc.allocated_orders, o.order_number) AS order_number,
+  -- Money in that no live sales order carries yet — the Payments screen counts
+  -- these as Pending SO. Linked either way counts: order_id on a live order, or
+  -- a share allocated to one (a deleted order leaves allocated_orders empty).
+  ((o.id IS NOT NULL AND o.deleted_at IS NULL) OR alloc.allocated_orders IS NOT NULL) AS has_sales_order,
   u.name AS recorded_by_name`
 
 const FROM = `

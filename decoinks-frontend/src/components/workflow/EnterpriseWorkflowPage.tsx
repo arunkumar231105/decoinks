@@ -300,7 +300,12 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Total Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.amount || 0), 0)), tone: 'green' },
       { label: 'Net Received', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + Number(x.net_amount ?? x.amount ?? 0), 0)), tone: 'green' },
       { label: 'Completed', icon: BadgeCheck, value: r => countStatus(r, 'completed'), tone: 'green' },
-      { label: 'Pending', icon: Clock3, value: r => countStatus(r, 'pending'), tone: 'amber' },
+      // Money received that no sales order carries yet. It leaves this count the
+      // moment its sales order is made and the payment linked to it. A failed or
+      // refunded payment is not waiting for an order, so it is not counted.
+      { label: 'Pending SO', icon: Clock3, tone: 'amber',
+        value: r => r.filter(x => x.has_sales_order === false
+          && !['failed', 'refunded'].includes(String(x.status || '').trim().toLowerCase())).length },
       { label: 'Average Payment', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.amount || 0), 0) / r.length : 0), tone: 'purple' },
     ],
     columns: [
