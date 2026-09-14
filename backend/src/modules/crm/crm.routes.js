@@ -235,13 +235,20 @@ router.get('/orders', wrap(async (req, res) => {
   const type = String(req.query.type || 'apparel').trim()
   const channel = String(req.query.channel || '').trim()
   const search = String(req.query.search || '').trim()
+  // `with_po=1` also lists orders that already have purchase orders, so BlankTex
+  // can pick the order and then the specific PO to fill from. Without it the list
+  // is exactly as before: only orders still awaiting a PO.
+  const withPo = ['1', 'true'].includes(String(req.query.with_po || '').trim().toLowerCase())
   const params = [type]
-  let where = `o.deleted_at IS NULL AND o.order_type = $1
+  let where = `o.deleted_at IS NULL AND o.order_type = $1`
+  if (!withPo) {
+    where += `
       AND NOT EXISTS (
         SELECT 1 FROM purchase_orders po
         LEFT JOIN po_orders poo ON poo.po_id = po.id
         WHERE (po.order_id = o.id OR poo.order_id = o.id) AND po.deleted_at IS NULL
       )`
+  }
   if (channel) { params.push(channel); where += ` AND o.sales_channel = $${params.length}` }
   if (search) {
     params.push(`%${search}%`)
@@ -251,7 +258,10 @@ router.get('/orders', wrap(async (req, res) => {
     `SELECT o.id, o.order_number, o.order_type, o.sales_channel, o.status,
             o.order_date, o.total, o.currency,
             cust.name AS customer_name,
-            COALESCE((SELECT SUM(qty) FROM order_items_apparel WHERE order_id = o.id), 0)::int AS total_qty
+            COALESCE((SELECT SUM(qty) FROM order_items_apparel WHERE order_id = o.id), 0)::int AS total_qty,
+            (SELECT COUNT(DISTINCT po.id) FROM purchase_orders po
+               LEFT JOIN po_orders poo ON poo.po_id = po.id
+              WHERE (po.order_id = o.id OR poo.order_id = o.id) AND po.deleted_at IS NULL)::int AS po_count
        FROM orders o
        LEFT JOIN customers cust ON cust.id = o.customer_id
       WHERE ${where}
@@ -305,6 +315,125 @@ router.post('/orders/:id/purchase-order', wrap(async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, po_number, status, created_at FROM purchase_orders WHERE id = $1`, [po.id])
   res.status(201).json({ data: rows[0] || { id: po.id, po_number: po.po_number, status: po.status }, already_existed: false })
+}))
+
+/**
+ * The purchase orders that cover one sales order — an order can have several
+ * (one per supplier, or split shipments). BlankTex shows these after the agent
+ * picks the sales order, so the blank order is filled from the exact PO.
+ */
+router.get('/orders/:id/purchase-orders', wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT po.id, po.po_number, po.status, po.po_type, po.order_date, po.created_at,
+            COALESCE(s.name, po.vendor_name) AS supplier_name,
+            COALESCE(it.item_count, 0)::int AS item_count,
+            COALESCE(it.total_qty, 0)::int AS total_qty
+       FROM purchase_orders po
+       LEFT JOIN suppliers s ON s.id = po.supplier_id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS item_count, SUM(qty_ordered) AS total_qty
+           FROM purchase_order_items WHERE po_id = po.id
+       ) it ON TRUE
+      WHERE po.deleted_at IS NULL
+        AND (po.order_id = $1
+             OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = po.id AND poo.order_id = $1))
+      ORDER BY po.created_at, po.po_number`, [req.params.id])
+  res.json({ data: rows })
+}))
+
+/**
+ * One purchase order in full, shaped for BlankTex auto-fill: its line items (with
+ * the BlankTex catalog codes they were picked from), the sales order(s) it covers
+ * with their contact/ship-to text, and a structured `ship_to` address.
+ *
+ * A PO line that carries no artwork of its own falls back to the images on the
+ * sales-order line it was raised from, so nothing typed once must be uploaded twice.
+ * The address prefers the PO's chosen address, then the order's, then the customer's.
+ */
+router.get('/purchase-orders/:id', wrap(async (req, res) => {
+  const { rows: poRows } = await db.query(
+    `SELECT po.id, po.po_number, po.status, po.po_type, po.po_scope, po.order_id, po.customer_id,
+            po.shipping_address, po.shipping_address_id, po.shipping_method, po.carrier
+       FROM purchase_orders po
+      WHERE po.id = $1 AND po.deleted_at IS NULL`, [req.params.id])
+  const po = poRows[0]
+  if (!po) return res.status(404).json({ error: 'Purchase order not found' })
+
+  const { rows: orders } = await db.query(
+    `SELECT o.id, o.order_number, o.customer_id, o.shipping_name, o.shipping_address,
+            o.shipping_address_id, o.contact_name, o.contact_phone, o.contact_email
+       FROM orders o
+      WHERE o.deleted_at IS NULL
+        AND (o.id = $2 OR o.id IN (SELECT order_id FROM po_orders WHERE po_id = $1))
+      ORDER BY COALESCE(o.id = $2, FALSE) DESC, o.order_number`, [po.id, po.order_id])
+
+  const { rows: items } = await db.query(
+    `SELECT poi.id, poi.item_name AS item, poi.qty_ordered AS qty, poi.color, poi.size,
+            poi.brand, poi.catalog_sku, poi.style_description, poi.sort_order,
+            st.style_no AS model, st.style_no,
+            COALESCE(NULLIF(sc.supplier_color_code, ''), sc.internal_color_code) AS color_code,
+            COALESCE(NULLIF(sz.supplier_size_code, ''), sz.size_code) AS size_code,
+            COALESCE(NULLIF(poi.front_image, ''), NULLIF(src.front_image, ''))   AS front_image,
+            COALESCE(NULLIF(poi.back_image, ''), NULLIF(src.back_image, ''))     AS back_image,
+            COALESCE(NULLIF(poi.front_mockup, ''), NULLIF(src.front_mockup, '')) AS front_mockup,
+            COALESCE(NULLIF(poi.back_mockup, ''), NULLIF(src.back_mockup, ''))   AS back_mockup
+       FROM purchase_order_items poi
+       LEFT JOIN blanktex.styles st       ON st.style_id = poi.catalog_style_id
+       LEFT JOIN blanktex.style_colors sc ON sc.style_color_id = poi.catalog_color_id
+       LEFT JOIN blanktex.style_sizes sz  ON sz.style_size_id = poi.catalog_size_id
+       LEFT JOIN order_items_apparel src
+              ON poi.source_line_table = 'order_items_apparel' AND src.id = poi.source_line_id
+      WHERE poi.po_id = $1
+      ORDER BY poi.sort_order, poi.created_at`, [po.id])
+
+  // Many purchase orders were raised before PO lines were saved and hold none.
+  // A full PO covers every line of its sales order, so those lines are what it
+  // buys. A partial PO with no lines cannot say which pieces it covers — nothing
+  // is guessed there (`items_source: 'none'`), the agent adds the items.
+  let items_source = items.length ? 'purchase_order' : 'none'
+  const primary = orders[0] || null
+  if (!items.length && po.po_scope !== 'partial' && orders.length) {
+    const { rows: lines } = await db.query(
+      `SELECT oi.id, oi.item, oi.qty, oi.color, oi.size, oi.brand, oi.catalog_sku,
+              oi.style_description, oi.sort_order,
+              COALESCE(st.style_no, oi.model) AS model, st.style_no,
+              COALESCE(NULLIF(sc.supplier_color_code, ''), sc.internal_color_code) AS color_code,
+              COALESCE(NULLIF(sz.supplier_size_code, ''), sz.size_code) AS size_code,
+              oi.front_image, oi.back_image, oi.front_mockup, oi.back_mockup
+         FROM order_items_apparel oi
+         LEFT JOIN blanktex.styles st       ON st.style_id = oi.catalog_style_id
+         LEFT JOIN blanktex.style_colors sc ON sc.style_color_id = oi.catalog_color_id
+         LEFT JOIN blanktex.style_sizes sz  ON sz.style_size_id = oi.catalog_size_id
+        WHERE oi.order_id = ANY($1::uuid[]) AND oi.qty > 0
+        ORDER BY oi.order_id, oi.sort_order`, [orders.map(o => o.id)])
+    if (lines.length) { items.push(...lines); items_source = 'sales_order' }
+  }
+  const customerId = po.customer_id || primary?.customer_id || null
+  let ship_to = null
+  if (customerId) {
+    const { rows } = await db.query(
+      `SELECT name, company_name, email, phone, mobile_number, company_phone_number,
+              address_line1, city, state, zip, country
+         FROM customers WHERE id = $1 AND deleted_at IS NULL`, [customerId])
+    ship_to = rows[0] || null
+  }
+  const addressId = po.shipping_address_id || primary?.shipping_address_id || null
+  if (addressId) {
+    const { rows } = await db.query(
+      `SELECT contact_person, line1, line2, city, state, zipcode, country
+         FROM customer_addresses WHERE id = $1`, [addressId])
+    const a = rows[0]
+    if (a) {
+      ship_to = {
+        ...(ship_to || {}),
+        name: a.contact_person || ship_to?.name || null,
+        address_line1: a.line1, address_line2: a.line2,
+        city: a.city, state: a.state, zip: a.zipcode, country: a.country,
+      }
+    }
+  }
+
+  res.json({ data: { ...po, orders, order_ids: orders.map(o => o.id), items, items_source, ship_to } })
 }))
 
 /* ── Invoice payment links ───────────────────────────────────────────────── */
