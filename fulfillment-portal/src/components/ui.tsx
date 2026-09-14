@@ -42,7 +42,7 @@ export function StatCard({
   label: string
   value: ReactNode
   tone?: string
-  trend?: { value: number; note: string } | null
+  trend?: { value: number; note: string; unit?: string } | null
   loading?: boolean
 }) {
   const up = (trend?.value ?? 0) >= 0
@@ -59,7 +59,7 @@ export function StatCard({
         {trend && !loading ? (
           <div className={cx('mt-0.5 flex items-center gap-1 text-xs font-medium', up ? 'text-emerald-600' : 'text-rose-600')}>
             {up ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-            {Math.abs(trend.value)}% <span className="text-muted">{trend.note}</span>
+            {Math.abs(trend.value)}{trend.unit ?? '%'} <span className="text-muted">{trend.note}</span>
           </div>
         ) : null}
       </div>
@@ -146,8 +146,12 @@ export function TableStates({
 
 export const dash = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : String(v))
 
+// A bare YYYY-MM-DD is a calendar day, not UTC midnight — read as UTC it shows
+// the day before anywhere west of Greenwich.
+export const toDate = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : new Date(v))
+
 export const fmtDate = (v?: string | null) =>
-  v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : '—'
+  v ? toDate(v).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : '—'
 
 export const fmtDateTime = (v?: string | null) =>
   v ? `${fmtDate(v)}\n${new Date(v).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : '—'

@@ -4,13 +4,14 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Download, ZoomIn, ZoomOut, Maximize2, RefreshCw } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
+import { toDate } from '../components/ui'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Artwork { id: string; artwork_number: string; name: string; file_url: string; thumbnail_url: string | null; width: number; height: number; position: string }
-interface ApparelItem { id: string; item: string; brand?: string; color: string; qty: number; artwork_no?: string; front_image?: string; back_image?: string }
-interface GangsheetItem { id: string; gangsheet_number?: string; width: number; height: number; efficiency?: number; qty: number; front_image?: string }
-interface DtfItem { id: string; artwork_name: string; size?: string; qty: number; unit_price: number; artwork_image?: string }
+interface Artwork { id: string; artwork_number: string | null; name: string | null; file_url: string; thumbnail_url: string | null; width: number | null; height: number | null; size?: string | null; position: string | null }
+interface ApparelItem { id: string; item: string; brand?: string; color: string; size?: string; qty: number; artwork_no?: string; front_image?: string; back_image?: string; product_image?: string }
+interface GangsheetItem { id: string; size?: string; no_artworks?: number; qty: number; front_image?: string }
+interface DtfItem { id: string; artwork_name: string; size?: string; qty: number; artwork_no?: string; artwork_image?: string }
 
 interface Order {
   id: string; order_number: string; status: string; order_type: string
@@ -28,12 +29,13 @@ const STATUS_BADGE: Record<string, string> = {
   'In Production': 'bg-blue-50 text-blue-700',
   Shipped:         'bg-orange-50 text-orange-700',
   Completed:       'bg-green-50 text-green-700',
+  Delivered:       'bg-green-50 text-green-700',
   'On Hold':       'bg-yellow-50 text-yellow-700',
   Cancelled:       'bg-red-50 text-red-700',
   Confirmed:       'bg-emerald-50 text-emerald-700',
 }
 
-const fmt     = (d: string | null) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const fmt     = (d: string | null) => d ? toDate(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 const THUMB   = (src?: string | null) => src
   ? <img src={src} alt="" className="w-10 h-10 object-contain bg-gray-900 rounded" />
   : <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-[9px] text-gray-400">None</div>
@@ -45,7 +47,7 @@ function ApparelTable({ items }: { items: ApparelItem[] }) {
     <table className="w-full">
       <thead>
         <tr className="border-b border-gray-100 bg-gray-50">
-          {['#', 'Item', 'Brand', 'Color', 'Qty', 'Artwork No', 'Front', 'Back', 'Sleeve', 'Label'].map((h) => (
+          {['#', 'Item', 'Brand', 'Color', 'Size', 'Qty', 'Artwork No', 'Garment', 'Front', 'Back'].map((h) => (
             <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">{h}</th>
           ))}
         </tr>
@@ -59,12 +61,12 @@ function ApparelTable({ items }: { items: ApparelItem[] }) {
             <td className="px-3 py-3 text-sm text-gray-900">{item.item}</td>
             <td className="px-3 py-3 text-sm text-gray-600">{item.brand ?? '—'}</td>
             <td className="px-3 py-3 text-sm text-gray-600">{item.color}</td>
+            <td className="px-3 py-3 text-sm text-gray-600">{item.size ?? '—'}</td>
             <td className="px-3 py-3 text-sm font-medium text-gray-900">{item.qty}</td>
             <td className="px-3 py-3 text-sm text-gray-600">{item.artwork_no ?? '—'}</td>
+            <td className="px-3 py-3">{THUMB(item.product_image)}</td>
             <td className="px-3 py-3">{THUMB(item.front_image)}</td>
             <td className="px-3 py-3">{THUMB(item.back_image)}</td>
-            <td className="px-3 py-3">{THUMB(null)}</td>
-            <td className="px-3 py-3">{THUMB(null)}</td>
           </tr>
         ))}
       </tbody>
@@ -77,21 +79,20 @@ function GangsheetTable({ items }: { items: GangsheetItem[] }) {
     <table className="w-full">
       <thead>
         <tr className="border-b border-gray-100 bg-gray-50">
-          {['#', 'Gangsheet No', 'Width', 'Height', 'Efficiency', 'Qty', 'Preview'].map((h) => (
+          {['#', 'Gangsheet', 'Size', 'Artworks', 'Qty', 'Preview'].map((h) => (
             <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">{h}</th>
           ))}
         </tr>
       </thead>
       <tbody>
         {items.length === 0 ? (
-          <tr><td colSpan={7} className="text-center py-8 text-sm text-gray-400">No items</td></tr>
+          <tr><td colSpan={6} className="text-center py-8 text-sm text-gray-400">No items</td></tr>
         ) : items.map((item, idx) => (
           <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
             <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-            <td className="px-4 py-3 text-sm font-medium text-accent">{item.gangsheet_number ?? `GS-${idx + 1}`}</td>
-            <td className="px-4 py-3 text-sm text-gray-700">{item.width} in</td>
-            <td className="px-4 py-3 text-sm text-gray-700">{item.height} in</td>
-            <td className="px-4 py-3 text-sm text-gray-700">{item.efficiency != null ? `${item.efficiency}%` : '—'}</td>
+            <td className="px-4 py-3 text-sm font-medium text-accent">{`GS-${idx + 1}`}</td>
+            <td className="px-4 py-3 text-sm text-gray-700">{item.size ?? '—'}</td>
+            <td className="px-4 py-3 text-sm text-gray-700">{item.no_artworks ?? '—'}</td>
             <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.qty}</td>
             <td className="px-4 py-3">{THUMB(item.front_image)}</td>
           </tr>
@@ -106,7 +107,7 @@ function DtfTable({ items }: { items: DtfItem[] }) {
     <table className="w-full">
       <thead>
         <tr className="border-b border-gray-100 bg-gray-50">
-          {['#', 'Artwork Name', 'Size', 'Qty', 'Unit Price', 'Preview'].map((h) => (
+          {['#', 'Artwork Name', 'Artwork No', 'Size', 'Qty', 'Preview'].map((h) => (
             <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">{h}</th>
           ))}
         </tr>
@@ -118,9 +119,9 @@ function DtfTable({ items }: { items: DtfItem[] }) {
           <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
             <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
             <td className="px-4 py-3 text-sm text-gray-900">{item.artwork_name}</td>
+            <td className="px-4 py-3 text-sm text-gray-600">{item.artwork_no ?? '—'}</td>
             <td className="px-4 py-3 text-sm text-gray-600">{item.size ?? '—'}</td>
             <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.qty}</td>
-            <td className="px-4 py-3 text-sm text-gray-700">${item.unit_price?.toFixed(2) ?? '—'}</td>
             <td className="px-4 py-3">{THUMB(item.artwork_image)}</td>
           </tr>
         ))}
@@ -339,7 +340,7 @@ export default function OrderDetailPage() {
                 {currentArtwork?.file_url ? (
                   <img
                     src={currentArtwork.file_url}
-                    alt={currentArtwork.name}
+                    alt={currentArtwork.name ?? ''}
                     style={{ transform: `scale(${zoom / 100})`, transition: 'transform 0.2s', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                   />
                 ) : (
@@ -350,10 +351,10 @@ export default function OrderDetailPage() {
               {/* Artwork metadata */}
               {currentArtwork && (
                 <div className="mt-3 space-y-1.5 text-xs text-gray-600">
-                  <div className="flex justify-between"><span className="text-gray-400">Code</span><span className="font-medium">{currentArtwork.artwork_number}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Code</span><span className="font-medium">{currentArtwork.artwork_number ?? '—'}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Name</span><span className="font-medium truncate ml-2">{currentArtwork.name}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Position</span><span className="font-medium">{currentArtwork.position ?? '—'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Dimensions</span><span className="font-medium">{currentArtwork.width}×{currentArtwork.height} in</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Dimensions</span><span className="font-medium">{currentArtwork.width && currentArtwork.height ? `${currentArtwork.width}×${currentArtwork.height} in` : currentArtwork.size ?? '—'}</span></div>
                 </div>
               )}
 
@@ -367,7 +368,7 @@ export default function OrderDetailPage() {
                       className={cn('w-12 h-12 rounded border-2 overflow-hidden bg-gray-900 flex-shrink-0', i === activeArtwork ? 'border-accent' : 'border-gray-200')}
                     >
                       {aw.thumbnail_url
-                        ? <img src={aw.thumbnail_url} alt={aw.name} className="w-full h-full object-contain" />
+                        ? <img src={aw.thumbnail_url} alt={aw.name ?? ''} className="w-full h-full object-contain" />
                         : <span className="text-[9px] text-white/40">AW</span>
                       }
                     </button>
@@ -389,8 +390,8 @@ export default function OrderDetailPage() {
             <button onClick={() => setLightbox(false)} className="absolute -top-10 right-0 text-white hover:text-gray-300 text-sm">
               ✕ Close
             </button>
-            <img src={currentArtwork.file_url} alt={currentArtwork.name} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
-            <p className="text-white text-center text-sm mt-3">{currentArtwork.name} — {currentArtwork.artwork_number}</p>
+            <img src={currentArtwork.file_url} alt={currentArtwork.name ?? ''} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+            <p className="text-white text-center text-sm mt-3">{[currentArtwork.name, currentArtwork.artwork_number].filter(Boolean).join(' — ')}</p>
           </div>
         </div>
       )}

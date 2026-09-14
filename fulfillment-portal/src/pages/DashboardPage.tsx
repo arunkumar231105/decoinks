@@ -98,7 +98,7 @@ export default function DashboardPage() {
       {/* Headline row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={CalendarDays} label="Total Orders" value={num(total)} loading={loading}
-          tone="bg-brand" trend={data ? { value: data.weekDelta, note: 'vs last week' } : null} />
+          tone="bg-brand" trend={data ? { value: data.weekDelta, note: 'orders vs last week', unit: '' } : null} />
         <StatCard icon={LayoutGrid} label="Gangsheet Orders" value={num(byType('Gangsheet Orders'))} loading={loading} tone="bg-violet-600" />
         <StatCard icon={Shirt} label="Custom T-Shirts" value={num(byType('Custom T-Shirts'))} loading={loading} tone="bg-cyan-600" />
         <StatCard icon={ClipboardList} label="DTF Transfers" value={num(byType('DTF Transfers'))} loading={loading} tone="bg-emerald-600" />

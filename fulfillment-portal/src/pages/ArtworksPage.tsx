@@ -1,29 +1,46 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, ZoomIn } from 'lucide-react'
 import api from '../services/api'
 
-const POSITIONS = ['All', 'Front', 'Back', 'Sleeve', 'Label', 'Other']
+const POSITIONS = ['All', 'Front', 'Back', 'Gangsheet', 'Sleeve', 'Label', 'Other']
+
+interface Artwork {
+  id: string
+  artwork_number: string | null
+  name: string | null
+  position: string | null
+  width: number | null
+  height: number | null
+  size?: string | null
+  thumbnail_url: string | null
+  file_url: string
+  order_id?: string | null
+  order_number?: string | null
+}
+
+const dims = (aw: Artwork) =>
+  aw.width && aw.height ? `${aw.width}×${aw.height} in` : aw.size || null
 
 export default function ArtworksPage() {
   const [preview, setPreview]     = useState<{ url: string; name: string } | null>(null)
   const [search, setSearch]       = useState('')
   const [position, setPosition]   = useState('All')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['artworks'],
     queryFn: () => api.get('/artworks').then((r) => r.data),
   })
 
-  const artworks = data?.artworks ?? []
+  const artworks: Artwork[] = data?.artworks ?? []
 
   const filtered = useMemo(() => {
-    return artworks.filter((aw: { name: string; artwork_number: string; position: string }) => {
-      const matchSearch =
-        !search ||
-        aw.artwork_number.toLowerCase().includes(search.toLowerCase()) ||
-        aw.name.toLowerCase().includes(search.toLowerCase())
-      const matchPos = position === 'All' || aw.position?.toLowerCase() === position.toLowerCase()
+    const q = search.trim().toLowerCase()
+    return artworks.filter((aw) => {
+      const matchSearch = !q ||
+        [aw.artwork_number, aw.name, aw.order_number].some((v) => (v ?? '').toLowerCase().includes(q))
+      const matchPos = position === 'All' || (aw.position ?? 'Other').toLowerCase() === position.toLowerCase()
       return matchSearch && matchPos
     })
   }, [artworks, search, position])
@@ -32,7 +49,7 @@ export default function ArtworksPage() {
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Artworks</h2>
-        <p className="text-sm text-gray-500 mt-1">View all artworks associated with your orders.</p>
+        <p className="text-sm text-gray-500 mt-1">Every print image on the orders shared with you.</p>
       </div>
 
       {/* Filters */}
@@ -43,7 +60,7 @@ export default function ArtworksPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by artwork code or name..."
+              placeholder="Search by artwork code, name or order..."
               className="input pl-8"
             />
           </div>
@@ -72,21 +89,27 @@ export default function ArtworksPage() {
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
         </div>
+      ) : isError ? (
+        <div className="card text-center py-16 text-gray-500">
+          Artworks could not be loaded. <button className="text-accent hover:underline" onClick={() => refetch()}>Try again</button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="card text-center py-16 text-gray-400">
-          {artworks.length === 0 ? 'No artworks found' : 'No artworks match the current filters'}
+          {artworks.length === 0
+            ? 'No print images are attached to your orders yet.'
+            : 'No artworks match the current filters'}
         </div>
       ) : (
-        <div className="grid grid-cols-4 gap-4">
-          {filtered.map((aw: { id: string; artwork_number: string; name: string; position: string; width: number; height: number; thumbnail_url: string | null; file_url: string }) => (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((aw) => (
             <div
               key={aw.id}
               className="card p-0 overflow-hidden group cursor-pointer"
-              onClick={() => setPreview({ url: aw.file_url, name: aw.name })}
+              onClick={() => setPreview({ url: aw.file_url, name: aw.name ?? aw.artwork_number ?? 'Artwork' })}
             >
               <div className="bg-gray-900 h-32 relative flex items-center justify-center">
-                {aw.thumbnail_url ? (
-                  <img src={aw.thumbnail_url} alt={aw.name} className="max-h-full max-w-full object-contain" />
+                {aw.thumbnail_url || aw.file_url ? (
+                  <img src={aw.thumbnail_url ?? aw.file_url} alt={aw.name ?? ''} className="max-h-full max-w-full object-contain" />
                 ) : (
                   <span className="text-white/30 text-xs">No preview</span>
                 )}
@@ -95,9 +118,17 @@ export default function ArtworksPage() {
                 </div>
               </div>
               <div className="p-3">
-                <p className="text-xs font-semibold text-accent">{aw.artwork_number}</p>
-                <p className="text-xs text-gray-700 truncate mt-0.5">{aw.name}</p>
-                <p className="text-xs text-gray-400 mt-1">{aw.position} • {aw.width}×{aw.height} in</p>
+                <p className="text-xs font-semibold text-accent">{aw.artwork_number || '—'}</p>
+                <p className="text-xs text-gray-700 truncate mt-0.5">{aw.name || '—'}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {[aw.position, dims(aw)].filter(Boolean).join(' • ') || '—'}
+                </p>
+                {aw.order_id && aw.order_number && (
+                  <Link to={`/orders/${aw.order_id}`} onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-accent hover:underline mt-1 inline-block">
+                    {aw.order_number}
+                  </Link>
+                )}
               </div>
             </div>
           ))}

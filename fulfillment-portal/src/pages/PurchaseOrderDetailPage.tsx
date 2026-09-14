@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { ArrowLeft, Download, Truck } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
+import { fmtDate } from '../components/ui'
 
 // ── PO status transitions available to the supplier role ─────────────────────
 // Mirrors backend PO_TRANSITIONS for role 'supplier' only.
@@ -30,6 +31,17 @@ const STATUS_BADGE: Record<string, string> = {
   Cancelled:           'bg-red-50 text-red-700',
 }
 
+interface Item {
+  id: string; item_name: string | null; description?: string | null; hsn_code: string | null; uom: string | null
+  qty_ordered: number | null; unit_price: number | null; discount_pct: number; tax_pct: number; line_total: number | null
+  brand?: string | null; color?: string | null; size?: string | null; style?: string | null; artwork_no?: string | null
+  print_type?: string | null; image?: string | null; product_image?: string | null; order_number?: string | null
+}
+
+interface Shipment {
+  id: string; shipment_number: string | null; carrier: string | null; tracking_number: string | null
+  status: string | null; ship_date: string | null; estimated_delivery: string | null; delivered_date: string | null
+}
 
 export default function PurchaseOrderDetailPage() {
   const { id }          = useParams()
@@ -43,6 +55,7 @@ export default function PurchaseOrderDetailPage() {
   const [trackingNum, setTrackingNum]         = useState('')
   const [carrier, setCarrier]                 = useState('')
   const [trackingNotes, setTrackingNotes]     = useState('')
+  const [preview, setPreview]                 = useState<string | null>(null)
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -86,12 +99,9 @@ export default function PurchaseOrderDetailPage() {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const fmt = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
-
-  const fmtMoney = (n: number | null | undefined, currency = 'USD') =>
-    n != null
-      ? n.toLocaleString(locale, { style: 'currency', currency, minimumFractionDigits: 2 })
+  const fmtMoney = (n: number | string | null | undefined, currency = 'USD') =>
+    n != null && n !== ''
+      ? Number(n).toLocaleString(locale, { style: 'currency', currency, minimumFractionDigits: 2 })
       : '—'
 
   // ── Loading / not found ───────────────────────────────────────────────────────
@@ -118,6 +128,10 @@ export default function PurchaseOrderDetailPage() {
   const po = data
   const cur = po.currency || 'USD'
   const validTransitions = SUPPLIER_PO_TRANSITIONS[po.status] ?? []
+  const items: Item[] = po.items ?? []
+  const shipments: Shipment[] = po.shipments ?? []
+  // Lines taken from the sales order carry no supplier cost of their own.
+  const fromOrder = po.items_source === 'sales_order'
 
   // Pre-fill tracking form from existing data when opening
   const openTracking = () => {
@@ -126,6 +140,10 @@ export default function PurchaseOrderDetailPage() {
     setTrackingNotes(po.tracking_notes ?? '')
     setTrackingOpen(true)
   }
+
+  const itemHeads = fromOrder
+    ? ['#', 'Image', t('po.itemName'), 'Style', 'Color', 'Size', t('po.qty'), 'Artwork', 'Order']
+    : ['#', 'Image', t('po.itemName'), 'Color / Size', t('po.qty'), t('po.unitPrice'), t('po.discount'), t('po.tax'), t('po.amount')]
 
   return (
     <div className="space-y-5">
@@ -137,7 +155,7 @@ export default function PurchaseOrderDetailPage() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">{t('po.details')}</h2>
           <p className="text-sm text-gray-500 mt-1">{t('po.detailSubtitle')}</p>
@@ -168,12 +186,19 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Info strip */}
       <div className="card">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
           {[
             { label: t('po.number'),       value: po.po_number },
-            { label: t('po.issueDate'),    value: fmt(po.order_date ?? po.created_at) },
-            { label: t('po.expectedDate'), value: fmt(po.expected_date) },
-            { label: t('po.supplier'),     value: po.supplier_name ?? '—' },
+            { label: t('po.issueDate'),    value: fmtDate(po.order_date ?? po.created_at) },
+            { label: t('po.dueDate'),      value: fmtDate(po.due_date) },
+            { label: t('po.orderId'),      value: (po.orders ?? []).length
+                ? <span className="flex flex-wrap gap-x-2">{po.orders.map((o: { id: string; order_number: string; archived?: boolean }) =>
+                    // An archived order has no page of its own any more; its lines still show below.
+                    o.archived
+                      ? <span key={o.id} className="text-gray-700" title="This sales order has been archived">{o.order_number}</span>
+                      : <Link key={o.id} to={`/orders/${o.id}`} className="text-accent hover:underline">{o.order_number}</Link>)}</span>
+                : '—' },
+            { label: 'Type',               value: [po.po_type, po.po_scope === 'partial' ? 'partial' : null].filter(Boolean).join(' · ') || '—' },
             { label: t('common.status'),   value: null, badge: po.status },
           ].map(({ label, value, badge }) => (
             <div key={label}>
@@ -182,7 +207,7 @@ export default function PurchaseOrderDetailPage() {
                 ? <span className={cn('badge', STATUS_BADGE[badge] ?? 'bg-gray-100 text-gray-600')}>
                     {String(t(`status.${badge}`, badge))}
                   </span>
-                : <p className="font-semibold text-gray-900">{value}</p>
+                : <div className="font-semibold text-gray-900 capitalize">{value}</div>
               }
             </div>
           ))}
@@ -213,14 +238,23 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Line items */}
       <div className="card p-0 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
           <h3 className="font-semibold text-gray-900">{t('po.lineItems')}</h3>
+          <span className="text-xs text-gray-500">
+            {items.length} line{items.length !== 1 ? 's' : ''} · {po.total_qty ?? 0} pcs
+          </span>
         </div>
+        {fromOrder && (
+          <p className="px-5 py-2.5 text-xs text-sky-800 bg-sky-50 border-b border-sky-100">
+            This purchase order has no lines of its own, so the garments below come from the sales order it was raised for.
+            {po.po_scope === 'partial' && ' It covers only part of that order — check the PO total.'}
+          </p>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['#', t('po.itemName'), t('po.hsn'), t('po.uom'), t('po.qty'), t('po.unitPrice'), t('po.discount'), t('po.tax'), t('po.amount')].map((h) => (
+                {itemHeads.map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     {h}
                   </th>
@@ -228,29 +262,44 @@ export default function PurchaseOrderDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {(po.items ?? []).length === 0 ? (
+              {items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-gray-400">{t('po.noItems')}</td>
+                  <td colSpan={itemHeads.length} className="text-center py-10 text-gray-400">{t('po.noItems')}</td>
                 </tr>
-              ) : (
-                (po.items ?? []).map((item: {
-                  id: string; item_name: string; hsn_code: string | null; uom: string
-                  qty_ordered: number; unit_price: number; discount_pct: number
-                  tax_pct: number; line_total: number
-                }, idx: number) => (
+              ) : items.map((item, idx) => {
+                const img = item.image ?? item.product_image
+                const thumb = img
+                  ? <button onClick={() => setPreview(img)}><img src={img} alt="" className="w-10 h-10 object-contain bg-gray-50 rounded" /></button>
+                  : <span className="text-xs text-gray-300">—</span>
+                return fromOrder ? (
                   <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.item_name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{item.hsn_code ?? '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{item.uom}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{item.qty_ordered}</td>
+                    <td className="px-4 py-2">{thumb}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {item.item_name ?? '—'}
+                      {item.brand && <span className="block text-xs text-gray-400">{item.brand}{item.print_type ? ` · ${item.print_type}` : ''}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.style ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.color ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.size ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.qty_ordered ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.artwork_no ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.order_number ?? '—'}</td>
+                  </tr>
+                ) : (
+                  <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
+                    <td className="px-4 py-2">{thumb}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{item.item_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{[item.color, item.size].filter(Boolean).join(' / ') || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{item.qty_ordered ?? '—'} {item.uom ?? ''}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{fmtMoney(item.unit_price, cur)}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{item.discount_pct > 0 ? `${item.discount_pct}%` : '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{item.tax_pct > 0 ? `${item.tax_pct}%` : '—'}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{fmtMoney(item.line_total, cur)}</td>
                   </tr>
-                ))
-              )}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -278,11 +327,66 @@ export default function PurchaseOrderDetailPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {/* Ship to */}
+        <div className="card">
+          <h3 className="font-semibold text-gray-900 mb-3">Ship To</h3>
+          <div className="text-sm space-y-1">
+            <p className="font-medium text-gray-900">{po.shipping_name ?? '—'}</p>
+            <p className="text-gray-600 whitespace-pre-line">{po.shipping_address ?? '—'}</p>
+            {(po.contact_name || po.contact_phone) && (
+              <p className="text-gray-500">{[po.contact_name, po.contact_phone].filter(Boolean).join(' · ')}</p>
+            )}
+            {(po.shipping_method || po.delivery_type) && (
+              <p className="text-gray-500">Method: {[po.shipping_method, po.delivery_type].filter(Boolean).join(' · ')}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Shipments */}
+        <div className="card p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Shipments ({shipments.length})</h3>
+          </div>
+          {shipments.length === 0 ? (
+            <p className="px-5 py-8 text-center text-sm text-gray-400">Nothing shipped yet.</p>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Tracking', 'Carrier', 'Status', 'Shipped', 'Delivered'].map((h) => (
+                    <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shipments.map((s) => (
+                  <tr key={s.id} className="border-b border-gray-50">
+                    <td className="px-4 py-2.5 text-sm font-medium text-gray-900">{s.tracking_number ?? s.shipment_number ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-600">{s.carrier ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-600">{s.status ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-600">{fmtDate(s.ship_date)}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-600">{fmtDate(s.delivered_date ?? s.estimated_delivery)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       {/* Notes */}
       {po.notes && (
         <div className="card">
           <h3 className="font-semibold text-gray-900 mb-2">{t('common.notes')}</h3>
           <p className="text-sm text-gray-600 whitespace-pre-line">{po.notes}</p>
+        </div>
+      )}
+
+      {/* ── Image preview ── */}
+      {preview && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8" onClick={() => setPreview(null)}>
+          <img src={preview} alt="" className="max-w-full max-h-[85vh] object-contain rounded-lg bg-white" />
         </div>
       )}
 

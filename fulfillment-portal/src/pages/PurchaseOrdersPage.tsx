@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
+import { toDate } from '../components/ui'
 
 const STATUS_BADGE: Record<string, string> = {
   Draft:               'bg-gray-100 text-gray-600',
@@ -41,7 +42,7 @@ export default function PurchaseOrdersPage() {
   const pages = Math.max(1, Math.ceil(total / 10))
 
   const fmt = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    d ? toDate(d).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
   return (
     <div className="space-y-5">
@@ -81,8 +82,8 @@ export default function PurchaseOrdersPage() {
                 <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
               ) : (
                 pos.map((po: {
-                  id: string; po_number: string; order_id: string | null
-                  issue_date: string; due_date: string | null; status: string; total: number
+                  id: string; po_number: string; order_id: string | null; order_number: string | null
+                  issue_date: string; due_date: string | null; status: string; total: number | null
                 }, idx: number) => (
                   <tr
                     key={po.id}
@@ -91,7 +92,7 @@ export default function PurchaseOrdersPage() {
                   >
                     <td className="px-4 py-3 text-sm text-gray-500">{(page - 1) * 10 + idx + 1}</td>
                     <td className="px-4 py-3 text-sm font-medium text-accent">{po.po_number}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{po.order_id ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{po.order_number ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{fmt(po.issue_date)}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{fmt(po.due_date)}</td>
                     <td className="px-4 py-3">
@@ -101,7 +102,7 @@ export default function PurchaseOrdersPage() {
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
                       {po.total != null
-                        ? po.total.toLocaleString(locale, { style: 'currency', currency: 'USD' })
+                        ? Number(po.total).toLocaleString(locale, { style: 'currency', currency: 'USD' })
                         : '—'}
                     </td>
                   </tr>
@@ -126,7 +127,7 @@ export default function PurchaseOrdersPage() {
             >
               <ChevronLeft size={16} />
             </button>
-            {Array.from({ length: Math.min(5, pages) }, (_, i) => i + 1).map((p) => (
+            {Array.from({ length: Math.min(5, pages) }, (_, i) => Math.min(Math.max(1, page - 2), Math.max(1, pages - 4)) + i).map((p) => (
               <button
                 key={p}
                 onClick={() => setPage(p)}

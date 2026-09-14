@@ -100,11 +100,17 @@ export default function StatusUpdatePage() {
     return map
   }, [history])
 
+  // The order's own status counts too: a job the shop already marked Delivered
+  // must not read as "not started" just because no update was typed in here.
+  const ORDER_STATUS_STEP: Record<string, number> = {
+    Confirmed: 0, 'In Production': 1, QC: 3, 'Ready to Ship': 3, Shipped: 4, Delivered: 5,
+  }
+
   const activeIndex = useMemo(() => {
-    let last = -1
-    STEPS.forEach((s, i) => { if (reached.has(s.key)) last = i })
+    let last = ORDER_STATUS_STEP[order?.status ?? ''] ?? -1
+    STEPS.forEach((s, i) => { if (reached.has(s.key) && i > last) last = i })
     return last
-  }, [reached])
+  }, [reached, order?.status])
 
   const submit = async (status: string, notes: string, key: string) => {
     if (!id) return

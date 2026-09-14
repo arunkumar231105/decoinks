@@ -5,7 +5,7 @@ import {
   Download, RotateCcw, Search,
 } from 'lucide-react'
 import { PageHeader } from '../components/Layout'
-import { Panel, Pill, StatCard, TableStates, fmtDate, num } from '../components/ui'
+import { Panel, Pill, StatCard, TableStates, fmtDate, num, toDate } from '../components/ui'
 import api from '../services/api'
 
 interface OrderRow {
@@ -17,6 +17,7 @@ interface OrderRow {
   order_date: string | null
   due_date: string | null
   shipped_date?: string | null
+  delivered_date?: string | null
   status: string
   total_qty?: number | null
   size_summary?: string | null
@@ -31,8 +32,10 @@ const typeLabel = (t: string) =>
 function timeliness(o: OrderRow): 'On Time' | 'Delayed' | null {
   if (!o.due_date) return null
   if (o.status === 'Cancelled') return null
-  const due = new Date(o.due_date).getTime()
-  if (o.shipped_date) return new Date(o.shipped_date).getTime() <= due ? 'On Time' : 'Delayed'
+  const due = toDate(o.due_date).getTime()
+  if (o.shipped_date) return toDate(o.shipped_date).getTime() <= due ? 'On Time' : 'Delayed'
+  // Delivered or shipped with no ship date on file: nothing to judge it by.
+  if (['Shipped', 'Delivered'].includes(o.status)) return null
   return Date.now() <= due ? 'On Time' : 'Delayed'
 }
 
@@ -76,7 +79,7 @@ export default function ReportsPage() {
     { icon: XCircle, label: 'Orders Cancelled', value: count(o => o.status === 'Cancelled'), tone: 'bg-rose-600' },
     { icon: Factory, label: 'In Production', value: count(o => o.status === 'In Production'), tone: 'bg-orange-500' },
     { icon: CheckCircle2, label: 'Completed', value: count(o => o.status === 'Completed' || o.status === 'Delivered'), tone: 'bg-emerald-600' },
-    { icon: PauseCircle, label: 'On Hold', value: count(o => o.status === 'On Hold'), tone: 'bg-violet-600' },
+    { icon: PauseCircle, label: 'Awaiting Production', value: count(o => o.status === 'Draft' || o.status === 'Confirmed'), tone: 'bg-violet-600' },
   ]
 
   const exportCsv = () => {
@@ -124,7 +127,7 @@ export default function ReportsPage() {
           <label className="block">
             <span className="fp-label">Status</span>
             <select className="fp-input" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
-              {['All', 'In Production', 'Shipped', 'Completed', 'Delivered', 'On Hold', 'Cancelled'].map(v => <option key={v}>{v}</option>)}
+              {['All', 'Draft', 'Confirmed', 'In Production', 'QC', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled'].map(v => <option key={v}>{v}</option>)}
             </select>
           </label>
           <div className="flex items-end">
