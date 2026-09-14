@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { ArrowLeft, Download, Truck } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
-import { fmtDate } from '../components/ui'
+import { fmtDate, assetUrl, SafeImg } from '../components/ui'
 
 // ── PO status transitions available to the supplier role ─────────────────────
 // Mirrors backend PO_TRANSITIONS for role 'supplier' only.
@@ -269,7 +269,7 @@ export default function PurchaseOrderDetailPage() {
               ) : items.map((item, idx) => {
                 const img = item.image ?? item.product_image
                 const thumb = img
-                  ? <button onClick={() => setPreview(img)}><img src={img} alt="" className="w-10 h-10 object-contain bg-gray-50 rounded" /></button>
+                  ? <button onClick={() => setPreview(img)}><SafeImg src={img} className="w-10 h-10 object-contain bg-gray-50 rounded" fallback="—" /></button>
                   : <span className="text-xs text-gray-300">—</span>
                 return fromOrder ? (
                   <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
@@ -375,6 +375,22 @@ export default function PurchaseOrderDetailPage() {
         </div>
       </div>
 
+      {/* Artwork */}
+      {(po.artworks ?? []).length > 0 && (
+        <div className="card">
+          <h3 className="font-semibold text-gray-900 mb-3">Artwork ({po.artworks.length})</h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            {po.artworks.map((a: { id: string; file_url: string; thumbnail_url: string | null; name: string | null; artwork_number: string | null; position: string | null; order_number?: string | null }) => (
+              <button key={a.id} onClick={() => setPreview(a.file_url)} className="text-left group">
+                <SafeImg src={a.thumbnail_url ?? a.file_url} alt={a.name ?? ''} className="h-28 w-full rounded-lg bg-gray-900 object-contain group-hover:ring-2 group-hover:ring-accent" />
+                <p className="mt-1 truncate text-xs font-semibold text-accent">{a.artwork_number ?? a.name ?? '—'}</p>
+                <p className="truncate text-[11px] text-gray-500">{[a.position, a.order_number].filter(Boolean).join(' · ') || '—'}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Notes */}
       {po.notes && (
         <div className="card">
@@ -386,7 +402,7 @@ export default function PurchaseOrderDetailPage() {
       {/* ── Image preview ── */}
       {preview && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8" onClick={() => setPreview(null)}>
-          <img src={preview} alt="" className="max-w-full max-h-[85vh] object-contain rounded-lg bg-white" />
+          <img src={assetUrl(preview)} alt="" className="max-w-full max-h-[85vh] object-contain rounded-lg bg-white" />
         </div>
       )}
 

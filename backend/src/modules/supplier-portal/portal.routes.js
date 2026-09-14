@@ -6,6 +6,19 @@ const ctrl         = require('./portal.controller');
 router.post('/auth/login',   ctrl.login);
 router.post('/auth/refresh', ctrl.refreshToken);
 
+// ── Vault artwork bytes ───────────────────────────────────────────────────────
+// An <img> cannot send an Authorization header, so these accept the same token
+// as ?t= — verified by the same supplierAuth, and the file is scoped to the
+// supplier's shared customers in the service.
+const tokenFromQuery = (req, _res, next) => {
+  if (!req.headers.authorization && typeof req.query.t === 'string') {
+    req.headers.authorization = `Bearer ${req.query.t}`;
+  }
+  next();
+};
+router.get('/vault/:id/preview', tokenFromQuery, supplierAuth, ctrl.vaultAsset('preview'));
+router.get('/vault/:id/file',    tokenFromQuery, supplierAuth, ctrl.vaultAsset('file'));
+
 // ── Protected routes (supplier JWT required) ──────────────────────────────────
 router.use(supplierAuth);
 

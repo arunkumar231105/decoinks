@@ -99,6 +99,57 @@ exports.getArtworks = async (req, res) => {
   }
 };
 
+// ── Vault artwork bytes ───────────────────────────────────────────────────────
+
+/**
+ * A vault image, proxied from Nextcloud. The path is never taken from the
+ * request — only an asset id, looked up against the supplier's shared customers.
+ * Previews are shrunk here so a gallery costs kilobytes; Nextcloud being slow or
+ * down is a 502 the portal shows as a placeholder, never a broken page.
+ */
+exports.vaultAsset = (kind) => async (req, res) => {
+  try {
+    const asset = await svc.getVaultAssetForSupplier(req.supplier.supplierId, req.params.id);
+    if (!asset) return res.status(404).json({ error: 'Artwork not found' });
+
+    const nc = require('../nextcloud/nextcloud.service');
+    const ncRes = kind === 'preview'
+      ? await nc.getPreview(asset.path, { width: 600, height: 600 })
+      : await nc.downloadFile(asset.path);
+    if (ncRes && ncRes.ok === false) {
+      return res.status(502).json({ error: 'The artwork store did not return this file' });
+    }
+    const raw = Buffer.from(await ncRes.arrayBuffer());
+
+    if (kind === 'file') {
+      const name = String(asset.file_name || 'artwork').replace(/["\r\n]/g, '');
+      res.setHeader('Content-Type', ncRes.headers.get('content-type') || asset.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${name}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      return res.send(raw);
+    }
+
+    const size = Math.min(Math.max(Number(req.query.w) || 480, 64), 1600);
+    try {
+      const thumb = await require('sharp')(raw)
+        .rotate()
+        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      return res.send(thumb);
+    } catch {
+      res.setHeader('Content-Type', ncRes.headers.get('content-type') || asset.mime_type || 'image/png');
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      return res.send(raw);
+    }
+  } catch (e) {
+    console.error('[portal] vault artwork could not be served:', e.message);
+    res.status(502).json({ error: 'Artwork could not be loaded right now' });
+  }
+};
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 exports.getNotifications = async (req, res) => {

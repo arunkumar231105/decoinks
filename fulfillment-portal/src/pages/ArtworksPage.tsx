@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, ZoomIn } from 'lucide-react'
 import api from '../services/api'
-
-const POSITIONS = ['All', 'Front', 'Back', 'Gangsheet', 'Sleeve', 'Label', 'Other']
+import { assetUrl, SafeImg } from '../components/ui'
 
 interface Artwork {
   id: string
@@ -18,6 +17,8 @@ interface Artwork {
   file_url: string
   order_id?: string | null
   order_number?: string | null
+  source?: string
+  lifecycle?: string | null
 }
 
 const dims = (aw: Artwork) =>
@@ -34,6 +35,8 @@ export default function ArtworksPage() {
   })
 
   const artworks: Artwork[] = data?.artworks ?? []
+  // Offer only the positions that actually occur, so no filter can come up empty by design.
+  const POSITIONS = ['All', ...Array.from(new Set(artworks.map((a) => a.position ?? 'Other')))]
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -106,10 +109,11 @@ export default function ArtworksPage() {
               key={aw.id}
               className="card p-0 overflow-hidden group cursor-pointer"
               onClick={() => setPreview({ url: aw.file_url, name: aw.name ?? aw.artwork_number ?? 'Artwork' })}
+              title={aw.source === 'vault' ? 'From the Printshop artwork vault' : undefined}
             >
               <div className="bg-gray-900 h-32 relative flex items-center justify-center">
                 {aw.thumbnail_url || aw.file_url ? (
-                  <img src={aw.thumbnail_url ?? aw.file_url} alt={aw.name ?? ''} className="max-h-full max-w-full object-contain" />
+                  <SafeImg src={aw.thumbnail_url ?? aw.file_url} alt={aw.name ?? ''} className="max-h-full max-w-full object-contain" />
                 ) : (
                   <span className="text-white/30 text-xs">No preview</span>
                 )}
@@ -145,8 +149,12 @@ export default function ArtworksPage() {
             <button onClick={() => setPreview(null)} className="absolute -top-10 right-0 text-white hover:text-gray-300">
               <X size={24} />
             </button>
-            <img src={preview.url} alt={preview.name} className="max-w-full max-h-[80vh] object-contain rounded-lg" />
+            <img src={assetUrl(preview.url)} alt={preview.name} className="max-w-full max-h-[80vh] object-contain rounded-lg bg-white" />
             <p className="text-white text-center text-sm mt-3">{preview.name}</p>
+            <p className="text-center mt-2">
+              <a className="text-sm text-white/80 underline hover:text-white"
+                 href={assetUrl(preview.url.includes('/vault/') ? `${preview.url}?download=1` : preview.url)}>Download</a>
+            </p>
           </div>
         </div>
       )}

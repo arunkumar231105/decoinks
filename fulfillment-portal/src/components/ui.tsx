@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useAuthStore } from '../store/authStore'
 import { AlertCircle, ArrowDown, ArrowUp, Inbox, RotateCcw, type LucideIcon } from 'lucide-react'
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ')
@@ -157,3 +158,25 @@ export const fmtDateTime = (v?: string | null) =>
   v ? `${fmtDate(v)}\n${new Date(v).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : '—'
 
 export const num = (n?: number | null) => Number(n ?? 0).toLocaleString('en-US')
+
+/* ── Files served by the portal API ───────────────────────────────────── */
+
+/** Portal-served files (vault artwork) need the session token; an <img> cannot send a header. */
+export const assetUrl = (u?: string | null): string | undefined => {
+  if (!u) return undefined
+  if (!u.startsWith('/api/supplier/')) return u
+  const t = useAuthStore.getState().token
+  return t ? `${u}${u.includes('?') ? '&' : '?'}t=${encodeURIComponent(t)}` : u
+}
+
+/** An image that shows a quiet placeholder when the file store is slow or down, instead of a broken icon. */
+export function SafeImg({ src, alt = '', className, fallback = 'No preview' }: {
+  src?: string | null; alt?: string; className?: string; fallback?: string
+}) {
+  const url = assetUrl(src)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  if (!url || failedUrl === url) {
+    return <span className={cx('grid place-items-center bg-slate-100 text-[10px] text-slate-400', className)}>{fallback}</span>
+  }
+  return <img src={url} alt={alt} loading="lazy" className={className} onError={() => setFailedUrl(url)} />
+}

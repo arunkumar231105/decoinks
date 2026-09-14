@@ -5,6 +5,7 @@ const { validateTransition } = require('../../utils/stateMachine');
 
 // Money columns arrive from pg as strings; the portal formats numbers.
 const money = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -211,7 +212,7 @@ async function shipmentsFor({ poId = null, orderIds = [] }) {
  * and mockups, DTF artwork, gangsheet artwork lists). Both are returned in one
  * shape, de-duplicated by image, so the portal shows every design it will print.
  */
-async function artworksForOrders(orderIds) {
+async function artworksForOrders(orderIds, supplierId = null) {
   if (!orderIds.length) return [];
   const [files, apparel, dtf, gangsheet] = await Promise.all([
     db.query(
@@ -280,9 +281,120 @@ async function artworksForOrders(orderIds) {
   }
 
   const seen = new Set();
-  return out
+  const own = out
     .filter((a) => (a.file_url && !seen.has(a.file_url) ? seen.add(a.file_url) : false))
     .sort((a, b) => new Date(b.created_at ?? 0) - new Date(a.created_at ?? 0));
+
+  // The vault is a second store on another server; if it cannot be read the
+  // order still loads with whatever the order itself carries.
+  const vault = supplierId
+    ? await vaultArtworksForOrders(orderIds, supplierId).catch((err) => {
+        console.error('[portal] vault artwork lookup failed:', err.message);
+        return [];
+      })
+    : [];
+  return [...own, ...vault];
+}
+
+const VAULT_ROLE = {
+  FNLA: 'Approved final', FNL: 'Final', OUT: 'Print file', MOCK: 'Mockup', MU: 'Mockup',
+  GS: 'Gangsheet', WRK: 'Working file', SRC: 'Customer source', REF: 'Reference',
+};
+
+/**
+ * Artwork kept in the Printshop vault (Nextcloud), matched to orders.
+ *
+ * Most jobs never write an image onto their order lines: the files live in the
+ * customer's vault folder (Leads 2.0/<date>_<Customer>/{references,Artworks,sent}),
+ * named AW-<CLIENT>-<NNNN>-<TYPE>. Every file carries the customer, none carries
+ * the order, so the match is made the way the shop itself works:
+ *   - a customer with one order: all of that customer's designs belong to it;
+ *   - a customer with several: a design belongs to the order whose date window
+ *     (after the previous order, before the next) its file was last touched in.
+ * A design appears once, as its most finished version: approved final, final,
+ * print file, mockup, working file, then the customer's source.
+ */
+async function vaultArtworksForOrders(orderIds, supplierId) {
+  if (!orderIds.length) return [];
+  const { rows } = await db.query(
+    `WITH cust_orders AS (
+       SELECT o.id, o.order_number, o.order_date, o.customer_id,
+              lag(o.order_date)  OVER w AS prev_date,
+              lead(o.order_date) OVER w AS next_date,
+              count(*)           OVER (PARTITION BY o.customer_id) AS orders_for_customer
+         FROM orders o
+        WHERE o.deleted_at IS NULL AND o.order_date IS NOT NULL
+          AND o.customer_id IN (SELECT customer_id FROM orders WHERE id = ANY($1::uuid[]))
+       WINDOW w AS (PARTITION BY o.customer_id ORDER BY o.order_date, o.order_number)
+     ),
+     wanted AS (
+       SELECT co.* FROM cust_orders co
+        WHERE co.id = ANY($1::uuid[])
+          AND EXISTS (SELECT 1 FROM portal_order_visibility pov
+                       WHERE pov.order_id = co.id AND pov.supplier_id = $2 AND pov.is_visible = TRUE)
+     ),
+     candidates AS (
+       SELECT w.id AS order_id, w.order_number, w.orders_for_customer,
+              v.id AS asset_id, v.file_name, v.artwork_code, upper(COALESCE(v.lifecycle_code, '')) AS lifecycle,
+              v.file_size_bytes, v.source_modified_at, split_part(v.path, '/', 2) AS folder,
+              row_number() OVER (
+                PARTITION BY w.id, COALESCE(v.artwork_code, lower(v.file_name))
+                ORDER BY CASE upper(COALESCE(v.lifecycle_code, ''))
+                           WHEN 'FNLA' THEN 0 WHEN 'FNL' THEN 1 WHEN 'OUT' THEN 2 WHEN 'MOCK' THEN 3 WHEN 'MU' THEN 3
+                           WHEN 'GS' THEN 4 WHEN 'WRK' THEN 5 WHEN 'SRC' THEN 6 WHEN 'REF' THEN 7 ELSE 8 END,
+                         v.source_modified_at DESC NULLS LAST) AS rn
+         FROM wanted w
+         JOIN artwork_vault_assets v
+           ON v.customer_id = w.customer_id AND v.mime_type LIKE 'image/%'
+          AND COALESCE(lower(v.status), '') NOT IN ('deleted', 'trashed', 'trash')
+          -- Nextcloud's small -THUMB copies are previews of a design, not a design.
+          AND v.file_name !~* '-thumb[0-9]*\.[a-z0-9]+$'
+        WHERE w.orders_for_customer = 1
+           OR (v.source_modified_at::date >= COALESCE(w.prev_date + 1, w.order_date - 60)
+               AND (w.next_date IS NULL OR v.source_modified_at::date < w.next_date))
+     )
+     SELECT * FROM candidates
+      WHERE rn = 1
+      ORDER BY order_number,
+               CASE lifecycle WHEN 'FNLA' THEN 0 WHEN 'FNL' THEN 1 WHEN 'OUT' THEN 2 WHEN 'MOCK' THEN 3 WHEN 'MU' THEN 3
+                              WHEN 'GS' THEN 4 WHEN 'WRK' THEN 5 WHEN 'SRC' THEN 6 WHEN 'REF' THEN 7 ELSE 8 END,
+               artwork_code NULLS LAST, file_name`,
+    [orderIds, supplierId]
+  );
+  return rows.map((r) => ({
+    id: `vault-${r.order_id}-${r.asset_id}`,
+    asset_id: r.asset_id,
+    artwork_number: r.artwork_code,
+    name: r.file_name,
+    file_url: `/api/supplier/vault/${r.asset_id}/file`,
+    thumbnail_url: `/api/supplier/vault/${r.asset_id}/preview`,
+    position: VAULT_ROLE[r.lifecycle] ?? 'Artwork',
+    lifecycle: r.lifecycle || null,
+    width: null,
+    height: null,
+    order_id: r.order_id,
+    order_number: r.order_number,
+    created_at: r.source_modified_at,
+    file_size: r.file_size_bytes != null ? Number(r.file_size_bytes) : null,
+    folder: r.folder,
+    source: 'vault',
+    match: Number(r.orders_for_customer) === 1 ? 'customer' : 'customer_dates',
+  }));
+}
+
+/** One vault file — only if its customer has an order shared with this supplier. */
+async function getVaultAssetForSupplier(supplierId, assetId) {
+  if (!UUID_RE.test(String(assetId || ''))) return null;
+  const { rows } = await db.query(
+    `SELECT v.path, v.file_name, v.mime_type
+       FROM artwork_vault_assets v
+      WHERE v.id = $1 AND v.mime_type LIKE 'image/%'
+        AND EXISTS (SELECT 1 FROM portal_order_visibility pov
+                      JOIN orders o ON o.id = pov.order_id
+                     WHERE pov.supplier_id = $2 AND pov.is_visible = TRUE AND o.customer_id = v.customer_id)`,
+    [assetId, supplierId]
+  );
+  return rows[0] || null;
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────
@@ -371,6 +483,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
 }
 
 async function getSupplierOrderDetail(supplierId, orderId) {
+  if (!UUID_RE.test(String(orderId || ''))) return null;
   const { rows: anyVis } = await db.query(
     `SELECT supplier_id FROM portal_order_visibility WHERE order_id = $1 AND is_visible = TRUE`,
     [orderId]
@@ -384,15 +497,21 @@ async function getSupplierOrderDetail(supplierId, orderId) {
     throw err;
   }
 
-  // Only what the factory needs to make and ship the job. The customer's money —
-  // order totals, payments, invoice — and the shop's internal fields stay out.
+  // Everything the shop's own order page shows, except the customer's money —
+  // totals, prices, payments, invoice and quote — and the shop's internal notes.
   const { rows: orderRows } = await db.query(
-    `SELECT o.id, o.order_number, o.status, o.order_type, o.order_date, o.due_date, o.required_ship_date,
+    `SELECT o.id, o.order_number, o.status, o.order_type, o.order_stage, o.process_status,
+            o.order_date, o.entry_date, o.due_date, o.required_ship_date,
             o.shipping_name, o.shipping_address, o.contact_name, o.contact_email, o.contact_phone,
-            o.shipping_method, o.courier, o.tracking_number, o.shipped_at, o.print_type,
-            o.production_priority, o.production_method,
-            NULLIF(concat_ws(E'\\n', o.production_notes, o.packing_instructions, o.shipping_instructions), '') AS notes,
-            COALESCE(NULLIF(o.shipping_name, ''), c.name) AS customer_name,
+            o.shipping_method, o.courier, o.tracking_number, o.shipped_at,
+            o.print_type, o.production_priority, o.production_method, o.production_facility,
+            o.assigned_team, o.estimated_production_time, o.total_print_locations,
+            o.production_notes, o.packing_instructions, o.shipping_instructions,
+            o.production_notes AS notes,
+            c.name AS customer_name, c.customer_number,
+            c.address_line1 AS c_line1, c.city AS c_city, c.state AS c_state, c.zip AS c_zip, c.country AS c_country,
+            ca.contact_person AS a_contact, ca.line1 AS a_line1, ca.line2 AS a_line2, ca.city AS a_city,
+            ca.state AS a_state, ca.zipcode AS a_zip, ca.country AS a_country,
             s.name AS vendor_name, s.name AS supplier_name,
             pos.po_number, pos.po_number AS purchase_order_number,
             q.total_qty, q.size_summary
@@ -400,25 +519,39 @@ async function getSupplierOrderDetail(supplierId, orderId) {
      JOIN portal_order_visibility pov ON pov.order_id = o.id AND pov.supplier_id = $2
      LEFT JOIN suppliers s ON s.id = pov.supplier_id
      LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (
+       SELECT a.* FROM customer_addresses a
+        WHERE a.id = o.shipping_address_id
+           OR (o.shipping_address_id IS NULL AND a.customer_id = o.customer_id AND a.is_default = TRUE)
+        LIMIT 1
+     ) ca ON TRUE
      ${SUPPLIER_POS_FOR_ORDER}
      ${ORDER_QTY}
      WHERE o.id = $1 AND o.deleted_at IS NULL`,
     [orderId, supplierId]
   );
   if (!orderRows.length) return null;
-
   const order = orderRows[0];
 
-  // Line items without the customer's prices.
+  // Line items without the customer's prices. Garment weight comes from the
+  // BlankTex size spec, as on the shop's page; if that schema is unavailable the
+  // lines still load without it.
   let items = [];
   if (order.order_type === 'apparel') {
-    ({ rows: items } = await db.query(
-      `SELECT id, item, brand, model, catalog_sku, color, size, qty, artwork_no, artwork_size,
-              decoration_method, production_status, notes,
-              COALESCE(front_mockup, front_image) AS front_image,
-              COALESCE(back_mockup, back_image)   AS back_image,
-              product_image
-         FROM order_items_apparel WHERE order_id = $1 ORDER BY sort_order`, [orderId]));
+    const apparel = (withWeight) => db.query(
+      `SELECT oi.id, oi.item, oi.brand, oi.model, oi.catalog_sku, oi.category, oi.style_description,
+              oi.color, oi.size, oi.qty, oi.artwork_no, oi.artwork_size, oi.decoration_method,
+              oi.production_status, oi.notes,
+              oi.front_image, oi.back_image, oi.front_mockup, oi.back_mockup, oi.product_image
+              ${withWeight ? `, ROUND(wsp.garment_weight_g / 453.59237, 2) AS unit_weight_lbs,
+                              ROUND(wsp.garment_weight_g * oi.qty / 453.59237, 2) AS line_weight_lbs` : ''}
+         FROM order_items_apparel oi
+         ${withWeight ? 'LEFT JOIN blanktex.style_size_specs wsp ON wsp.style_size_id = oi.catalog_size_id' : ''}
+        WHERE oi.order_id = $1
+        ORDER BY oi.sort_order`,
+      [orderId]
+    );
+    ({ rows: items } = await apparel(true).catch(() => apparel(false)));
   } else if (order.order_type === 'gangsheet') {
     ({ rows: items } = await db.query(
       `SELECT id, size, no_artworks, qty, front_image, back_image, artworks, production_status
@@ -426,16 +559,73 @@ async function getSupplierOrderDetail(supplierId, orderId) {
   } else if (order.order_type === 'dtf') {
     ({ rows: items } = await db.query(
       `SELECT id, artwork_name, artwork_no, size, width_inches, height_inches, qty, production_status, notes,
-              COALESCE(artwork_image, front_image) AS artwork_image, back_image
+              front_image, back_image, artwork_image
          FROM order_items_dtf WHERE order_id = $1 ORDER BY sort_order`, [orderId]));
   }
+  items = items.map((i) => ({
+    ...i,
+    unit_weight_lbs: money(i.unit_weight_lbs),
+    line_weight_lbs: money(i.line_weight_lbs),
+    width_inches: money(i.width_inches),
+    height_inches: money(i.height_inches),
+  }));
 
-  const [artworks, shipments] = await Promise.all([
-    artworksForOrders([orderId]),
+  const [artworks, shipments, purchaseOrders, updates] = await Promise.all([
+    artworksForOrders([orderId], supplierId),
     shipmentsFor({ orderIds: [orderId] }),
+    db.query(
+      `SELECT p.id, p.po_number, p.status::text AS status, p.po_type, p.po_scope,
+              COALESCE(p.order_date, p.created_at::date) AS issue_date, p.tracking_number, p.carrier
+         FROM purchase_orders p
+        WHERE p.deleted_at IS NULL AND p.supplier_id = $2
+          AND (p.order_id = $1 OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = p.id AND poo.order_id = $1))
+          AND EXISTS (SELECT 1 FROM portal_po_visibility ppv
+                       WHERE ppv.po_id = p.id AND ppv.supplier_id = $2 AND ppv.is_visible = TRUE)
+        ORDER BY p.po_number`,
+      [orderId, supplierId]
+    ),
+    getStatusUpdates(supplierId, orderId),
   ]);
 
-  return { ...order, items, artworks, shipments };
+  // Ship-to: the order's own text, else its address-book entry, else the
+  // customer's address — the same fallbacks the shop uses.
+  const cityLine = (city, state, zip) => [city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const fromBook = [order.a_line1, order.a_line2, cityLine(order.a_city, order.a_state, order.a_zip), order.a_country].filter(Boolean).join('\n');
+  const fromCustomer = [order.c_line1, cityLine(order.c_city, order.c_state, order.c_zip), order.c_country].filter(Boolean).join('\n');
+  const shipTo = {
+    name: order.shipping_name || order.a_contact || order.customer_name || null,
+    address: order.shipping_address || fromBook || fromCustomer || null,
+    source: order.shipping_address ? 'order' : fromBook ? 'address_book' : fromCustomer ? 'customer' : null,
+  };
+  for (const k of ['c_line1', 'c_city', 'c_state', 'c_zip', 'c_country', 'a_contact', 'a_line1', 'a_line2', 'a_city', 'a_state', 'a_zip', 'a_country']) {
+    delete order[k];
+  }
+
+  const latest = shipments[0];
+  const totalWeight = items.reduce((sum, i) => sum + (i.line_weight_lbs || 0), 0);
+  const imageCount = new Set(items.flatMap((i) => [i.front_image, i.back_image, i.artwork_image].filter(Boolean))).size;
+  const pieces = order.total_qty ?? items.reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+
+  return {
+    ...order,
+    shipping_name: shipTo.name,
+    shipping_address: shipTo.address,
+    ship_to: shipTo,
+    courier: order.courier || latest?.carrier || null,
+    tracking_number: order.tracking_number || latest?.tracking_number || null,
+    items,
+    artworks,
+    shipments,
+    purchase_orders: purchaseOrders.rows,
+    updates,
+    stats: {
+      total_pieces: pieces,
+      total_weight_lbs: totalWeight ? Math.round(totalWeight * 100) / 100 : null,
+      print_locations: order.total_print_locations || imageCount || null,
+      artworks: artworks.length,
+      shipments: shipments.length,
+    },
+  };
 }
 
 // ── Purchase Orders ───────────────────────────────────────────────────────────
@@ -546,7 +736,7 @@ async function getSupplierPODetail(supplierId, poId) {
 
   const [shipments, artworks] = await Promise.all([
     shipmentsFor({ poId, orderIds }),
-    artworksForOrders(orderIds),
+    artworksForOrders(orderIds, supplierId),
   ]);
 
   return {
@@ -621,7 +811,7 @@ async function getSupplierArtworks(supplierId) {
       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE`,
     [supplierId]
   );
-  return artworksForOrders(rows.map((r) => r.order_id));
+  return artworksForOrders(rows.map((r) => r.order_id), supplierId);
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -895,6 +1085,7 @@ module.exports = {
   getSupplierPOs,
   getSupplierPODetail,
   getSupplierArtworks,
+  getVaultAssetForSupplier,
   getNotifications,
   markNotificationRead,
   getProfile,
