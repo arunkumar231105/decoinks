@@ -503,10 +503,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   // Columns can be dragged into any order by their header (hooks/useColumnDrag).
   // How many stay frozen is the user's to set from the filter bar; Purchase
   // Orders starts with three — PO #, date and customer — and every other list
-  // with its first column. Not saved: a hard refresh brings back the page's own
-  // order and number.
+  // with its first column. Order, hidden columns and freeze are remembered per
+  // list until the user changes them or resets the layout.
   const columnDrag = useColumnDrag(config.columns.map(c => c.key),
-    { frozen: kind === 'purchase-orders' ? 3 : 1, cellBackground: 'inherit' })
+    { frozen: kind === 'purchase-orders' ? 3 : 1, cellBackground: 'inherit', storageKey: kind })
   const shownColumns = useMemo(() => {
     const byKey = new Map(config.columns.map(c => [c.key, c] as const))
     return columnDrag.visible.map(k => byKey.get(k)).filter((c): c is Column => Boolean(c))
@@ -651,7 +651,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
           <option value="num_asc">Number: low to high</option>
         </select></label>
         <ColumnHideMenu columns={config.columns.map(c => ({ key: c.key, label: c.label }))}
-          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} onReset={columnDrag.resetLayout} canReset={columnDrag.customised} />
         <ColumnFreezeField value={columnDrag.frozenCount} max={columnDrag.visible.length}
           shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         <button className="ew-btn ew-clear" onClick={clearFilters}>Clear Filters</button>

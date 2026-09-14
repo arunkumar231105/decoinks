@@ -42,3 +42,13 @@
 .ch-list input:disabled { cursor: not-allowed; }
 
 @keyframes chIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.ch-panel footer { display: grid; gap: 3px; padding: 9px 13px 11px; border-top: 1px solid #edf0f4; }
+.ch-panel footer button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px;
+  border: 1px solid #dbe3ee; border-radius: 6px; background: #fff; color: #0f172a;
+  font: 700 12px inherit; cursor: pointer; transition: background .15s ease, border-color .15s ease;
+}
+.ch-panel footer button:hover:not(:disabled) { background: #f3f7fc; border-color: #a8b8cd; }
+.ch-panel footer button:disabled { color: #94a3b8; cursor: default; }
+.ch-panel footer small { font-size: 10.5px; color: #64748b; text-align: center; }

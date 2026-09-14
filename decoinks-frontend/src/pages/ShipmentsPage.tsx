@@ -245,7 +245,7 @@ export function ShipmentsPage() {
     'Tracking ID': { render: s => <span className="sh-awb">{s.tracking_number ?? '-'}</span> },
   }
   // Shipments starts with no column frozen; the filter bar sets how many.
-  const columnDrag = useColumnDrag(SORT_COLUMNS.map(([label]) => label), { frozen: 0 })
+  const columnDrag = useColumnDrag(SORT_COLUMNS.map(([label]) => label), { frozen: 0, storageKey: 'shipments' })
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -575,7 +575,7 @@ export function ShipmentsPage() {
           </select>
         </label>
         <ColumnHideMenu columns={SORT_COLUMNS.map(([label]) => ({ key: label, label }))}
-          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} onReset={columnDrag.resetLayout} canReset={columnDrag.customised} />
         <ColumnFreezeField value={columnDrag.frozenCount} max={columnDrag.visible.length}
           shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         <button type="button" className="sh-clear" onClick={clearFilters} disabled={!anyFilter}>Clear Filters</button>

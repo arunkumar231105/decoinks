@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, EyeOff } from 'lucide-react'
+import { ChevronDown, EyeOff, RotateCcw } from 'lucide-react'
 import '../styles/column-hide.css'
 
 /**
@@ -12,15 +12,21 @@ import '../styles/column-hide.css'
  *
  * The list opens in a panel drawn into the document body, so a filter bar that
  * scrolls or clips its contents cannot cut it off.
+ *
+ * A grid that remembers its layout (hooks/useColumnDrag with a storageKey)
+ * passes `onReset`, and the panel offers a way back to the page's own order,
+ * hidden columns and frozen number.
  */
 export function ColumnHideMenu({
-  columns, hidden, onToggle, onShowAll,
+  columns, hidden, onToggle, onShowAll, onReset, canReset,
   label = 'Hide Columns', variant = 'field', wrapperClassName, buttonClassName,
 }: {
   columns: { key: string; label: string }[]
   hidden: Set<string>
   onToggle: (key: string) => void
   onShowAll: () => void
+  onReset?: () => void
+  canReset?: boolean
   label?: string
   // 'field' sits in a filter row with a small caption above it, like the
   // selects beside it; 'button' is a toolbar button.
@@ -81,7 +87,7 @@ export function ColumnHideMenu({
           <strong>{label}</strong>
           <button type="button" onClick={onShowAll} disabled={!count}>Show all</button>
         </header>
-        <p>Tick a column to hide it from the grid; untick it to bring it back.</p>
+        <p>Tick a column to hide it from the grid; untick it to bring it back.{onReset ? ' Your layout stays as you leave it until you change it.' : ''}</p>
         <div className="ch-list">
           {columns.map(c => {
             const isHidden = hidden.has(c.key)
@@ -94,6 +100,14 @@ export function ColumnHideMenu({
             )
           })}
         </div>
+        {onReset && (
+          <footer>
+            <button type="button" onClick={onReset} disabled={!canReset}>
+              <RotateCcw size={13} /> Reset to default layout
+            </button>
+            <small>Column order, hidden columns and freeze</small>
+          </footer>
+        )}
       </div>,
       document.body,
     )}

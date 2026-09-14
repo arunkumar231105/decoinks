@@ -55,7 +55,7 @@ export function ClaimsListPage() {
     approved_date: { head: 'Approved Date', cell: c => c.approval_date ? date(c.approval_date) : '—' },
     status: { head: 'Status', cell: c => <span className={`leads-pill st-${String(c.status).toLowerCase().replace(/\s+/g, '-')}`}>{c.status}</span> },
   }
-  const columnDrag = useColumnDrag(Object.keys(cols), { frozen: 1 })
+  const columnDrag = useColumnDrag(Object.keys(cols), { frozen: 1, storageKey: 'claims' })
 
   return (
     <div className="leads-page">
@@ -73,7 +73,7 @@ export function ClaimsListPage() {
         </label>
         <ColumnHideMenu wrapperClassName="leads-filter"
           columns={Object.entries(cols).map(([key, c]) => ({ key, label: String(c.head) }))}
-          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} />
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll} onReset={columnDrag.resetLayout} canReset={columnDrag.customised} />
         <ColumnFreezeField className="leads-filter" value={columnDrag.frozenCount}
           max={columnDrag.visible.length} shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         <button className="leads-btn primary" onClick={() => nav('/claims/new')}>

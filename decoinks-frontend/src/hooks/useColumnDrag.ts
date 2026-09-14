@@ -1,5 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { useAuthStore } from '../store/authStore'
 import '../styles/column-drag.css'
+
+// A grid's layout as this browser remembers it for one user: the column order,
+// the hidden columns and how many are frozen. Anything unreadable — an old
+// shape, a column since removed — is dropped rather than trusted.
+const LAYOUT_PREFIX = 'decoinks:grid-layout:'
+type SavedLayout = { order?: unknown; hidden?: unknown; frozen?: unknown }
+function readLayout(key: string | null): SavedLayout | null {
+  if (!key) return null
+  try {
+    const raw = localStorage.getItem(key)
+    const saved = raw ? JSON.parse(raw) : null
+    return saved && typeof saved === 'object' ? saved as SavedLayout : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Columns a grid's user can drag into any order by their headers.
@@ -16,8 +33,12 @@ import '../styles/column-drag.css'
  *   - Columns can be hidden and shown again (`toggleHidden`, `showAll`); the
  *     page draws `visible`, which is `order` less the hidden ones. At least one
  *     column always stays.
- *   - Nothing is saved. A hard refresh brings back the page's own order, with
- *     every column shown and the page's own number frozen.
+ *   - With a `storageKey` the layout is remembered — order, hidden columns and
+ *     the frozen number — for the signed-in user in this browser, and comes
+ *     back after a refresh or a redeploy until the user changes it again.
+ *     `resetLayout` returns to the page's own; `customised` says whether there
+ *     is anything to reset. A column added to the page later appears at the
+ *     end; one removed is forgotten. Without a key nothing is kept.
  *
  * A page renders its columns in `visible`, spreads `headProps(key, i)` on each
  * header cell and `cellProps(key, i)` on each body cell, and puts `tableRef` on
@@ -25,8 +46,10 @@ import '../styles/column-drag.css'
  */
 export function useColumnDrag(
   keys: string[],
-  { frozen = 3, cellBackground, headBackground }: {
+  { frozen = 3, cellBackground, headBackground, storageKey }: {
     frozen?: number
+    // Names the grid whose layout is remembered, e.g. 'purchase-orders'.
+    storageKey?: string
     // Set when the table paints its row colour on the <tr> rather than the
     // cells: a frozen cell must be opaque or the scrolled cells show through.
     cellBackground?: string
@@ -34,25 +57,70 @@ export function useColumnDrag(
   } = {},
 ) {
   const signature = keys.join('|')
-  const [stored, setStored] = useState<string[]>(keys)
-  // A page that changes its columns starts again from its own order.
-  useEffect(() => { setStored(keys) }, [signature]) // eslint-disable-line react-hooks/exhaustive-deps
+  const userId = useAuthStore(state => state.user?.id)
+  const layoutKey = storageKey ? `${LAYOUT_PREFIX}${userId ?? 'signed-out'}:${storageKey}` : null
+
+  // The layout the grid opens in: the one this user left it in, else the page's own.
+  const startingLayout = () => {
+    const saved = readLayout(layoutKey)
+    const known = new Set(keys)
+    const names = (value: unknown) =>
+      Array.isArray(value) ? value.filter((k): k is string => typeof k === 'string' && known.has(k)) : []
+    const savedOrder = names(saved?.order)
+    const savedHidden = names(saved?.hidden)
+    return {
+      order: savedOrder.length ? savedOrder : keys,
+      // At least one column always stays on show.
+      hidden: new Set(savedHidden.length < keys.length ? savedHidden : []),
+      frozen: typeof saved?.frozen === 'number' && Number.isFinite(saved.frozen)
+        ? Math.max(0, Math.trunc(saved.frozen)) : frozen,
+    }
+  }
+  const [stored, setStored] = useState<string[]>(() => startingLayout().order)
+  const [hidden, setHidden] = useState<Set<string>>(() => startingLayout().hidden)
+  const [frozenWanted, setFrozenWanted] = useState(() => startingLayout().frozen)
+
+  // Only what the user does is written back — opening a grid is not a change,
+  // so a grid nobody has touched keeps following the page's own defaults.
+  const touched = useRef(false)
+  // Another grid, another user, or a page whose columns changed: load its layout.
+  const loadedFor = useRef(`${layoutKey}|${signature}|${frozen}`)
+  useEffect(() => {
+    const id = `${layoutKey}|${signature}|${frozen}`
+    if (loadedFor.current === id) return
+    loadedFor.current = id
+    touched.current = false
+    const next = startingLayout()
+    setStored(next.order)
+    setHidden(next.hidden)
+    setFrozenWanted(next.frozen)
+  }, [layoutKey, signature, frozen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const order = useMemo(() => {
     const known = new Set(keys)
     return [...stored.filter(k => known.has(k)), ...keys.filter(k => !stored.includes(k))]
   }, [stored, signature]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
-  useEffect(() => { setHidden(new Set()) }, [signature]) // eslint-disable-line react-hooks/exhaustive-deps
   const visible = useMemo(() => order.filter(k => !hidden.has(k)), [order, hidden])
-  const toggleHidden = (key: string) => setHidden(current => {
-    const next = new Set(current)
-    if (next.has(key)) next.delete(key)
-    else if (keys.length - next.size > 1) next.add(key)
-    return next
-  })
-  const showAll = () => setHidden(new Set())
+  const toggleHidden = (key: string) => {
+    touched.current = true
+    setHidden(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else if (keys.length - next.size > 1) next.add(key)
+      return next
+    })
+  }
+  const showAll = () => { touched.current = true; setHidden(new Set()) }
+
+  useEffect(() => {
+    if (!layoutKey || !touched.current) return
+    try {
+      localStorage.setItem(layoutKey, JSON.stringify({ order, hidden: [...hidden], frozen: frozenWanted }))
+    } catch {
+      // Storage full or blocked: the layout still applies, it just is not kept.
+    }
+  }, [layoutKey, order, hidden, frozenWanted])
 
   const [dragKey, setDragKey] = useState<string | null>(null)
   const tableRef = useRef<HTMLTableElement>(null)
@@ -102,17 +170,29 @@ export function useColumnDrag(
     next.splice(source, 1)
     next.splice(target, 0, from)
     snapshot()
+    touched.current = true
     setStored(next)
   }
 
+  const customised = order.join('|') !== signature || hidden.size > 0 || frozenWanted !== frozen
+  const resetLayout = () => {
+    touched.current = false
+    if (layoutKey) {
+      try { localStorage.removeItem(layoutKey) } catch { /* nothing kept to remove */ }
+    }
+    snapshot()
+    setStored(keys)
+    setHidden(new Set())
+    setFrozenWanted(frozen)
+  }
+
   // ── Frozen columns ────────────────────────────────────────────────────────
-  const [frozenWanted, setFrozenWanted] = useState(frozen)
-  // A page that changes its columns (or its own default) starts from its own number.
-  useEffect(() => { setFrozenWanted(frozen) }, [signature, frozen]) // eslint-disable-line react-hooks/exhaustive-deps
   // Never more than the columns on show: hiding columns lowers it with them.
   const frozenCount = Math.max(0, Math.min(frozenWanted, visible.length))
-  const setFrozenCount = (n: number) =>
+  const setFrozenCount = (n: number) => {
+    touched.current = true
     setFrozenWanted(Number.isFinite(n) ? Math.max(0, Math.min(Math.trunc(n), visible.length)) : 0)
+  }
 
   const [lefts, setLefts] = useState<number[]>([])
   useLayoutEffect(() => {
@@ -188,5 +268,6 @@ export function useColumnDrag(
   return {
     order, visible, hidden, toggleHidden, showAll, tableRef, headProps, cellProps,
     frozenCount, frozenShown: lefts.length, setFrozenCount,
+    customised, resetLayout,
   }
 }
