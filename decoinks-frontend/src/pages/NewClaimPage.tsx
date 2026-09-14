@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CalendarDays, CheckCircle2, ChevronDown, ExternalLink, Eye, FileText, Info,
-  Loader2, Save, Send, Trash2, UploadCloud, X,
+  CheckCircle2, ExternalLink, Eye, FileText, Info,
+  Loader2, Save, Send, UploadCloud, X,
 } from 'lucide-react'
 import toast from '../utils/toast'
 import '../styles/claims.css'
@@ -13,11 +13,15 @@ import { useAuthStore } from '../store/authStore'
 /**
  * New Claim / Refund.
  *
- * Two rules shape this screen. A customer may ask for more than one remedy at
- * once — part refunded and part replaced — so Preferred Resolution is a set of
- * checkboxes, not a single choice. And the internal review belongs to an admin:
- * everyone sees the panel, so anyone raising a claim knows what will be decided
- * and by whom, but only an admin can fill it in. The server refuses the rest.
+ * A claim is raised against a purchase order — the document the shop actually
+ * works from. The sales order and invoice behind that PO are filled in by the
+ * server, so they are shown here but never chosen.
+ *
+ * Two more rules shape this screen. A customer may ask for more than one remedy
+ * at once — part refunded and part replaced — so Preferred Resolution is a set
+ * of checkboxes, not a single choice. And the internal review belongs to an
+ * admin: everyone sees the panel, so anyone raising a claim knows what will be
+ * decided and by whom, but only an admin can fill it in. The server refuses the rest.
  */
 
 const CATEGORIES = ['Delayed Shipment', 'Damaged Product', 'Wrong Item', 'Missing Item',
@@ -33,6 +37,7 @@ const SUB_ISSUES: Record<string, string[]> = {
 }
 const REPORTED_VIA = ['Email', 'WhatsApp', 'Phone', 'Portal', 'In Person']
 const RESOLUTIONS = ['Full Refund', 'Partial Refund', 'Replacement', 'Credit Note']
+const MONEY_RESOLUTIONS = ['Full Refund', 'Partial Refund', 'Credit Note']
 const STATUSES = ['Draft', 'Raised', 'Under Review', 'Need More Info', 'Approved', 'Rejected', 'Refunded', 'Closed']
 const TIMELINE = ['Raised', 'Under Review', 'Need More Info', 'Approved', 'Refunded', 'Closed']
 
@@ -43,6 +48,7 @@ const stamp = (v?: string | null) => v
   ? new Date(v).toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric',
                                           hour: '2-digit', minute: '2-digit' })
   : '-'
+const day = (v: any) => (v ? String(v).slice(0, 10) : '—')
 const sizeLabel = (n?: number | null) =>
   !n ? '' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
 
@@ -56,15 +62,15 @@ export function NewClaimPage() {
   const qc = useQueryClient()
   const { id: claimId } = useParams()
   const editing = Boolean(claimId)
-  const isAdmin = useAuthStore(s => s.user?.role) === 'Admin'
+  const user = useAuthStore(s => s.user)
+  const isAdmin = user?.role === 'Admin'
   const fileInput = useRef<HTMLInputElement>(null)
 
   // ── Section 1 ──
   const [customerId, setCustomerId] = useState('')
-  const [orderId, setOrderId] = useState('')
-  // A sales order can have several POs and several parcels, so which one the
-  // complaint is about has to be said, not guessed.
   const [poId, setPoId] = useState('')
+  // A PO can go out in several parcels, so which one the complaint is about has
+  // to be said, not guessed.
   const [shipmentId, setShipmentId] = useState('')
   const [panelOpen, setPanelOpen] = useState(false)
 
@@ -92,7 +98,7 @@ export function NewClaimPage() {
   const [decision, setDecision] = useState('')
   const [approvedAmount, setApprovedAmount] = useState('')
   const [resolutionType, setResolutionType] = useState('')
-  const [status, setStatus] = useState('Raised')
+  const [status, setStatus] = useState('Draft')
 
   const customers = useQuery({
     queryKey: ['claim-customers'],
@@ -100,32 +106,33 @@ export function NewClaimPage() {
       .then(r => r.data.data?.rows ?? []),
   })
 
-  // The orders of the chosen customer, and only those.
-  const orders = useQuery({
-    queryKey: ['claim-customer-orders', customerId],
-    queryFn: () => api.get(`/claims/customer/${customerId}/orders`).then(r => r.data.data ?? []),
+  // The purchase orders of the chosen customer, and only those.
+  const purchaseOrders = useQuery({
+    queryKey: ['claim-customer-pos', customerId],
+    queryFn: () => api.get(`/claims/customer/${customerId}/purchase-orders`).then(r => r.data.data ?? []),
     enabled: Boolean(customerId),
   })
 
-  // The procurement and shipping side of the chosen order.
+  // The sales order, invoice and parcels behind the chosen PO.
   const chain = useQuery({
-    queryKey: ['claim-order-chain', orderId],
-    queryFn: () => api.get(`/claims/order/${orderId}/chain`).then(r => r.data.data),
-    enabled: Boolean(orderId),
+    queryKey: ['claim-po-chain', poId],
+    queryFn: () => api.get(`/claims/purchase-order/${poId}/chain`).then(r => r.data.data),
+    enabled: Boolean(poId),
   })
+  const po = chain.data?.purchase_order
+  const shipments: any[] = chain.data?.shipments ?? []
+  const orderId: string = po?.order_id ?? ''
 
   useEffect(() => {
-    if (!chain.data) return
-    // One of a kind needs no choosing; more than one, and the field stays empty
+    // One parcel needs no choosing; more than one, and the field stays empty
     // until someone picks.
-    if (!poId && chain.data.purchase_orders?.length === 1) setPoId(chain.data.purchase_orders[0].id)
-    if (!shipmentId && chain.data.shipments?.length === 1) setShipmentId(chain.data.shipments[0].id)
+    if (!shipmentId && shipments.length === 1) setShipmentId(shipments[0].id)
   }, [chain.data])
 
   const orderDetails = useQuery({
     queryKey: ['claim-order-details', orderId],
     queryFn: () => api.get(`/claims/order/${orderId}/details`).then(r => r.data.data),
-    enabled: Boolean(orderId),
+    enabled: Boolean(orderId) && panelOpen,
   })
 
   const existing = useQuery({
@@ -137,7 +144,7 @@ export function NewClaimPage() {
   useEffect(() => {
     const c = existing.data
     if (!c) return
-    setCustomerId(c.customer_id ?? ''); setOrderId(c.order_id ?? '')
+    setCustomerId(c.customer_id ?? '')
     setPoId(c.purchase_order_id ?? ''); setShipmentId(c.shipment_id ?? '')
     setCategory(c.claim_category ?? CATEGORIES[0]); setSubIssue(c.sub_issue ?? '')
     setQuantity(c.quantity_affected ?? ''); setClaimedAmount(c.claimed_amount ?? '')
@@ -150,12 +157,14 @@ export function NewClaimPage() {
     setStatus(c.status ?? 'Raised'); setAttachments(c.attachments ?? [])
   }, [existing.data])
 
-  const order = useMemo(
-    () => (orders.data ?? []).find((o: any) => o.id === orderId),
-    [orders.data, orderId])
   const customer = useMemo(
     () => (customers.data ?? []).find((c: any) => c.id === customerId),
     [customers.data, customerId])
+  const shipment = shipments.find((s: any) => s.id === shipmentId)
+
+  // A draft is still the author's to submit; once raised, the claim moves only
+  // by decision, and its status is the admin's to change.
+  const isDraft = !editing || existing.data?.status === 'Draft'
 
   const toggleResolution = (r: string) =>
     setResolutions(cur => cur.includes(r) ? cur.filter(x => x !== r) : [...cur, r])
@@ -173,12 +182,15 @@ export function NewClaimPage() {
         }])
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? 'Could not upload that file')
-    } finally { setUploading(false) }
+      toast.error(e?.response?.data?.error ?? e?.response?.data?.message ?? 'Could not upload that file')
+    } finally {
+      setUploading(false)
+      if (fileInput.current) fileInput.current.value = ''
+    }
   }
 
   const body = () => ({
-    customer_id: customerId, order_id: orderId,
+    customer_id: customerId,
     purchase_order_id: poId || null, shipment_id: shipmentId || null,
     claim_category: category, sub_issue: subIssue || null,
     quantity_affected: quantity === '' ? null : Number(quantity),
@@ -193,17 +205,20 @@ export function NewClaimPage() {
 
   const save = useMutation({
     mutationFn: (asDraft: boolean) => {
-      const payload = { ...body(), status: asDraft ? 'Draft' : 'Raised' }
+      const payload: Record<string, any> = body()
+      if (isDraft) payload.status = asDraft ? 'Draft' : 'Raised'
+      else if (isAdmin && status !== existing.data?.status) payload.status = status
       return editing ? api.put(`/claims/${claimId}`, payload) : api.post('/claims', payload)
     },
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['claims'] })
+      qc.invalidateQueries({ queryKey: ['claim', claimId] })
       toast.success(`Claim ${res.data.data?.claim_number ?? ''} saved`)
       nav('/claims')
     },
     onError: (err: any) => {
       const d = err?.response?.data
-      toast.error(d?.details?.[0]?.message ?? d?.message ?? 'Could not save the claim')
+      toast.error(d?.details?.[0]?.message ?? d?.message ?? d?.error ?? 'Could not save the claim')
     },
   })
 
@@ -215,27 +230,40 @@ export function NewClaimPage() {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['claim', claimId] })
+      qc.invalidateQueries({ queryKey: ['claims'] })
       toast.success('Decision recorded')
     },
     onError: (err: any) =>
       toast.error(err?.response?.data?.message ?? 'Could not record the decision'),
   })
 
-  const check = () => {
+  // A draft may be half-filled; a submitted claim carries everything marked *.
+  const check = (asDraft: boolean) => {
     if (!customerId) return 'Choose the customer'
-    if (!orderId) return 'Choose the sales order'
+    if (!poId) return 'Choose the purchase order'
     if (!category) return 'Choose the claim category'
     if (!description.trim()) return 'Describe the issue'
+    if (asDraft) return null
+    if (!subIssue) return 'Choose the sub issue'
+    if (quantity === '') return 'Enter the quantity affected'
+    if (claimedAmount === '') return 'Enter the claimed amount'
+    if (!resolutions.length) return 'Choose at least one preferred resolution'
+    if (requestedAmount === '' && resolutions.some(r => MONEY_RESOLUTIONS.includes(r))) {
+      return 'Enter the refund / adjustment amount'
+    }
     return null
   }
   const handleSave = (asDraft: boolean) => {
-    const problem = check()
+    const problem = check(asDraft)
     if (problem) { toast.error(problem); return }
     save.mutate(asDraft)
   }
 
   const history: any[] = existing.data?.status_history ?? []
-  const at = (s: string) => history.find(h => h.status === s)?.changed_at
+  const at = (s: string) => [...history].reverse().find(h => h.status === s)?.changed_at
+
+  const poLabel = (p: any) =>
+    `${p.po_number} · ${day(p.order_date)} · ${p.supplier_name ?? 'Supplier'} · ${money(p.total)}`
 
   return (
     <div className="clm-page">
@@ -244,15 +272,18 @@ export function NewClaimPage() {
           <h1>{editing ? 'Claim / Refund' : 'New Claim / Refund'}</h1>
           <p className="clm-crumb">Claims <span>›</span> {editing
             ? existing.data?.claim_number ?? 'Claim'
-            : 'New Claim (Sales Order)'}</p>
+            : 'New Claim (Purchase Order)'}</p>
         </div>
         <div className="clm-head-actions">
-          <button className="clm-btn" disabled={save.isPending} onClick={() => handleSave(true)}>
-            <Save size={16}/> Save as Draft
-          </button>
+          {isDraft && (
+            <button className="clm-btn" disabled={save.isPending} onClick={() => handleSave(true)}>
+              <Save size={16}/> Save as Draft
+            </button>
+          )}
           <button className="clm-btn" onClick={() => nav('/claims')}>Cancel</button>
           <button className="clm-btn primary" disabled={save.isPending} onClick={() => handleSave(false)}>
-            {save.isPending ? <Loader2 size={16} className="clm-spin"/> : <Send size={16}/>} Submit Claim
+            {save.isPending ? <Loader2 size={16} className="clm-spin"/> : <Send size={16}/>}
+            {isDraft ? ' Submit Claim' : ' Save Changes'}
           </button>
         </div>
       </header>
@@ -260,13 +291,15 @@ export function NewClaimPage() {
       <div className="clm-body">
         <div className="clm-main">
 
-          {/* ── 1. Select Sales Order ── */}
+          {/* ── 1. Select Purchase Order ── */}
           <section className="clm-card">
-            <h2><i>1.</i> Select Sales Order</h2>
+            <h2><i>1.</i> Select Purchase Order</h2>
             <div className="clm-row-3">
               <label className="clm-field">
                 <span>Customer <b>*</b></span>
-                <select value={customerId} onChange={e => { setCustomerId(e.target.value); setOrderId('') }}>
+                <select value={customerId} onChange={e => {
+                  setCustomerId(e.target.value); setPoId(''); setShipmentId('')
+                }}>
                   <option value="">— Select customer —</option>
                   {(customers.data ?? []).map((c: any) => (
                     <option key={c.id} value={c.id}>{c.display_name ?? c.name}</option>
@@ -276,52 +309,52 @@ export function NewClaimPage() {
               </label>
 
               <label className="clm-field">
-                <span>Sales Order <b>*</b></span>
-                <select value={orderId} disabled={!customerId} onChange={e => setOrderId(e.target.value)}>
-                  <option value="">{customerId
-                    ? orders.isLoading ? 'Loading…' : `— ${(orders.data ?? []).length} orders —`
-                    : 'Choose a customer first'}</option>
-                  {(orders.data ?? []).map((o: any) => (
-                    <option key={o.id} value={o.id}>
-                      {o.order_number} · {String(o.order_date).slice(0, 10)} · {money(o.total)}
-                    </option>
+                <span>Purchase Order <b>*</b></span>
+                <select value={poId} disabled={!customerId} onChange={e => {
+                  setPoId(e.target.value); setShipmentId('')
+                }}>
+                  <option value="">{!customerId ? 'Choose a customer first'
+                    : purchaseOrders.isLoading ? 'Loading…'
+                    : (purchaseOrders.data ?? []).length === 0 ? 'No purchase orders for this customer'
+                    : `— ${(purchaseOrders.data ?? []).length} purchase orders —`}</option>
+                  {(purchaseOrders.data ?? []).map((p: any) => (
+                    <option key={p.id} value={p.id}>{poLabel(p)}</option>
                   ))}
+                  {/* An old claim may point at a PO this list no longer offers. */}
+                  {poId && po && !(purchaseOrders.data ?? []).some((p: any) => p.id === poId) && (
+                    <option value={poId}>{poLabel(po)}</option>
+                  )}
                 </select>
-                {order && <small className="clm-sub">
-                  Order Date: {String(order.order_date).slice(0, 10)} &nbsp; Order Value: <b>{money(order.total)}</b>
+                {po && <small className="clm-sub">
+                  PO Date: {day(po.order_date)} &nbsp; Status: {po.status} &nbsp; PO Value: <b>{money(po.total)}</b>
                 </small>}
               </label>
 
               <div className="clm-field clm-field-btn">
-                <button className="clm-btn ghost" disabled={!orderId} onClick={() => setPanelOpen(true)}>
-                  <Eye size={15}/> View Order Details
+                <button className="clm-btn ghost" disabled={!poId} onClick={() => setPanelOpen(true)}>
+                  <Eye size={15}/> View PO Details
                 </button>
               </div>
             </div>
 
-            {/* The rest of the chain. Left empty when the order has not reached
-                that stage — a claim can be raised before anything ships. */}
+            {/* The rest of the chain. The sales order is read off the PO; the
+                parcel is left empty when nothing has shipped yet. */}
             <div className="clm-row-2 clm-chain">
               <label className="clm-field">
-                <span>Purchase Order</span>
-                <select value={poId} disabled={!orderId} onChange={e => setPoId(e.target.value)}>
-                  <option value="">{!orderId ? 'Choose a sales order first'
-                    : (chain.data?.purchase_orders?.length ?? 0) === 0 ? 'No purchase order yet'
-                    : '— Not specific to one PO —'}</option>
-                  {(chain.data?.purchase_orders ?? []).map((p: any) => (
-                    <option key={p.id} value={p.id}>
-                      {p.po_number} · {p.supplier_name ?? 'Supplier'} · {money(p.total)}
-                    </option>
-                  ))}
-                </select>
+                <span>Sales Order (from PO)</span>
+                <input readOnly value={!poId ? 'Choose a purchase order first'
+                  : chain.isLoading ? 'Loading…'
+                  : po?.order_number
+                    ? `${po.order_number} · ${day(po.sales_order_date)} · ${money(po.order_total)}`
+                    : 'No sales order linked'} />
               </label>
               <label className="clm-field">
                 <span>Shipment</span>
-                <select value={shipmentId} disabled={!orderId} onChange={e => setShipmentId(e.target.value)}>
-                  <option value="">{!orderId ? 'Choose a sales order first'
-                    : (chain.data?.shipments?.length ?? 0) === 0 ? 'Nothing shipped yet'
+                <select value={shipmentId} disabled={!poId} onChange={e => setShipmentId(e.target.value)}>
+                  <option value="">{!poId ? 'Choose a purchase order first'
+                    : shipments.length === 0 ? 'Nothing shipped yet'
                     : '— Not specific to one parcel —'}</option>
-                  {(chain.data?.shipments ?? []).map((sh: any) => (
+                  {shipments.map((sh: any) => (
                     <option key={sh.id} value={sh.id}>
                       {sh.shipment_number ?? sh.tracking_number} · {sh.carrier ?? '—'} · {sh.status}
                     </option>
@@ -499,8 +532,7 @@ export function NewClaimPage() {
                   <div className="clm-row-2">
                     <label className="clm-field">
                       <span>Responsible Admin</span>
-                      <input readOnly value={existing.data?.responsible_admin_name
-                        ?? useAuthStore.getState().user?.name ?? ''} />
+                      <input readOnly value={existing.data?.responsible_admin_name ?? user?.name ?? ''} />
                     </label>
                     <label className="clm-field">
                       <span>Approval Date</span>
@@ -529,24 +561,23 @@ export function NewClaimPage() {
             <h3>Claim Summary</h3>
             <dl className="clm-summary">
               <dt>Claim ID</dt><dd>{existing.data?.claim_number ?? <i>(Auto Generate)</i>}</dd>
-              <dt>Linked To</dt><dd><b>Sales Order</b></dd>
-              <dt>Sales Order ID</dt>
-              <dd>{order?.order_number ?? existing.data?.order_number ?? '—'}
-                {orderId && <ExternalLink size={12} className="clm-ext" onClick={() => setPanelOpen(true)} />}</dd>
+              <dt>Linked To</dt><dd><b>Purchase Order</b></dd>
+              <dt>Purchase Order</dt>
+              <dd>{po?.po_number ?? existing.data?.po_number ?? '—'}
+                {poId && <ExternalLink size={12} className="clm-ext" onClick={() => setPanelOpen(true)} />}</dd>
+              <dt>Supplier</dt>
+              <dd>{po?.supplier_name ?? existing.data?.supplier_name ?? '—'}</dd>
               <dt>Customer</dt>
               <dd>{customer?.display_name ?? customer?.name ?? existing.data?.customer_name ?? '—'}</dd>
-              <dt>Purchase Order</dt>
-              <dd>{(chain.data?.purchase_orders ?? []).find((p: any) => p.id === poId)?.po_number
-                ?? existing.data?.po_number ?? '—'}</dd>
+              <dt>Sales Order</dt>
+              <dd>{po?.order_number ?? existing.data?.order_number ?? '—'}</dd>
               <dt>Shipment</dt>
-              <dd>{(() => {
-                const sh = (chain.data?.shipments ?? []).find((x: any) => x.id === shipmentId)
-                return sh?.shipment_number ?? sh?.tracking_number ?? existing.data?.shipment_number ?? '—'
-              })()}</dd>
+              <dd>{shipment?.shipment_number ?? shipment?.tracking_number
+                ?? (shipmentId ? existing.data?.shipment_number : null) ?? '—'}</dd>
               <dt>Invoice</dt>
-              <dd>{orderDetails.data?.invoice_number ?? existing.data?.invoice_number ?? '—'}</dd>
+              <dd>{po?.invoice_number ?? existing.data?.invoice_number ?? '—'}</dd>
               <dt>Invoice Value</dt>
-              <dd>{money(orderDetails.data?.invoice_total ?? existing.data?.invoice_total)}</dd>
+              <dd>{money(po?.invoice_total ?? existing.data?.invoice_total)}</dd>
               <dt>Claim Type</dt><dd>{category}</dd>
               <dt>Claimed Amount</dt><dd>{money(claimedAmount)}</dd>
             </dl>
@@ -560,7 +591,8 @@ export function NewClaimPage() {
             <h3>Claim Status</h3>
             <label className="clm-field">
               <span>Current Status</span>
-              <select value={status} disabled={!isAdmin} onChange={e => setStatus(e.target.value)}>
+              {/* Moves by decision; an admin can still set it by hand, e.g. to Refunded or Closed. */}
+              <select value={status} disabled={!isAdmin || isDraft} onChange={e => setStatus(e.target.value)}>
                 {STATUSES.map(s => <option key={s}>{s}</option>)}
               </select>
             </label>
@@ -581,46 +613,54 @@ export function NewClaimPage() {
         </aside>
       </div>
 
-      {/* ── Order details side panel ── */}
+      {/* ── PO details side panel ── */}
       {panelOpen && (
         <div className="clm-panel-wrap" onClick={() => setPanelOpen(false)}>
           <aside className="clm-panel" onClick={e => e.stopPropagation()}>
             <header>
               <div>
-                <h3>{orderDetails.data?.order_number ?? 'Order'}</h3>
-                <p>{orderDetails.data?.customer_name} · {orderDetails.data?.customer_number}</p>
+                <h3>{po?.po_number ?? 'Purchase Order'}</h3>
+                <p>{customer?.display_name ?? customer?.name ?? existing.data?.customer_name}
+                  {po?.supplier_name ? ` · ${po.supplier_name}` : ''}</p>
               </div>
               <button onClick={() => setPanelOpen(false)}><X size={18}/></button>
             </header>
-            {orderDetails.isLoading ? <p className="clm-panel-empty">Loading…</p> : (
+            {chain.isLoading ? <p className="clm-panel-empty">Loading…</p> : (
               <>
                 <dl className="clm-summary">
-                  <dt>Order Date</dt><dd>{String(orderDetails.data?.order_date ?? '').slice(0, 10)}</dd>
-                  <dt>Type</dt><dd>{orderDetails.data?.order_type}</dd>
-                  <dt>Status</dt><dd>{orderDetails.data?.status}</dd>
-                  <dt>Subtotal</dt><dd>{money(orderDetails.data?.subtotal)}</dd>
-                  <dt>Shipping</dt><dd>{money(orderDetails.data?.shipping_charges)}</dd>
-                  <dt>Total</dt><dd><b>{money(orderDetails.data?.total)}</b></dd>
-                  <dt>Invoice</dt><dd>{orderDetails.data?.invoice_number ?? '—'}</dd>
-                  <dt>Invoice Value</dt><dd>{money(orderDetails.data?.invoice_total)}</dd>
-                  <dt>Balance Due</dt><dd>{money(orderDetails.data?.balance_due)}</dd>
+                  <dt>PO Date</dt><dd>{day(po?.order_date)}</dd>
+                  <dt>PO Type</dt><dd>{po?.po_type ?? '—'}</dd>
+                  <dt>PO Status</dt><dd>{po?.status ?? '—'}</dd>
+                  <dt>PO Total</dt><dd><b>{money(po?.total)}</b></dd>
+                  <dt>Sales Order</dt><dd>{po?.order_number ?? '—'}</dd>
+                  <dt>Order Total</dt><dd>{money(orderDetails.data?.total ?? po?.order_total)}</dd>
+                  <dt>Invoice</dt><dd>{po?.invoice_number ?? '—'}</dd>
+                  <dt>Invoice Value</dt><dd>{money(po?.invoice_total)}</dd>
+                  <dt>Balance Due</dt><dd>{money(po?.balance_due)}</dd>
                 </dl>
                 <h4>Lines</h4>
-                <table className="clm-panel-table">
-                  <thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
-                  <tbody>
-                    {(orderDetails.data?.items ?? []).map((it: any) => (
-                      <tr key={it.id}>
-                        <td>{it.description || '—'}{it.size && <small> · {it.size}</small>}</td>
-                        <td>{it.qty}</td>
-                        <td>{money(it.unit_price)}</td>
-                        <td>{money(it.amount)}</td>
-                      </tr>
-                    ))}
-                    {!(orderDetails.data?.items ?? []).length &&
-                      <tr><td colSpan={4} className="clm-panel-empty">No lines on this order.</td></tr>}
-                  </tbody>
-                </table>
+                {orderDetails.isLoading ? <p className="clm-panel-empty">Loading…</p> : (
+                  <table className="clm-panel-table">
+                    <thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+                    <tbody>
+                      {(orderDetails.data?.items ?? []).map((it: any) => (
+                        <tr key={it.id}>
+                          <td>{it.description || '—'}{it.size && <small> · {it.size}</small>}</td>
+                          <td>{it.qty}</td>
+                          <td>{money(it.unit_price)}</td>
+                          <td>{money(it.amount)}</td>
+                        </tr>
+                      ))}
+                      {!(orderDetails.data?.items ?? []).length &&
+                        <tr><td colSpan={4} className="clm-panel-empty">No lines on this order.</td></tr>}
+                    </tbody>
+                  </table>
+                )}
+                {poId && (
+                  <button className="clm-btn ghost" onClick={() => nav(`/purchase-orders/${poId}`)}>
+                    <ExternalLink size={14}/> Open purchase order
+                  </button>
+                )}
               </>
             )}
           </aside>

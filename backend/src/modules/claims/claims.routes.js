@@ -1,6 +1,7 @@
 const express = require('express')
 const { z } = require('zod')
 const controller = require('./claims.controller')
+const { STATUSES } = require('./claims.service')
 const { validate } = require('../../middleware/validate')
 const { verifyToken, requireRole } = require('../../middleware/auth')
 
@@ -11,10 +12,13 @@ const RESOLUTIONS = ['Full Refund', 'Partial Refund', 'Replacement', 'Credit Not
 
 const claimSchema = z.object({
   customer_id:      z.string().uuid(),
-  order_id:         z.string().uuid(),
-  invoice_id:       z.string().uuid().optional().nullable(),
-  // A claim can be raised before a PO is cut or anything ships, so both stay optional.
+  // The claim is raised against the purchase order; the sales order and invoice
+  // are read off it on the server. order_id is still accepted for claims made
+  // before POs were the key.
   purchase_order_id: z.string().uuid().optional().nullable(),
+  order_id:         z.string().uuid().optional().nullable(),
+  invoice_id:       z.string().uuid().optional().nullable(),
+  // A claim can be raised before anything ships.
   shipment_id:       z.string().uuid().optional().nullable(),
   claim_category:   z.string().min(1).max(80),
   sub_issue:        z.string().max(80).optional().nullable(),
@@ -32,6 +36,13 @@ const claimSchema = z.object({
   attachments:      z.array(z.object({}).passthrough()).optional(),
 })
 
+const createSchema = claimSchema.refine(
+  b => Boolean(b.purchase_order_id || b.order_id),
+  { message: 'Choose the purchase order', path: ['purchase_order_id'] })
+
+// An edit may move the claim along; the service lets only an admin go past Raised.
+const updateSchema = claimSchema.partial().extend({ status: z.enum(STATUSES).optional() })
+
 const reviewSchema = z.object({
   decision:        z.enum(['Approve', 'Reject', 'Need More Info']),
   review_notes:    z.string().optional().nullable(),
@@ -40,13 +51,15 @@ const reviewSchema = z.object({
 })
 
 router.get('/', controller.list)
+router.get('/customer/:customerId/purchase-orders', controller.customerPurchaseOrders)
+router.get('/purchase-order/:poId/chain', controller.purchaseOrderChain)
 router.get('/customer/:customerId/orders', controller.customerOrders)
 router.get('/order/:orderId/details', controller.orderDetails)
 router.get('/order/:orderId/chain', controller.orderChain)
 router.get('/:id', controller.getOne)
 
-router.post('/', validate(claimSchema), controller.create)
-router.put('/:id', validate(claimSchema.partial()), controller.update)
+router.post('/', validate(createSchema), controller.create)
+router.put('/:id', validate(updateSchema), controller.update)
 
 // Internal review is the admin's alone. Everyone else sees the panel in the
 // form but the server refuses to record a decision from them.

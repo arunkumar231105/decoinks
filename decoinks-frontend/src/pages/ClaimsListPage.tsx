@@ -10,7 +10,7 @@ import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { ColumnFreezeField } from '../components/ColumnFreezeField'
 
-const STATUSES = ['All', 'Draft', 'Raised', 'Under Review', 'Approved', 'Refunded', 'Closed', 'Rejected']
+const STATUSES = ['All', 'Draft', 'Raised', 'Under Review', 'Need More Info', 'Approved', 'Refunded', 'Closed', 'Rejected']
 const money = (v: any) => v == null ? '—'
   : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const date = (v: any) => v ? new Date(v).toLocaleDateString('en-US',
@@ -41,10 +41,10 @@ export function ClaimsListPage() {
     claim: { head: 'Claim No.', cell: c => <strong>{c.claim_number}</strong> },
     raised: { head: 'Raised', cell: c => date(c.created_at) },
     customer: { head: 'Customer', cell: c => <>{c.customer_name ?? '—'}<small className="leads-cell-sub">{c.customer_number ?? ''}</small></> },
-    order: { head: 'Sales Order', cell: c => c.order_number ?? '—' },
-    // The purchase order the work was bought against — which is what tells you
+    // The purchase order the claim is raised against — which is what tells you
     // which factory has to answer for it.
     po: { head: 'PO Number', cell: c => c.po_number ?? '—' },
+    order: { head: 'Sales Order', cell: c => c.order_number ?? '—' },
     category: { head: 'Category', cell: c => <>{c.claim_category}<small className="leads-cell-sub">{c.sub_issue ?? ''}</small></> },
     claimed: { head: 'Claimed', cell: c => money(c.claimed_amount), className: 'cw-num' },
     approved: { head: 'Approved', cell: c => money(c.approved_amount), className: 'cw-num' },
@@ -62,7 +62,7 @@ export function ClaimsListPage() {
       <header className="leads-actionbar cw-actionbar">
         <label className="leads-search">
           <Search size={20}/>
-          <input value={search} placeholder="Search by claim no, order no or customer…"
+          <input value={search} placeholder="Search by claim no, PO no, order no or customer…"
             onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </label>
         <label className="leads-filter">
@@ -95,7 +95,7 @@ export function ClaimsListPage() {
                 <tr><td colSpan={12}>
                   <div className="leads-state">
                     <strong>No claims yet.</strong>
-                    <p>Raise one against a sales order when a customer reports a problem.</p>
+                    <p>Raise one against a purchase order when a customer reports a problem.</p>
                     <button onClick={() => nav('/claims/new')}>New Claim</button>
                   </div>
                 </td></tr>

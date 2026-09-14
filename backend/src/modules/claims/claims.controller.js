@@ -24,7 +24,7 @@ async function create(req, res, next) {
 }
 
 async function update(req, res, next) {
-  try { return success(res, await svc.update(req.params.id, req.body, actor(req)), 'Claim updated') }
+  try { return success(res, await svc.update(req.params.id, req.body, actor(req), req.user?.role), 'Claim updated') }
   catch (err) { next(err) }
 }
 
@@ -53,6 +53,19 @@ async function remove(req, res, next) {
   catch (err) { next(err) }
 }
 
+async function customerPurchaseOrders(req, res, next) {
+  try { return success(res, await svc.purchaseOrdersForCustomer(req.params.customerId)) }
+  catch (err) { next(err) }
+}
+
+async function purchaseOrderChain(req, res, next) {
+  try {
+    const chain = await svc.chainForPurchaseOrder(req.params.poId)
+    if (!chain) return error(res, 'Purchase order not found', 404)
+    return success(res, chain)
+  } catch (err) { next(err) }
+}
+
 async function customerOrders(req, res, next) {
   try { return success(res, await svc.ordersForCustomer(req.params.customerId)) }
   catch (err) { next(err) }
@@ -72,4 +85,5 @@ async function orderDetails(req, res, next) {
 }
 
 module.exports = { list, getOne, create, update, review, comment, attach, detach, remove,
+                   customerPurchaseOrders, purchaseOrderChain,
                    customerOrders, orderDetails, orderChain }

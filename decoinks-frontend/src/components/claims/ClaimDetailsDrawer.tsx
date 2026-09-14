@@ -73,8 +73,8 @@ export function ClaimDetailsDrawer({ claimId, onClose }: { claimId: string | nul
               <h4>Traced To</h4>
               <div className="cd-chain">
                 {chainRow('Customer', c.customer_name, c.customer_number ? ` ${c.customer_number}` : '')}
-                {chainRow('Sales Order', c.order_number, c.order_total != null ? ` ${money(c.order_total)}` : '')}
                 {chainRow('Purchase Order', c.po_number, c.supplier_name ? ` ${c.supplier_name}` : '')}
+                {chainRow('Sales Order', c.order_number, c.order_total != null ? ` ${money(c.order_total)}` : '')}
                 {chainRow('Invoice', c.invoice_number, c.invoice_total != null ? ` ${money(c.invoice_total)}` : '')}
                 {chainRow('Shipment',
                   c.shipment_number ?? c.tracking_number,
@@ -177,6 +177,11 @@ export function ClaimDetailsDrawer({ claimId, onClose }: { claimId: string | nul
               <button className="cd-btn" onClick={() => nav(`/claims/${claimId}`)}>
                 <Pencil size={14}/> Edit this claim
               </button>
+              {c.purchase_order_id && (
+                <button className="cd-btn ghost" onClick={() => nav(`/purchase-orders/${c.purchase_order_id}`)}>
+                  <ExternalLink size={14}/> Open purchase order
+                </button>
+              )}
               {c.order_id && (
                 <button className="cd-btn ghost" onClick={() => nav(`/orders/${c.order_id}`)}>
                   <ExternalLink size={14}/> Open sales order
