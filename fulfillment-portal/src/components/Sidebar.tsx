@@ -1,12 +1,14 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, ShoppingCart, RefreshCw, BarChart3, Settings, LogOut, Share2,
+  LayoutDashboard, ShoppingCart, RefreshCw, BarChart3, Settings, LogOut, Share2, FileText, Image,
 } from 'lucide-react'
 import { useSupplierAuth } from '../hooks/useSupplierAuth'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/purchase-orders', label: 'Purchase Orders', icon: FileText },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
+  { to: '/artworks', label: 'Artworks', icon: Image },
   { to: '/status-update', label: 'Status Update', icon: RefreshCw },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
 ]

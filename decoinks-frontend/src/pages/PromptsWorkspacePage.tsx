@@ -300,7 +300,9 @@ export function PromptsWorkspacePage() {
 
       {creating && (
         <PromptFormModal
-          defaultModuleId={moduleId}
+          // The module the list is filtered to or, on All Modules, the module
+          // of the prompt that is open — the one the admin is working in.
+          defaultModuleId={moduleId || p?.module_id || ''}
           onClose={() => setCreating(false)}
           onSaved={(id) => { qc.invalidateQueries({ queryKey: ['prompts'] }); setCreating(false); nav(`/prompts/${id}`) }}
         />
@@ -430,9 +432,10 @@ function PromptFormModal({
 
   const set = (k: keyof typeof form) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
   const moduleKey = (modules.data ?? []).find(m => m.id === form.module_id)?.key
+  // Shown as soon as there is a module, filling in as the name is typed.
   const keyPreview = editing
     ? form.prompt_key
-    : moduleKey && keyPart(form.name) ? `AIS.${keyPart(moduleKey)}.${keyPart(form.name)}` : ''
+    : moduleKey ? `AIS.${keyPart(moduleKey)}.${keyPart(form.name) || '…'}` : ''
   const ready = form.name.trim() && (editing || form.module_id)
 
   return (

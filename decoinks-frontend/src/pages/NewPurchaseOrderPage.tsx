@@ -16,6 +16,11 @@ import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type POType = 'gangsheet' | 'apparel'
+type POScope = 'full' | 'partial'
+// Which table a sales order's lines live in, by the order's type.
+const LINE_TABLE: Record<string, string> = {
+  apparel: 'order_items_apparel', dtf: 'order_items_dtf', gangsheet: 'order_items_gangsheet',
+}
 
 interface POLineItem {
   id: string
@@ -24,7 +29,21 @@ interface POLineItem {
   brand: string
   color: string
   size: string
+  // qty_ordered is this purchase order's CURRENT — how many of the sales order
+  // line it issues. The three figures beside it come from the sales order and
+  // the other purchase orders on it (backend po.issue.js), and are read-only:
+  //   Total Qty = the order's own quantity   Issued = taken by other POs
+  //   Available = Total − Issued             Balance = Available − Current
   qty_ordered: number
+  source_line_id: string | null
+  source_line_table: string | null
+  total_qty: number
+  issued: number
+  available: number
+  // True once Current has been typed on this line. Until then the figures the
+  // server sends may set it (0 on a partial PO, everything on a full one)
+  // without overwriting what someone has entered.
+  current_touched: boolean
   unit_price: number
   line_total: number
   artwork_id: string | null
@@ -50,6 +69,17 @@ interface POLineItem {
   tax_pct: number
   remarks: string
   required_by_date: string
+}
+
+interface PlanLine {
+  line_id: string; line_table: string; order_id: string; order_number: string
+  item_name: string | null; color: string | null; size: string | null
+  total_qty: number; issued: number; available: number; unit_price: number
+}
+
+interface PlanOrder {
+  order_id: string; order_number: string; order_type: string; po_count: number
+  total_qty: number; issued: number; available: number; fully_issued: boolean
 }
 
 interface CoveredOrder {
@@ -99,6 +129,8 @@ interface SupplierContact {
 
 interface POFormState {
   po_type: POType
+  // Full: everything the sales order has left. Partial: a stated number a line.
+  po_scope: POScope
   order_date: string
   expected_date: string
   supplier_id: string
@@ -126,6 +158,8 @@ interface POFormState {
 }
 
 type Action =
+  | { type: 'SET_SCOPE'; scope: POScope }
+  | { type: 'APPLY_PLAN'; lines: PlanLine[] }
   | { type: 'SET'; field: keyof POFormState; value: any }
   | { type: 'ADD_ITEM' }
   | { type: 'ADD_CATALOG_ITEM'; style: ApparelCatalogStyle }
@@ -157,7 +191,8 @@ function parseSheetSize(size?: string | null): { width: string; length: string }
 function newItem(idx: number): POLineItem {
   return {
     id: uid(), category: 'T-Shirt', item_name: '', brand: '', color: '', size: '',
-    qty_ordered: 1, unit_price: 0, line_total: 0,
+    qty_ordered: 1, source_line_id: null, source_line_table: null,
+    total_qty: 0, issued: 0, available: 0, current_touched: false, unit_price: 0, line_total: 0,
     artwork_id: null, artwork_no: '', artwork_url: null,
     artwork_size_front: '', artwork_size_back: '',
     catalog_style_id: '', catalog_color_id: '', catalog_size_id: '', catalog_sku: '',
@@ -184,6 +219,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 const initialState: POFormState = {
   po_type: 'gangsheet',
+  po_scope: 'full',
   order_date: todayISO(),
   expected_date: '',
   supplier_id: '',
@@ -214,6 +250,36 @@ function reducer(state: POFormState, action: Action): POFormState {
   switch (action.type) {
     case 'SET':
       return { ...state, [action.field]: action.value }
+    // Full issues everything the order has left, partial nothing until it is
+    // typed in. Either way the quantity itself is never typed.
+    case 'SET_SCOPE':
+      return {
+        ...state, po_scope: action.scope,
+        items: state.items.map(it => it.source_line_id
+          ? { ...it, qty_ordered: action.scope === 'full' ? it.available : 0, current_touched: false,
+              line_total: lineTotal(action.scope === 'full' ? it.available : 0, it.unit_price) }
+          : it),
+      }
+    // What the sales order has left, from the server. Current is kept within
+    // Available; on a full PO it is Available.
+    case 'APPLY_PLAN': {
+      const byLine = new Map(action.lines.map(l => [l.line_id, l]))
+      return {
+        ...state,
+        items: state.items.map(it => {
+          const line = it.source_line_id ? byLine.get(it.source_line_id) : undefined
+          if (!line) return it
+          const available = Number(line.available) || 0
+          // A partial PO starts at nothing: the line came across holding the
+          // order's whole quantity, which would read Remaining 0.
+          const current = state.po_scope === 'full'
+            ? available
+            : it.current_touched ? Math.min(it.qty_ordered, available) : 0
+          return { ...it, total_qty: Number(line.total_qty) || 0, issued: Number(line.issued) || 0,
+                   available, qty_ordered: current, line_total: lineTotal(current, it.unit_price) }
+        }),
+      }
+    }
     case 'ADD_ITEM':
       return { ...state, items: [...state.items, newItem(state.items.length)] }
     case 'ADD_CATALOG_ITEM': {
@@ -324,7 +390,11 @@ export function NewPurchaseOrderPage() {
     'purchase-order:new',
     state as unknown as Record<string, unknown>,
     saved => dispatch({ type: 'INIT', payload: { ...initialState, ...(saved as Partial<POFormState>) } }),
-    { enabled: !isEdit },
+    // Not while converting a sales order: that form is filled from the order
+    // itself, and a draft left over from a hand-typed PO would overwrite its
+    // date and lines (a PO came out dated 4 September for an order raised on
+    // the 12th, and so was nowhere near the top of the list).
+    { enabled: !isEdit && !fromOrderId },
   )
   const selectPOColor = (item: POLineItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)
@@ -378,6 +448,8 @@ export function NewPurchaseOrderPage() {
       type: 'INIT',
       payload: {
         po_type:              existingPO.po_type === 'gangsheet' ? 'gangsheet' : 'apparel',
+        // Its own full/partial, or a save would be judged as a full one.
+        po_scope:             existingPO.po_scope === 'partial' ? 'partial' : 'full',
         order_date:           existingPO.order_date ? existingPO.order_date.split('T')[0] : todayISO(),
         expected_date:        existingPO.expected_date ? existingPO.expected_date.split('T')[0] : '',
         supplier_id:          existingPO.supplier_id || '',
@@ -433,6 +505,14 @@ export function NewPurchaseOrderPage() {
           color: it.color || '',
           size: it.size || '',
           qty_ordered: Number(it.qty_ordered) || 1,
+          // The sales order line this line issues; its Issued and Available
+          // figures arrive with the issue plan, which leaves this PO out.
+          source_line_id: it.source_line_id || null,
+          source_line_table: it.source_line_table || null,
+          total_qty: Number(it.qty_ordered) || 0,
+          issued: 0,
+          available: Number(it.qty_ordered) || 0,
+          current_touched: true,          // what this PO already issues
           unit_price: Number(it.unit_price) || 0,
           line_total: Number(it.line_total) || 0,
           artwork_id: it.artwork_id || null,
@@ -470,6 +550,32 @@ export function NewPurchaseOrderPage() {
     refetchOnMount: 'always',
   })
 
+  // What the covered sales orders still have left to buy. Read from the server,
+  // so Issued counts every other purchase order and two people cannot both
+  // issue the last pieces.
+  const coveredKey = state.orders.map(o => o.order_id).filter(Boolean).join(',')
+  const { data: issuePlan } = useQuery<{ lines: PlanLine[]; orders: PlanOrder[] }>({
+    queryKey: ['po-issue-plan', coveredKey, editId ?? ''],
+    queryFn: () => api.get('/purchase-orders/issue-plan', {
+      params: { order_ids: coveredKey, exclude_po_id: editId || undefined },
+    }).then(r => r.data.data),
+    enabled: coveredKey.length > 0,
+    staleTime: 0,
+  })
+  // Also when the lines are rebuilt — the sales order's own items can arrive
+  // after the plan, and without this they kept the order's quantity as Current
+  // and read Remaining 0.
+  const planLineKey = state.items.map(it => it.source_line_id ?? '').join(',')
+  useEffect(() => {
+    if (issuePlan?.lines?.length) dispatch({ type: 'APPLY_PLAN', lines: issuePlan.lines })
+  }, [issuePlan, planLineKey])
+  // A full purchase order is only possible while the sales order has none.
+  const alreadyHasPo = Boolean(issuePlan?.orders?.some(o => o.po_count > 0))
+  const nothingLeft = Boolean(issuePlan?.orders?.length && issuePlan.orders.every(o => o.fully_issued))
+  useEffect(() => {
+    if (alreadyHasPo && state.po_scope === 'full') dispatch({ type: 'SET_SCOPE', scope: 'partial' })
+  }, [alreadyHasPo])
+
   useEffect(() => {
     if (!sourceOrder) return
     const poType: POType = sourceOrder.order_type === 'gangsheet' ? 'gangsheet' : 'apparel'
@@ -477,6 +583,8 @@ export function NewPurchaseOrderPage() {
 
     const payload: Partial<POFormState> = {
       po_type: poType,
+      // Raised today — which is also never before its sales order.
+      order_date: todayISO(),
       supplier_id: sourceOrder.supplier_id || '',
       supplier_name: sourceOrder.supplier_name || '',
       expected_date: sourceOrder.due_date ? sourceOrder.due_date.split('T')[0] : '',
@@ -492,6 +600,14 @@ export function NewPurchaseOrderPage() {
         color: it.color || '',
         size: it.size || '',
         qty_ordered: Number(it.qty) || 1,
+        // The sales order line this line issues. Issued and Available come
+        // from the server a moment later (the issue plan below).
+        source_line_id: it.id ?? null,
+        source_line_table: LINE_TABLE[sourceOrder.order_type] ?? null,
+        total_qty: Number(it.qty) || 0,
+        issued: 0,
+        available: Number(it.qty) || 0,
+        current_touched: false,
         unit_price: Number(it.unit_price) || 0,
         line_total: lineTotal(Number(it.qty) || 1, Number(it.unit_price) || 0),
         artwork_id: null,
@@ -656,6 +772,7 @@ export function NewPurchaseOrderPage() {
     const supplier_contact_id = await resolveContactId()
     return {
       po_type: state.po_type,
+      po_scope: coveredKey && state.po_type === 'apparel' ? state.po_scope : undefined,
       supplier_id: state.supplier_id || null,
       vendor_name: state.supplier_name || supplierSearch || null,
       supplier_contact_id,
@@ -698,13 +815,17 @@ export function NewPurchaseOrderPage() {
           }))
         : [],
       items: state.po_type === 'apparel'
-          ? state.items.map((it, i) => ({
+          // A line issuing nothing on this purchase order is not on it at all.
+          ? state.items.filter(it => !it.source_line_id || issuingQty(it) > 0).map((it, i) => ({
             category: it.category,
             item_name: it.item_name,
             brand: it.brand || null,
             color: it.color || null,
             size: it.size || null,
-            qty_ordered: it.qty_ordered,
+            // A full PO issues everything available, a partial one what was typed.
+            qty_ordered: issuingQty(it),
+            source_line_id: it.source_line_id,
+            source_line_table: it.source_line_table,
             unit_price: it.unit_price,
             artwork_id: it.artwork_id,
             artwork_size_front: it.artwork_size_front || null,
@@ -765,6 +886,24 @@ export function NewPurchaseOrderPage() {
       if (state.items.length === 0) { toast.error('Add at least one item'); return false }
       if (state.items.some(it => !it.item_name.trim())) { toast.error('All items require a name'); return false }
     }
+    // Lines that issue a sales order line: never more than the order has left.
+    const planned = state.items.filter(it => it.source_line_id)
+    if (planned.length) {
+      if (nothingLeft) {
+        toast.error('This sales order is fully issued — every piece is already on a purchase order.')
+        return false
+      }
+      const over = planned.find(it => it.qty_ordered > figuresOf(it).available)
+      if (over) {
+        const which = [over.item_name, over.color, over.size].filter(Boolean).join(' · ') || 'A line'
+        toast.error(`${which}: Current ${over.qty_ordered} is more than the ${figuresOf(over).available} available.`)
+        return false
+      }
+      if (planned.reduce((sum, it) => sum + issuingQty(it), 0) <= 0) {
+        toast.error('Enter Current on at least one line — how many pieces this purchase order issues.')
+        return false
+      }
+    }
     return true
   }
 
@@ -821,9 +960,35 @@ export function NewPurchaseOrderPage() {
     qty: state.fragments.reduce((s, f) => s + (Number(f.qty) || 0), 0),
   }), [state.fragments])
 
+  // Total Qty, Issued and Available are read straight off the server's answer
+  // every render — never copied into the form's own state and kept in step.
+  // Copying them meant the order of two effects decided whether they were
+  // right; a third purchase order opened showing Issued 0 and Available 7 when
+  // the server had already said 4 and 3.
+  const figures = useMemo(() => {
+    const map = new Map<string, PlanLine>()
+    for (const line of issuePlan?.lines ?? []) map.set(line.line_id, line)
+    return map
+  }, [issuePlan])
+  const figuresOf = (it: POLineItem) => {
+    const line = it.source_line_id ? figures.get(it.source_line_id) : undefined
+    return {
+      total: line ? line.total_qty : it.total_qty,
+      issued: line ? line.issued : it.issued,
+      available: line ? line.available : it.available,
+    }
+  }
+  // What this purchase order issues of a line: everything available on a full
+  // one, and what was typed on a partial one.
+  const issuingQty = (it: POLineItem) => {
+    if (!it.source_line_id) return it.qty_ordered
+    const { available } = figuresOf(it)
+    return state.po_scope === 'full' ? available : Math.min(it.qty_ordered, available)
+  }
+
   const itemsTotal = useMemo(
-    () => state.items.reduce((s, it) => s + it.line_total, 0),
-    [state.items]
+    () => state.items.reduce((s, it) => s + issuingQty(it) * it.unit_price, 0),
+    [state.items, figures, state.po_scope]
   )
   // Live apparel weight from the selected BlankTex size's per-size garment weight
   // (grams → lbs). Display-only; does not change the saved PO payload.
@@ -833,8 +998,8 @@ export function NewPurchaseOrderPage() {
     return Number.isFinite(g) ? g : 0
   }
   const poWeightLbs = useMemo(
-    () => +(state.items.reduce((s, it) => s + poUnitWeightG(it) * it.qty_ordered, 0) / GRAMS_PER_LB).toFixed(2),
-    [state.items]
+    () => +(state.items.reduce((s, it) => s + poUnitWeightG(it) * issuingQty(it), 0) / GRAMS_PER_LB).toFixed(2),
+    [state.items, figures, state.po_scope]
   )
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
@@ -1117,6 +1282,44 @@ export function NewPurchaseOrderPage() {
       )}
 
       {/* ═══ APPAREL MODE ═══ */}
+      {/* ── FULL PO / PARTIAL PO ── (apparel: a PO issues the order's lines) */}
+      {coveredKey.length > 0 && state.po_type === 'apparel' && (
+        <div className="np-card" style={{ padding: 14, margin: '0 0 14px' }}>
+          <label className="np-label" style={{ display: 'block', marginBottom: 6 }}>
+            This Purchase Order Covers <span style={{ color: '#ef4444' }}>*</span>
+          </label>
+          <div style={{ display: 'inline-flex', gap: 4, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+            {([['full', 'Full PO'], ['partial', 'Partial PO']] as [POScope, string][]).map(([val, label]) => (
+              <button key={val} type="button" disabled={val === 'full' && alreadyHasPo}
+                className={cn('lb-action-btn', state.po_scope === val && 'lb-action-primary')}
+                style={{ border: 'none', opacity: val === 'full' && alreadyHasPo ? 0.45 : 1 }}
+                onClick={() => dispatch({ type: 'SET_SCOPE', scope: val })}>{label}</button>
+            ))}
+          </div>
+          <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 2px 0', maxWidth: 760 }}>
+            {state.po_scope === 'full'
+              ? 'Issues every piece the sales order has. The quantities are the order\u2019s own and cannot be typed here.'
+              : 'Issue part of the order now and the rest on later purchase orders. Type Current on each line \u2014 it can never be more than Available.'}
+            {alreadyHasPo && ' This sales order already has a purchase order, so only a partial one can be raised.'}
+          </p>
+          {issuePlan?.orders?.length ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, fontSize: 12, color: '#374151' }}>
+              {issuePlan.orders.map(o => (
+                <div key={o.order_id}>
+                  <strong>{o.order_number}</strong> — Total {o.total_qty} · Issued {o.issued} · Available {o.available}
+                  {o.fully_issued && <span style={{ color: '#b91c1c', fontWeight: 700 }}> · fully issued</span>}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {nothingLeft && (
+            <p style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600, margin: '10px 2px 0' }}>
+              Every piece of this sales order is already on a purchase order. There is nothing left to raise.
+            </p>
+          )}
+        </div>
+      )}
+
       {state.po_type === 'apparel' && (
         <div className="np-card">
           <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
@@ -1136,7 +1339,14 @@ export function NewPurchaseOrderPage() {
                   <th style={{ width: 100 }}>Color</th>
                   <th style={{ width: 80 }}>Size</th>
                   <th style={{ width: 100 }}>SKU</th>
-                  <th style={{ width: 80 }}>Qty (Shirts)</th>
+                  <th style={{ width: 84 }}>Total Qty</th>
+                  <th style={{ width: 74 }}>Issued</th>
+                  {state.po_scope === 'partial' && <>
+                    <th style={{ width: 80 }}>Available</th>
+                    <th style={{ width: 88 }}>Current</th>
+                    <th style={{ width: 86 }}>Remaining</th>
+                    <th style={{ width: 96 }}>Balance (USD)</th>
+                  </>}
                   <th style={{ width: 150 }}>Artwork</th>
                   <th style={{ width: 96 }}>Unit Price (USD)</th>
                   <th style={{ width: 96 }}>Total (USD)</th>
@@ -1146,7 +1356,7 @@ export function NewPurchaseOrderPage() {
               </thead>
               <tbody>
                 {state.items.length === 0 && (
-                  <tr><td colSpan={13} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
+                  <tr><td colSpan={state.po_scope === 'partial' ? 18 : 14} style={{ textAlign: 'center', padding: 20, color: '#9ca3af', fontSize: 13 }}>
                     Add a line, then pick its style from the Style column.
                   </td></tr>
                 )}
@@ -1165,11 +1375,35 @@ export function NewPurchaseOrderPage() {
                       {it.availableSizes?.length ? <select className="np-table-select" value={it.catalog_size_id} onChange={e => selectPOSize(it, e.target.value)}><option value="">Select size</option>{it.availableSizes.map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <input className="np-table-input" value={it.size} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { size: e.target.value } })} />}
                     </td>
                     <td><code className="nq-item-sku">{it.catalog_sku || 'Select color + size'}</code></td>
+                    {/* A line that came from a sales order carries the order's
+                        quantity: only Current is typed, and only on a partial
+                        PO. A line typed here by hand keeps its own quantity. */}
                     <td>
-                      <input type="number" className="np-table-input np-num-input" min={1}
-                        value={it.qty_ordered}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { qty_ordered: +e.target.value || 1 } })} />
+                      {it.source_line_id
+                        ? <span className="np-td-num">{figuresOf(it).total}</span>
+                        : <input type="number" className="np-table-input np-num-input" min={1}
+                            value={it.qty_ordered}
+                            onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { qty_ordered: +e.target.value || 1 } })} />}
                     </td>
+                    <td className="np-td-num">{it.source_line_id ? (state.po_scope === 'full' ? issuingQty(it) : figuresOf(it).issued) : '—'}</td>
+                    {state.po_scope === 'partial' && <>
+                      <td className="np-td-num">{it.source_line_id ? figuresOf(it).available : '—'}</td>
+                      <td>
+                        <input type="number" className="np-table-input np-num-input" min={0}
+                          max={it.source_line_id ? figuresOf(it).available : undefined}
+                          disabled={Boolean(it.source_line_id) && figuresOf(it).available === 0}
+                          value={issuingQty(it)}
+                          onChange={e => {
+                            const asked = Math.max(0, +e.target.value || 0)
+                            dispatch({ type: 'UPDATE_ITEM', id: it.id,
+                              patch: { qty_ordered: it.source_line_id ? Math.min(asked, figuresOf(it).available) : asked, current_touched: true } })
+                          }} />
+                      </td>
+                      {/* Remaining is the pieces left after this purchase
+                          order; Balance is what those pieces are worth. */}
+                      <td className="np-td-num">{it.source_line_id ? figuresOf(it).available - issuingQty(it) : '—'}</td>
+                      <td className="np-td-num">{it.source_line_id ? `$${fmt((figuresOf(it).available - issuingQty(it)) * it.unit_price)}` : '—'}</td>
+                    </>}
                     <td>
                       <div className="np-inline-artwork"><ArtworkCellPicker
                         value={it.artwork_no}
@@ -1192,18 +1426,22 @@ export function NewPurchaseOrderPage() {
                     <td style={{ textAlign: 'right', paddingRight: 8, fontWeight: 700, fontSize: 13 }}>
                       ${fmt(it.line_total)}
                     </td>
-                    <td>{poUnitWeightG(it) ? `${(poUnitWeightG(it) * it.qty_ordered / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
+                    <td>{poUnitWeightG(it) ? `${(poUnitWeightG(it) * issuingQty(it) / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                     <td>
-                      <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ITEM', id: it.id })}>
-                        <Trash2 size={13} />
-                      </button>
+                      {!it.source_line_id && (
+                        <button className="np-del-btn" onClick={() => dispatch({ type: 'REMOVE_ITEM', id: it.id })}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
-                <td colSpan={6}><span className="live-summary-title">Apparel Summary</span></td>
-                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.items.reduce((sum, item) => sum + item.qty_ordered, 0)}</strong></div></td>
+                <td colSpan={7}><span className="live-summary-title">Apparel Summary</span></td>
+                <td><div className="live-summary-stat"><span>{coveredKey ? 'Order Qty' : 'Total Qty'}</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).total : item.qty_ordered), 0)}</strong></div></td>
+                <td><div className="live-summary-stat"><span>This PO</span><strong>{state.items.reduce((sum, item) => sum + issuingQty(item), 0)}</strong></div></td>
+                {state.po_scope === 'partial' && <><td /><td /><td><div className="live-summary-stat"><span>Remaining</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).available - issuingQty(item) : 0), 0)}</strong></div></td><td><div className="live-summary-stat"><span>Balance</span><strong>${fmt(state.items.reduce((sum, item) => sum + (item.source_line_id ? (figuresOf(item).available - issuingQty(item)) * item.unit_price : 0), 0))}</strong></div></td></>}
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Weight</span><strong>{poWeightLbs ? `${poWeightLbs} lbs` : '—'}</strong></div></td>
                 <td></td>
@@ -1212,7 +1450,8 @@ export function NewPurchaseOrderPage() {
               </tr></tfoot>
             </table>
           </div>
-          <button className="np-add-row-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}><Plus size={13} /> Add Item</button>
+          {/* Lines belong to the sales order; they are added there, not here. */}
+          {!coveredKey && <button className="np-add-row-btn" onClick={() => dispatch({ type: 'ADD_ITEM' })}><Plus size={13} /> Add Item</button>}
         </div>
       )}
 

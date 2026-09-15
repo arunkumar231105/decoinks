@@ -2,15 +2,14 @@ import { useEffect } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import toast from '../utils/toast'
 import { useAuthStore } from '../store/authStore'
-import { useIdleLogout } from '../hooks/useIdleLogout'
 
 export function ProtectedRoute() {
   const { isAuthenticated, isLoading, initAuth } = useAuthStore()
   const location = useLocation()
   const navigate  = useNavigate()
 
-  // Auto-logout after the configured inactivity period (only while logged in)
-  useIdleLogout(isAuthenticated)
+  // No logout for inactivity: the owner asked for sessions to stay open until
+  // someone signs out (the idle timer that did it was removed on 15 Sep 2026).
 
   // Silent refresh on mount - calls POST /auth/refresh with the httpOnly cookie
   useEffect(() => {

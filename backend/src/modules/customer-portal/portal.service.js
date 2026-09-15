@@ -74,16 +74,17 @@ async function getSummary(customerId) {
   // Count the same artwork the Artworks screen lists: distinct designs used in
   // this customer's orders, not every file sitting in the vault.
   const { rows: artRows } = await db.query(
-    `SELECT count(DISTINCT lower(btrim(name)))::int AS artworks FROM (
-       SELECT btrim(regexp_replace(d.artwork_name, '^AW#?[0-9]+\\s*[-–]\\s*', '', 'i')) AS name FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
+    `SELECT count(DISTINCT COALESCE(upper(NULLIF(btrim(CASE WHEN artwork_no NOT ILIKE '%AGGREGATE%' THEN artwork_no END), '')),
+                                    lower(btrim(name))))::int AS artworks FROM (
+       SELECT btrim(regexp_replace(d.artwork_name, '^AW#?[0-9]+\\s*[-–]\\s*', '', 'i')) AS name, d.artwork_no FROM orders o JOIN order_items_dtf d ON d.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND d.artwork_name NOT ILIKE '%AGGREGATE%'
        UNION ALL
-       SELECT el->>'artwork_no' FROM orders o
+       SELECT el->>'artwork_no', el->>'artwork_no' FROM orders o
          JOIN order_items_gangsheet g ON g.order_id = o.id
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(g.artworks, '[]'::jsonb)) el
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL
        UNION ALL
-       SELECT a.item FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
+       SELECT a.item, a.artwork_no FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND COALESCE(a.item,'') NOT ILIKE '%AGGREGATE%'
      ) t WHERE name IS NOT NULL AND btrim(name) <> ''`,
     [customerId]
@@ -234,7 +235,11 @@ async function getArtworks(customerId) {
          FROM orders o JOIN order_items_apparel a ON a.order_id = o.id
         WHERE o.customer_id = $1 AND o.deleted_at IS NULL AND COALESCE(a.item,'') NOT ILIKE $2
      )
-     SELECT lower(btrim(name)) AS key,
+     -- Group by the design code when the line has one: several shops enter every
+     -- line as just "DTF Transfer", so grouping by name alone folded distinct
+     -- designs (AW-HG01-0001…0010) into a single row with one thumbnail.
+     SELECT COALESCE(upper(NULLIF(btrim(CASE WHEN artwork_no NOT ILIKE $2 THEN artwork_no END), '')),
+                     lower(btrim(name))) AS key,
             min(name)                     AS name,
             min(artwork_no)               AS artwork_no,
             (array_agg(image) FILTER (WHERE image IS NOT NULL))[1] AS image,
@@ -249,7 +254,7 @@ async function getArtworks(customerId) {
             ) ORDER BY order_date DESC)   AS orders
        FROM items
       WHERE name IS NOT NULL AND btrim(name) <> ''
-      GROUP BY lower(btrim(name))
+      GROUP BY 1
       ORDER BY max(order_date) DESC NULLS LAST`,
     [customerId, AGGREGATE]
   )
@@ -310,8 +315,13 @@ async function getArtworks(customerId) {
   })
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** The stored Nextcloud path for one asset — only if it belongs to this customer. */
 async function getAssetPath(customerId, assetId) {
+  // Artworks with no vault file carry ids like "item:<name>"; Postgres rejects
+  // those as a uuid and the request surfaced as a 500 instead of a 404.
+  if (!UUID_RE.test(String(assetId || ''))) return null
   const { rows } = await db.query(
     'SELECT path, file_name, mime_type FROM artwork_vault_assets WHERE id = $1 AND customer_id = $2',
     [assetId, customerId]

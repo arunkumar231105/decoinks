@@ -5,27 +5,79 @@ const { pool } = require('../config/db')
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
 
 /**
- * Atomically claims the next value for a counter scope.
- * Must be called inside a transaction that holds the scope's advisory lock.
+ * The numbers a series hands out must read 1..N with nothing missing — that is
+ * how this shop audits its book. So a new record takes the LOWEST free number
+ * rather than one past the highest: delete PO-2026-0120 and the next purchase
+ * order is 0120 again, not 0121.
  *
- * The counter row is a high-water mark: it is seeded from the highest
- * number already present in the data (so it picks up exactly where the
- * old MAX()-based generator left off) and only ever moves forward, so a
- * deleted row can never cause a number to be handed out twice.
+ * A number is free when no live record holds it. A soft-deleted record still
+ * holding one hands it back here: its own number is parked as
+ * "D-PO-2026-0120-4f9a", so the deleted row stays readable and the number
+ * returns to the pool. Two callers can never pick the same number — each holds
+ * the series' advisory lock for the whole transaction.
  */
-async function claimNext(client, scope, seedValue) {
-  await client.query(
-    `INSERT INTO counters (scope) VALUES ($1) ON CONFLICT (scope) DO NOTHING`,
-    [scope]
-  )
+
+// Does this table mark rows deleted, or remove them outright — and how much
+// room does its number column have? A parked number has to fit: customers'
+// column is VARCHAR(20) and "D-CUST-2026-0118-4f9a" is 21 characters.
+const tableFacts = new Map()
+async function factsFor(client, table, column) {
+  const key = `${table}.${column}`
+  if (tableFacts.has(key)) return tableFacts.get(key)
   const { rows } = await client.query(
-    `UPDATE counters
-     SET last_value = GREATEST(last_value, $2) + 1, updated_at = NOW()
-     WHERE scope = $1
-     RETURNING last_value`,
-    [scope, seedValue]
-  )
-  return Number(rows[0].last_value)
+    `SELECT column_name, character_maximum_length FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+        AND column_name IN ('deleted_at', $2)`, [table, column])
+  const facts = {
+    deletedColumn: rows.some(r => r.column_name === 'deleted_at') ? 'deleted_at' : null,
+    width: rows.find(r => r.column_name === column)?.character_maximum_length ?? null,
+  }
+  tableFacts.set(key, facts)
+  return facts
+}
+
+/**
+ * The lowest number of a series that no live record holds. Any deleted record
+ * holding it has its number parked, so nothing collides when it is reused.
+ *
+ * `pattern` matches the series' own numbers — a parked "D-…" number does not
+ * match, which is exactly why it counts as free. The number itself is always
+ * the last dash-separated part, whether the text reads PO-2026-0042 or RFA-0042.
+ */
+async function lowestFreeNumber(client, { table, column, pattern }) {
+  const { deletedColumn, width } = await factsFor(client, table, column)
+  const alive = deletedColumn ? `AND ${deletedColumn} IS NULL` : ''
+  const { rows } = await client.query(
+    `SELECT CAST(REGEXP_REPLACE(${column}, '^.*-', '') AS INTEGER) AS n
+       FROM ${table} WHERE ${column} ~ $1 ${alive}`, [pattern])
+  const taken = new Set(rows.map(r => Number(r.n)))
+  let value = 1
+  while (taken.has(value)) value++
+
+  if (deletedColumn) {
+    // The id fragment keeps two deleted rows of the same number apart; the
+    // whole is trimmed to what the column can hold.
+    const parked = `'D-' || ${column} || '-' || LEFT(REPLACE(id::text, '-', ''), 4)`
+    await client.query(
+      `UPDATE ${table}
+          SET ${column} = ${width ? `LEFT(${parked}, ${width})` : parked}
+        WHERE ${column} ~ $1
+          AND CAST(REGEXP_REPLACE(${column}, '^.*-', '') AS INTEGER) = $2
+          AND ${deletedColumn} IS NOT NULL`, [pattern, value])
+  }
+  return value
+}
+
+/**
+ * The counters table is no longer what hands numbers out, but it is still a
+ * truthful record of the highest one issued, so anything reading it is right.
+ */
+async function rememberHighWater(client, scope, value) {
+  await client.query(
+    `INSERT INTO counters (scope, last_value) VALUES ($1, $2)
+     ON CONFLICT (scope) DO UPDATE SET last_value = GREATEST(counters.last_value, EXCLUDED.last_value),
+                                       updated_at = NOW()`,
+    [scope, value])
 }
 
 /**
@@ -51,19 +103,13 @@ async function getNextNumber(prefix, table, column) {
 
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [scope])
 
-    // Seed guard: highest number already present in the table for this
-    // prefix+year (regex filter keeps the cast safe against odd formats).
-    const { rows } = await client.query(
-      `SELECT COALESCE(MAX(CAST(SPLIT_PART(${column}, '-', 3) AS INTEGER)), 0) AS max_seq
-       FROM ${table}
-       WHERE ${column} ~ $1`,
-      [`^${scope}-[0-9]+$`]
-    )
-
-    const next = await claimNext(client, scope, rows[0].max_seq || 0)
+    const value = await lowestFreeNumber(client, {
+      table, column, pattern: `^${scope}-[0-9]+$`,
+    })
+    await rememberHighWater(client, scope, value)
 
     await client.query('COMMIT')
-    return `${scope}-${String(next).padStart(4, '0')}`
+    return `${scope}-${String(value).padStart(4, '0')}`
   } catch (err) {
     await client.query('ROLLBACK')
     throw err
@@ -126,18 +172,13 @@ async function getNextInvoiceNumber(customerName) {
     await client.query('BEGIN')
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [scope])
 
-    // Seeded from the highest number in the book, under any customer's letters.
-    const { rows } = await client.query(
-      `SELECT COALESCE(MAX(CAST(SPLIT_PART(invoice_number, '-', 2) AS INTEGER)), 0) AS max_seq
-       FROM invoices
-       WHERE invoice_number ~ $1`,
-      ['^[A-Z]{3}-[0-9]+$']
-    )
-
-    const next = await claimNext(client, scope, rows[0].max_seq || 0)
+    const value = await lowestFreeNumber(client, {
+      table: 'invoices', column: 'invoice_number', pattern: '^[A-Z]{3}-[0-9]+$',
+    })
+    await rememberHighWater(client, scope, value)
 
     await client.query('COMMIT')
-    return `${prefix}-${String(next).padStart(4, '0')}`
+    return `${prefix}-${String(value).padStart(4, '0')}`
   } catch (err) {
     await client.query('ROLLBACK')
     throw err

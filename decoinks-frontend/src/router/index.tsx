@@ -274,12 +274,12 @@ export const router = createBrowserRouter([
               {
                 path: '/claims',
                 element: <ClaimsListPage />,
-                handle: { title: 'Claims', subtitle: 'Claims and refunds raised against sales orders.' },
+                handle: { title: 'Claims', subtitle: 'Claims and refunds raised against purchase orders.' },
               },
               {
                 path: '/claims/new',
                 element: <NewClaimPage />,
-                handle: { title: 'New Claim', subtitle: 'Raise a claim against a sales order.' },
+                handle: { title: 'New Claim', subtitle: 'Raise a claim against a purchase order.' },
               },
               {
                 path: '/claims/:id',

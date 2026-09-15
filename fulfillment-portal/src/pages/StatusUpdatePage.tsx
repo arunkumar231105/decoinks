@@ -41,7 +41,7 @@ interface HistoryRow {
   id: string
   status: string
   notes: string | null
-  created_at: string
+  submitted_at: string
   supplier_name?: string | null
   order_number?: string | null
 }
@@ -96,15 +96,21 @@ export default function StatusUpdatePage() {
   /** A milestone is reached once an update with that status exists. */
   const reached = useMemo(() => {
     const map = new Map<string, string>()
-    for (const h of history) if (!map.has(h.status)) map.set(h.status, h.created_at)
+    for (const h of history) if (!map.has(h.status)) map.set(h.status, h.submitted_at)
     return map
   }, [history])
 
+  // The order's own status counts too: a job the shop already marked Delivered
+  // must not read as "not started" just because no update was typed in here.
+  const ORDER_STATUS_STEP: Record<string, number> = {
+    Confirmed: 0, 'In Production': 1, QC: 3, 'Ready to Ship': 3, Shipped: 4, Delivered: 5,
+  }
+
   const activeIndex = useMemo(() => {
-    let last = -1
-    STEPS.forEach((s, i) => { if (reached.has(s.key)) last = i })
+    let last = ORDER_STATUS_STEP[order?.status ?? ''] ?? -1
+    STEPS.forEach((s, i) => { if (reached.has(s.key) && i > last) last = i })
     return last
-  }, [reached])
+  }, [reached, order?.status])
 
   const submit = async (status: string, notes: string, key: string) => {
     if (!id) return
@@ -323,7 +329,7 @@ export default function StatusUpdatePage() {
                 empty={history.length === 0} emptyMessage="Status updates you record will be listed here." />
               {!loading && !error && history.map(h => (
                 <tr key={h.id}>
-                  <td className="fp-td whitespace-nowrap">{new Date(h.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+                  <td className="fp-td whitespace-nowrap">{new Date(h.submitted_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</td>
                   <td className="fp-td">{dash(h.order_number ?? order?.order_number)}</td>
                   <td className="fp-td"><Pill>{h.status}</Pill></td>
                   <td className="fp-td">{dash(h.supplier_name)}</td>

@@ -1,7 +1,8 @@
 const authService = require('./auth.service')
 const { success } = require('../../utils/response')
 
-const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
+// The cookie lives as long as the token it carries, and is re-set on every refresh.
+const COOKIE_MAX_AGE_MS = authService.REFRESH_EXPIRES_MS
 
 function setRefreshCookie(res, token) {
   res.cookie(authService.COOKIE_NAME, token, {

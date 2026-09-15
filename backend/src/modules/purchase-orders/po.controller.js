@@ -38,6 +38,19 @@ async function updateStatus(req, res, next) {
   } catch (err) { next(err) }
 }
 
+async function issuePlan(req, res, next) {
+  try {
+    const ids = String(req.query.order_ids || '').split(',').map(s => s.trim()).filter(Boolean)
+    return success(res, await service.issuePlan(ids, { excludePoId: req.query.exclude_po_id || null }), 'Issue plan')
+  } catch (err) { next(err) }
+}
+
+async function setFactoryStatus(req, res, next) {
+  try {
+    return success(res, await service.setFactoryStatus(req.params.id, req.body.factory_status), 'Factory status updated')
+  } catch (err) { next(err) }
+}
+
 async function remove(req, res, next) {
   try {
     await service.remove(req.params.id)
@@ -117,4 +130,4 @@ async function exportCsv(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, exportCsv, summary, getOne, create, update, updateStatus, remove, bulkRemove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }
+module.exports = { list, exportCsv, summary, getOne, create, update, updateStatus, setFactoryStatus, issuePlan, remove, bulkRemove, listAttachments, addAttachment, removeAttachment, getStatusHistory, sendToPortal }

@@ -1,0 +1,30 @@
+/* useColumnDrag: headers that can be dragged, and the column being dragged. */
+th[data-col][draggable="true"] { cursor: grab; user-select: none; }
+th[data-col][draggable="true"]:active { cursor: grabbing; }
+[data-col][data-dragging="true"] { opacity: .45; }
+
+/* Shipments paints its rows on the cells only on hover; a frozen cell needs
+   its own background or the scrolled cells show through it. */
+.sh-table td[data-col] { background: #fff; }
+.sh-row:hover td[data-col] { background: #f9fafb; }
+
+/* Where the frozen block ends. The line is a background image inside the last
+   frozen column rather than a border or shadow: collapsed-border tables
+   (leads-table) draw neither on a pinned cell, and every list sets its cell
+   colour with the `background` shorthand, hence !important on the image. */
+th[data-frozen-edge="true"], td[data-frozen-edge="true"] {
+  background-image: linear-gradient(to left, #a9b8cc 0, #a9b8cc 2px, transparent 2px) !important;
+}
+/* Scrolled sideways: the line turns the freeze blue with a soft fade, so the
+   still columns read apart from the ones passing under them. */
+table[data-col-scrolled] th[data-frozen-edge="true"],
+table[data-col-scrolled] td[data-frozen-edge="true"] {
+  background-image: linear-gradient(to left, #2f7cf6 0, #2f7cf6 2px, rgba(47, 124, 246, .12) 2px, rgba(47, 124, 246, 0) 14px) !important;
+}
+
+/* The freeze number changed: the frozen columns flash once. */
+table[data-freeze-flash] [data-frozen="true"] { animation: colFreezeFlash .9s ease-out; }
+@keyframes colFreezeFlash { 0%, 35% { background-color: #dbe9fd; } }
+@media (prefers-reduced-motion: reduce) {
+  table[data-freeze-flash] [data-frozen="true"] { animation: none; }
+}

@@ -6,7 +6,16 @@ const { query, pool } = require('../../config/db')
  * Nothing here stores a customer's name, an order number or an invoice total —
  * those are read back through the keys every time, so a claim can never show a
  * figure the order itself has since changed.
+ *
+ * A claim is raised against a purchase order: that is the document the shop
+ * works from. The sales order and invoice behind it are read off the PO on the
+ * server, never taken from the form, so the three can never disagree.
  */
+
+const STATUSES = ['Draft', 'Raised', 'Under Review', 'Need More Info', 'Approved', 'Rejected', 'Refunded', 'Closed']
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const fail = (message, status = 400) => Object.assign(new Error(message), { status, statusCode: status })
 
 // Reads the claim with the things around it named, never copied.
 const CLAIM_SELECT = `
@@ -16,6 +25,7 @@ const CLAIM_SELECT = `
          o.order_number, o.order_date, o.total AS order_total, o.order_type,
          i.invoice_number, i.total AS invoice_total, i.balance_due AS invoice_balance_due,
          po.po_number, po.order_date AS po_date, po.total AS po_total,
+         po.status::text AS po_status, po.po_type,
          sup.name AS supplier_name,
          sh.shipment_number, sh.carrier, sh.tracking_number,
          sh.status::text AS shipment_status, sh.ship_date, sh.estimated_delivery, sh.delivered_date,
@@ -31,6 +41,19 @@ const CLAIM_SELECT = `
     LEFT JOIN users     u ON u.id = cl.responsible_admin_id
     LEFT JOIN users    cb ON cb.id = cl.created_by`
 
+// The parcels a PO went out in. A parcel's target is the sales order; the PO it
+// was handed in on is kept in from_po_id (po_id on older rows). Parcels that name
+// no PO at all belong to the whole order, so they are offered too.
+const PO_SHIPMENTS = `
+  SELECT sh.id, sh.shipment_number, sh.carrier, sh.tracking_number,
+         sh.status::text AS status, sh.ship_date, sh.estimated_delivery, sh.delivered_date,
+         COALESCE(sh.from_po_id, sh.po_id) AS po_id
+    FROM shipments sh
+   WHERE sh.deleted_at IS NULL
+     AND (sh.from_po_id = $1 OR sh.po_id = $1
+          OR ($2::uuid IS NOT NULL AND sh.order_id = $2 AND sh.from_po_id IS NULL AND sh.po_id IS NULL))
+   ORDER BY sh.ship_date DESC NULLS LAST`
+
 async function nextClaimNumber(client = null) {
   const run = client ? client.query.bind(client) : query
   // High-water mark, the same rule the other document series use, so a number
@@ -42,12 +65,37 @@ async function nextClaimNumber(client = null) {
   return rows[0].n
 }
 
+/**
+ * Fills the sales order, invoice and customer in from the chosen purchase order,
+ * and refuses a PO that belongs to someone else.
+ */
+async function resolvePurchaseOrder(run, data, currentCustomerId = null) {
+  if (!data.purchase_order_id) return data
+  if (!UUID_RE.test(String(data.purchase_order_id))) throw fail('Choose a valid purchase order')
+  const po = (await run(
+    `SELECT p.id, COALESCE(p.customer_id, o.customer_id) AS customer_id, p.order_id, o.invoice_id
+       FROM purchase_orders p LEFT JOIN orders o ON o.id = p.order_id
+      WHERE p.id = $1 AND p.deleted_at IS NULL`, [data.purchase_order_id])).rows[0]
+  if (!po) throw fail('That purchase order no longer exists')
+  const wanted = data.customer_id ?? currentCustomerId
+  if (wanted && po.customer_id && wanted !== po.customer_id) {
+    throw fail('That purchase order belongs to a different customer')
+  }
+  return {
+    ...data,
+    customer_id: wanted ?? po.customer_id,
+    order_id: po.order_id ?? null,
+    invoice_id: po.invoice_id ?? null,
+  }
+}
+
 async function list({ page = 1, limit = 20, search = '', status = '', customer_id = '' } = {}) {
   const where = ['cl.deleted_at IS NULL']
   const params = []
   if (search) {
     params.push(`%${search}%`)
     where.push(`(cl.claim_number ILIKE $${params.length} OR o.order_number ILIKE $${params.length}
+                 OR po.po_number ILIKE $${params.length}
                  OR c.name ILIKE $${params.length} OR c.company_name ILIKE $${params.length})`)
   }
   if (status) { params.push(status); where.push(`cl.status = $${params.length}`) }
@@ -57,6 +105,7 @@ async function list({ page = 1, limit = 20, search = '', status = '', customer_i
     `SELECT COUNT(*)::INT AS n FROM claims cl
        LEFT JOIN customers c ON c.id = cl.customer_id
        LEFT JOIN orders o ON o.id = cl.order_id
+       LEFT JOIN purchase_orders po ON po.id = cl.purchase_order_id
       WHERE ${where.join(' AND ')}`, params)).rows[0].n
 
   params.push(limit, (page - 1) * limit)
@@ -68,6 +117,7 @@ async function list({ page = 1, limit = 20, search = '', status = '', customer_i
 }
 
 async function getById(id) {
+  if (!UUID_RE.test(String(id))) return null
   const claim = (await query(`${CLAIM_SELECT} WHERE cl.id = $1 AND cl.deleted_at IS NULL`, [id])).rows[0]
   if (!claim) return null
   const [items, attachments, history, reviews, comments] = await Promise.all([
@@ -94,10 +144,24 @@ const CREATE_FIELDS = ['customer_id', 'order_id', 'invoice_id', 'purchase_order_
   'quantity_affected', 'claimed_amount', 'reported_via', 'description', 'preferred_resolution',
   'requested_amount', 'urgency_by_date', 'customer_comments', 'status']
 
-async function create(data, actorId = null) {
+const asList = v => (Array.isArray(v) ? v : [v].filter(Boolean))
+
+async function insertAttachment(run, claimId, a, userId) {
+  await run(
+    `INSERT INTO claim_attachments (claim_id, file_name, file_url, file_type, mime_type, file_size, description, uploaded_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [claimId, a.file_name, a.file_url, a.file_type ?? null, a.mime_type ?? null,
+     a.file_size ?? null, a.description ?? null, userId])
+}
+
+async function create(input, actorId = null) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    const run = client.query.bind(client)
+    const data = await resolvePurchaseOrder(run, input)
+    if (!data.purchase_order_id && !data.order_id) throw fail('Choose the purchase order')
+
     const number = await nextClaimNumber(client)
     const status = data.status === 'Draft' ? 'Draft' : 'Raised'
 
@@ -106,33 +170,36 @@ async function create(data, actorId = null) {
     for (const f of CREATE_FIELDS) {
       if (f === 'status' || data[f] === undefined) continue
       cols.push(f)
-      vals.push(f === 'preferred_resolution' ? (Array.isArray(data[f]) ? data[f] : [data[f]].filter(Boolean)) : data[f])
+      vals.push(f === 'preferred_resolution' ? asList(data[f]) : data[f])
     }
-    // The invoice is worth resolving now: the claim summary shows its total, and
-    // a refund will one day need to find the payment behind it.
+    // A claim raised the old way, against a sales order alone: the invoice is
+    // worth resolving now, since the summary shows its total.
     if (!cols.includes('invoice_id') && data.order_id) {
-      const inv = (await client.query(
-        `SELECT invoice_id FROM orders WHERE id = $1`, [data.order_id])).rows[0]
+      const inv = (await run(`SELECT invoice_id FROM orders WHERE id = $1`, [data.order_id])).rows[0]
       if (inv?.invoice_id) { cols.push('invoice_id'); vals.push(inv.invoice_id) }
     }
-    if (!cols.includes('purchase_order_id') && data.order_id) {
-      const po = (await client.query(
+    if (!data.purchase_order_id && data.order_id) {
+      const po = (await run(
         `SELECT id FROM purchase_orders WHERE order_id = $1 AND deleted_at IS NULL`, [data.order_id])).rows
-      if (po.length === 1) { cols.push('purchase_order_id'); vals.push(po[0].id) }
+      if (po.length === 1) { cols.push('purchase_order_id'); vals.push(po[0].id); data.purchase_order_id = po[0].id }
     }
-    if (!cols.includes('shipment_id') && data.order_id) {
-      const sh = (await client.query(
-        `SELECT id FROM shipments WHERE order_id = $1 AND deleted_at IS NULL`, [data.order_id])).rows
-      if (sh.length === 1) { cols.push('shipment_id'); vals.push(sh[0].id) }
+    // One parcel needs no choosing.
+    if (!data.shipment_id && data.purchase_order_id) {
+      const sh = (await run(PO_SHIPMENTS, [data.purchase_order_id, data.order_id ?? null])).rows
+      if (sh.length === 1) {
+        const at = cols.indexOf('shipment_id')
+        if (at >= 0) vals[at] = sh[0].id
+        else { cols.push('shipment_id'); vals.push(sh[0].id) }
+      }
     }
 
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ')
-    const { rows } = await client.query(
+    const { rows } = await run(
       `INSERT INTO claims (${cols.join(', ')}) VALUES (${placeholders}) RETURNING id`, vals)
     const id = rows[0].id
 
     for (const it of data.items ?? []) {
-      await client.query(
+      await run(
         `INSERT INTO claim_items (claim_id, order_item_table, order_item_id, invoice_item_id,
                                   purchase_order_item_table, purchase_order_item_id,
                                   quantity_affected, reason, claimed_amount)
@@ -141,14 +208,8 @@ async function create(data, actorId = null) {
          it.purchase_order_item_table ?? null, it.purchase_order_item_id ?? null,
          it.quantity_affected ?? null, it.reason ?? null, it.claimed_amount ?? null])
     }
-    for (const a of data.attachments ?? []) {
-      await client.query(
-        `INSERT INTO claim_attachments (claim_id, file_name, file_url, file_type, mime_type, file_size, description, uploaded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [id, a.file_name, a.file_url, a.file_type ?? null, a.mime_type ?? null,
-         a.file_size ?? null, a.description ?? null, actorId])
-    }
-    await client.query(
+    for (const a of data.attachments ?? []) await insertAttachment(run, id, a, actorId)
+    await run(
       `INSERT INTO claim_status_history (claim_id, status, changed_by, notes)
        VALUES ($1,$2,$3,$4)`, [id, status, actorId, 'Claim created'])
 
@@ -159,25 +220,55 @@ async function create(data, actorId = null) {
 
 const UPDATE_FIELDS = [...CREATE_FIELDS]
 
-async function update(id, data, actorId = null) {
-  const current = (await query(`SELECT status FROM claims WHERE id = $1 AND deleted_at IS NULL`, [id])).rows[0]
-  if (!current) { const e = new Error('Claim not found'); e.status = 404; throw e }
+async function update(id, input, actorId = null, role = null) {
+  if (!UUID_RE.test(String(id))) throw fail('Claim not found', 404)
+  const current = (await query(
+    `SELECT status, customer_id FROM claims WHERE id = $1 AND deleted_at IS NULL`, [id])).rows[0]
+  if (!current) throw fail('Claim not found', 404)
 
-  const sets = []
-  const params = []
-  for (const f of UPDATE_FIELDS) {
-    if (data[f] === undefined) continue
-    params.push(f === 'preferred_resolution' ? (Array.isArray(data[f]) ? data[f] : [data[f]].filter(Boolean)) : data[f])
-    sets.push(`${f} = $${params.length}`)
+  // Draft and Raised are the author's to choose; every later state is a decision,
+  // and a decision is the admin's.
+  if (input.status !== undefined) {
+    if (!STATUSES.includes(input.status)) throw fail('Unknown claim status')
+    if (input.status !== current.status && !['Draft', 'Raised'].includes(input.status) && role !== 'Admin') {
+      throw fail('Only an admin can move a claim past Raised', 403)
+    }
   }
-  if (sets.length) {
-    params.push(id)
-    await query(`UPDATE claims SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params)
-  }
-  if (data.status && data.status !== current.status) {
-    await query(`INSERT INTO claim_status_history (claim_id, status, changed_by, notes) VALUES ($1,$2,$3,$4)`,
-      [id, data.status, actorId, data.status_note ?? null])
-  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const run = client.query.bind(client)
+    const data = await resolvePurchaseOrder(run, input, current.customer_id)
+    // Choosing another PO means its parcel may not be this one any more.
+    if (input.purchase_order_id && input.shipment_id === undefined) data.shipment_id = null
+
+    const sets = []
+    const params = []
+    for (const f of UPDATE_FIELDS) {
+      if (data[f] === undefined) continue
+      params.push(f === 'preferred_resolution' ? asList(data[f]) : data[f])
+      sets.push(`${f} = $${params.length}`)
+    }
+    if (sets.length) {
+      params.push(id)
+      await run(`UPDATE claims SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params)
+    }
+
+    // The form sends the evidence as it now stands: what was removed goes, what
+    // is new (no id yet) is added, what was already there is left alone.
+    if (Array.isArray(data.attachments)) {
+      const keep = data.attachments.map(a => a.id).filter(v => UUID_RE.test(String(v)))
+      await run(`DELETE FROM claim_attachments WHERE claim_id = $1 AND NOT (id = ANY($2::uuid[]))`, [id, keep])
+      for (const a of data.attachments.filter(a => !a.id)) await insertAttachment(run, id, a, actorId)
+    }
+
+    if (data.status && data.status !== current.status) {
+      await run(`INSERT INTO claim_status_history (claim_id, status, changed_by, notes) VALUES ($1,$2,$3,$4)`,
+        [id, data.status, actorId, data.status_note ?? null])
+    }
+    await client.query('COMMIT')
+  } catch (e) { await client.query('ROLLBACK'); throw e } finally { client.release() }
   return getById(id)
 }
 
@@ -186,19 +277,25 @@ async function update(id, data, actorId = null) {
  * the form can show the panel to everyone and let nobody but an admin save it.
  */
 async function review(id, data, reviewerId) {
+  if (!UUID_RE.test(String(id))) throw fail('Claim not found', 404)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    const exists = (await client.query(
+      `SELECT 1 FROM claims WHERE id = $1 AND deleted_at IS NULL`, [id])).rows[0]
+    if (!exists) throw fail('Claim not found', 404)
+
     await client.query(
       `INSERT INTO claim_reviews (claim_id, reviewer_id, decision, review_notes, resolution_type, approved_amount)
        VALUES ($1,$2,$3,$4,$5,$6)`,
       [id, reviewerId, data.decision, data.review_notes ?? null,
        data.resolution_type ?? null, data.approved_amount ?? null])
 
-    // A decision moves the claim: approved, refused, or back for more detail.
+    // A decision moves the claim: approved, refused, or sent back for detail —
+    // and "Need More Info" is a state the claim waits in, not "Under Review".
     const status = data.decision === 'Approve' ? 'Approved'
                  : data.decision === 'Reject'  ? 'Rejected'
-                 : 'Under Review'
+                 : 'Need More Info'
     await client.query(
       // $2 is read as a decision and again as a text comparison, so it is cast
       // once here rather than left for Postgres to guess at twice.
@@ -223,11 +320,7 @@ async function addComment(id, comment, userId) {
 }
 
 async function addAttachment(id, a, userId) {
-  await query(
-    `INSERT INTO claim_attachments (claim_id, file_name, file_url, file_type, mime_type, file_size, description, uploaded_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [id, a.file_name, a.file_url, a.file_type ?? null, a.mime_type ?? null,
-     a.file_size ?? null, a.description ?? null, userId])
+  await insertAttachment(query, id, a, userId)
   return getById(id)
 }
 
@@ -243,8 +336,43 @@ async function remove(id, actorId = null) {
   return true
 }
 
-/** The sales orders a claim can be raised against, for the second dropdown. */
+/** The purchase orders a claim can be raised against, for the second dropdown. */
+async function purchaseOrdersForCustomer(customerId) {
+  if (!UUID_RE.test(String(customerId))) return []
+  const { rows } = await query(
+    `SELECT p.id, p.po_number, p.order_date, p.total, p.status::text AS status, p.po_type,
+            s.name AS supplier_name,
+            p.order_id, o.order_number, o.invoice_id, i.invoice_number, i.total AS invoice_total
+       FROM purchase_orders p
+       LEFT JOIN orders o    ON o.id = p.order_id AND o.deleted_at IS NULL
+       LEFT JOIN invoices i  ON i.id = o.invoice_id
+       LEFT JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.deleted_at IS NULL AND COALESCE(p.customer_id, o.customer_id) = $1
+      ORDER BY p.order_date DESC NULLS LAST, p.po_number DESC`, [customerId])
+  return rows
+}
+
+/** One purchase order with the sales order, invoice and parcels behind it. */
+async function chainForPurchaseOrder(poId) {
+  if (!UUID_RE.test(String(poId))) return null
+  const po = (await query(
+    `SELECT p.id, p.po_number, p.order_date, p.total, p.status::text AS status, p.po_type,
+            s.name AS supplier_name, COALESCE(p.customer_id, o.customer_id) AS customer_id,
+            p.order_id, o.order_number, o.order_date AS sales_order_date, o.total AS order_total,
+            o.invoice_id, i.invoice_number, i.total AS invoice_total, i.balance_due
+       FROM purchase_orders p
+       LEFT JOIN orders o    ON o.id = p.order_id AND o.deleted_at IS NULL
+       LEFT JOIN invoices i  ON i.id = o.invoice_id
+       LEFT JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.id = $1 AND p.deleted_at IS NULL`, [poId])).rows[0]
+  if (!po) return null
+  const ships = await query(PO_SHIPMENTS, [poId, po.order_id])
+  return { purchase_order: po, shipments: ships.rows }
+}
+
+/** The sales orders of a customer — kept for claims raised before POs were the key. */
 async function ordersForCustomer(customerId) {
+  if (!UUID_RE.test(String(customerId))) return []
   const { rows } = await query(
     `SELECT o.id, o.order_number, o.order_date, o.total, o.order_type, o.status::text AS status,
             o.invoice_id, i.invoice_number, i.total AS invoice_total
@@ -254,8 +382,9 @@ async function ordersForCustomer(customerId) {
   return rows
 }
 
-/** The POs and shipments behind one order — a claim must name which. */
+/** The POs and shipments behind one order. */
 async function chainForOrder(orderId) {
+  if (!UUID_RE.test(String(orderId))) return { purchase_orders: [], shipments: [] }
   const [pos, ships] = await Promise.all([
     query(`SELECT p.id, p.po_number, p.order_date, p.total, p.status::text AS status,
                   s.name AS supplier_name
@@ -272,8 +401,9 @@ async function chainForOrder(orderId) {
   return { purchase_orders: pos.rows, shipments: ships.rows }
 }
 
-/** Everything the "View Order Details" panel shows, in one call. */
+/** Everything the details panel shows about the order behind a PO, in one call. */
 async function orderDetails(orderId) {
+  if (!UUID_RE.test(String(orderId))) return null
   const order = (await query(
     `SELECT o.*, COALESCE(NULLIF(c.company_name,''), c.name) AS customer_name, c.customer_number,
             i.invoice_number, i.total AS invoice_total, i.balance_due
@@ -294,5 +424,5 @@ async function orderDetails(orderId) {
 }
 
 module.exports = { list, getById, create, update, review, addComment, addAttachment,
-                   removeAttachment, remove, ordersForCustomer, orderDetails, chainForOrder,
-                   nextClaimNumber }
+                   removeAttachment, remove, purchaseOrdersForCustomer, chainForPurchaseOrder,
+                   ordersForCustomer, orderDetails, chainForOrder, nextClaimNumber, STATUSES }

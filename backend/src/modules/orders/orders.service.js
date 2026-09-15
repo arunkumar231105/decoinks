@@ -312,16 +312,16 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
             -- on the factory floor, a parcel with a tracking number has left.
             -- Stored process_status was whatever someone last typed, so it went
             -- stale the moment the next thing happened.
+            -- Every parcel of the order counts, the furthest one deciding, and a
+            -- label the courier has not scanned is not yet Shipped — the same
+            -- reading the Purchase Orders list gives its PO.
             CASE
-              WHEN latest_shipment.delivered_date IS NOT NULL
-                OR latest_shipment.tracking_status = 'DELIVERED'
-                OR latest_shipment.status = 'Delivered'
-                OR o.status = 'Delivered'                       THEN 'Delivered'
-              WHEN latest_shipment.tracking_number IS NOT NULL
-                OR NULLIF(BTRIM(o.tracking_number), '') IS NOT NULL
-                OR po_roll.po_rank >= 4                          THEN 'Shipped'
-              WHEN po_roll.po_rank = 3                           THEN 'In Production'
-              WHEN COALESCE(po_roll.po_count, 0) > 0             THEN 'PO Issued'
+              WHEN parcel_roll.rank = 4 OR o.status = 'Delivered'  THEN 'Delivered'
+              WHEN parcel_roll.rank = 3 OR po_roll.po_rank >= 4
+                OR (COALESCE(parcel_roll.rank, 0) = 0
+                    AND NULLIF(BTRIM(o.tracking_number), '') IS NOT NULL) THEN 'Shipped'
+              WHEN parcel_roll.rank = 2 OR po_roll.po_rank = 3     THEN 'In Production'
+              WHEN COALESCE(po_roll.po_count, 0) > 0               THEN 'PO Issued'
               ELSE 'PO to be Issued'
             END AS export_process_status,
             COALESCE(po_roll.po_count, 0) AS po_count,
@@ -372,6 +372,21 @@ async function list({ page = 1, limit = 10, status = '', order_type = '', custom
        ORDER BY created_at DESC
        LIMIT 1
      ) latest_shipment ON TRUE
+     LEFT JOIN LATERAL (
+       -- How far the parcels have got, the furthest of them. Every parcel
+       -- counts, not only the newest: a job with a stray empty shipment row
+       -- beside its delivered one read Pending, and a label nobody has handed
+       -- to the courier yet is not a parcel on its way.
+       SELECT MAX(CASE
+                WHEN sh.status = 'Delivered' OR sh.delivered_date IS NOT NULL
+                  OR UPPER(COALESCE(sh.tracking_status, '')) = 'DELIVERED'              THEN 4
+                WHEN sh.status IN ('In Transit', 'Picked Up', 'Exception')
+                  OR UPPER(COALESCE(sh.tracking_status, '')) IN ('TRANSIT', 'OUT_FOR_DELIVERY', 'FAILURE', 'RETURNED') THEN 3
+                WHEN NULLIF(BTRIM(sh.tracking_number), '') IS NOT NULL                 THEN 2
+                ELSE 0 END) AS rank
+       FROM shipments sh
+       WHERE sh.deleted_at IS NULL AND sh.order_id = o.id
+     ) parcel_roll ON TRUE
      LEFT JOIN LATERAL (
        SELECT po.po_number, NULLIF(BTRIM(po.source_po_number), '') AS source_po_number
        FROM purchase_orders po
