@@ -616,4 +616,14 @@ router.post('/upload-image', wrap(async (req, res) => {
   res.json({ data: { url, dimensions } })
 }))
 
+/* ── Shipments ───────────────────────────────────────────────────────────── */
+
+// Fresh carrier status for one shipment, from the CRM's Shipment tab — the same
+// refreshTracking the Printshop Shipments screen runs (Shippo lookup, only the
+// fields Shippo returned are written, Delivered is never moved back).
+const shipmentsSvc = require('../shipments/shipments.service')
+router.post('/shipments/:id/track', wrap(async (req, res) => {
+  res.json({ data: await shipmentsSvc.refreshTracking(req.params.id) })
+}))
+
 module.exports = router
