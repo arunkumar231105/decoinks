@@ -341,6 +341,38 @@ function reducer(state: POFormState, action: Action): POFormState {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
+
+// The Shipping App compares live factory × carrier rates for a sales order.
+// Section 4 opens it in a new tab and receives the chosen lane back by
+// postMessage, so nothing typed on this form is lost.
+const SHIPPING_APP_URL =
+  ((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SHIPPING_APP_URL) ||
+  'https://shipping.decoinkssuite.com'
+const SHIPPING_APP_ORIGIN = new URL(SHIPPING_APP_URL).origin
+
+interface ShippingRate {
+  handoff: string
+  reference: string | null
+  carrier_name: string
+  service_name: string
+  factory_code: string | null
+  factory_name: string | null
+  is_own_factory: boolean
+  ship_date: string | null
+  est_delivery_date: string | null
+  transit_days_min: number | null
+  transit_days_max: number | null
+  total_cost: number
+}
+
+// "UPS" + "UPS Ground" reads as "UPS UPS Ground"; say the carrier once.
+const laneName = (r: Pick<ShippingRate, 'carrier_name' | 'service_name'>) =>
+  r.service_name.toLowerCase().startsWith(r.carrier_name.toLowerCase()) ? r.service_name : `${r.carrier_name} ${r.service_name}`
+
+const rateNote = (r: ShippingRate) =>
+  `Rate from Shipping App${r.reference ? ` ${r.reference}` : ''}: ${laneName(r)} · $${Number(r.total_cost).toFixed(2)}` +
+  `${r.factory_name ? ` · ships from ${r.factory_name}` : ''}`
+
 export function NewPurchaseOrderPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -363,6 +395,52 @@ export function NewPurchaseOrderPage() {
     (location.state as any)?.fromOrderId || searchParams.get('order') || undefined
 
   const set = (field: keyof POFormState, value: any) => dispatch({ type: 'SET', field, value })
+
+  // ── Shipping App hand-off ──
+  const rateHandoff = useRef<string | null>(null)
+  const [appliedRate, setAppliedRate] = useState<ShippingRate | null>(null)
+  const [rateFreight, setRateFreight] = useState(false)
+  const notesRef = useRef(state.tracking_notes)
+  notesRef.current = state.tracking_notes
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      // Only the Shipping App, and only the tab this form opened.
+      if (event.origin !== SHIPPING_APP_ORIGIN) return
+      const data = event.data as Partial<ShippingRate> & { type?: string }
+      if (data?.type !== 'decoinks:shipping-rate' || !rateHandoff.current || data.handoff !== rateHandoff.current) return
+      if (!data.carrier_name || !data.service_name || data.total_cost == null) return
+      const rate = data as ShippingRate
+      set('carrier', rate.carrier_name)
+      set('shipping_method', rate.service_name)
+      if (rate.ship_date) set('ship_date', rate.ship_date)
+      if (rate.est_delivery_date) set('estimated_delivery', rate.est_delivery_date)
+      // Our own facility ships it; a partner factory ships it (and bills the freight).
+      set('ship_source', rate.is_own_factory ? 'self' : 'vendor')
+      const kept = (notesRef.current || '').split('\n').filter(line => !line.startsWith('Rate from Shipping App')).join('\n').trim()
+      set('tracking_notes', [rateNote(rate), kept].filter(Boolean).join('\n'))
+      setAppliedRate(rate)
+      setRateFreight(!rate.is_own_factory)
+      rateHandoff.current = null
+      window.focus()
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  const openShippingApp = () => {
+    const order = state.orders[0]
+    if (!order?.order_number) return
+    const nonce = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+    rateHandoff.current = nonce
+    const page = state.po_type === 'apparel' ? 'shipping/custom-shirts' : 'shipping/dtf-transfers'
+    const qs = new URLSearchParams({ order: order.order_number, return: 'printshop', handoff: nonce })
+    if (editId) qs.set('po', editId)
+    // Not noopener: the Shipping App tab needs window.opener to send the rate back.
+    window.open(`${SHIPPING_APP_URL}/${page}?${qs.toString()}`, '_blank')
+  }
 
   // Prefill the Shipment & Fulfillment section from the Shipping App's chosen
   // lane (carrier, service type, ship date, ETA). Runs once, only when those
@@ -791,6 +869,9 @@ export function NewPurchaseOrderPage() {
       ship_date: state.ship_date || null,
       estimated_delivery: state.estimated_delivery || null,
       tracking_notes: state.tracking_notes || null,
+      ...(appliedRate && rateFreight && !appliedRate.is_own_factory
+        ? { freight_charges: Number(appliedRate.total_cost) }
+        : {}),
       // Apparel PO may cover only one order — never send more, even if the
       // orders list carried over from a gangsheet-mode edit before the switch.
       order_ids: state.po_type === 'apparel'
@@ -1581,7 +1662,32 @@ export function NewPurchaseOrderPage() {
         <div className="np-card-header">
           <span className="np-section-num">4</span>
           <h3>Shipment &amp; Fulfillment</h3>
+          <button type="button" className="lb-action-btn"
+            style={{ marginLeft: 'auto' }}
+            disabled={!state.orders[0]?.order_number}
+            title={state.orders[0]?.order_number ? 'Compare live factory and carrier rates for this order' : 'Add a sales order to this PO first'}
+            onClick={openShippingApp}>
+            Get rates from Shipping App ↗
+          </button>
         </div>
+        {appliedRate && (
+          <div style={{ border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
+            <div style={{ fontWeight: 700, color: '#1d4ed8' }}>
+              {laneName(appliedRate)} · ${Number(appliedRate.total_cost).toFixed(2)}
+              {appliedRate.reference ? <span style={{ fontWeight: 500, color: '#6b7280' }}> · quote {appliedRate.reference}</span> : null}
+            </div>
+            <div style={{ color: '#374151', marginTop: 2 }}>
+              {appliedRate.factory_name ? `Ships from ${appliedRate.factory_name}` : 'Shipping rate applied'}
+              {appliedRate.est_delivery_date ? ` · estimated delivery ${appliedRate.est_delivery_date}` : ''}
+            </div>
+            {!appliedRate.is_own_factory && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={rateFreight} onChange={e => setRateFreight(e.target.checked)} />
+                Add ${Number(appliedRate.total_cost).toFixed(2)} to this PO's freight charges (the factory bills the shipping)
+              </label>
+            )}
+          </div>
+        )}
 
         <div className="np-field" style={{ marginBottom: 14 }}>
           <label className="np-label">Who ships this order?</label>
@@ -1620,6 +1726,9 @@ export function NewPurchaseOrderPage() {
               <option value="">Select…</option>
               <option value="Ground">Ground</option>
               <option value="Air">Air</option>
+              {state.shipping_method && !['Ground', 'Air'].includes(state.shipping_method) && (
+                <option value={state.shipping_method}>{state.shipping_method}</option>
+              )}
             </select>
           </div>
           <div className="np-field">
