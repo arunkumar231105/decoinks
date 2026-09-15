@@ -10,9 +10,14 @@
  * starts reading from Decoinks it sends exactly what it sent before. Changing a
  * prompt from then on is a new version in Prompt Management, not a code change.
  *
- * Input is a JSON file of { TEMPLATE_NAME: python_template } exported from the
- * automation (see --from). Python placeholders {text} become {{text}}; doubled
- * literal braces become single ones.
+ * Input (--from) is either
+ *   - a map { TEMPLATE_NAME: python_template } exported from the automation, or
+ *   - the automation team's prompt export { prompts: [{ constant, template, active }] }.
+ *     There, active=false means retired: the prompt is kept (text and history)
+ *     but set to Archived, so no app is served it. A prompt left out of the
+ *     file is not touched.
+ * Python placeholders {text} become {{text}}; doubled literal braces become
+ * single ones.
  *
  * Covers every prompt text in the automation (27): the 15 its screens send, the
  * 5 templates no screen sends today (3 extraction, Black Out, Half Tone), and the
@@ -49,6 +54,10 @@ const PLAN = [
   { name: 'CUSTOM_CHANGE_COLOR',      key: 'AIS.COLORWAY.CHANGE_COLOR',        title: 'Change Object Colour',          module: 'Colorways',   used: 'Custom operations · Change Object Colour, step B' },
   { name: 'CUSTOM_ASPECT_ADVICE',     key: 'AIS.RATIO.PLAN',                   title: 'Aspect Ratio Planning',         module: 'Variations',  used: 'Custom operations · Aspect Ratio, advice' },
   { name: 'CUSTOM_ASPECT_BASELINE',   key: 'AIS.RATIO.BASELINE',               title: 'Aspect Ratio Baseline',         module: 'Variations',  used: 'Custom operations · Aspect Ratio, clean baseline' },
+  // Replace the wording in a supplied design (from the automation team's export;
+  // its code is not deployed yet, so nothing fetches these until it is).
+  { name: 'TEXT_REPLACE_COLLAGE',     key: 'AIS.TEXT.REPLACE_COLLAGE',         title: 'Replace Text: 8 Variations',    module: 'Concept',     used: 'Text replace · step 1, 8 variations with the new wording' },
+  { name: 'TEXT_REPLACE_FINAL',       key: 'AIS.TEXT.REPLACE_FINAL',           title: 'Replace Text: Final Artwork',   module: 'Concept',     used: 'Text replace · step 2, final artwork' },
   { name: 'CUSTOM_ASPECT_REGENERATE', key: 'AIS.RATIO.REGENERATE',             title: 'Aspect Ratio Regenerate',       module: 'Variations',  used: 'Custom operations · Aspect Ratio, regenerate' },
   // In the automation's code and kept here, but no screen sends them yet.
   { name: 'EXTRACT_BOXES',            key: 'AIS.EXTRACT.BOXES',                title: 'Detect Design Boxes (JSON)',    module: 'Extraction',  used: 'Extraction helper get_boxes · not used by a screen yet' },
@@ -81,6 +90,33 @@ const VARIABLES = {
   dpi:      { type: 'Number', source: 'UI Selection',   description: 'Print resolution in dots per inch' },
   changes:  { type: 'Text',   source: 'UI Selection',   description: 'The object → colour changes the designer chose' },
   value:    { type: 'Text',   source: 'UI Selection',   description: 'The value entered for this option (background or colour)' },
+  new_text: { type: 'Text',   source: 'UI Selection',   description: 'The wording that replaces the text in the supplied design' },
+  target_clause: { type: 'Text', source: 'System',      description: 'Sentence naming which text in the design to replace (may be empty)' },
+}
+
+// The export names the custom operations by their list entry; these are the same texts.
+const EXPORT_ALIASES = {
+  "CUSTOM_OPERATIONS['reconstruct']": 'CUSTOM_RECONSTRUCT',
+  "CUSTOM_OPERATIONS['remove_background']": 'CUSTOM_REMOVE_BACKGROUND',
+  "CUSTOM_OPERATIONS['halo_removal']": 'CUSTOM_HALO_REMOVAL',
+  "CUSTOM_OPERATIONS['aspect_ratio']": 'CUSTOM_ASPECT_ADVICE',
+}
+
+/** { name: { template, active } } from either input shape. */
+function readSource(file) {
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const out = {}
+  if (Array.isArray(data.prompts)) {
+    for (const row of data.prompts) {
+      const name = EXPORT_ALIASES[row.constant] ?? row.constant
+      if (out[name] && out[name].template !== row.template) throw new Error(`${name} appears twice with different text`)
+      out[name] = { template: row.template, active: row.active !== false }
+    }
+  } else {
+    // This shape says nothing about retirement, so it never changes a prompt's status.
+    for (const [name, template] of Object.entries(data)) out[name] = { template, active: null }
+  }
+  return out
 }
 
 /** {text} → {{text}}, {{ → {, }} → }. Refuses anything str.format would not accept. */
@@ -114,20 +150,27 @@ async function moduleId(name) {
 
 async function main() {
   if (!FROM) throw new Error('Pass --from <json> exported from the automation config/workflows.py')
-  const source = JSON.parse(fs.readFileSync(FROM, 'utf8'))
+  const source = readSource(FROM)
   console.log(APPLY ? '── APPLYING ──\n' : '── DRY RUN (add --apply to write) ──\n')
 
   for (const item of PLAN) {
-    const python = source[item.name]
-    if (typeof python !== 'string' || !python.trim()) throw new Error(`${item.name} is missing from ${FROM}`)
+    if (!source[item.name]) { console.log(`  —      ${item.key.padEnd(34)} not in this file, left as it is`); continue }
+    const python = source[item.name].template
+    if (typeof python !== 'string' || !python.trim()) throw new Error(`${item.name} has no text in ${FROM}`)
     const text = fromPythonTemplate(python)
     const placeholders = [...new Set([...text.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)].map(m => m[1]))]
     for (const p of placeholders) if (!VARIABLES[p]) throw new Error(`${item.name}: no definition for {{${p}}}`)
 
+    const wantStatus = source[item.name].active === null ? null : source[item.name].active ? 'Active' : 'Archived'
     const { rows: existing } = await query(
-      `SELECT id, production_version_id FROM prompts WHERE prompt_key = $1 AND deleted_at IS NULL`, [item.key])
+      `SELECT id, production_version_id, status FROM prompts WHERE prompt_key = $1 AND deleted_at IS NULL`, [item.key])
     if (existing[0]?.production_version_id) {
-      console.log(`  skip   ${item.key.padEnd(34)} already has a live version`)
+      if (!wantStatus || existing[0].status === wantStatus) {
+        console.log(`  skip   ${item.key.padEnd(34)} already has a live version (${existing[0].status})`)
+      } else {
+        console.log(`  status ${item.key.padEnd(34)} ${existing[0].status} → ${wantStatus}`)
+        if (APPLY) await svc.updatePrompt(existing[0].id, { status: wantStatus })
+      }
       continue
     }
     console.log(`  ${existing[0] ? 'fill  ' : 'create'} ${item.key.padEnd(34)} ${String(text.length).padStart(5)} chars  vars: ${placeholders.join(', ') || '—'}`)
@@ -159,18 +202,29 @@ async function main() {
       await svc.createVariable(draftId, { variable_name: p, required: true, ...VARIABLES[p] })
     }
     await svc.publishVersion(draftId, null)
+    if (wantStatus && wantStatus !== 'Active') {
+      await svc.updatePrompt(promptId, { status: wantStatus })
+      console.log(`         ${item.key.padEnd(34)} published and set ${wantStatus} (retired in the file)`)
+    }
   }
 
-  // Proof: what the runtime now serves is the same text, character for character.
+  // Proof: apps are served exactly the active prompts, character for character,
+  // and none of the retired ones.
   if (APPLY) {
-    const live = await svc.productionPrompts({ keys: PLAN.map(p => p.key) })
-    let same = 0
-    for (const item of PLAN) {
+    const inFile = PLAN.filter(p => source[p.name])
+    const live = await svc.productionPrompts({ keys: inFile.map(p => p.key) })
+    let same = 0, retired = 0, bad = 0
+    for (const item of inFile) {
       const p = live.prompts.find(x => x.prompt_key === item.key)
-      if (p && p.text === fromPythonTemplate(source[item.name])) same++
-      else console.log(`  MISMATCH ${item.key}`)
+      const status = (await query(`SELECT status FROM prompts WHERE prompt_key = $1`, [item.key])).rows[0]?.status
+      if (source[item.name].active === false && status !== 'Archived') { bad++; console.log(`  NOT ARCHIVED ${item.key}`) }
+      if (status === 'Active') {
+        if (p && p.text === fromPythonTemplate(source[item.name].template)) same++
+        else { bad++; console.log(`  MISMATCH ${item.key}`) }
+      } else if (p) { bad++; console.log(`  STILL SERVED ${item.key}`) } else retired++
     }
-    console.log(`\nLive and identical to the automation's text: ${same}/${PLAN.length}`)
+    console.log(`\nServed and identical: ${same} · retired and not served: ${retired} · problems: ${bad} (of ${inFile.length} in the file)`)
+    if (bad) process.exitCode = 1
   }
 }
 
