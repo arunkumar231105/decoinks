@@ -36,6 +36,7 @@ const payRoutes            = require('./modules/stripe/pay.routes')
 const payLinkAdminRoutes   = require('./modules/stripe/paylinks.admin.routes')
 const crmRoutes            = require('./modules/crm/crm.routes')
 const promptRoutes         = require('./modules/prompts/prompts.routes')
+const aiRuntimeRoutes      = require('./modules/prompts/ai.routes')
 const paypalRoutes         = require('./modules/paypal/paypal.routes')
 const paypalWebhookRoutes  = require('./modules/paypal/webhook.routes')
 
@@ -127,6 +128,9 @@ app.use('/api/payment-links', payLinkAdminRoutes)
 // caller is the CRM's server acting for an agent who is in the chat, not here.
 app.use('/api/crm',          crmRoutes)
 app.use('/api/prompts',      promptRoutes)
+// Apps that RUN the prompts (Artwork Automation) read the live versions and
+// report their runs here, with the service secret rather than a staff login.
+app.use('/api/ai',           aiRuntimeRoutes)
 // Before the pay routes, which put a 30-a-minute rate limit on everything under
 // /api/paypal. PayPal's own deliveries would have been counted against a limit
 // meant for browsers, and a burst would have had us answering 429 to the one

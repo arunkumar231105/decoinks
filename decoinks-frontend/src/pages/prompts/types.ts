@@ -1,7 +1,13 @@
 // The shapes the Prompt Management API returns. Kept in one place so the list
 // and the detail screen cannot drift apart from each other.
 
-export type VersionStatus = 'draft' | 'production' | 'archived'
+export type VersionStatus = 'draft' | 'testing' | 'production' | 'archived'
+
+// Draft and Testing may still be changed; Production and Archived are the record.
+export const isEditable = (status?: string | null) => status === 'draft' || status === 'testing'
+
+export const statusLabel = (status?: string | null) =>
+  status === 'production' ? 'Production' : status === 'testing' ? 'Testing' : status === 'draft' ? 'Draft' : 'Archived'
 
 export interface PromptModule {
   id: string
@@ -27,6 +33,7 @@ export interface PromptVersion {
   id: string
   prompt_id: string
   version_number: string
+  version_seq?: number
   status: VersionStatus
   system_instruction: string | null
   task_instruction: string | null
@@ -35,6 +42,7 @@ export interface PromptVersion {
   change_summary: string | null
   notes: string | null
   created_by_name: string | null
+  published_by_name?: string | null
   created_at: string
   updated_at: string
   published_at: string | null
@@ -46,6 +54,31 @@ export interface PromptVersion {
   temperature: string | number | null
   max_tokens: number | null
   model_settings: Record<string, unknown> | null
+  model_key?: string | null
+  model_display_name?: string | null
+  history?: { from_status: string | null; to_status: string; note: string | null; changed_at: string; changed_by_name: string | null }[]
+}
+
+// One live run reported by an app that uses the prompt (Artwork Automation).
+export interface PromptGeneration {
+  id: string
+  prompt_key: string
+  source_app: string | null
+  external_ref: string | null
+  status: 'running' | 'success' | 'failed' | 'cancelled'
+  prompt_source: 'managed' | 'edited' | 'built_in' | null
+  model_used: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  cost_usd: string | null
+  latency_ms: number | null
+  error_message: string | null
+  input_variables: Record<string, unknown>
+  resolved_prompt?: string | null
+  output_reference: string | null
+  created_at: string
+  version_number: string | null
+  files: { file_name: string; file_url: string | null }[]
 }
 
 export interface Prompt {
@@ -77,14 +110,14 @@ export interface PromptTest {
   created_at: string
 }
 
-export const VARIABLE_TYPES = ['Text', 'Image', 'Boolean', 'Enum', 'Number', 'Ratio', 'Color', 'Asset', 'Array'] as const
+export const VARIABLE_TYPES = ['Text', 'Image', 'Boolean', 'Enum', 'Number', 'Ratio', 'Color', 'Asset', 'Array', 'JSON'] as const
 export const VARIABLE_SOURCES = ['Job / CRM', 'Uploaded Asset', 'UI Selection', 'System', 'Previous Step', 'AI Output', 'Database'] as const
 
 // Providers the studio can be pointed at. The server stores the provider as
 // text and keeps everything else in a JSON bag, so adding an entry here is the
 // only change on this screen a second provider needs.
 export const PROVIDERS: Record<string, string[]> = {
-  OpenAI: ['GPT-5.5'],
+  OpenAI: ['GPT-5.5', 'chatgpt-web'],
 }
 
 export const PROMPT_STATUSES = ['Active', 'Disabled', 'Archived'] as const

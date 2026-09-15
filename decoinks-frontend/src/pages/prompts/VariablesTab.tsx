@@ -5,8 +5,7 @@ import { api } from '../../services/api'
 import toast from '../../utils/toast'
 import {
   VARIABLE_SOURCES, VARIABLE_TYPES, apiMessage,
-  type PromptVariable, type PromptVersion,
-} from './types'
+  type PromptVariable, type PromptVersion, isEditable } from './types'
 
 const BLANK = {
   variable_name: '', type: 'Text', required: false,
@@ -43,7 +42,7 @@ export function VariablesTab({
   onChanged: () => void
 }) {
   const qc = useQueryClient()
-  const locked = version.status !== 'draft' || !canEdit
+  const locked = !isEditable(version.status) || !canEdit
   const [selected, setSelected] = useState<PromptVariable | null>(null)
   const [draft, setDraft] = useState<Draft>(BLANK)
   const [adding, setAdding] = useState(false)
@@ -106,7 +105,7 @@ export function VariablesTab({
         <div className="pm-notice">
           <Lock size={15} />
           <span>
-            {version.status === 'draft'
+            {isEditable(version.status)
               ? 'Your role can read variables but not change them.'
               : `Variables belong to v${version.version_number}, which is ${version.status === 'production' ? 'live' : 'archived'}. Create a new version to change them.`}
           </span>

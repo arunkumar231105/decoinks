@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Info, Lock, Maximize2, X } from 'lucide-react'
 import { api } from '../../services/api'
 import toast from '../../utils/toast'
-import { apiMessage, type PromptVersion } from './types'
+import { apiMessage, type PromptVersion, isEditable } from './types'
 
 /** A structural starting point, not words for the model to say. The shop's own
  *  instructions are the shop's to write; this only lays out the shape. */
@@ -42,7 +42,7 @@ export function PromptTab({
   registerSave: (fn: (() => void) | null, busy: boolean) => void
   onSaved: () => void
 }) {
-  const locked = version.status !== 'draft' || !canEdit
+  const locked = !isEditable(version.status) || !canEdit
 
   const [form, setForm] = useState({
     system_instruction: version.system_instruction ?? '',

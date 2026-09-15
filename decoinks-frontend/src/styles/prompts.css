@@ -140,6 +140,7 @@
 .pm-chip.module     { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
 .pm-chip.version    { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
 .pm-chip.draft      { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.pm-chip.testing    { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
 .pm-chip.production { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
 .pm-chip.archived   { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
 .pm-chip.active     { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }

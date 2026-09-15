@@ -76,6 +76,19 @@ export const PROVIDERS: ProviderSpec[] = [
         ],
         defaults: {},
       },
+      {
+        id: 'chatgpt-web',
+        type: 'Image Generation (ChatGPT web)',
+        supportsLora: false,
+        bestFor: 'Artwork Automation: ChatGPT driven in the designer’s own browser by the Artwork Agent.',
+        // The web app takes no parameters — the words are the whole setting.
+        params: [],
+        recommended: [
+          'Placeholders must stay exactly as Artwork Automation fills them, e.g. {{text}} or {{n}}. A version that adds or drops one is refused by the automation, which keeps running the previous text.',
+          'A published version reaches new jobs within about a minute; running jobs keep the text they started with.',
+        ],
+        defaults: {},
+      },
     ],
   },
 ]

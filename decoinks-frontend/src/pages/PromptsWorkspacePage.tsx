@@ -84,7 +84,7 @@ export function PromptsWorkspacePage() {
   useEffect(() => {
     if (!versions.length) { setVersionId(''); return }
     if (versionId && versions.some(v => v.id === versionId)) return
-    const draft = versions.find(v => v.status === 'draft')
+    const draft = versions.find(v => v.status === 'draft' || v.status === 'testing')
     const live = versions.find(v => v.status === 'production')
     setVersionId((draft ?? live ?? versions[0]).id)
   }, [versions, versionId])
@@ -270,7 +270,7 @@ export function PromptsWorkspacePage() {
                   <select className="pm-input" value={versionId} onChange={e => setVersionId(e.target.value)}>
                     {versions.map(v => (
                       <option key={v.id} value={v.id}>
-                        v{v.version_number} — {v.status === 'production' ? 'Production' : v.status === 'draft' ? 'Draft' : 'Archived'}
+                        v{v.version_number} — {v.status === 'production' ? 'Production' : v.status === 'testing' ? 'Testing' : v.status === 'draft' ? 'Draft' : 'Archived'}
                       </option>
                     ))}
                   </select>

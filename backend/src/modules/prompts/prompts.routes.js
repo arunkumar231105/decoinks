@@ -11,7 +11,7 @@ router.use(verifyToken)
 // an administrator's job. Everyone else who reaches the module can read.
 const canEdit = requireRole('Admin', 'Manager')
 
-const VARIABLE_TYPES = ['Text', 'Image', 'Boolean', 'Enum', 'Number', 'Ratio', 'Color', 'Asset', 'Array']
+const VARIABLE_TYPES = ['Text', 'Image', 'Boolean', 'Enum', 'Number', 'Ratio', 'Color', 'Asset', 'Array', 'JSON']
 const VARIABLE_SOURCES = ['Job / CRM', 'Uploaded Asset', 'UI Selection', 'System', 'Previous Step', 'AI Output', 'Database']
 
 const promptSchema = z.object({
@@ -74,10 +74,17 @@ router.post('/modules', canEdit,
                       description: z.string().optional().nullable() })),
   controller.createModule)
 
+// The model catalogue and the shared variable library.
+router.get('/ai-models', controller.listModels)
+router.get('/variables-library', controller.listLibrary)
+
 // Versions — declared before /:id so "versions" is never read as a prompt id.
 router.get('/versions/:id', controller.getVersion)
 router.put('/versions/:id', canEdit, validate(versionUpdateSchema), controller.updateVersion)
 router.delete('/versions/:id', canEdit, controller.deleteVersion)
+router.post('/versions/:id/status', canEdit,
+  validate(z.object({ status: z.enum(['draft', 'testing']), note: z.string().max(300).optional().nullable() })),
+  controller.setVersionStatus)
 router.post('/versions/:id/publish', canEdit, controller.publishVersion)
 router.post('/versions/:id/rollback', canEdit, controller.rollbackVersion)
 router.get('/versions/:id/variables', controller.listVariables)
@@ -95,5 +102,7 @@ router.post('/', canEdit, validate(promptSchema), controller.create)
 router.get('/:id', controller.getOne)
 router.put('/:id', canEdit, validate(promptUpdateSchema), controller.update)
 router.post('/:id/versions', canEdit, validate(versionSchema), controller.createVersion)
+// Live runs reported by the apps that use this prompt (Artwork Automation).
+router.get('/:id/generations', controller.listGenerations)
 
 module.exports = router
