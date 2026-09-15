@@ -10,7 +10,7 @@ let promptId
 let draftId
 
 async function clearPrompts() {
-  await pool.query('TRUNCATE TABLE ai_generation_logs, prompt_tests, prompt_model_settings, prompt_variables, prompt_versions, prompts, prompt_modules CASCADE')
+  await pool.query('TRUNCATE TABLE prompt_output_files, ai_generation_logs, prompt_test_runs, prompt_test_inputs, prompt_tests, prompt_version_history, prompt_version_variables, prompt_variables_library, prompt_model_settings, prompt_variables, prompt_versions, prompts, prompt_modules CASCADE')
 }
 
 async function login() {
@@ -53,7 +53,8 @@ describe('Prompt Management', () => {
     const version = one.body.data.versions[0]
     draftId = version.id
     expect(version.status).toBe('draft')
-    expect(version.version_number).toBe('1.0.0')
+    expect(version.version_number).toBe('1')
+    expect(version.version_seq).toBe(1)
     // The model belongs to the version, so a version can always be run.
     expect(version.provider).toBe('OpenAI')
     expect(version.model_name).toBe('GPT-5.5')
@@ -140,7 +141,7 @@ describe('Prompt Management', () => {
       .send({ change_summary: 'Tighten the colour rules' })
     expect(res.status).toBe(201)
     secondDraftId = res.body.data.id
-    expect(res.body.data.version_number).toBe('1.1.0')
+    expect(res.body.data.version_number).toBe('2')
 
     const v = await auth(request(app).get(`/api/prompts/versions/${secondDraftId}`))
     expect(v.body.data.system_instruction).toBe('You are a print production artwork specialist.')
@@ -183,6 +184,50 @@ describe('Prompt Management', () => {
 
     const history = await auth(request(app).get(`/api/prompts/versions/${draftId}/tests`))
     expect(history.body.data).toHaveLength(2)
+
+    // Each test is kept as test → input → run, the run holding the exact text and settings.
+    const { rows } = await pool.query(
+      `SELECT r.status, r.resolved_prompt, r.settings_snapshot FROM prompt_test_runs r
+        WHERE r.prompt_version_id = $1 ORDER BY r.created_at`, [draftId])
+    expect(rows.map(r => r.status)).toEqual(['resolved', 'failed'])
+    expect(rows[0].resolved_prompt).toContain('ART-1042.png')
+    expect(rows[0].settings_snapshot.model_name).toBe('GPT-5.5')
+  })
+
+  test('a version under test can still be edited, and publishing freezes its variables', async () => {
+    const made = await auth(request(app).post(`/api/prompts/${promptId}/versions`)).send({})
+    expect(made.status).toBe(201)
+    const vid = made.body.data.id
+    expect(made.body.data.version_number).toBe('3')
+
+    const toTesting = await auth(request(app).post(`/api/prompts/versions/${vid}/status`)).send({ status: 'testing' })
+    expect(toTesting.status).toBe(200)
+    expect(toTesting.body.data.status).toBe('testing')
+
+    const edit = await auth(request(app).put(`/api/prompts/versions/${vid}`)).send({ notes: 'still under test' })
+    expect(edit.status).toBe(200)
+
+    // "production" is reached only by publishing.
+    const cheat = await auth(request(app).post(`/api/prompts/versions/${vid}/status`)).send({ status: 'production' })
+    expect(cheat.status).toBe(422)
+
+    await auth(request(app).post(`/api/prompts/versions/${vid}/publish`)).expect(200)
+    const v = await auth(request(app).get(`/api/prompts/versions/${vid}`))
+    expect(v.body.data.published_by_name).toBe('Test Admin')
+    expect(v.body.data.variables.every(x => x.frozen)).toBe(true)
+    expect(v.body.data.history.map(h => h.to_status)).toEqual(['draft', 'testing', 'production'])
+
+    // Editing the shared library afterwards does not change what the published version meant.
+    await pool.query(`UPDATE prompt_variables_library SET default_value = '600' WHERE variable_key = 'output_dpi'`)
+    const after = await auth(request(app).get(`/api/prompts/versions/${vid}`))
+    expect(after.body.data.variables.find(x => x.variable_name === 'output_dpi').default_value).toBe('300')
+  })
+
+  test('an empty version cannot be published', async () => {
+    const res = await auth(request(app).post('/api/prompts')).send({ name: 'Empty', prompt_key: 'AIS.TEST.EMPTY' })
+    const one = await auth(request(app).get(`/api/prompts/${res.body.data.id}`))
+    const pub = await auth(request(app).post(`/api/prompts/versions/${one.body.data.versions[0].id}/publish`))
+    expect(pub.status).toBe(422)
   })
 
   test('a viewer may read the prompts but not change them', async () => {
@@ -198,7 +243,7 @@ describe('Prompt Management', () => {
 
     const read = await request(app).get('/api/prompts').set('Authorization', `Bearer ${viewerToken}`)
     expect(read.status).toBe(200)
-    expect(read.body.data).toHaveLength(1)
+    expect(read.body.data).toHaveLength(2)
 
     const write = await request(app).post('/api/prompts').set('Authorization', `Bearer ${viewerToken}`)
       .send({ name: 'Not allowed', prompt_key: 'NOPE.KEY' })
@@ -208,6 +253,80 @@ describe('Prompt Management', () => {
   test('the module refuses anonymous callers', async () => {
     const res = await request(app).get('/api/prompts')
     expect(res.status).toBe(401)
+  })
+
+  describe('runtime API for apps', () => {
+    const SECRET = 'test-service-secret-for-prompts'
+    const svc = r => r.set('x-decoinks-sso-secret', SECRET)
+    let single
+
+    beforeAll(async () => {
+      process.env.SERVICE_API_SECRET = SECRET
+      const made = await auth(request(app).post('/api/prompts')).send({ name: 'Collage', prompt_key: 'AIS.TEST.COLLAGE' })
+      const one = await auth(request(app).get(`/api/prompts/${made.body.data.id}`))
+      single = one.body.data.versions[0].id
+      await auth(request(app).put(`/api/prompts/versions/${single}`)).send({
+        task_instruction: 'Make 8 styles of "{{text}}". Reply as {"n": 1}.\n  Keep spacing.  ',
+        model: { provider: 'OpenAI', model_name: 'chatgpt-web' },
+      }).expect(200)
+      await auth(request(app).post(`/api/prompts/versions/${single}/variables`))
+        .send({ variable_name: 'text', type: 'Text', required: true, source: 'UI Selection' }).expect(201)
+    })
+
+    test('refuses a caller without the service secret', async () => {
+      expect((await request(app).get('/api/ai/prompts')).status).toBe(401)
+      expect((await request(app).get('/api/ai/prompts').set('x-decoinks-sso-secret', 'wrong')).status).toBe(401)
+    })
+
+    test('a draft is never served', async () => {
+      const res = await svc(request(app).get('/api/ai/prompts?keys=AIS.TEST.COLLAGE'))
+      expect(res.status).toBe(200)
+      expect(res.body.data.prompts).toHaveLength(0)
+      expect(res.body.data.missing).toEqual(['AIS.TEST.COLLAGE'])
+    })
+
+    test('the live version is served word for word, with its variables and model', async () => {
+      await auth(request(app).post(`/api/prompts/versions/${single}/publish`)).expect(200)
+      const res = await svc(request(app).get('/api/ai/prompts/ais.test.collage'))
+      expect(res.status).toBe(200)
+      const p = res.body.data
+      // A single filled section comes back exactly as written — no headings, no trimming.
+      expect(p.text).toBe('Make 8 styles of "{{text}}". Reply as {"n": 1}.\n  Keep spacing.  ')
+      expect(p.placeholders).toEqual(['text'])
+      expect(p.variables[0]).toMatchObject({ key: 'text', required: true, source: 'UI Selection' })
+      expect(p.model.model_key).toBe('chatgpt-web')
+      expect(p.version.number).toBe(1)
+
+      const missing = await svc(request(app).get('/api/ai/prompts/AIS.NOPE'))
+      expect(missing.status).toBe(404)
+    })
+
+    test('runs are logged once per job and prompt, with their files', async () => {
+      const body = {
+        runs: [{
+          prompt_key: 'AIS.TEST.COLLAGE', prompt_version_id: single, source_app: 'artwork-automation',
+          external_ref: 'job-1', status: 'running', prompt_source: 'managed', provider: 'OpenAI', model: 'chatgpt-web',
+          resolved_prompt: 'Make 8 styles of "HELLO".', input_variables: { text: 'HELLO' },
+        }],
+      }
+      const first = await svc(request(app).post('/api/ai/generations')).send(body)
+      expect(first.status).toBe(201)
+      body.runs[0].status = 'success'
+      body.runs[0].latency_ms = 42000
+      body.runs[0].output_files = [{ file_name: 'job-1_final.png', file_url: '/api/output/job-1_final.png' }]
+      const again = await svc(request(app).post('/api/ai/generations')).send(body)
+      expect(again.body.data[0].id).toBe(first.body.data[0].id)
+
+      const promptRow = await pool.query(`SELECT id FROM prompts WHERE prompt_key = 'AIS.TEST.COLLAGE'`)
+      const list = await auth(request(app).get(`/api/prompts/${promptRow.rows[0].id}/generations`))
+      expect(list.status).toBe(200)
+      expect(list.body.data).toHaveLength(1)
+      expect(list.body.data[0]).toMatchObject({ status: 'success', latency_ms: 42000, version_number: '1' })
+      expect(list.body.data[0].files).toEqual([{ file_name: 'job-1_final.png', file_url: '/api/output/job-1_final.png' }])
+
+      const bad = await svc(request(app).post('/api/ai/generations')).send({ runs: [{ prompt_key: 'X' }] })
+      expect(bad.status).toBe(422)
+    })
   })
 
   test('a bad prompt key is rejected before it reaches the database', async () => {

@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2, ChevronDown, ChevronRight, Info, Lock, RotateCcw } from 'lucide-react'
 import { api } from '../../services/api'
 import toast from '../../utils/toast'
-import { apiMessage, type PromptVersion } from './types'
+import { apiMessage, type PromptVersion, isEditable } from './types'
 import {
   PROVIDERS, QUALITY_LEVELS, SAFETY_MODES, SEED_MODES,
   modelNamed, providerNamed, takes,
@@ -24,7 +24,7 @@ export function ModelTab({
   registerSave: (fn: (() => void) | null, busy: boolean) => void
   onSaved: () => void
 }) {
-  const locked = version.status !== 'draft' || !canEdit
+  const locked = !isEditable(version.status) || !canEdit
 
   const readSettings = () => (version.model_settings ?? {}) as Record<string, any>
 
@@ -96,7 +96,7 @@ export function ModelTab({
           <div className="pm-notice">
             <Lock size={15} />
             <span>
-              {version.status === 'draft'
+              {isEditable(version.status)
                 ? 'Your role can read the model settings but not change them.'
                 : `The model is part of v${version.version_number}, which is ${version.status === 'production' ? 'live' : 'archived'}. Create a new version to change it.`}
             </span>

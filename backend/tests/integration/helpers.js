@@ -18,6 +18,8 @@ const MIGRATION_FILES = [
   '019_custom_field_values.sql',
   '020_lead_quote_intake.sql',
   '081_orders_entry_date.sql',
+  '131_prompts_are_configuration_with_a_history.sql',
+  '136_prompts_serve_the_apps_that_run_them.sql',
 ]
 
 async function runMigrations() {

@@ -25,6 +25,9 @@ module.exports = {
   getVersion: handle(async (req, res) => success(res, await svc.getVersion(req.params.id))),
   updateVersion: handle(async (req, res) =>
     success(res, await svc.updateVersion(req.params.id, req.body), 'Version saved')),
+  setVersionStatus: handle(async (req, res) =>
+    success(res, await svc.setVersionStatus(req.params.id, req.body.status, actor(req), req.body.note),
+      req.body.status === 'testing' ? 'Version moved to testing' : 'Version moved back to draft')),
   publishVersion: handle(async (req, res) =>
     success(res, await svc.publishVersion(req.params.id, actor(req)), 'Version published to production')),
   rollbackVersion: handle(async (req, res) =>
@@ -34,9 +37,9 @@ module.exports = {
 
   listVariables: handle(async (req, res) => success(res, await svc.listVariables(req.params.id))),
   createVariable: handle(async (req, res) =>
-    success(res, await svc.createVariable(req.params.id, req.body), 'Variable added', 201)),
+    success(res, await svc.createVariable(req.params.id, req.body, actor(req)), 'Variable added', 201)),
   updateVariable: handle(async (req, res) =>
-    success(res, await svc.updateVariable(req.params.id, req.body), 'Variable updated')),
+    success(res, await svc.updateVariable(req.params.id, req.body, actor(req)), 'Variable updated')),
   deleteVariable: handle(async (req, res) =>
     success(res, await svc.deleteVariable(req.params.id), 'Variable removed')),
 
@@ -46,4 +49,8 @@ module.exports = {
     success(res, await svc.testVersion(req.params.id, { values: req.body?.values ?? {}, tested_by: actor(req) }),
       'Test run recorded')),
   listTests: handle(async (req, res) => success(res, await svc.listTests(req.params.id))),
+  listLibrary: handle(async (req, res) => success(res, await svc.listLibrary())),
+  listModels: handle(async (req, res) => success(res, await svc.listModels())),
+  listGenerations: handle(async (req, res) =>
+    success(res, await svc.listGenerations(req.params.id, req.query.limit))),
 }
