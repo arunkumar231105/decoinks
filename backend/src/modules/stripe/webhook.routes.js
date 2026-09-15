@@ -121,6 +121,8 @@ async function handle(event) {
         logger.warn({ err: err.message, chargeId: charge.id }, 'Could not read balance transaction')
       }
       if (fee !== null) await recorder.backfillFee(charge.payment_intent, fee)
+      // How the customer paid, if the payment does not say yet (never throws).
+      await recorder.notePaidViaForIntent(charge.payment_intent, charge)
       break
     }
 

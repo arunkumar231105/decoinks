@@ -6,7 +6,7 @@ const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 // One SELECT list shared by list/getById so both views agree.
 const COLUMNS = `
   p.id, p.payment_number, p.payment_date, p.paid_at, p.amount, p.payment_method,
-  p.fee_amount, p.net_amount, p.transaction_id,
+  p.fee_amount, p.net_amount, p.transaction_id, p.paid_via,
   p.received_from_name, p.received_into_account_id,
   p.sender_bank_name, p.sender_account_name, p.sender_account_last4, p.sender_reference,
   p.reference_no, p.status, p.notes, p.invoice_id, p.order_id, p.customer_id,

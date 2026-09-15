@@ -322,6 +322,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
       { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
+      // How the customer actually paid inside Stripe — Apple Pay, a card, a bank.
+      // The method stays "Stripe"; this is read from Stripe's charge.
+      { key: 'paid_via', label: 'Paid Via', render: r => common.empty(r, 'paid_via') },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },

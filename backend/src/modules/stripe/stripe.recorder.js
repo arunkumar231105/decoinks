@@ -18,6 +18,34 @@ const db = require('../../config/db')
 const paymentsService = require('../payments/payments.service')
 const paylinks = require('./paylinks.service')
 const logger = require('../../utils/logger')
+const { describePaidVia } = require('./paidVia')
+
+/**
+ * Note how the customer paid (Apple Pay, a card, a bank…) on a payment already
+ * in the ledger. Strictly after the fact and on its own: it only ever fills an
+ * empty paid_via, touches no other column, and swallows every failure — the
+ * payment is recorded whether or not this works.
+ */
+async function notePaidVia(paymentId, charge, intentId) {
+  try {
+    const via = describePaidVia(charge)
+    if (!via || !paymentId) return
+    await db.query(`UPDATE payments SET paid_via = $1 WHERE id = $2 AND paid_via IS NULL`, [via, paymentId])
+  } catch (err) {
+    logger.warn({ err: err.message, intentId }, 'Could not note how the Stripe payment was paid')
+  }
+}
+
+/** The same, found by its PaymentIntent — for charge.updated, which may come later. */
+async function notePaidViaForIntent(intentId, charge) {
+  try {
+    const via = describePaidVia(charge)
+    if (!via || !intentId) return
+    await db.query(`UPDATE payments SET paid_via = $1 WHERE transaction_id = $2 AND paid_via IS NULL`, [via, intentId])
+  } catch (err) {
+    logger.warn({ err: err.message, intentId }, 'Could not note how the Stripe payment was paid')
+  }
+}
 
 /** The `payment_accounts` row Stripe money lands in, seeded by migration 124. */
 async function stripeAccountId() {
@@ -108,6 +136,7 @@ async function recordSucceededIntent(intent) {
 
   if (existing[0]) {
     await settleDerived(existing[0], intentId)
+    await notePaidVia(existing[0].id, intent.latest_charge, intentId)
     return { payment: existing[0], created: false }
   }
 
@@ -167,6 +196,7 @@ async function recordSucceededIntent(intent) {
   })
 
   await settleDerived(payment, intentId, linkId)
+  await notePaidVia(payment.id, intent.latest_charge, intentId)
   logger.info({ intentId, paymentId: payment.id, invoice: invoice?.invoice_number || '(advance)' },
     'Stripe payment recorded')
   return { payment, created: true }
@@ -312,6 +342,7 @@ async function unallocatedPayments(customerId) {
 }
 
 module.exports = {
+  notePaidViaForIntent,
   recordSucceededIntent, reconcileInvoice, reconcileOrder, stripeAccountId, backfillFee,
   attachPaymentToInvoice, unallocatedPayments,
 }
