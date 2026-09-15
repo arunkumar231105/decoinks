@@ -1,0 +1,7 @@
+/* Field-level errors on hand-keyed forms (the payment form first): the field
+   turns red and the reason sits under it, rather than one toast for all. */
+.al-input.has-error, .al-textarea.has-error {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .10);
+}
+.al-field-error { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; line-height: 1.35; color: #dc2626; }

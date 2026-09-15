@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PAYMENT_METHODS, isListedPaymentMethod } from '../utils/paymentMethods'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, CircleDollarSign } from 'lucide-react'
@@ -8,8 +9,10 @@ import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
 import { SearchableSelect } from '../components/SearchableSelect'
 import { toIsoDate } from '../utils/period'
+import '../styles/form-errors.css'
 
-const METHODS = ['Bank Transfer', 'Cash', 'Card', 'PayPal', 'Zelle', 'Stripe', 'Shopify', 'Cheque', 'Other']
+// The same list the sales order form offers — an order's method is its payment's.
+const METHODS: readonly string[] = PAYMENT_METHODS
 const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 
 // The shop's own calendar day. toISOString() is UTC, so from early evening in
@@ -37,6 +40,81 @@ const EMPTY = {
   notes: '',
 }
 
+// ── The form's rules ─────────────────────────────────────────────────────────
+// The server holds the same ones (backend payments.rules.js) and adds what only
+// it can check: a transaction ID already on another payment, and a linked
+// payment's customer. Payments the system records itself — Stripe, PayPal —
+// never come through this form and are never held to these.
+type PaymentForm = typeof EMPTY
+type Account = { value: string; label: string; account_type?: string }
+const methodKey = (v?: string | null) => String(v ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+// Where each method's money lands. A method with no account of the shop's own
+// (Cash App, Venmo, cash) is tied to none.
+const ACCOUNT_FOR: Record<string, string> = {
+  zelle: 'zelle', paypal: 'paypal', stripe: 'stripe', shopify: 'shopify', banktransfer: 'bank', bankdeposit: 'bank',
+}
+const NEEDS_TRANSACTION_ID = new Set(['stripe', 'paypal', 'shopify'])
+const NUMBER = /^-?\d+(\.\d+)?$/
+const sameValue = (a: string, b: string) => {
+  const x = String(a ?? '').trim(), y = String(b ?? '').trim()
+  return NUMBER.test(x) && NUMBER.test(y) ? Number(x) === Number(y) : x === y
+}
+
+function paymentProblems(form: PaymentForm, original: PaymentForm | null, accounts: Account[]) {
+  const errors: Partial<Record<keyof PaymentForm, string>> = {}
+  const fail = (field: keyof PaymentForm, message: string) => { if (!errors[field]) errors[field] = message }
+  // Editing checks only what is being changed, so an older payment with a gap
+  // can still have its notes corrected.
+  const changed = (...keys: (keyof PaymentForm)[]) => !original || keys.some(k => !sameValue(form[k], original[k]))
+  const text = (k: keyof PaymentForm) => String(form[k] ?? '').trim()
+
+  if (changed('payment_date')) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text('payment_date'))) fail('payment_date', 'Enter the date the payment was received')
+    else if (text('payment_date') > today()) fail('payment_date', 'Payment date cannot be in the future')
+  }
+  const amount = Number(form.amount)
+  if (changed('amount') && (!text('amount') || !Number.isFinite(amount) || amount <= 0)) {
+    fail('amount', 'Enter the amount received — it must be more than 0')
+  }
+  if (changed('fee_amount', 'amount')) {
+    const fee = text('fee_amount') ? Number(form.fee_amount) : 0
+    if (!Number.isFinite(fee) || fee < 0) fail('fee_amount', 'Fee cannot be negative')
+    else if (amount > 0 && fee >= amount) fail('fee_amount', 'Fee must be less than the amount')
+  }
+  const method = form.payment_method
+  const name = PAYMENT_METHODS.find(m => methodKey(m) === methodKey(method)) ?? method
+  if (changed('payment_method')) {
+    if (!text('payment_method')) fail('payment_method', 'Choose how the money was paid')
+    else if (!PAYMENT_METHODS.some(m => methodKey(m) === methodKey(method))) fail('payment_method', 'Choose a payment method from the list')
+  }
+  if (changed('payment_method', 'transaction_id') && NEEDS_TRANSACTION_ID.has(methodKey(method)) && !text('transaction_id')) {
+    fail('transaction_id', `Enter the ${name} transaction ID`)
+  }
+  if (changed('transaction_id') && /\s/.test(text('transaction_id'))) fail('transaction_id', 'Transaction ID cannot contain spaces')
+  if (changed('received_from_name')) {
+    if (!text('received_from_name')) fail('received_from_name', 'Enter who sent the money')
+    else if (!/\p{L}.*\p{L}/u.test(text('received_from_name'))) fail('received_from_name', 'Enter the name of who sent the money — not a number')
+  }
+  if (changed('payment_method', 'received_into_account_id')) {
+    const wanted = ACCOUNT_FOR[methodKey(method)]
+    const where = wanted === 'bank' ? 'the bank account' : `the ${name} account`
+    const chosen = accounts.find(a => a.value === form.received_into_account_id)
+    if (wanted && !form.received_into_account_id) fail('received_into_account_id', `Choose the account the money went into — ${where}`)
+    else if (wanted && chosen && methodKey(chosen.account_type) !== wanted) {
+      fail('received_into_account_id', `A ${name} payment must go into ${where}, not ${chosen.label}`)
+    }
+  }
+  if (changed('customer_id') && !form.customer_id) fail('customer_id', 'Choose the customer this payment is from')
+  for (const [k, label] of [['sender_bank_name', 'Sender bank'], ['sender_account_name', 'Account name']] as const) {
+    if (changed(k) && text(k) && !/\p{L}/u.test(text(k))) fail(k, `${label} must be a name, not only numbers`)
+  }
+  if (changed('sender_account_last4') && text('sender_account_last4') && !/^\d{4}$/.test(text('sender_account_last4'))) {
+    fail('sender_account_last4', 'Enter exactly the last 4 digits')
+  }
+  if (changed('notes') && text('notes').length > 1000) fail('notes', 'Notes can be at most 1000 characters')
+  return errors
+}
+
 export function NewPaymentPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -44,7 +122,13 @@ export function NewPaymentPage() {
   const isEdit = !!id
   const [form, setForm] = useState(() => ({ ...EMPTY, payment_date: today() }))
   const [saving, setSaving] = useState(false)
-  const set = (key: keyof typeof form, value: string) => setForm(v => ({ ...v, [key]: value }))
+  const [errors, setErrors] = useState<Partial<Record<keyof PaymentForm, string>>>({})
+  // The payment as loaded, when editing — the rules check only what changes.
+  const [original, setOriginal] = useState<PaymentForm | null>(null)
+  const set = (key: keyof typeof form, value: string) => {
+    setForm(v => ({ ...v, [key]: value }))
+    setErrors(e => { if (!e[key]) return e; const next = { ...e }; delete next[key]; return next })
+  }
 
   // Customers and orders to link the payment against.
   const { data: customers = [] } = useQuery<Option[]>({
@@ -61,7 +145,7 @@ export function NewPaymentPage() {
 
   // The company's own receiving accounts — a lookup, so a renamed account
   // updates everywhere at once.
-  const { data: accounts = [] } = useQuery<Array<{ value: string; label: string }>>({
+  const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['payment-accounts'],
     queryFn: () => api.get('/payments/filters').then(r => r.data.data?.accounts ?? []),
   })
@@ -74,7 +158,7 @@ export function NewPaymentPage() {
 
   useEffect(() => {
     if (!existing) return
-    setForm({
+    const loaded = {
       payment_date: String(existing.payment_date ?? existing.paid_at ?? today()).slice(0, 10),
       amount: String(existing.amount ?? ''),
       fee_amount: String(existing.fee_amount ?? ''),
@@ -91,7 +175,9 @@ export function NewPaymentPage() {
       customer_id: String(existing.customer_id ?? ''),
       order_id: String(existing.order_id ?? ''),
       notes: String(existing.notes ?? ''),
-    })
+    }
+    setForm(loaded)
+    setOriginal(loaded)
   }, [existing])
 
   // Keep a half-filled payment across a refresh (create mode only).
@@ -120,9 +206,34 @@ export function NewPaymentPage() {
   ])
   const allocatedTotal = allocations.reduce((sum, a) => sum + (Number(a.allocated_amount) || 0), 0)
 
+  // The account follows the method: choosing Stripe picks the Stripe account.
+  const chooseMethod = (method: string) => {
+    set('payment_method', method)
+    const wanted = ACCOUNT_FOR[methodKey(method)]
+    const current = accounts.find(a => a.value === form.received_into_account_id)
+    const match = wanted ? accounts.find(a => methodKey(a.account_type) === wanted) : undefined
+    if (match && (!current || methodKey(current.account_type) !== wanted)) set('received_into_account_id', match.value)
+  }
+  // A new payment opens with the account its default method goes into.
+  useEffect(() => {
+    if (isEdit || form.received_into_account_id || !accounts.length) return
+    const wanted = ACCOUNT_FOR[methodKey(form.payment_method)]
+    const match = wanted ? accounts.find(a => methodKey(a.account_type) === wanted) : undefined
+    if (match) setForm(v => ({ ...v, received_into_account_id: match.value }))
+  }, [accounts, isEdit]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Choosing the customer fills Received From when nobody has typed one yet.
+  const chooseCustomer = (customerId: string) => {
+    set('customer_id', customerId)
+    const label = customerOptions.find(c => c.value === customerId)?.label
+    if (label && !form.received_from_name.trim()) set('received_from_name', label)
+  }
+
   const save = async () => {
-    if (!(totalAmount > 0)) return toast.error('Enter an amount greater than zero')
-    if (feeAmount < 0 || feeAmount > totalAmount) return toast.error('Fee cannot be negative or exceed the total')
+    const problems = paymentProblems(form, isEdit ? original : null, accounts)
+    if (Object.keys(problems).length) {
+      setErrors(problems)
+      return toast.error('Please fix the fields marked in red')
+    }
     const lines = allocations.filter(a => a.order_id && Number(a.allocated_amount) > 0)
     if (allocatedTotal > totalAmount) return toast.error('Applied amounts exceed the payment total')
     setSaving(true)
@@ -157,14 +268,27 @@ export function NewPaymentPage() {
       qc.invalidateQueries({ queryKey: ['payments'] })
       navigate('/payments')
     } catch (e) {
-      toast.apiError(e)
+      // The server's rules answer field by field; each goes under its field.
+      const details = (e as { response?: { data?: { details?: Array<{ field?: string; message: string }> } } })
+        ?.response?.data?.details
+      const fielded = Array.isArray(details) ? details.filter(d => d?.field) : []
+      if (fielded.length) {
+        setErrors(Object.fromEntries(fielded.map(d => [d.field, d.message])))
+        toast.error('Please fix the fields marked in red')
+      } else {
+        toast.apiError(e)
+      }
     } finally { setSaving(false) }
   }
 
+  const inputClass = (key: keyof typeof form, base = 'al-input') => (errors[key] ? `${base} has-error` : base)
+  const errorFor = (key: keyof typeof form) => (errors[key] ? <span className="al-field-error">{errors[key]}</span> : null)
   const field = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
     <div className="al-field"><label>{label}</label>
-      <input className="al-input" type={type} value={form[key]} placeholder={placeholder}
+      <input className={inputClass(key)} type={type} value={form[key]} placeholder={placeholder}
+        aria-invalid={Boolean(errors[key])}
         onChange={e => set(key, e.target.value)} />
+      {errorFor(key)}
     </div>
   )
 
@@ -204,14 +328,18 @@ export function NewPaymentPage() {
             )}
             <div className="al-field-row">
               <div className="al-field"><label>Payment Method</label>
-                <select className="al-input" value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
+                <select className={inputClass('payment_method')} value={form.payment_method} onChange={e => chooseMethod(e.target.value)}>
+                  {form.payment_method && !isListedPaymentMethod(form.payment_method) && <option>{form.payment_method}</option>}
                   {METHODS.map(m => <option key={m}>{m}</option>)}
                 </select>
+                {errorFor('payment_method')}
               </div>
               <div className="al-field"><label>Status</label>
-                <select className="al-input" value={form.status} onChange={e => set('status', e.target.value)}>
+                <select className={inputClass('status')} value={form.status} onChange={e => set('status', e.target.value)}>
+                  {form.status && !STATUSES.some(s => s.toLowerCase() === form.status.toLowerCase()) && <option>{form.status}</option>}
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
+                {errorFor('status')}
               </div>
             </div>
             <div className="al-field-row">
@@ -244,20 +372,23 @@ export function NewPaymentPage() {
           <div className="ncust-section-body">
             {field('Received From', 'received_from_name', 'text', 'Who actually sent the money')}
             <div className="al-field"><label>Received Into (our account)</label>
-              <select className="al-input" value={form.received_into_account_id}
+              <select className={inputClass('received_into_account_id')} value={form.received_into_account_id}
                       onChange={e => set('received_into_account_id', e.target.value)}>
                 <option value="">— Select account —</option>
                 {accounts.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
+              {errorFor('received_into_account_id')}
             </div>
             <div className="al-field"><label>Customer</label>
               <SearchableSelect
                 value={form.customer_id}
                 options={customerOptions}
-                onChange={v => set('customer_id', v)}
+                onChange={chooseCustomer}
+                className={inputClass('customer_id')}
                 placeholder="— Select customer —"
                 searchPlaceholder="Search customer…"
               />
+              {errorFor('customer_id')}
             </div>
             {/* The sales order is chosen from the ORDER form, not here. Money
                 lands before the order is keyed in, so the order is raised
@@ -265,8 +396,9 @@ export function NewPaymentPage() {
                 order_id and allocation columns are untouched — only this
                 picker is gone, so nothing already linked is affected. */}
             <div className="al-field"><label>Notes</label>
-              <textarea className="al-textarea" rows={4} value={form.notes}
+              <textarea className={inputClass('notes', 'al-textarea')} rows={4} value={form.notes}
                 onChange={e => set('notes', e.target.value)} placeholder="Any notes about this payment…" />
+              {errorFor('notes')}
             </div>
           </div>
         </section>
