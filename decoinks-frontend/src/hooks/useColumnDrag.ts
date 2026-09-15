@@ -29,7 +29,10 @@ function readLayout(key: string | null): SavedLayout | null {
  *     filter bar (`setFrozenCount`, components/ColumnFreezeField). Where each
  *     one ends is measured from the header as drawn, so any widths work; on a
  *     narrow screen fewer are frozen, so the frozen block never takes more than
- *     ~70% of the grid — `frozenShown` says how many actually are.
+ *     ~70% of the grid — `frozenShown` says how many actually are. The last
+ *     frozen column carries a line on its right edge, which turns blue while
+ *     the grid is scrolled sideways, and the frozen block flashes when the
+ *     number changes, so the user sees where the still part ends.
  *   - Columns can be hidden and shown again (`toggleHidden`, `showAll`); the
  *     page draws `visible`, which is `order` less the hidden ones. At least one
  *     column always stays.
@@ -181,6 +184,7 @@ export function useColumnDrag(
       try { localStorage.removeItem(layoutKey) } catch { /* nothing kept to remove */ }
     }
     snapshot()
+    flashAsked.current = Date.now()
     setStored(keys)
     setHidden(new Set())
     setFrozenWanted(frozen)
@@ -189,8 +193,12 @@ export function useColumnDrag(
   // ── Frozen columns ────────────────────────────────────────────────────────
   // Never more than the columns on show: hiding columns lowers it with them.
   const frozenCount = Math.max(0, Math.min(frozenWanted, visible.length))
+  // A change the user makes flashes the frozen block once it is drawn.
+  const flashAsked = useRef(0)
+  const flashTimer = useRef<number | undefined>(undefined)
   const setFrozenCount = (n: number) => {
     touched.current = true
+    flashAsked.current = Date.now()
     setFrozenWanted(Number.isFinite(n) ? Math.max(0, Math.min(Math.trunc(n), visible.length)) : 0)
   }
 
@@ -217,22 +225,51 @@ export function useColumnDrag(
     const observer = new ResizeObserver(measure)
     observer.observe(table)
     if (table.parentElement) observer.observe(table.parentElement)
-    return () => observer.disconnect()
+
+    // Marked while scrolled sideways: the frozen edge then shows it is holding
+    // columns still over the ones sliding under it.
+    let scroller: HTMLElement | null = table.parentElement
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement
+    const onScroll = () => { if (scroller) table.toggleAttribute('data-col-scrolled', scroller.scrollLeft > 0) }
+    onScroll()
+    scroller?.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      observer.disconnect()
+      scroller?.removeEventListener('scroll', onScroll)
+    }
   })
 
+  useEffect(() => {
+    const table = tableRef.current
+    if (!table || !lefts.length || Date.now() - flashAsked.current > 1000) return
+    flashAsked.current = 0
+    window.clearTimeout(flashTimer.current)
+    table.removeAttribute('data-freeze-flash')
+    void table.offsetWidth                      // restart the animation
+    table.setAttribute('data-freeze-flash', '')
+    flashTimer.current = window.setTimeout(() => table.removeAttribute('data-freeze-flash'), 900)
+  }, [lefts])
+
   const frozenStyle = (index: number, head: boolean): CSSProperties | undefined => {
-    if (index >= lefts.length) return undefined
-    const bg = head ? headBackground : cellBackground
-    return {
-      position: 'sticky', left: lefts[index], zIndex: head ? 6 : 3,
-      ...(bg ? { background: bg } : {}),
-      boxShadow: index === lefts.length - 1 ? '1px 0 0 #e1e7ef' : 'none',
+    if (index >= lefts.length) {
+      // Past the frozen block. A list's own stylesheet may pin a column
+      // (leads-table pins its second); the user's number decides instead.
+      return head ? undefined : { left: 'auto', boxShadow: 'none' }
     }
+    const bg = head ? headBackground : cellBackground
+    // The colour only: the edge line is a background image (column-drag.css),
+    // which a `background` shorthand here would wipe out.
+    return { position: 'sticky', left: lefts[index], zIndex: head ? 6 : 3, ...(bg ? { backgroundColor: bg } : {}) }
   }
+  const frozenMarks = (index: number) => ({
+    'data-frozen': index < lefts.length ? 'true' : undefined,
+    'data-frozen-edge': index === lefts.length - 1 ? 'true' : undefined,
+  })
 
   const headProps = (key: string, index: number, style?: CSSProperties) => ({
     'data-col': key,
     'data-dragging': dragKey === key ? 'true' : undefined,
+    ...frozenMarks(index),
     draggable: true,
     title: 'Drag to move this column',
     style: { ...style, ...frozenStyle(index, true) },
@@ -262,6 +299,7 @@ export function useColumnDrag(
   const cellProps = (key: string, index: number, style?: CSSProperties) => ({
     'data-col': key,
     'data-dragging': dragKey === key ? 'true' : undefined,
+    ...frozenMarks(index),
     style: { ...style, ...frozenStyle(index, false) },
   })
 
