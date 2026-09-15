@@ -38,6 +38,14 @@ describe('a real incoming alert', () => {
     expect(r).toMatchObject({ ok: true, payer: 'Sam Payer', amount: 1250.5, memo: null })
   })
 
+  test('text the bank may append after the amount does not hide the payment', () => {
+    const r = parseZelleEmail(alert({
+      subject: 'Jane Q Sample sent you $1,090.00 with Zelle®',
+      text: ' Jane Q Sample sent you $1,090.00 with Zelle®\n Hats\n View your balance',
+    }))
+    expect(r).toMatchObject({ ok: true, payer: 'Jane Q Sample', amount: 1090, memo: 'Hats' })
+  })
+
   test('HTML-only bodies are read too', () => {
     const r = parseZelleEmail(alert({ text: '', html: '<td>Jane Q Sample sent you $88.00</td><td>Hats</td><td>View your balance</td>' }))
     expect(r).toMatchObject({ ok: true, memo: 'Hats' })

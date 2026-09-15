@@ -77,7 +77,9 @@ function localDate(dateHeader) {
   return d.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
 }
 
-const SENT_YOU = /^\s*(.+?)\s+sent you\s+\$\s*([\d,]+(?:\.\d{1,2})?)\s*$/i
+// Not anchored at the end: if the bank ever appends "with Zelle®" or similar,
+// the alert must still be read rather than silently ignored.
+const SENT_YOU = /^\s*(.+?)\s+sent you\s+\$\s*([\d,]+(?:\.\d{1,2})?)(?![\d,])/i
 const NOT_MEMO = /^(view your balance|please allow|money to deposit|zelle®? and the zelle)/i
 
 /**
