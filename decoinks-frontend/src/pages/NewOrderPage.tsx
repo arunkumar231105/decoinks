@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { PAYMENT_METHODS, isListedPaymentMethod, paymentMethodName } from '../utils/paymentMethods'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, Edit3, Eye, Images, Package, Plus, Save, Send, Trash2, UserCheck, X, Check } from 'lucide-react'
 import { Menu, MenuItem } from '@mui/material'
@@ -182,19 +183,6 @@ function ArtworkSizePicker({ value, onChange, autoDetected = false }: { value: s
 // "Bank Transfer" or "bank_transfer"). Normalise known variants to this form's
 // option values on convert; any unknown/legacy value is returned unchanged so
 // nothing is lost (a fallback <option> renders it).
-const PM_KNOWN = ['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'bank_transfer', 'cash', 'other']
-const normalizePaymentMethod = (v?: string | null): string => {
-  const raw = String(v ?? '').trim()
-  if (!raw) return ''
-  const map: Record<string, string> = {
-    'bank transfer': 'bank_transfer', bank_transfer: 'bank_transfer',
-    paypal: 'paypal', zelle: 'zelle', stripe: 'stripe', shopify: 'shopify',
-    'cash app': 'cashapp', cash_app: 'cashapp', cashapp: 'cashapp',
-    cash: 'cash', other: 'other',
-  }
-  return map[raw.toLowerCase()] ?? raw
-}
-
 export function NewOrderPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -225,7 +213,7 @@ export function NewOrderPage() {
 
   // Payment
   const [paymentTerms,   setPaymentTerms]   = useState(PAYMENT_TERMS[0])
-  const [paymentMethod,  setPaymentMethod]  = useState<string>('zelle')
+  const [paymentMethod,  setPaymentMethod]  = useState<string>('')
   const [paymentStatus,  setPaymentStatus]  = useState<PaymentStatus>('Unpaid')
   const [amountPaid,       setAmountPaid]       = useState(0)
   const [paymentReference, setPaymentReference] = useState('')
@@ -291,7 +279,7 @@ export function NewOrderPage() {
       if (Array.isArray(saved.gangsheetArtworks)) setGangsheetArtworks(saved.gangsheetArtworks as GangsheetArtwork[])
       if (Array.isArray(saved.dtf)) setDtf(saved.dtf as DtfItem[])
       if (str(saved.paymentTerms) !== undefined) setPaymentTerms(saved.paymentTerms as string)
-      if (str(saved.paymentMethod) !== undefined) setPaymentMethod(saved.paymentMethod as string)
+      if (str(saved.paymentMethod) !== undefined) setPaymentMethod(paymentMethodName(saved.paymentMethod as string))
       if (str(saved.paymentStatus) !== undefined) setPaymentStatus(saved.paymentStatus as PaymentStatus)
       if (num(saved.amountPaid) !== undefined) setAmountPaid(saved.amountPaid as number)
       if (str(saved.paymentReference) !== undefined) setPaymentReference(saved.paymentReference as string)
@@ -378,6 +366,19 @@ export function NewOrderPage() {
     })
   }, [paymentsData])
 
+  // The payment this order's method comes from: the one picked on the form, or,
+  // when editing, the one already paying the order. While there is one the
+  // method is that payment's and is not chosen here (migration 137 and the
+  // server hold the two equal; this keeps the form from offering otherwise).
+  const methodPayment = useMemo(() => {
+    if (paymentId) return selectablePayments.find(p => p.id === paymentId) ?? null
+    if (!editOrderId) return null
+    return selectablePayments.find(p => p.order_id === editOrderId) ?? null
+  }, [paymentId, editOrderId, selectablePayments])
+  useEffect(() => {
+    if (methodPayment?.payment_method) setPaymentMethod(methodPayment.payment_method)
+  }, [methodPayment])
+
   const { data: existingOrder } = useQuery({
     queryKey: ['edit-order', editOrderId],
     queryFn:  () => api.get(`/orders/${editOrderId}`).then(r => r.data.data),
@@ -427,7 +428,7 @@ export function NewOrderPage() {
     setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
     setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
-    setPaymentMethod(existingOrder.payment_method ?? 'zelle')
+    setPaymentMethod(paymentMethodName(existingOrder.payment_method))
     setPaymentStatus((existingOrder.payment_status ?? 'Unpaid') as PaymentStatus)
     setAmountPaid(Number(existingOrder.amount_paid ?? 0))
     setPaymentReference(existingOrder.payment_reference ?? '')
@@ -504,7 +505,7 @@ export function NewOrderPage() {
     if (sourceInvoice.billing_email)    setContactEmail(sourceInvoice.billing_email)
     if (sourceInvoice.contact_number)   setContactPhone(sourceInvoice.contact_number)
     if (sourceInvoice.shipping_address) setShippingAddress(sourceInvoice.shipping_address)
-    if (sourceInvoice.payment_method)   setPaymentMethod(normalizePaymentMethod(sourceInvoice.payment_method))
+    if (sourceInvoice.payment_method)   setPaymentMethod(paymentMethodName(sourceInvoice.payment_method))
     if (sourceInvoice.payment_terms)    setPaymentTerms(sourceInvoice.payment_terms)
     if (sourceInvoice.notes)            setOrderNotes(sourceInvoice.notes)
     if (sourceInvoice.shipping_charges) setShippingCharges(Number(sourceInvoice.shipping_charges))
@@ -1515,16 +1516,19 @@ export function NewOrderPage() {
 
               <div className="no-payment-field">
                 <label className="no-payment-label">Payment Method</label>
-                <select className="no-info-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                  {paymentMethod && !PM_KNOWN.includes(paymentMethod) && <option value={paymentMethod}>{paymentMethod}</option>}
-                  <option value="cashapp">CashApp</option>
-                  <option value="zelle">Zelle</option>
-                  <option value="paypal">PayPal</option>
-                  <option value="shopify">Shopify</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="other">Other</option>
+                <select className="no-info-select" value={paymentMethod} disabled={Boolean(methodPayment)}
+                  title={methodPayment ? `Taken from payment ${methodPayment.payment_number}. To change it, correct the payment.` : undefined}
+                  style={methodPayment ? { background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' } : undefined}
+                  onChange={e => setPaymentMethod(e.target.value)}>
+                  {!paymentMethod && <option value="">— Select —</option>}
+                  {paymentMethod && !isListedPaymentMethod(paymentMethod) && <option value={paymentMethod}>{paymentMethod}</option>}
+                  {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
+                {methodPayment && (
+                  <span style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                    Same as payment {methodPayment.payment_number}
+                  </span>
+                )}
               </div>
 
               <div className="no-payment-field">
@@ -1577,7 +1581,7 @@ export function NewOrderPage() {
                     // never disagree about how or when it was paid.
                     const chosen = selectablePayments.find(p => p.id === id)
                     if (chosen) {
-                      if (chosen.payment_method) setPaymentMethod(normalizePaymentMethod(chosen.payment_method))
+                      if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
                       if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
                       // The bank's or processor's own reference, which is what
                       // anyone reconciling actually searches for. Our internal

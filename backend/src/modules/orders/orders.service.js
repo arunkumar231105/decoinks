@@ -452,6 +452,36 @@ async function getById(id) {
     total_weight_lbs: +(totalWeightG / 453.59237).toFixed(2) }
 }
 
+// ── Payment method ────────────────────────────────────────────────────────────
+// A sales order's payment method is its payment's (migration 137 holds the two
+// equal in the database). A different method chosen on the order is refused
+// with the reason, rather than quietly replaced, so the mistake is seen. Spelling
+// does not count as different: "cashapp", "Cash App" and "cash_app" agree.
+const methodKey = value => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+
+function assertPaymentMethodMatches(chosen, payment) {
+  if (!chosen || !payment?.payment_method || methodKey(chosen) === methodKey(payment.payment_method)) return
+  throw Object.assign(new Error(
+    `Payment method must be ${payment.payment_method}, the method of payment ${payment.payment_number}. ` +
+    'If the payment itself is wrong, correct it on the payment.'), { statusCode: 422 })
+}
+
+// The payment that speaks for an order's method — same order as the database's
+// order_payment_method_of: the one holding order_id, then an allocated one.
+async function paymentBehindOrder(orderId) {
+  const { rows } = await query(
+    `SELECT payment_number, payment_method FROM (
+       SELECT p.payment_number, p.payment_method, 0 AS via, p.payment_date, p.created_at
+         FROM payments p WHERE p.order_id = $1
+       UNION ALL
+       SELECT p.payment_number, p.payment_method, 1, p.payment_date, p.created_at
+         FROM payment_allocations a JOIN payments p ON p.id = a.payment_id WHERE a.order_id = $1
+     ) linked
+     WHERE NULLIF(BTRIM(payment_method), '') IS NOT NULL
+     ORDER BY via, payment_date NULLS LAST, created_at LIMIT 1`, [orderId])
+  return rows[0] || null
+}
+
 async function create(data) {
   const {
     customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
@@ -567,6 +597,17 @@ async function create(data) {
     ? derivePaymentStatus(effectivePaid, totals.total, payment_status)
     : payment_status
 
+  // Raised against a payment: the order takes that payment's method.
+  let resolvedPaymentMethod = payment_method || null
+  if (payment_id) {
+    const { rows: payRows } = await query(
+      `SELECT payment_number, payment_method FROM payments WHERE id = $1`, [payment_id])
+    if (payRows[0]?.payment_method) {
+      assertPaymentMethodMatches(payment_method, payRows[0])
+      resolvedPaymentMethod = payRows[0].payment_method
+    }
+  }
+
   const client = await getClient()
   try {
     await client.query('BEGIN')
@@ -588,7 +629,7 @@ async function create(data) {
       [
         order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         resolvedOrderDate, resolvedDueDate,
-        payment_terms || 'Advance', payment_method || null, effectiveStatus, currency,
+        payment_terms || 'Advance', resolvedPaymentMethod, effectiveStatus, currency,
         effectivePaid, payment_reference || null, payment_date || null,
         resolvedRush, resolvedShipping, totals.subtotal, discount_pct, totals.discount_amt,
         tax_pct, totals.tax_amt, totals.total, notes || null,
@@ -698,6 +739,9 @@ async function update(id, data, actorId) {
   if (items.length && items.reduce((sum, item) => sum + Number(item.qty || 0), 0) <= 0) {
     throw Object.assign(new Error('Sales order total quantity must be greater than zero'), { statusCode: 422 })
   }
+
+  // An order already paid keeps its payment's method.
+  if (data.payment_method) assertPaymentMethodMatches(data.payment_method, await paymentBehindOrder(id))
 
   // Resolve the amount received + effective payment status for this update.
   const paidProvided = data.amount_paid !== undefined && data.amount_paid !== null
