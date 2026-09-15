@@ -4,7 +4,11 @@ const crypto   = require('crypto')
 const { query, getClient } = require('../../config/db')
 
 const ACCESS_EXPIRES   = process.env.JWT_ACCESS_EXPIRES_IN || '8h'
-const REFRESH_EXPIRES_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
+// A signed-in session does not end on its own. Every refresh — each page load,
+// and every 8 hours of use when the access token lapses — moves this a year out
+// again, so only signing out (or a year without opening the app) ends it. A year
+// because browsers cap a cookie's life at 400 days.
+const REFRESH_EXPIRES_MS = 365 * 24 * 60 * 60 * 1000  // 365 days, renewed on use
 const COOKIE_NAME      = 'decoinks_rt'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -134,6 +138,10 @@ async function refresh(rawToken, ip, userAgent) {
 
   const newAccessToken = signAccessToken({ id: record.uid, email: record.email, role: record.role })
 
+  // Used, so it lives on: the expiry slides a full period forward.
+  await query(`UPDATE refresh_tokens SET expires_at = $1 WHERE id = $2`,
+    [new Date(Date.now() + REFRESH_EXPIRES_MS), record.id])
+
   // No rotation — reuse the same refresh token so multiple tabs can refresh
   // simultaneously without revoking each other's tokens.
   // Token is only invalidated on explicit logout or expiry.
@@ -228,7 +236,7 @@ async function changePassword(userId, currentPassword, newPassword) {
   await query(`UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2`, [hashed, userId])
 }
 
-module.exports = {
+module.exports = { REFRESH_EXPIRES_MS,
   COOKIE_NAME,
   login, sso, refresh, logout, revokeAll,
   getMe, setupStatus, setup, changePassword,
