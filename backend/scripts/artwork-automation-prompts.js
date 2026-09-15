@@ -14,6 +14,10 @@
  * automation (see --from). Python placeholders {text} become {{text}}; doubled
  * literal braces become single ones.
  *
+ * Covers every prompt text in the automation (27): the 15 its screens send, the
+ * 5 templates no screen sends today (3 extraction, Black Out, Half Tone), and the
+ * edit-options base + 6 option blocks.
+ *
  * Idempotent: a prompt that already has a live version is left alone. The five
  * prompts created earlier from the owner's list (empty drafts) are filled in
  * rather than duplicated. Dry run by default; pass --apply to write.
@@ -46,6 +50,20 @@ const PLAN = [
   { name: 'CUSTOM_ASPECT_ADVICE',     key: 'AIS.RATIO.PLAN',                   title: 'Aspect Ratio Planning',         module: 'Variations',  used: 'Custom operations · Aspect Ratio, advice' },
   { name: 'CUSTOM_ASPECT_BASELINE',   key: 'AIS.RATIO.BASELINE',               title: 'Aspect Ratio Baseline',         module: 'Variations',  used: 'Custom operations · Aspect Ratio, clean baseline' },
   { name: 'CUSTOM_ASPECT_REGENERATE', key: 'AIS.RATIO.REGENERATE',             title: 'Aspect Ratio Regenerate',       module: 'Variations',  used: 'Custom operations · Aspect Ratio, regenerate' },
+  // In the automation's code and kept here, but no screen sends them yet.
+  { name: 'EXTRACT_BOXES',            key: 'AIS.EXTRACT.BOXES',                title: 'Detect Design Boxes (JSON)',    module: 'Extraction',  used: 'Extraction helper get_boxes · not used by a screen yet' },
+  { name: 'EXTRACT_ARTWORKS',         key: 'AIS.EXTRACT.SEPARATE',             title: 'Extract Artworks Separately',   module: 'Extraction',  used: 'Extraction helper extract_artwork_images · not used by a screen yet' },
+  { name: 'MOCKUP_REGENERATE',        key: 'AIS.EXTRACT.REGENERATE',           title: 'Regenerate From Mockup',        module: 'Extraction',  used: 'Mockup regenerate template · not used by a screen yet' },
+  { name: 'CUSTOM_BLACK_OUT',         key: 'AIS.PRINTREADY.BLACK_OUT',         title: 'Black Out (ChatGPT wording)',   module: 'Print Ready', used: 'Custom operations · Black Out · now runs locally, wording kept' },
+  { name: 'CUSTOM_HALF_TONE',         key: 'AIS.PRINTREADY.HALF_TONE',         title: 'Half Tone (ChatGPT wording)',   module: 'Print Ready', used: 'Custom operations · Half Tone · now runs locally, wording kept' },
+  // The original edit-options job (API only): the base block, then one block per option.
+  { name: 'BASE_INSTRUCTION',             key: 'AIS.EDIT.BASE',                title: 'Edit Options: Base Instruction', module: 'Edit Options', used: 'Edit-options job · base block (always first)' },
+  { name: 'JOB_OPTION_TEXT_ONLY',         key: 'AIS.EDIT.TEXT_ONLY',           title: 'Edit Option: Text Only',        module: 'Edit Options', used: 'Edit-options job · option text_only' },
+  { name: 'JOB_OPTION_REMOVE_BACKGROUND', key: 'AIS.EDIT.REMOVE_BACKGROUND',   title: 'Edit Option: Remove Background', module: 'Edit Options', used: 'Edit-options job · option remove_background' },
+  { name: 'JOB_OPTION_CHANGE_BACKGROUND', key: 'AIS.EDIT.CHANGE_BACKGROUND',   title: 'Edit Option: Change Background', module: 'Edit Options', used: 'Edit-options job · option change_background' },
+  { name: 'JOB_OPTION_BLUR_BACKGROUND',   key: 'AIS.EDIT.BLUR_BACKGROUND',     title: 'Edit Option: Blur Background',  module: 'Edit Options', used: 'Edit-options job · option blur_background' },
+  { name: 'JOB_OPTION_RECOLOUR',          key: 'AIS.EDIT.RECOLOUR',            title: 'Edit Option: Recolour',         module: 'Edit Options', used: 'Edit-options job · option recolour' },
+  { name: 'JOB_OPTION_UPSCALE_CLEANUP',   key: 'AIS.EDIT.UPSCALE_CLEANUP',     title: 'Edit Option: Upscale Cleanup',  module: 'Edit Options', used: 'Edit-options job · option upscale_cleanup' },
 ]
 
 // What each placeholder means, where its value comes from, and its type.
@@ -62,6 +80,7 @@ const VARIABLES = {
   inches_h: { type: 'Number', source: 'System',         description: 'Print height in inches at the chosen DPI' },
   dpi:      { type: 'Number', source: 'UI Selection',   description: 'Print resolution in dots per inch' },
   changes:  { type: 'Text',   source: 'UI Selection',   description: 'The object → colour changes the designer chose' },
+  value:    { type: 'Text',   source: 'UI Selection',   description: 'The value entered for this option (background or colour)' },
 }
 
 /** {text} → {{text}}, {{ → {, }} → }. Refuses anything str.format would not accept. */
