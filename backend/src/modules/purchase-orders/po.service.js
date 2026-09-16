@@ -45,7 +45,7 @@ async function getPoItemCols(client) {
                            'category','brand','color','size','artwork_id','artwork_size_front','artwork_size_back',
                            'artwork_no','catalog_style_id','catalog_color_id','catalog_size_id',
                            'catalog_sku','product_image','style_description','front_mockup','back_mockup',
-                           'source_line_id','source_line_table')`
+                           'source_line_id','source_line_table','supplier_unit_cost')`
   )
   const _poItemCols = new Set(rows.map(r => r.column_name))
   return _poItemCols
@@ -77,6 +77,13 @@ async function insertItems(client, poId, items) {
     for (const key of ['source_line_id','source_line_table']) {
       if (cols.has(key)) { extraCols.push(key); extraVals.push(item[key] || null) }
     }
+    // What the supplier charges for one piece; the line's cost is the database's
+    // own sum (supplier_line_cost, migration 142).
+    if (cols.has('supplier_unit_cost')) {
+      const cost = item.supplier_unit_cost
+      extraCols.push('supplier_unit_cost')
+      extraVals.push(cost === null || cost === undefined || cost === '' ? null : Number(cost))
+    }
 
     const baseCols = ['po_id','item_name','description','qty_ordered','unit_price',
                       'discount_pct','discount_amt','tax_pct','tax_amt','line_total',
@@ -94,6 +101,73 @@ async function insertItems(client, poId, items) {
       `INSERT INTO purchase_order_items (${allCols.join(',')}) VALUES (${placeholders})`,
       allVals
     )
+  }
+}
+
+// ── Supplier cost ─────────────────────────────────────────────────────────────
+// What the factory charges us (migration 142) — never the customer's prices. The
+// goods cost is the lines' unit costs added up when any line has one; otherwise
+// the figure typed for the whole PO (a gangsheet PO has no priced lines). Setup,
+// freight and discount sit on top; the total is the database's own column.
+const SUPPLIER_CHARGES = ['supplier_setup_cost', 'supplier_freight_cost', 'supplier_discount']
+const hasCost = v => v !== null && v !== undefined && v !== ''
+
+async function writeSupplierCost(client, poId, data, items) {
+  const sets = []
+  const params = [poId]
+  const priced = Array.isArray(items) ? items.filter(it => hasCost(it.supplier_unit_cost)) : []
+  if (priced.length) {
+    const goods = priced.reduce((sum, it) =>
+      sum + Math.round(Number(it.supplier_unit_cost) * Number(it.qty_ordered || 0) * 100) / 100, 0)
+    params.push(Math.round(goods * 100) / 100)
+    sets.push(`supplier_goods_cost = $${params.length}`)
+  } else if (data.supplier_goods_cost !== undefined) {
+    params.push(hasCost(data.supplier_goods_cost) ? Number(data.supplier_goods_cost) : null)
+    sets.push(`supplier_goods_cost = $${params.length}`)
+  }
+  for (const key of SUPPLIER_CHARGES) {
+    if (data[key] === undefined) continue
+    params.push(Number(data[key]) || 0)
+    sets.push(`${key} = $${params.length}`)
+  }
+  if (!sets.length) return
+  try {
+    await client.query(`UPDATE purchase_orders SET ${sets.join(', ')} WHERE id = $1`, params)
+  } catch (err) {
+    if (err.constraint === 'chk_po_supplier_costs') {
+      throw Object.assign(new Error('The supplier discount cannot be more than the supplier cost'), { statusCode: 422 })
+    }
+    throw err
+  }
+}
+
+// A line raised from a sales order line takes that line's artwork — which
+// design, where it goes, how big — as a link, not a copied image address
+// (po_item_artworks, migration 142). Best effort: a link that cannot be made never
+// stops the purchase order saving.
+async function linkLineArtworks(client, poId) {
+  await client.query('SAVEPOINT po_line_artworks')
+  try {
+    await client.query(
+      `INSERT INTO po_item_artworks
+         (id, purchase_order_id, purchase_order_item_id, artwork_id, artwork_version_id,
+          placement, width_in, height_in, quantity, application_notes, item_type, created_at, updated_at)
+       SELECT gen_random_uuid(), poi.po_id, poi.id, oia.artwork_id, oia.artwork_version_id,
+              COALESCE(NULLIF(oia.placement, ''), 'Front'), oia.width_in, oia.height_in,
+              GREATEST(COALESCE(oia.quantity, 1), 1), oia.production_notes, 'PO_ITEM', NOW(), NOW()
+         FROM purchase_order_items poi
+         JOIN order_item_artworks oia
+           ON (poi.source_line_table = 'order_items_apparel' AND oia.apparel_item_id = poi.source_line_id)
+           OR (poi.source_line_table = 'order_items_dtf'     AND oia.dtf_item_id     = poi.source_line_id)
+        WHERE poi.po_id = $1
+          AND NOT EXISTS (SELECT 1 FROM po_item_artworks x
+                           WHERE x.purchase_order_item_id = poi.id AND x.artwork_id = oia.artwork_id
+                             AND x.placement = COALESCE(NULLIF(oia.placement, ''), 'Front'))`,
+      [poId])
+    await client.query('RELEASE SAVEPOINT po_line_artworks')
+  } catch (err) {
+    await client.query('ROLLBACK TO SAVEPOINT po_line_artworks')
+    console.warn('Could not link the sales order artwork to the purchase order lines', poId, err.message)
   }
 }
 
@@ -585,7 +659,7 @@ async function create(data) {
     billing_address, terms_conditions, order_date, expected_date, notes,
     freight_charges = 0, other_charges = 0, order_id,
     po_type = 'apparel', supplier_contact_id = null,
-    communication_method = 'email', payment_status = 'Unpaid',
+    communication_method = 'email',
     ship_source, ship_date, estimated_delivery, tracking_number, carrier, tracking_notes,
     fragments = [], artwork_ids = [],
     items = [], created_by,
@@ -656,7 +730,8 @@ async function create(data) {
         po_type,
         supplier_contact_id,
         communication_method,
-        payment_status,
+        // payment_status: the customer's, so never written on a new PO.
+        null,
         ship_source || null,
         ship_date || null,
         estimated_delivery || null,
@@ -673,6 +748,8 @@ async function create(data) {
       await client.query(`UPDATE purchase_orders SET po_scope = $2 WHERE id = $1`, [po.id, data.po_scope])
     }
     await insertItems(client, po.id, items)
+    await writeSupplierCost(client, po.id, data, items)
+    await linkLineArtworks(client, po.id)
     if (order_ids.length)   await replaceOrders(client, po.id, order_ids)
     if (fragments.length)   await replaceFragments(client, po.id, fragments)
     if (artwork_ids.length) await replaceArtworks(client, po.id, artwork_ids)
@@ -775,7 +852,8 @@ async function update(id, data) {
         data.currency, data.exchange_rate, data.buyer_id, data.department, data.priority,
         data.shipping_method, data.shipping_address, data.billing_address, data.terms_conditions,
         total_discount, total_tax, freight, other, grand_total,
-        data.po_type, data.supplier_contact_id, data.communication_method, data.payment_status,
+        // payment_status ($27) is the customer's: an edit leaves it as it was.
+        data.po_type, data.supplier_contact_id, data.communication_method, null,
         id,
         data.ship_source ?? null, data.ship_date ?? null, data.estimated_delivery ?? null,
         data.tracking_number ?? null, data.carrier ?? null, data.tracking_notes ?? null,
@@ -788,7 +866,9 @@ async function update(id, data) {
     if (data.items) {
       await client.query(`DELETE FROM purchase_order_items WHERE po_id = $1`, [id])
       await insertItems(client, id, data.items)
+      await linkLineArtworks(client, id)
     }
+    await writeSupplierCost(client, id, data, data.items)
     // `!== undefined` so an explicit empty array clears the relation (matches
     // "user removed everything"); an omitted key leaves it untouched.
     if (data.order_ids   !== undefined) await replaceOrders(client, id, data.order_ids)
@@ -971,6 +1051,7 @@ async function sendToPortal(poId, sentByUserId, overrideSupplierId) {
 }
 
 module.exports = {
+  writeSupplierCost, linkLineArtworks,
   setFactoryStatus,
   issuePlan: require('./po.issue').issuePlan,
   list, getImportSummary, getById, create, update, updateStatus, remove,

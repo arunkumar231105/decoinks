@@ -46,6 +46,8 @@ interface POLineItem {
   current_touched: boolean
   unit_price: number
   line_total: number
+  // What the supplier charges for one piece, as typed ('' when not known).
+  supplier_unit_cost?: string
   artwork_id: string | null
   artwork_no: string
   artwork_url: string | null
@@ -140,7 +142,12 @@ interface POFormState {
   contact_email: string
   contact_phone: string
   communication_method: 'email' | 'wechat'
-  payment_status: 'Unpaid' | 'Partial' | 'Paid'
+  // What the supplier charges (migration 142), as typed. The customer's payment
+  // is never on a purchase order.
+  supplier_goods_cost: string
+  supplier_setup_cost: string
+  supplier_freight_cost: string
+  supplier_discount: string
   buyer_id: string
   notes: string
   terms_conditions: string
@@ -188,6 +195,14 @@ function parseSheetSize(size?: string | null): { width: string; length: string }
   return m ? { width: m[1], length: m[2] } : { width: '', length: '' }
 }
 
+// A money field as typed: a number rounded to cents, or null when blank or not a number.
+function moneyOf(value?: string | null): number | null {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const n = Number(text)
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
+}
+
 function newItem(idx: number): POLineItem {
   return {
     id: uid(), category: 'T-Shirt', item_name: '', brand: '', color: '', size: '',
@@ -229,7 +244,10 @@ const initialState: POFormState = {
   contact_email: '',
   contact_phone: '',
   communication_method: 'email',
-  payment_status: 'Unpaid',
+  supplier_goods_cost: '',
+  supplier_setup_cost: '',
+  supplier_freight_cost: '',
+  supplier_discount: '',
   buyer_id: '',
   notes: '',
   terms_conditions: '',
@@ -537,7 +555,10 @@ export function NewPurchaseOrderPage() {
         contact_email:        existingPO.contact_email || '',
         contact_phone:        existingPO.contact_phone || existingPO.contact_wechat || '',
         communication_method: existingPO.communication_method === 'wechat' ? 'wechat' : 'email',
-        payment_status:       existingPO.payment_status || 'Unpaid',
+        supplier_goods_cost:   existingPO.supplier_goods_cost != null ? String(existingPO.supplier_goods_cost) : '',
+        supplier_setup_cost:   Number(existingPO.supplier_setup_cost) ? String(existingPO.supplier_setup_cost) : '',
+        supplier_freight_cost: Number(existingPO.supplier_freight_cost) ? String(existingPO.supplier_freight_cost) : '',
+        supplier_discount:     Number(existingPO.supplier_discount) ? String(existingPO.supplier_discount) : '',
         buyer_id:             existingPO.buyer_id || '',
         notes:                existingPO.notes || '',
         terms_conditions:     existingPO.terms_conditions || '',
@@ -593,6 +614,7 @@ export function NewPurchaseOrderPage() {
           current_touched: true,          // what this PO already issues
           unit_price: Number(it.unit_price) || 0,
           line_total: Number(it.line_total) || 0,
+          supplier_unit_cost: it.supplier_unit_cost != null ? String(it.supplier_unit_cost) : '',
           artwork_id: it.artwork_id || null,
           artwork_no: it.artwork_no_ref || '',
           artwork_url: it.artwork_thumbnail_url || it.artwork_file_url || it.front_image || null,
@@ -855,7 +877,11 @@ export function NewPurchaseOrderPage() {
       vendor_name: state.supplier_name || supplierSearch || null,
       supplier_contact_id,
       communication_method: state.communication_method,
-      payment_status: state.payment_status,
+      // What the supplier charges — the customer's payment is never on a PO.
+      supplier_goods_cost: supplierCost.goods,
+      supplier_setup_cost: supplierCost.setup,
+      supplier_freight_cost: supplierCost.freight,
+      supplier_discount: supplierCost.discount,
       buyer_id: state.buyer_id || null,
       order_date: state.order_date || null,
       expected_date: state.expected_date || null,
@@ -908,6 +934,7 @@ export function NewPurchaseOrderPage() {
             source_line_id: it.source_line_id,
             source_line_table: it.source_line_table,
             unit_price: it.unit_price,
+            supplier_unit_cost: moneyOf(it.supplier_unit_cost),
             artwork_id: it.artwork_id,
             artwork_size_front: it.artwork_size_front || null,
             artwork_size_back: it.artwork_size_back || null,
@@ -984,6 +1011,17 @@ export function NewPurchaseOrderPage() {
         toast.error('Enter Current on at least one line — how many pieces this purchase order issues.')
         return false
       }
+    }
+    // Supplier cost: nothing negative, and no discount beyond what is charged.
+    const typedCosts = [state.supplier_goods_cost, state.supplier_setup_cost, state.supplier_freight_cost,
+                        state.supplier_discount, ...state.items.map(it => it.supplier_unit_cost)]
+    if (typedCosts.some(v => String(v ?? '').trim() !== '' && !(Number(v) >= 0))) {
+      toast.error('Supplier costs must be numbers of 0 or more.')
+      return false
+    }
+    if (supplierCost.discount > (supplierCost.goods ?? 0) + supplierCost.setup + supplierCost.freight) {
+      toast.error('The supplier discount is more than the supplier cost.')
+      return false
     }
     return true
   }
@@ -1084,6 +1122,30 @@ export function NewPurchaseOrderPage() {
   )
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
+
+  // ── What the supplier charges ─────────────────────────────────────────────
+  // Lines priced at the supplier's unit cost add up to the goods cost; with no
+  // line priced (a gangsheet PO, or costs not known line by line) the goods cost
+  // is typed for the whole PO. Setup, freight and discount sit on top. Freight
+  // left blank takes the Shipping App rate when it was ticked as the factory's.
+  const costLines = state.po_type === 'apparel'
+    ? state.items.filter(it => !it.source_line_id || issuingQty(it) > 0)
+    : []
+  const pricedLines = costLines.filter(it => moneyOf(it.supplier_unit_cost) !== null)
+  const rateFreightCost = appliedRate && rateFreight && !appliedRate.is_own_factory ? Number(appliedRate.total_cost) : null
+  const supplierCost = (() => {
+    const goods = pricedLines.length
+      ? Math.round(pricedLines.reduce((sum, it) =>
+          sum + Math.round((moneyOf(it.supplier_unit_cost) ?? 0) * issuingQty(it) * 100) / 100, 0) * 100) / 100
+      : moneyOf(state.supplier_goods_cost)
+    const setup = moneyOf(state.supplier_setup_cost) ?? 0
+    const freight = moneyOf(state.supplier_freight_cost) ?? rateFreightCost ?? 0
+    const discount = moneyOf(state.supplier_discount) ?? 0
+    const total = goods !== null || setup > 0 || freight > 0
+      ? Math.round(((goods ?? 0) + setup + freight - discount) * 100) / 100
+      : null
+    return { goods, setup, freight, discount, total }
+  })()
   const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-US') : '—')
 
   const saving = saveMutation.isPending
@@ -1247,13 +1309,6 @@ export function NewPurchaseOrderPage() {
 
         {state.po_type === 'apparel' && (
           <div className="np-vendor-grid" style={{ gridTemplateColumns: '1fr 1fr 2fr', marginTop: 12 }}>
-            <div className="np-field">
-              <label className="np-label">Payment Status</label>
-              <select className="np-select" value={state.payment_status}
-                onChange={e => set('payment_status', e.target.value)}>
-                {['Unpaid', 'Partial', 'Paid'].map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
             <div className="np-field">
               <label className="np-label">Sales Agent</label>
               <select className="np-select" value={state.buyer_id}
@@ -1656,6 +1711,81 @@ export function NewPurchaseOrderPage() {
             onChange={e => set('terms_conditions', e.target.value)} />
         </div>
       )}
+
+      {/* ── SUPPLIER COST ── */}
+      <div className="np-card">
+        <div className="np-card-header">
+          <span className="np-section-num">$</span>
+          <h3>Supplier Cost</h3>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#64748b' }}>
+            What the factory charges us. The customer's prices and payments are never on a purchase order.
+          </span>
+        </div>
+        {costLines.length > 0 && (
+          <div className="np-table-wrap" style={{ overflowX: 'auto', marginBottom: 14 }}>
+            <table className="np-table" style={{ minWidth: 560 }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>#</th>
+                  <th>Item</th>
+                  <th style={{ width: 90 }}>Qty</th>
+                  <th style={{ width: 150 }}>Unit Cost</th>
+                  <th style={{ width: 130 }}>Line Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {costLines.map((it, i) => {
+                  const unit = moneyOf(it.supplier_unit_cost)
+                  return (
+                    <tr key={it.id}>
+                      <td>{i + 1}</td>
+                      <td>{[it.item_name, it.color, it.size].filter(Boolean).join(' · ') || '—'}</td>
+                      <td>{issuingQty(it)}</td>
+                      <td>
+                        <input className="np-input" type="number" min={0} step="0.01" placeholder="0.00"
+                          value={it.supplier_unit_cost ?? ''}
+                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { supplier_unit_cost: e.target.value } })} />
+                      </td>
+                      <td>{unit !== null ? `$${fmt(Math.round(unit * issuingQty(it) * 100) / 100)}` : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="np-vendor-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+          <div className="np-field">
+            <label className="np-label">Goods Cost</label>
+            {pricedLines.length
+              ? <input className="np-input" readOnly title="The line costs above, added up"
+                  value={supplierCost.goods !== null ? fmt(supplierCost.goods) : ''} />
+              : <input className="np-input" type="number" min={0} step="0.01" placeholder="0.00"
+                  value={state.supplier_goods_cost ?? ''} onChange={e => set('supplier_goods_cost', e.target.value)} />}
+          </div>
+          <div className="np-field">
+            <label className="np-label">Setup / Print Charges</label>
+            <input className="np-input" type="number" min={0} step="0.01" placeholder="0.00"
+              value={state.supplier_setup_cost ?? ''} onChange={e => set('supplier_setup_cost', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Freight</label>
+            <input className="np-input" type="number" min={0} step="0.01"
+              placeholder={rateFreightCost !== null ? fmt(rateFreightCost) : '0.00'}
+              value={state.supplier_freight_cost ?? ''} onChange={e => set('supplier_freight_cost', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Discount</label>
+            <input className="np-input" type="number" min={0} step="0.01" placeholder="0.00"
+              value={state.supplier_discount ?? ''} onChange={e => set('supplier_discount', e.target.value)} />
+          </div>
+          <div className="np-field">
+            <label className="np-label">Total Supplier Cost</label>
+            <input className="np-input" readOnly style={{ fontWeight: 700 }}
+              value={supplierCost.total !== null ? `$${fmt(supplierCost.total)}` : '—'} />
+          </div>
+        </div>
+      </div>
 
       {/* ── SHIPMENT / FULFILLMENT ── */}
       <div className="np-card">

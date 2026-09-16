@@ -46,6 +46,8 @@ const itemSchema = z.object({
   style_description:  z.string().optional().nullable(),
   front_mockup:       z.string().optional().nullable(),
   back_mockup:        z.string().optional().nullable(),
+  // What the supplier charges for one piece (migration 142).
+  supplier_unit_cost: z.number().nonnegative().optional().nullable(),
 })
 
 const fragmentSchema = z.object({
@@ -66,7 +68,13 @@ const createSchema = z.object({
   supplier_id:        z.string().uuid().optional().nullable(),
   supplier_contact_id: z.string().uuid().optional().nullable(),
   communication_method: z.enum(['email', 'wechat']).optional().default('email'),
-  payment_status:     z.enum(['Unpaid', 'Partial', 'Paid']).optional().default('Unpaid'),
+  // The customer's payment status. Accepted from older clients, never written:
+  // a purchase order's money is the supplier's (see the supplier_* fields).
+  payment_status:     z.enum(['Unpaid', 'Partial', 'Paid']).optional().nullable(),
+  supplier_goods_cost:   z.number().nonnegative().optional().nullable(),
+  supplier_setup_cost:   z.number().nonnegative().optional().nullable(),
+  supplier_freight_cost: z.number().nonnegative().optional().nullable(),
+  supplier_discount:     z.number().nonnegative().optional().nullable(),
   supplier_reference: z.string().optional().nullable(),
   payment_terms:      z.string().optional().nullable(),
   currency:           z.string().max(3).optional().default('USD'),
