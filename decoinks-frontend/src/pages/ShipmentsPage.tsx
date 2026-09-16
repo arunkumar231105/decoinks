@@ -138,7 +138,7 @@ const stageOf = (s: Shipment): Stage => {
 }
 
 // Promised delivery date: the original ETA if known, else the current estimate.
-const promisedEta = (s: Shipment) => s.original_eta || s.estimated_delivery
+const promisedEta = (s: Shipment) => originalEtaOf(s) || etaOf(s)
 const isOnTime = (s: Shipment) => {
   const eta = promisedEta(s)
   return Boolean(s.delivered_date && eta && s.delivered_date <= eta)
@@ -149,6 +149,12 @@ const isDelayed = (s: Shipment, today: string) => {
   if (s.delivered_date) return s.delivered_date > eta             // delivered late
   return stageOf(s) !== 'Delivered' && today > eta                // overdue, still not delivered
 }
+
+// A parcel that has not been scanned yet has no delivery estimate to show, even
+// if an old record still carries one (migration 140 clears them at the source).
+const notMovingYet = (s: Shipment) => stageOf(s) === 'Pre Transit' || stageOf(s) === 'Pending'
+const etaOf = (s: Shipment) => (notMovingYet(s) ? null : s.estimated_delivery)
+const originalEtaOf = (s: Shipment) => (notMovingYet(s) ? null : s.original_eta)
 
 const NO_FILTERS = { stage: 'All', timing: 'All', carrier: 'All', service: 'All', customer: 'All', state: 'All' }
 type Filters = typeof NO_FILTERS
@@ -219,7 +225,7 @@ export function ShipmentsPage() {
     // readable by opening the row, so it goes next to the status it explains.
     ['Details', s => s.status_details],
     ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
-    ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
+    ['Estimated Delivery', s => etaOf(s)], ['Delivered Date', s => s.delivered_date],
     ['Tracking ID', s => s.tracking_number],
   ]
   // What each column draws, by the same label. The columns can be dragged into
@@ -240,7 +246,7 @@ export function ShipmentsPage() {
       render: s => s.status_details ?? '-' },
     'Last Scan City': { className: 'sh-muted', render: s => s.last_scan_city ?? '-' },
     'Last Scan State': { className: 'sh-muted', render: s => s.last_scan_state ?? '-' },
-    'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(s.estimated_delivery) },
+    'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(etaOf(s)) },
     'Delivered Date': { className: 'sh-muted', render: s => s.delivered_date ?? '-' },
     'Tracking ID': { render: s => <span className="sh-awb">{s.tracking_number ?? '-'}</span> },
   }
@@ -734,8 +740,8 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
     ['From', fmtLoc(s.address_from_city, s.address_from_state, s.address_from_postal_code)],
     ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
     ['Last Scan', fmtLoc(s.last_scan_city, s.last_scan_state)],
-    ['Original ETA', s.original_eta ?? '—'],
-    ['Estimated Delivery', s.estimated_delivery ? fmtDay(s.estimated_delivery) : '—'],
+    ['Original ETA', originalEtaOf(s) ?? '—'],
+    ['Estimated Delivery', etaOf(s) ? fmtDay(etaOf(s)) : '—'],
     ['Delivered', s.delivered_date ?? '—'],
     ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
   ]

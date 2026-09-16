@@ -91,8 +91,13 @@ function mapTracking(data) {
     }
   }
 
-  if (data.eta)          out.estimated_delivery = toDate(data.eta)
-  if (data.original_eta) out.original_eta        = toDate(data.original_eta)
+  // A delivery estimate only once the parcel is moving. Before the carrier's
+  // first scan Shippo still returns the label's scheduled date, which read as a
+  // promise for a package that had not left the shop. The database holds the
+  // same rule for every other writer (migration 140).
+  const moving = !['PRE_TRANSIT', 'UNKNOWN'].includes(String(ts?.status || '').toUpperCase())
+  if (data.eta && moving)          out.estimated_delivery = toDate(data.eta)
+  if (data.original_eta && moving) out.original_eta        = toDate(data.original_eta)
 
   if (data.servicelevel && data.servicelevel.name) out.service_type = data.servicelevel.name
 
