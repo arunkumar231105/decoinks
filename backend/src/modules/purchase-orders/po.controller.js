@@ -113,20 +113,32 @@ async function exportCsv(req, res, next) {
   try {
     const { status = '', supplier_id = '', search = '' } = req.query
     const { rows } = await service.list({ page: 1, limit: 10000, status, supplier_id, search })
+    // Each column from where the fact actually lives (16 Sep 2026): shipping from
+    // the PO's parcel, contacts from the supplier, the PO's money from the
+    // supplier's side. "Payment Status" was the customer's and "Tax" read a
+    // column a PO does not have. Order Subtotal / Total are the sales order's
+    // value, kept for reference and named for what they are.
     const columns = [
     ['PO No', 'po_number'], ['PO Date', 'order_date'], ['Entry Date', 'entry_date'],
     ['Expected Date', 'expected_date'],
     ['Status', 'status'], ['PO Type', 'po_type'],
     ['Supplier / Vendor', 'display_vendor_name'], ['Contact Name', 'contact_name'],
     ['Contact Email', 'contact_email'], ['Contact Phone', 'contact_phone'],
-    ['Order No', 'order_number'], ['Payment Status', 'payment_status'],
-    ['Subtotal', 'subtotal'], ['Tax', 'tax_amt'], ['Total', 'total'], ['Currency', 'currency'],
-    ['Shipping By', 'shipping_method'], ['Service Type', 'service_type'],
-    ['Carrier', 'carrier'], ['Tracking No', 'tracking_number'],
-    ['Ship Date', 'ship_date'], ['Estimated Delivery', 'estimated_delivery'],
+    ['Order No', 'order_number'],
+    ['Supplier Cost', 'supplier_total_cost'], ['Supplier Payment Status', 'supplier_payment_status'],
+    ['Order Subtotal', 'subtotal'], ['Order Tax', 'total_tax'], ['Order Total', 'total'], ['Currency', 'currency'],
+    ['Shipping By', 'export_shipping_by'], ['Service Type', 'service_type'],
+    ['Carrier', 'export_carrier'], ['Tracking No', 'export_tracking_number'],
+    ['Ship Date', 'export_ship_date'], ['Estimated Delivery', 'export_estimated_delivery'],
     ['Terms', 'terms_conditions'], ['Notes', 'notes'],
     ]
-    return sendCsv(res, 'purchase-orders', columns, rows)
+    // Written as ="…" so Excel keeps a long tracking number as text instead of
+    // turning 9234690845500038491112 into 9.23469E+21.
+    const out = rows.map(r => ({
+      ...r,
+      export_tracking_number: r.display_tracking_number ? `="${String(r.display_tracking_number).replace(/"/g, '')}"` : null,
+    }))
+    return sendCsv(res, 'purchase-orders', columns, out)
   } catch (err) { next(err) }
 }
 

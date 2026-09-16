@@ -292,6 +292,17 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             COALESCE(NULLIF(BTRIM(latest_shipment.tracking_status), ''),
                      latest_shipment.status::text) AS tracking_status,
             COALESCE(po.tracking_number, latest_shipment.tracking_number) AS display_tracking_number,
+            -- The parcel's own facts for the export. The PO's copies of carrier,
+            -- ship date and estimate were rarely filled (ship_date and
+            -- estimated_delivery never), while the parcel always carries them.
+            COALESCE(NULLIF(BTRIM(latest_shipment.carrier), ''), NULLIF(BTRIM(po.carrier), '')) AS export_carrier,
+            COALESCE(po.ship_date, latest_shipment.ship_date) AS export_ship_date,
+            COALESCE(po.estimated_delivery, latest_shipment.estimated_delivery) AS export_estimated_delivery,
+            COALESCE(NULLIF(BTRIM(latest_shipment.ship_source), ''),
+                     CASE po.ship_source WHEN 'vendor' THEN 'Factory' WHEN 'self' THEN 'Decoinks' END) AS export_shipping_by,
+            sc.name AS contact_name,
+            COALESCE(sc.email, s.email) AS contact_email,
+            COALESCE(sc.phone, s.phone) AS contact_phone,
             -- Two statuses, as a sales order has (utils/poStatus.ts reads them).
             -- PO Status is where the document is: anything past Draft has gone
             -- to the factory, so it is Sent whatever po_stage last said.
@@ -340,6 +351,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
             u.name      AS created_by_name
      FROM purchase_orders po
      LEFT JOIN suppliers s  ON s.id  = po.supplier_id
+     LEFT JOIN supplier_contacts sc ON sc.id = po.supplier_contact_id
      LEFT JOIN customers cust ON cust.id = po.customer_id
      LEFT JOIN orders   o  ON o.id  = po.order_id
      LEFT JOIN customers ocust ON ocust.id = o.customer_id
@@ -349,7 +361,8 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
        -- Prefer the shipment matching the PO's own tracking number; fall back to
        -- the order's most recent shipment.
        SELECT sh.status, sh.tracking_number, sh.service_type, sh.carrier,
-              sh.tracking_status, sh.original_eta, sh.estimated_delivery
+              sh.tracking_status, sh.original_eta, sh.estimated_delivery,
+              sh.ship_date, sh.ship_source
        FROM shipments sh
        WHERE sh.deleted_at IS NULL
          AND (sh.from_po_id = po.id OR sh.po_id = po.id OR sh.order_id = po.order_id
