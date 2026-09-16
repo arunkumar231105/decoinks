@@ -22,9 +22,10 @@ const alert = (over = {}) => ({
 })
 
 describe('a real incoming alert', () => {
-  test('reads payer, amount, memo and the bank-local date', () => {
+  test('reads payer, amount, memo and the Pakistan date', () => {
+    // Sent 16:53 on the 11th in the US = 03:53 on the 12th in Pakistan.
     expect(parseZelleEmail(alert())).toEqual({
-      ok: true, payer: 'Jane Q Sample', amount: 88, memo: 'DTG T-Shirts', payment_date: '2026-09-11',
+      ok: true, payer: 'Jane Q Sample', amount: 88, memo: 'DTG T-Shirts', payment_date: '2026-09-12',
       message_id: '212176bd-fc15-465b-b31f-9b8f321d7d5f@las1s05mta0013.xt.local',
       sender: 'customerservice@ealerts.bankofamerica.com',
     })
@@ -51,8 +52,15 @@ describe('a real incoming alert', () => {
     expect(r).toMatchObject({ ok: true, memo: 'Hats' })
   })
 
-  test('the date is the day in the header offset, not UTC', () => {
-    expect(localDate('Mon, 31 Aug 2026 19:12:52 -0600')).toBe('2026-08-31')   // 01:12 UTC on Sep 1
+  test('the date is the day in Pakistan when the bank sent it', () => {
+    // 19:12 in the US on the 31st is 06:12 on Sep 1 in Pakistan.
+    expect(localDate('Mon, 31 Aug 2026 19:12:52 -0600')).toBe('2026-09-01')
+    // 23:00 in Denver on the 15th (PAY-2026-0164) is 10:00 on the 16th in Pakistan.
+    expect(localDate('Tue, 15 Sep 2026 23:00:34 -0600')).toBe('2026-09-16')
+    // Early evening in the US stays the same day... until Pakistan passes midnight at 19:00 UTC.
+    expect(localDate('Tue, 15 Sep 2026 12:59:00 -0600')).toBe('2026-09-15')
+    expect(localDate('Tue, 15 Sep 2026 13:00:00 -0600')).toBe('2026-09-16')
+    expect(localDate('not a date')).toBe(null)
   })
 })
 

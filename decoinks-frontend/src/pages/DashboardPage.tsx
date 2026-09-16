@@ -55,11 +55,19 @@ const TAB_ORDER: Tab[] = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', '
 const RECENT_KEYS = RECENT_PERIODS.map(([k]) => k) as RecentKey[]
 const isRecent = (tab: Tab): tab is RecentKey => (RECENT_KEYS as string[]).includes(tab)
 
+// Today's date in Pakistan (UTC+5, no DST), whatever clock the browser is on.
+// The dashboard counts shop days, the same days the CRM's Leads page counts.
+const shopToday = () => {
+  const d = new Date(Date.now() + 5 * 3600 * 1000)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+}
+
 function tabRange(tab: Tab): { from: string; to: string } {
-  const today = new Date()
+  const today = shopToday()
   if (isRecent(tab)) { const [from, to] = periodRange(tab); return { from, to } }
   if (tab === 'daily') return { from: iso(today), to: iso(today) }
-  if (tab === 'weekly') { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: iso(f), to: iso(today) } }
+  // This week so far, Monday first — the CRM's "This Week".
+  if (tab === 'weekly') { const f = new Date(today); f.setDate(f.getDate() - ((f.getDay() + 6) % 7)); return { from: iso(f), to: iso(today) } }
   if (tab === 'quarterly') { const q = Math.floor(today.getMonth() / 3) * 3; return { from: iso(new Date(today.getFullYear(), q, 1)), to: iso(today) } }
   if (tab === 'yearly') return { from: iso(new Date(today.getFullYear(), 0, 1)), to: iso(today) }
   if (tab === 'alltime') return { from: '2000-01-01', to: iso(today) }

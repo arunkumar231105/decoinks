@@ -1,4 +1,4 @@
-const { query } = require('../../config/db')
+const { query, getClient } = require('../../config/db')
 const { cacheGet, cacheSet } = require('../../config/redis')
 
 const TTL = 30
@@ -151,9 +151,37 @@ async function getRecentActivity() {
 
 const iso = d => d.toISOString().slice(0, 10)
 
+// The shop works on Pakistan time. A "day" on the dashboard runs from midnight
+// to midnight in Asia/Karachi (UTC+5, no DST), the same day the CRM's Leads
+// page counts — on UTC days the two disagreed every morning (Daily read 11
+// here against 36 in the CRM).
+const SHOP_TZ = 'Asia/Karachi'
+const SHOP_OFFSET_MS = 5 * 3600 * 1000
+
+/**
+ * The overview's queries, run with the session clock on shop time, so every
+ * `::date`, `$1::date` boundary and timestamp comparison means a Pakistan day.
+ * Each query borrows its own connection (they still run side by side) and puts
+ * the setting back before returning it to the pool.
+ */
+async function shopQuery(text, params) {
+  const client = await getClient()
+  let clean = false
+  try {
+    await client.query(`SET TIME ZONE '${SHOP_TZ}'`)
+    const result = await client.query(text, params)
+    await client.query('RESET TIME ZONE')
+    clean = true
+    return result
+  } finally {
+    // A connection whose clock could not be put back is discarded, never reused.
+    client.release(clean ? undefined : true)
+  }
+}
+
 function resolvePeriod(date_from, date_to) {
   const reDate = /^\d{4}-\d{2}-\d{2}$/
-  const now = new Date()
+  const now = new Date(Date.now() + SHOP_OFFSET_MS)   // wall clock in shop time, read with UTC getters
   let to = reDate.test(date_to || '') ? new Date(date_to + 'T00:00:00Z') : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   let from = reDate.test(date_from || '') ? new Date(date_from + 'T00:00:00Z') : new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1))
   if (from > to) [from, to] = [to, from]
@@ -165,7 +193,7 @@ function resolvePeriod(date_from, date_to) {
 
 async function getOverview({ date_from, date_to } = {}) {
   const p = resolvePeriod(date_from, date_to)
-  const cacheKey = `dashboard:overview:v3:${p.from}:${p.to}`
+  const cacheKey = `dashboard:overview:v4:${p.from}:${p.to}`
   const cached = await cacheGet(cacheKey)
   if (cached) return cached
 
@@ -178,7 +206,7 @@ async function getOverview({ date_from, date_to } = {}) {
          recentPays, recentPos, recentShips, shipCount] = await Promise.all([
 
     // Leads created in period + qualified subset, with product-type detection
-    query(`SELECT
+    shopQuery(`SELECT
         COUNT(*) FILTER (WHERE cur)::int AS cnt, COUNT(*) FILTER (WHERE prev)::int AS prev,
         COUNT(*) FILTER (WHERE cur AND ptype='dtf')::int AS dtf,
         COUNT(*) FILTER (WHERE cur AND ptype='shirt')::int AS shirt,
@@ -200,7 +228,7 @@ async function getOverview({ date_from, date_to } = {}) {
       ) x`, params),
 
     // Quotations actually sent (sent_at set, or moved past Draft)
-    query(`SELECT
+    shopQuery(`SELECT
         COUNT(*) FILTER (WHERE cur)::int AS cnt, COUNT(*) FILTER (WHERE prev)::int AS prev,
         COUNT(*) FILTER (WHERE cur AND ot IN ('dtf','gangsheet'))::int AS dtf,
         COUNT(*) FILTER (WHERE cur AND ot = 'apparel')::int AS shirt
@@ -215,7 +243,7 @@ async function getOverview({ date_from, date_to } = {}) {
       ) x`, params),
 
     // Payments received (real ledger) with type + new/existing customer splits
-    query(`SELECT
+    shopQuery(`SELECT
         COUNT(*) FILTER (WHERE cur)::int AS cnt,
         COUNT(*) FILTER (WHERE prev)::int AS prev,
         COALESCE(SUM(amount) FILTER (WHERE cur),0)::numeric(14,2) AS val,
@@ -248,7 +276,7 @@ async function getOverview({ date_from, date_to } = {}) {
       ) x`, params),
 
     // Orders: issued counts/values, reached-stage funnel, pendings, splits
-    query(`SELECT
+    shopQuery(`SELECT
         COUNT(*)                FILTER (WHERE cur)::int AS so_cnt,
         COUNT(*)                FILTER (WHERE prev)::int AS so_prev,
         COALESCE(SUM(total)     FILTER (WHERE cur),0)::numeric(14,2) AS so_val,
@@ -323,7 +351,7 @@ async function getOverview({ date_from, date_to } = {}) {
       ) x`, params),
 
     // Purchase orders issued in period
-    query(`SELECT
+    shopQuery(`SELECT
         COUNT(*) FILTER (WHERE cur)::int AS cnt, COUNT(*) FILTER (WHERE prev)::int AS prev,
         COUNT(*) FILTER (WHERE cur AND po_type='gangsheet')::int AS dtf,
         COUNT(*) FILTER (WHERE cur AND po_type='apparel')::int AS shirt,
@@ -339,13 +367,13 @@ async function getOverview({ date_from, date_to } = {}) {
       ) x`, params),
 
     // Customer base
-    query(`SELECT COUNT(*)::int AS total,
+    shopQuery(`SELECT COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE ${CUR('created_at')})::int AS new_cnt,
         COUNT(*) FILTER (WHERE ${PREV('created_at')})::int AS new_prev
       FROM customers WHERE deleted_at IS NULL`, params),
 
     // Daily revenue/order trend — current period
-    query(`WITH days AS (SELECT generate_series($1::date, $2::date, '1 day')::date AS d)
+    shopQuery(`WITH days AS (SELECT generate_series($1::date, $2::date, '1 day')::date AS d)
       SELECT to_char(d.d,'YYYY-MM-DD') AS date,
         COALESCE((SELECT SUM(pp.amount) FROM payments pp
                   JOIN invoices ii ON ii.id = pp.invoice_id AND ii.status::text <> 'Void'
@@ -355,7 +383,7 @@ async function getOverview({ date_from, date_to } = {}) {
       FROM days d ORDER BY d.d`, [p.from, p.to]),
 
     // Daily trend — previous period (aligned by index on the client)
-    query(`WITH days AS (SELECT generate_series($1::date, $2::date, '1 day')::date AS d)
+    shopQuery(`WITH days AS (SELECT generate_series($1::date, $2::date, '1 day')::date AS d)
       SELECT to_char(d.d,'YYYY-MM-DD') AS date,
         COALESCE((SELECT SUM(pp.amount) FROM payments pp
                   JOIN invoices ii ON ii.id = pp.invoice_id AND ii.status::text <> 'Void'
@@ -370,7 +398,7 @@ async function getOverview({ date_from, date_to } = {}) {
     // hid every one of them. The five most recent were four Stripe payments and
     // one older invoice-linked row, so the card showed the wrong five.
     // Dated the same way the rest of this file dates a payment.
-    query(`SELECT COALESCE(pay.paid_at::date, pay.payment_date, pay.created_at::date) AS paid_at,
+    shopQuery(`SELECT COALESCE(pay.paid_at::date, pay.payment_date, pay.created_at::date) AS paid_at,
         pay.amount, pay.payment_method::text AS method,
         COALESCE(c.name, cust.name, NULLIF(BTRIM(pay.received_from_name), ''), i.customer_name, '—') AS customer,
         i.invoice_number, i.id AS invoice_id, COALESCE(o.order_number, po.order_number) AS order_number
@@ -384,7 +412,7 @@ async function getOverview({ date_from, date_to } = {}) {
                pay.created_at DESC
       LIMIT 5`),
 
-    query(`SELECT po.id, po.po_number, COALESCE(po.order_date, po.created_at::date) AS po_date,
+    shopQuery(`SELECT po.id, po.po_number, COALESCE(po.order_date, po.created_at::date) AS po_date,
         po.status::text AS status, o.order_number AS source_order, s.name AS vendor
       FROM purchase_orders po
       LEFT JOIN orders o ON o.id = po.order_id
@@ -392,7 +420,7 @@ async function getOverview({ date_from, date_to } = {}) {
       WHERE po.deleted_at IS NULL
       ORDER BY po.created_at DESC LIMIT 5`),
 
-    query(`SELECT sh.id, COALESCE(sh.ship_date, sh.created_at::date) AS ship_date,
+    shopQuery(`SELECT sh.id, COALESCE(sh.ship_date, sh.created_at::date) AS ship_date,
         sh.tracking_number, sh.carrier, sh.status::text AS status,
         COALESCE(sh.recipient_name, c.name, o.contact_name, '—') AS customer
       FROM shipments sh
@@ -400,7 +428,7 @@ async function getOverview({ date_from, date_to } = {}) {
       LEFT JOIN customers c ON c.id = o.customer_id
       ORDER BY sh.created_at DESC LIMIT 5`),
 
-    query(`SELECT COUNT(*)::int AS cnt FROM shipments sh
+    shopQuery(`SELECT COUNT(*)::int AS cnt FROM shipments sh
       WHERE ${CUR("COALESCE(sh.ship_date, sh.created_at::date)")}`, [p.from, p.to]),
   ])
 
