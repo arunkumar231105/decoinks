@@ -795,20 +795,8 @@ export function PurchaseOrderPrintPage() {
                 <span className="card-field-value">{po.supplier_reference}</span>
               </div>
             )}
-            {po.payment_terms && (
-              <div className="card-field">
-                <span className="card-field-label">Payment Terms</span>
-                <span className="card-field-sep">:</span>
-                <span className="card-field-value">{po.payment_terms}</span>
-              </div>
-            )}
-            {po.payment_method && (
-              <div className="card-field">
-                <span className="card-field-label">Payment Method</span>
-                <span className="card-field-sep">:</span>
-                <span className="card-field-value">{po.payment_method}</span>
-              </div>
-            )}
+            {/* No payment terms or method: those were the customer's ("Advance",
+                "Paid"), and this document goes to the factory. */}
           </div>
 
           {/* Card 2 — Shipping & Billing */}

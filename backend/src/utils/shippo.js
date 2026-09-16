@@ -75,6 +75,9 @@ function mapLocation(loc) {
 function mapTracking(data) {
   const out = {}
   const ts = data.tracking_status || null
+  // Before the carrier's first scan the parcel has not moved: no last scan and no
+  // delivery estimate yet (migrations 140 and 141 hold the same rule in the DB).
+  const moving = !['PRE_TRANSIT', 'UNKNOWN'].includes(String(ts?.status || '').toUpperCase())
 
   if (ts) {
     if (ts.status)         out.tracking_status = ts.status
@@ -85,14 +88,22 @@ function mapTracking(data) {
         ? ts.substatus
         : (ts.substatus.text || ts.substatus.code || null)
     }
-    if (ts.location) {
+    if (!moving) {
+      // The location Shippo reports here is where the label was made, not a scan.
+      out.last_scan_city = null
+      out.last_scan_state = null
+    } else if (ts.location) {
       if (ts.location.city)  out.last_scan_city  = ts.location.city
       if (ts.location.state) out.last_scan_state = ts.location.state
     }
   }
 
-  if (data.eta)          out.estimated_delivery = toDate(data.eta)
-  if (data.original_eta) out.original_eta        = toDate(data.original_eta)
+  // A delivery estimate only once the parcel is moving. Before the carrier's
+  // first scan Shippo still returns the label's scheduled date, which read as a
+  // promise for a package that had not left the shop. The database holds the
+  // same rule for every other writer (migration 140).
+  if (data.eta && moving)          out.estimated_delivery = toDate(data.eta)
+  if (data.original_eta && moving) out.original_eta        = toDate(data.original_eta)
 
   if (data.servicelevel && data.servicelevel.name) out.service_type = data.servicelevel.name
 

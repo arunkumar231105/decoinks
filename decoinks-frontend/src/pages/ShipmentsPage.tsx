@@ -43,6 +43,7 @@ import { periodRange, toIsoDate, type PeriodKey } from '../utils/period'
 import { PeriodTabs } from '../components/PeriodTabs'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
 import { LabelModal } from '../components/LabelModal'
+import { ScanTimeline, TrackingTimelineDrawer } from '../components/TrackingTimeline'
 
 interface TrackingScan {
   status: string | null
@@ -138,7 +139,7 @@ const stageOf = (s: Shipment): Stage => {
 }
 
 // Promised delivery date: the original ETA if known, else the current estimate.
-const promisedEta = (s: Shipment) => s.original_eta || s.estimated_delivery
+const promisedEta = (s: Shipment) => originalEtaOf(s) || etaOf(s)
 const isOnTime = (s: Shipment) => {
   const eta = promisedEta(s)
   return Boolean(s.delivered_date && eta && s.delivered_date <= eta)
@@ -149,6 +150,16 @@ const isDelayed = (s: Shipment, today: string) => {
   if (s.delivered_date) return s.delivered_date > eta             // delivered late
   return stageOf(s) !== 'Delivered' && today > eta                // overdue, still not delivered
 }
+
+// A parcel that has not been scanned yet has no delivery estimate to show, even
+// if an old record still carries one (migration 140 clears them at the source).
+const notMovingYet = (s: Shipment) => stageOf(s) === 'Pre Transit' || stageOf(s) === 'Pending'
+const etaOf = (s: Shipment) => (notMovingYet(s) ? null : s.estimated_delivery)
+const originalEtaOf = (s: Shipment) => (notMovingYet(s) ? null : s.original_eta)
+// Nor a last scan: before the first scan the location is where the label was made
+// (migration 141 clears it at the source).
+const lastScanCityOf = (s: Shipment) => (notMovingYet(s) ? null : s.last_scan_city)
+const lastScanStateOf = (s: Shipment) => (notMovingYet(s) ? null : s.last_scan_state)
 
 const NO_FILTERS = { stage: 'All', timing: 'All', carrier: 'All', service: 'All', customer: 'All', state: 'All' }
 type Filters = typeof NO_FILTERS
@@ -169,7 +180,7 @@ const EXPORT_COLUMNS: ReadonlyArray<readonly [string, (s: Shipment) => unknown]>
   ['Weight (lbs)', s => s.weight_lbs], ['Shipping Cost', s => s.shipping_cost],
   ['Estimated Delivery', s => s.estimated_delivery], ['Original ETA', s => s.original_eta],
   ['Delivered Date', s => s.delivered_date],
-  ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
+  ['Last Scan City', s => lastScanCityOf(s)], ['Last Scan State', s => lastScanStateOf(s)],
   ['Is Return', s => s.is_return], ['Notes', s => s.notes], ['Created At', s => s.created_at],
 ]
 
@@ -218,8 +229,8 @@ export function ShipmentsPage() {
     // on Delivery Vehicle", "On the Way", "Out For Delivery" — and it was only
     // readable by opening the row, so it goes next to the status it explains.
     ['Details', s => s.status_details],
-    ['Last Scan City', s => s.last_scan_city], ['Last Scan State', s => s.last_scan_state],
-    ['Estimated Delivery', s => s.estimated_delivery], ['Delivered Date', s => s.delivered_date],
+    ['Last Scan City', s => lastScanCityOf(s)], ['Last Scan State', s => lastScanStateOf(s)],
+    ['Estimated Delivery', s => etaOf(s)], ['Delivered Date', s => s.delivered_date],
     ['Tracking ID', s => s.tracking_number],
   ]
   // What each column draws, by the same label. The columns can be dragged into
@@ -238,16 +249,27 @@ export function ShipmentsPage() {
     'Details': { className: 'sh-muted', style: DETAILS_CELL,
       title: s => [s.status_details, s.substatus].filter(Boolean).join(' — ') || undefined,
       render: s => s.status_details ?? '-' },
-    'Last Scan City': { className: 'sh-muted', render: s => s.last_scan_city ?? '-' },
-    'Last Scan State': { className: 'sh-muted', render: s => s.last_scan_state ?? '-' },
-    'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(s.estimated_delivery) },
+    'Last Scan City': { className: 'sh-muted', render: s => lastScanCityOf(s) ?? '-' },
+    'Last Scan State': { className: 'sh-muted', render: s => lastScanStateOf(s) ?? '-' },
+    'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(etaOf(s)) },
     'Delivered Date': { className: 'sh-muted', render: s => s.delivered_date ?? '-' },
-    'Tracking ID': { render: s => <span className="sh-awb">{s.tracking_number ?? '-'}</span> },
+    'Tracking ID': {
+      render: s => s.tracking_number
+        ? (
+          <button type="button" className="sh-track-link" title="View tracking timeline"
+            onClick={e => { e.stopPropagation(); setTrackingShipment(s) }}>
+            <Truck size={13} /> {s.tracking_number}
+          </button>
+        )
+        : '-',
+    },
   }
   // Shipments starts with no column frozen; the filter bar sets how many.
   const columnDrag = useColumnDrag(SORT_COLUMNS.map(([label]) => label), { frozen: 0, storageKey: 'shipments' })
   const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; id: string } | null>(null)
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null)
+  // The tracking timeline opened from a tracking number.
+  const [trackingShipment, setTrackingShipment] = useState<Shipment | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showLabel, setShowLabel] = useState(false)
 
@@ -357,6 +379,7 @@ export function ShipmentsPage() {
     onSuccess: (updated: Shipment) => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       setDetailShipment(prev => (prev && prev.id === updated.id ? updated : prev))
+      setTrackingShipment(prev => (prev && prev.id === updated.id ? updated : prev))
       toast.success(`Tracking updated: ${updated.tracking_status ?? updated.status}`)
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Could not refresh tracking'),
@@ -701,6 +724,13 @@ export function ShipmentsPage() {
         refreshing={refreshMutation.isPending}
       />
 
+      <TrackingTimelineDrawer
+        shipment={trackingShipment}
+        onClose={() => setTrackingShipment(null)}
+        onRefresh={id => refreshMutation.mutate(id)}
+        refreshing={refreshMutation.isPending}
+      />
+
       {showImport && <ShipmentImportModal onClose={() => setShowImport(false)} />}
       {showLabel && <LabelModal onClose={() => setShowLabel(false)} />}
     </div>
@@ -733,9 +763,9 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
     ['Details', s.status_details ?? '—'],
     ['From', fmtLoc(s.address_from_city, s.address_from_state, s.address_from_postal_code)],
     ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
-    ['Last Scan', fmtLoc(s.last_scan_city, s.last_scan_state)],
-    ['Original ETA', s.original_eta ?? '—'],
-    ['Estimated Delivery', s.estimated_delivery ? fmtDay(s.estimated_delivery) : '—'],
+    ['Last Scan', fmtLoc(lastScanCityOf(s), lastScanStateOf(s))],
+    ['Original ETA', originalEtaOf(s) ?? '—'],
+    ['Estimated Delivery', etaOf(s) ? fmtDay(etaOf(s)) : '—'],
     ['Delivered', s.delivered_date ?? '—'],
     ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
   ]
@@ -770,30 +800,10 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
           ))}
         </div>
 
-        <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Tracking Timeline</h4>
-        {history.length === 0 ? (
-          <p style={{ color: '#94a3b8', fontSize: 13 }}>
-            No scan history yet. Click “Refresh Tracking” to pull the latest from Shippo.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {history.slice().reverse().map((h, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <MapPin size={15} style={{ color: '#0ea5e9', marginTop: 2, flexShrink: 0 }} />
-                <div style={{ fontSize: 13 }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {h.status ?? '—'}{h.substatus ? ` · ${h.substatus}` : ''}
-                  </div>
-                  {h.status_details && <div style={{ color: '#475569' }}>{h.status_details}</div>}
-                  <div style={{ color: '#94a3b8' }}>
-                    {fmtLoc(h.location?.city, h.location?.state, h.location?.zip)}
-                    {h.status_date ? ` — ${new Date(h.status_date).toLocaleString()}` : ''}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700 }}>Tracking Timeline</h4>
+        <div style={{ margin: '0 -22px' }}>
+          <ScanTimeline scans={history} />
+        </div>
       </div>
     </Drawer>
   )

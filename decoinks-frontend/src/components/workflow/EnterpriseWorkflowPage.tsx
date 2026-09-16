@@ -22,6 +22,7 @@ import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { periodRange, type PeriodKey } from '../../utils/period'
 import { PeriodTabs } from '../PeriodTabs'
+import '../../styles/workflow-range.css'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -59,6 +60,16 @@ const date = (value: any) => {
   if (!value) return '—'
   const raw = String(value)
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+/**
+ * A period as it fits its box: "Sep 14 – Sep 16, 2026" when both ends share a
+ * year, a single date for one day. The full dates stay in the box's tooltip.
+ */
+const rangeText = (from: any, to: any) => {
+  const a = date(from), b = date(to)
+  if (a === b) return a
+  const sameYear = String(from).slice(0, 4) === String(to).slice(0, 4)
+  return `${sameYear ? a.replace(/,\s*\d{4}$/, '') : a} – ${b}`
 }
 /**
  * Date with the time of day, when we actually know it.
@@ -264,7 +275,8 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Delivered', icon: PackageCheck, value: r => r.filter(x => poProcessStatus(x) === 'Delivered').length, tone: 'green' },
       // grand_total when it was worked out, total otherwise: purchase orders
       // raised without line items carry grand_total 0, and counted as nothing.
-      { label: 'PO Value', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + (Number(x.grand_total) || Number(x.total) || 0), 0)), tone: 'green' },
+      // What the POs cost us — the supplier's charges, never the customer's order value.
+      { label: 'PO Cost', icon: CircleDollarSign, value: r => money(r.reduce((a, x) => a + (Number(x.supplier_total_cost) || 0), 0)), tone: 'green' },
     ],
     columns: [
       // Our own number, not the supplier's. This column showed source_po_number
@@ -322,6 +334,9 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
       { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
       { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
+      // How the customer actually paid inside Stripe — Apple Pay, a card, a bank.
+      // The method stays "Stripe"; this is read from Stripe's charge.
+      { key: 'paid_via', label: 'Paid Via', render: r => common.empty(r, 'paid_via') },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
@@ -643,7 +658,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {kind === 'orders' && <label><span>Channel</span><select value={group} onChange={e => setGroup(e.target.value)}><option>All</option>{ORDER_GROUPS.map(g => <option value={g.value} key={g.value}>{g.value}</option>)}</select></label>}
-        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
+        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label" title={periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}><CalendarDays size={15}/><span>{periodRangeMemo[0] ? rangeText(periodRangeMemo[0], periodRangeMemo[1]) : 'All dates'}</span></div>}
         <label><span>Sort By</span><select value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as SortKey) }}>
           <option value="date_desc">Date: newest first</option>
           <option value="date_asc">Date: oldest first</option>
@@ -699,7 +714,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     {active && <>
       <button className="ew-drawer-scrim" aria-label={`Close ${config.title.slice(0, -1).toLowerCase()} summary`} onClick={() => { setActive(null); setDetail(null) }}/>
       <aside className="ew-drawer" role="dialog" aria-modal="true" aria-label={`${config.title.slice(0, -1)} summary`}>
-      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges">{kind === 'purchase-orders' ? <><Badge>{poStage(active)}</Badge><Badge>{poFactoryStatus(active)}</Badge><Badge>{poProcessStatus(active)}</Badge></> : <Badge>{titleCase(active.status)}</Badge>}{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
+      <header><div><small>{config.title.slice(0, -1)} Summary</small><h3>{active[config.numberKey]}</h3><div className="ew-drawer-badges">{kind === 'purchase-orders' ? <><Badge>{poStage(active)}</Badge><Badge>{poFactoryStatus(active)}</Badge><Badge>{poProcessStatus(active)}</Badge></> : <Badge>{titleCase(active.status)}</Badge>}{kind === 'quotations' && <Badge>Revision {active.revision_number ?? 0}</Badge>}{kind === 'purchase-orders' ? <Badge>{active.supplier_payment_status || 'Not Billed'}</Badge> : kind !== 'quotations' && (active.export_payment_status || active.payment_status) && <Badge>{titleCase(active.export_payment_status || active.payment_status)}</Badge>}</div></div><button className="ew-icon-btn ew-drawer-close" onClick={() => { setActive(null); setDetail(null) }} aria-label="Close summary"><X size={20}/></button></header>
       <div className="ew-drawer-actions">{editFor(active) && <button onClick={editFor(active)!} title="Open this record in its form"><Pencil size={16}/><span>Edit</span></button>}{kind !== 'payments' && <button onClick={() => window.open(printPathFor(active), '_blank', 'noopener,noreferrer')} title="Open print preview"><Printer size={16}/><span>Preview</span></button>}<button onClick={() => downloadCsv(`${active[config.numberKey]}.csv`, [detail || active])} title="Export this record"><Download size={16}/><span>Export</span></button></div>
       <WorkflowDrawerContent kind={kind} row={detail || active} navigate={navigate}/>
       {kind === 'quotations' && <button className="ew-full" onClick={() => navigate(pathFor(active))}>View Full History</button>}
@@ -910,6 +925,9 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Full / Partial', value: <Badge>{row.po_scope === 'full' ? 'Full PO' : row.po_scope === 'partial' ? 'Partial PO' : '—'}</Badge> },
       { label: 'Factory Status', value: <Badge>{poFactoryStatus(row)}</Badge> },
       { label: 'Process Status', value: <Badge>{poProcessStatus(row)}</Badge> },
+      // The supplier's side of the money (the customer's is on the sales order).
+      { label: 'Supplier Cost', value: row.supplier_total_cost != null ? money(row.supplier_total_cost) : '—' },
+      { label: 'Supplier Payment', value: <Badge>{row.supplier_payment_status || 'Not Billed'}</Badge> },
     ]}/>
     <DrawerSection title="Order Details" fields={[
       { label: 'Order Type', value: titleCase(first(row, 'print_type', 'po_type')) }, { label: 'No. of Artworks', value: row.order_total_artworks ?? row.total_artworks ?? row.artworks?.length ?? '—' },

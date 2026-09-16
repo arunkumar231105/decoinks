@@ -25,6 +25,9 @@ interface POItem {
   discount_amt: number
   tax_amt: number
   line_total: number
+  // What the supplier charges for the line (migration 142).
+  supplier_unit_cost?: number | string | null
+  supplier_line_cost?: number | string | null
   required_by_date: string | null
   remarks: string | null
   source_artwork_no?: string | null
@@ -120,6 +123,15 @@ interface PurchaseOrder {
   shipping_labels?: string | null
   packages?: number | null
   source_payment_status?: string | null
+  // What the supplier charges and what we have paid them (migration 142).
+  supplier_goods_cost?: number | string | null
+  supplier_setup_cost?: number | string | null
+  supplier_freight_cost?: number | string | null
+  supplier_discount?: number | string | null
+  supplier_total_cost?: number | string | null
+  supplier_billed_amount?: number | string | null
+  supplier_paid_amount?: number | string | null
+  supplier_payment_status?: string | null
   qa_notes?: {
     id: string
     issue_type: string
@@ -380,18 +392,19 @@ export function PurchaseOrderDetailPage() {
                   <p style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Shipping Label</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     {po.shipping_labels
-                      ? (/^https?:\/\//.test(po.shipping_labels)
+                      // Uploaded labels are stored as /storage/… links, not only http(s).
+                      ? (/^(https?:\/\/|\/)/.test(po.shipping_labels)
                           ? <a href={po.shipping_labels} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>View label</a>
                           : <span style={{ fontSize: 13 }}>{po.shipping_labels}</span>)
                       : <span style={{ fontSize: 13, color: '#9ca3af' }}>Not uploaded</span>}
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: uploadingLabel ? 'default' : 'pointer' }}>
                       {uploadingLabel ? 'Uploading…' : (po.shipping_labels ? 'Replace' : 'Upload')}
-                      <input type="file" accept="image/*" hidden disabled={uploadingLabel} onChange={e => { onLabelFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
+                      <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden disabled={uploadingLabel} onChange={e => { onLabelFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
                     </label>
                   </div>
                 </div>
                 <DetailRow label="Packages" value={String(po.packages ?? '-')} />
-                <DetailRow label="Source Payment Status" value={po.source_payment_status || '-'} />
+                <DetailRow label="Supplier Payment Status" value={po.supplier_payment_status || 'Not Billed'} />
               </div>
               {po.shipping_address && <div style={{ marginTop: 16 }}><DetailRow label="Ship To Address" value={po.shipping_address} multiline /></div>}
             </div>
@@ -409,7 +422,8 @@ export function PurchaseOrderDetailPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
                 <DetailRow label="Supplier" value={po.supplier_name ?? '-'} />
                 <DetailRow label="Supplier Reference" value={po.supplier_reference ?? '-'} />
-                <DetailRow label="Payment Terms" value={po.payment_terms ?? '-'} />
+                {/* The supplier's payment, not the customer's terms ("Advance" was the sales order's). */}
+                <DetailRow label="Supplier Payment" value={`${po.supplier_payment_status || 'Not Billed'} · paid ${po.currency || 'USD'} ${fmo(po.supplier_paid_amount ?? 0)} of ${po.currency || 'USD'} ${fmo(po.supplier_billed_amount ?? 0)} billed`} />
               </div>
             </div>
 
@@ -455,10 +469,10 @@ export function PurchaseOrderDetailPage() {
                     <th style={{ width: 70 }}>HSN</th>
                     <th style={{ width: 56 }}>UOM</th>
                     <th style={{ width: 64 }}>Qty</th>
-                    <th style={{ width: 96 }}>Unit Price</th>
+                    <th style={{ width: 96 }}>Unit Cost</th>
                     <th style={{ width: 64 }}>Disc%</th>
                     <th style={{ width: 64 }}>Tax%</th>
-                    <th style={{ width: 96 }}>Line Total</th>
+                    <th style={{ width: 96 }}>Line Cost</th>
                     <th style={{ width: 100 }}>Req By</th>
                   </tr>
                   )}
@@ -492,11 +506,11 @@ export function PurchaseOrderDetailPage() {
                         <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{item.hsn_code ?? '-'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#374151' }}>{item.uom}</td>
                         <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{item.qty_ordered}</td>
-                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{rate(item.unit_price, '-')}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', paddingRight: '12px' }}>{item.supplier_unit_cost != null ? `${currency} ${fmo(item.supplier_unit_cost)}` : '-'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', textAlign: 'right', paddingRight: '12px', color: '#6b7280' }}>{item.discount_pct}%</td>
                         <td style={{ padding: '8px', fontSize: '12px', textAlign: 'right', paddingRight: '12px', color: '#6b7280' }}>{item.tax_pct}%</td>
                         <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600, textAlign: 'right', paddingRight: '12px' }}>
-                          {currency} {fmo(item.line_total)}
+                          {item.supplier_line_cost != null ? `${currency} ${fmo(item.supplier_line_cost)}` : '-'}
                         </td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{fmtDate(item.required_by_date)}</td>
                       </tr>
@@ -710,36 +724,30 @@ export function PurchaseOrderDetailPage() {
         <div className="resp-sidebar-col">
           <div className="np-card" style={{ position: 'sticky', top: '80px' }}>
             <div className="np-card-header">
-              <h3>Financial Summary</h3>
+              <h3>Supplier Cost</h3>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {isImportedDTF ? (
-                <>
-                  <SummaryRow label="Payment Received" value={po.source_payment_status === 'Free/Reprint' ? 'Free / Reprint' : `${currency} ${fmo(po.payment_received)}`} />
-                  <SummaryRow label="Shipping Collected" value={`${currency} ${fmo(po.shipping_charge)}`} />
-                  <SummaryRow label="Net Product Amount" value={`${currency} ${fmo(po.net_product_amount)}`} />
-                  <SummaryRow label="Payment Status" value={po.source_payment_status || '-'} />
-                  <div style={{ borderTop: '2px solid #0d9488', paddingTop: 10, marginTop: 4 }}>
-                    <SummaryRow label="Imported Source Total" value={po.source_payment_status === 'Free/Reprint' ? 'Free' : `${currency} ${fmo(po.payment_received)}`} />
-                  </div>
-                </>
-              ) : (
-                <>
-              <SummaryRow label="Subtotal"        value={`${currency} ${fmo(po.subtotal ?? null)}`} />
-              <SummaryRow label="Total Discount"  value={`- ${currency} ${fmo(po.total_discount ?? null)}`} dimmed />
-              <SummaryRow label="Total Tax"       value={`${currency} ${fmo(po.total_tax ?? null)}`} />
-              <SummaryRow label="Freight"         value={`${currency} ${fmo(po.freight_charges ?? null)}`} />
-              <SummaryRow label="Other Charges"   value={`${currency} ${fmo(po.other_charges ?? null)}`} />
+              {/* The supplier's side only: what the factory charges us and what we have
+                  paid it. The customer's prices and payments belong to the sales order
+                  (owner, 16 Sep 2026). */}
+              <SummaryRow label="Goods Cost"    value={po.supplier_goods_cost != null ? `${currency} ${fmo(po.supplier_goods_cost)}` : '-'} />
+              <SummaryRow label="Setup / Print" value={`${currency} ${fmo(po.supplier_setup_cost ?? 0)}`} />
+              <SummaryRow label="Freight"       value={`${currency} ${fmo(po.supplier_freight_cost ?? 0)}`} />
+              <SummaryRow label="Discount"      value={`- ${currency} ${fmo(po.supplier_discount ?? 0)}`} dimmed />
               <div style={{ borderTop: '2px solid #1a1a2e', paddingTop: '10px', marginTop: '4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#111' }}>Grand Total</span>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#111' }}>Total Supplier Cost</span>
                   <span style={{ fontSize: '15px', fontWeight: 800, color: '#1a1a2e' }}>
-                    {currency} {fmo(po.grand_total ?? null)}
+                    {po.supplier_total_cost != null ? `${currency} ${fmo(po.supplier_total_cost)}` : '-'}
                   </span>
                 </div>
               </div>
-                </>
-              )}
+              <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 10, marginTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <SummaryRow label="Supplier Payment"   value={po.supplier_payment_status || 'Not Billed'} />
+                <SummaryRow label="Billed by Supplier" value={`${currency} ${fmo(po.supplier_billed_amount ?? 0)}`} />
+                <SummaryRow label="Paid to Supplier"   value={`${currency} ${fmo(po.supplier_paid_amount ?? 0)}`} />
+                <SummaryRow label="Balance Due"        value={`${currency} ${fmo(Math.max(0, Number(po.supplier_billed_amount ?? 0) - Number(po.supplier_paid_amount ?? 0)))}`} />
+              </div>
             </div>
 
             {/* Delete */}

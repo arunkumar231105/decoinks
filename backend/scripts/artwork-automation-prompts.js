@@ -58,6 +58,9 @@ const PLAN = [
   // its code is not deployed yet, so nothing fetches these until it is).
   { name: 'TEXT_REPLACE_COLLAGE',     key: 'AIS.TEXT.REPLACE_COLLAGE',         title: 'Replace Text: 8 Variations',    module: 'Concept',     used: 'Text replace · step 1, 8 variations with the new wording' },
   { name: 'TEXT_REPLACE_FINAL',       key: 'AIS.TEXT.REPLACE_FINAL',           title: 'Replace Text: Final Artwork',   module: 'Concept',     used: 'Text replace · step 2, final artwork' },
+  // Text designs with a client-supplied image: their own stage-1 collage, then the shared colour and final turns.
+  { name: 'TEXT_IMAGE_ELEMENT_COLLAGE', key: 'AIS.TEXT.IMAGE_ELEMENT_COLLAGE', title: 'Text + Image: 8 Variations',   module: 'Concept',     used: 'Text designs · image element mode, step 1' },
+  { name: 'TEXT_IMAGE_STYLE_COLLAGE',   key: 'AIS.TEXT.IMAGE_STYLE_COLLAGE',   title: 'Text Styled After Image: 8 Variations', module: 'Concept', used: 'Text designs · image style mode, step 1' },
   { name: 'CUSTOM_ASPECT_REGENERATE', key: 'AIS.RATIO.REGENERATE',             title: 'Aspect Ratio Regenerate',       module: 'Variations',  used: 'Custom operations · Aspect Ratio, regenerate' },
   // In the automation's code and kept here, but no screen sends them yet.
   { name: 'EXTRACT_BOXES',            key: 'AIS.EXTRACT.BOXES',                title: 'Detect Design Boxes (JSON)',    module: 'Extraction',  used: 'Extraction helper get_boxes · not used by a screen yet' },

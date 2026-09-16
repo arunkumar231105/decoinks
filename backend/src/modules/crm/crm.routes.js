@@ -616,4 +616,28 @@ router.post('/upload-image', wrap(async (req, res) => {
   res.json({ data: { url, dimensions } })
 }))
 
+/* ── Shipments ───────────────────────────────────────────────────────────── */
+
+// Fresh carrier status for one shipment, from the CRM's Shipment tab — the same
+// refreshTracking the Printshop Shipments screen runs (Shippo lookup, only the
+// fields Shippo returned are written, Delivered is never moved back).
+const shipmentsSvc = require('../shipments/shipments.service')
+router.post('/shipments/:id/track', wrap(async (req, res) => {
+  res.json({ data: await shipmentsSvc.refreshTracking(req.params.id) })
+}))
+
+/* ── Payments ────────────────────────────────────────────────────────────── */
+
+// A Bank of America Zelle alert, posted by the n8n inbox watcher the moment it
+// arrives. zelle.recorder decides — bank-signed only, never twice, adopting a
+// row staff already typed. ?dry_run=1 answers what it would do and writes nothing.
+// 422 when refused, so n8n's failure branch alerts someone to look.
+const zelleRecorder = require('../payments/zelle.recorder')
+router.post('/payments/zelle-email', wrap(async (req, res) => {
+  const dryRun = req.query.dry_run === '1' || req.body?.dry_run === true
+  const result = await zelleRecorder.recordZelleEmail(req.body || {}, { dryRun })
+  if (result.status === 'rejected') return res.status(422).json({ error: result.reason, data: result })
+  res.status(result.status === 'created' && !dryRun ? 201 : 200).json({ data: result })
+}))
+
 module.exports = router

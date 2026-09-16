@@ -162,10 +162,13 @@ async function getDashboard(supplierId) {
 // This supplier's purchase orders on one sales order. An order can carry more
 // than one PO (and a PO can cover several orders through po_orders), so they
 // are aggregated rather than joined — a join repeated the order once per PO.
+// No money reaches a supplier from the purchase order for now. Its totals and
+// line prices were the customer's (a PO's total was the sales order's value),
+// which told the factory our margin. The owner, 16 Sep 2026. The supplier's own
+// cost (migration 141) is shown here only once the owner decides it should be.
 const SUPPLIER_POS_FOR_ORDER = `
   LEFT JOIN LATERAL (
-    SELECT string_agg(p.po_number, ', ' ORDER BY p.po_number) AS po_number,
-           SUM(COALESCE(p.grand_total, p.total))              AS po_total
+    SELECT string_agg(p.po_number, ', ' ORDER BY p.po_number) AS po_number
       FROM purchase_orders p
      WHERE p.deleted_at IS NULL AND p.supplier_id = pov.supplier_id
        AND (p.order_id = o.id
@@ -425,7 +428,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
     db.query(
       `SELECT o.id, o.order_number, o.status, o.order_type,
               o.order_date, o.due_date, pov.sent_at,
-              pos.po_number, pos.po_total AS total,
+              pos.po_number, NULL::numeric AS total,
               COALESCE(NULLIF(o.shipping_name, ''), c.name) AS customer_name,
               COALESCE(shp.ship_date, o.shipped_at::date) AS shipped_date,
               shp.delivered_date,
@@ -644,9 +647,9 @@ async function getSupplierPODetail(supplierId, poId) {
             po.order_date, po.created_at, po.expected_date,
             COALESCE(po.need_by_date, po.required_dispatch_date, po.expected_date, o.due_date) AS due_date,
             po.required_dispatch_text, po.production_priority, po.print_type, po.brand,
-            po.currency, po.subtotal, po.total_discount, po.total_tax,
-            COALESCE(NULLIF(po.freight_charges, 0), po.shipping_charge) AS freight_charges,
-            po.other_charges, COALESCE(po.grand_total, po.total) AS grand_total,
+            -- No money: see the note above SUPPLIER_POS_FOR_ORDER.
+            po.currency, NULL::numeric AS subtotal, NULL::numeric AS total_discount, NULL::numeric AS total_tax,
+            NULL::numeric AS freight_charges, NULL::numeric AS other_charges, NULL::numeric AS grand_total,
             po.shipping_method, po.delivery_type,
             po.tracking_number, po.carrier, po.tracking_notes,
             COALESCE(NULLIF(po.supplier_notes, ''), po.notes) AS notes,
@@ -681,7 +684,7 @@ async function getSupplierPODetail(supplierId, poId) {
   // is making, shown without the customer's prices.
   let items_source = 'purchase_order';
   let { rows: items } = await db.query(
-    `SELECT id, item_name, description, hsn_code, uom, qty_ordered, unit_price, discount_pct, tax_pct, line_total,
+    `SELECT id, item_name, description, hsn_code, uom, qty_ordered, NULL::numeric AS unit_price, discount_pct, tax_pct, NULL::numeric AS line_total,
             brand, color, size, catalog_sku AS style, artwork_no, print_type,
             COALESCE(front_mockup, front_image) AS image, product_image
        FROM purchase_order_items WHERE po_id = $1 ORDER BY sort_order, created_at`,
@@ -690,8 +693,8 @@ async function getSupplierPODetail(supplierId, poId) {
   if (!items.length) {
     ({ rows: items } = await db.query(
       `SELECT id, COALESCE(item_name, item_description) AS item_name, item_description AS description,
-              hsn_code, uom, quantity AS qty_ordered, supplier_unit_cost AS unit_price,
-              discount_pct, tax_pct, supplier_line_cost AS line_total,
+              hsn_code, uom, quantity AS qty_ordered, NULL::numeric AS unit_price,
+              discount_pct, tax_pct, NULL::numeric AS line_total,
               brand, color, size, style_no AS style, source_artwork_no AS artwork_no, print_type,
               front_image AS image, product_image
          FROM po_apparel_items WHERE purchase_order_id = $1 ORDER BY sort_order, line_no`,
@@ -769,7 +772,7 @@ async function getSupplierPOs(supplierId, { page = 1, limit = 10, search, status
       `SELECT po.id, po.po_number, po.status::text AS status, po.po_type, po.po_scope,
               COALESCE(po.order_date, po.created_at::date) AS issue_date, po.expected_date,
               COALESCE(po.need_by_date, po.required_dispatch_date, po.expected_date, o.due_date) AS due_date,
-              COALESCE(po.grand_total, po.total) AS total,
+              NULL::numeric AS total,
               po.order_id, o.order_number, po.tracking_number, po.carrier
        FROM portal_po_visibility ppv
        JOIN purchase_orders po ON po.id = ppv.po_id
