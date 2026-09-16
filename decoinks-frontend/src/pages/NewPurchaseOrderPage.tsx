@@ -8,8 +8,6 @@ import {
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
-import { useFormDraft } from '../hooks/useFormDraft'
-import { DraftBanner } from '../components/DraftBanner'
 import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 
@@ -158,6 +156,8 @@ interface POFormState {
   ship_date: string
   estimated_delivery: string
   tracking_notes: string
+  // The carrier label's file, as a link (/storage/…). '' when there is none.
+  shipping_labels: string
   items: POLineItem[]
   orders: CoveredOrder[]
   fragments: Fragment[]
@@ -258,6 +258,7 @@ const initialState: POFormState = {
   ship_date: '',
   estimated_delivery: '',
   tracking_notes: '',
+  shipping_labels: '',
   items: [],
   orders: [],
   fragments: [],
@@ -479,19 +480,13 @@ export function NewPurchaseOrderPage() {
     set('ship_source', 'vendor')
   }, [searchParams, isEdit])
 
-  // Draft persistence — survives refresh / hard refresh / redeploy.
-  // Create mode only: an edit form is authoritative from the server, so a stale
-  // draft must never overwrite freshly loaded PO data.
-  const { restored, clearDraft } = useFormDraft(
-    'purchase-order:new',
-    state as unknown as Record<string, unknown>,
-    saved => dispatch({ type: 'INIT', payload: { ...initialState, ...(saved as Partial<POFormState>) } }),
-    // Not while converting a sales order: that form is filled from the order
-    // itself, and a draft left over from a hand-typed PO would overwrite its
-    // date and lines (a PO came out dated 4 September for an order raised on
-    // the 12th, and so was nowhere near the top of the list).
-    { enabled: !isEdit && !fromOrderId },
-  )
+  // No half-typed PO is kept in the browser and brought back. A PO is either
+  // saved — Save Draft makes a real Draft PO, listed with the others — or it is
+  // not. The local copy kept reappearing on New PO with old lines and dates
+  // (owner, 16 Sep 2026); what an older version left behind is cleared once.
+  useEffect(() => {
+    try { localStorage.removeItem('decoinks:draft:purchase-order:new') } catch { /* storage blocked */ }
+  }, [])
   const selectPOColor = (item: POLineItem, colorId: string) => {
     const color = item.availableColors?.find(value => value.style_color_id === colorId)
     const variant = item.availableVariants?.find(value => value.style_color_id === colorId && value.style_size_id === item.catalog_size_id)
@@ -569,6 +564,7 @@ export function NewPurchaseOrderPage() {
         ship_date:            existingPO.ship_date ? existingPO.ship_date.split('T')[0] : '',
         estimated_delivery:   existingPO.estimated_delivery ? existingPO.estimated_delivery.split('T')[0] : '',
         tracking_notes:       existingPO.tracking_notes || '',
+        shipping_labels:      existingPO.shipping_labels || '',
         orders: (existingPO.orders ?? []).map((o: any): CoveredOrder => {
           const sz = parseSheetSize(o.gangsheet_sizes)
           return {
@@ -895,6 +891,9 @@ export function NewPurchaseOrderPage() {
       ship_date: state.ship_date || null,
       estimated_delivery: state.estimated_delivery || null,
       tracking_notes: state.tracking_notes || null,
+      // The carrier label (its link); '' clears it. An edit saves it here, a new
+      // PO has it attached right after it is created (see saveMutation).
+      shipping_labels: state.shipping_labels ?? '',
       ...(appliedRate && rateFreight && !appliedRate.is_own_factory
         ? { freight_charges: Number(appliedRate.total_cost) }
         : {}),
@@ -959,6 +958,34 @@ export function NewPurchaseOrderPage() {
     }
   }
 
+  // ── Shipping label ────────────────────────────────────────────────────────
+  // The carrier label goes up to storage at once and its link is kept on the
+  // form; it is saved with the PO. A PDF or an image — what Shippo, UPS or the
+  // factory hands over.
+  const [uploadingLabel, setUploadingLabel] = useState(false)
+  const onLabelFile = async (file?: File) => {
+    if (!file) return
+    if (!/^(application\/pdf|image\/(png|jpe?g|webp))$/.test(file.type)) {
+      toast.error('Upload the label as a PDF, PNG or JPG.')
+      return
+    }
+    setUploadingLabel(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const up = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const url: string | undefined = up.data?.url ?? up.data?.data?.url
+      if (!url) throw new Error('The upload did not return a link')
+      if (url.length > 160) throw new Error('The label link is too long to save')
+      set('shipping_labels', url)
+      toast.success(isEdit ? 'Label uploaded — press Update PO to save it' : 'Label uploaded — it is saved with the PO')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? err?.message ?? 'Could not upload the label')
+    } finally {
+      setUploadingLabel(false)
+    }
+  }
+
   const saveMutation = useMutation({
     mutationFn: async ({ thenView }: { thenView: boolean }) => {
       // PO Status: Save Draft keeps it a Draft, Save PO marks it Saved. A PO
@@ -969,11 +996,15 @@ export function NewPurchaseOrderPage() {
       const res = isEdit
         ? await api.put(`/purchase-orders/${editId}`, payload)
         : await api.post('/purchase-orders', payload)
+      // Creating a PO does not take a label; it is attached the moment the PO exists.
+      const createdId = !isEdit ? res.data.data?.id : null
+      if (createdId && state.shipping_labels) {
+        await api.put(`/purchase-orders/${createdId}`, { shipping_labels: state.shipping_labels })
+      }
       return { res, thenView }
     },
     onSuccess: ({ res, thenView }) => {
       const id = editId ?? res.data.data?.id
-      if (!isEdit) clearDraft()   // saved for real — the draft is no longer needed
       toast.success(isEdit ? 'Purchase order updated' : 'Purchase order saved')
       if (thenView && id) navigate(`/purchase-orders/${id}`)
       else if (!isEdit && id) navigate(`/purchase-orders/${id}/edit`, { replace: true })
@@ -1105,10 +1136,6 @@ export function NewPurchaseOrderPage() {
     return state.po_scope === 'full' ? available : Math.min(it.qty_ordered, available)
   }
 
-  const itemsTotal = useMemo(
-    () => state.items.reduce((s, it) => s + issuingQty(it) * it.unit_price, 0),
-    [state.items, figures, state.po_scope]
-  )
   // Live apparel weight from the selected BlankTex size's per-size garment weight
   // (grams → lbs). Display-only; does not change the saved PO payload.
   const GRAMS_PER_LB = 453.59237
@@ -1154,7 +1181,6 @@ export function NewPurchaseOrderPage() {
 
   return (
     <div className="np-page">
-      <DraftBanner show={restored} onDiscard={() => { clearDraft(); window.location.reload() }} />
 
       {/* ── HEADER ── */}
       <div className="np-header">
@@ -1481,11 +1507,11 @@ export function NewPurchaseOrderPage() {
                     <th style={{ width: 80 }}>Available</th>
                     <th style={{ width: 88 }}>Current</th>
                     <th style={{ width: 86 }}>Remaining</th>
-                    <th style={{ width: 96 }}>Balance (USD)</th>
+                    <th style={{ width: 96 }}>Balance (Cost)</th>
                   </>}
                   <th style={{ width: 150 }}>Artwork</th>
-                  <th style={{ width: 96 }}>Unit Price (USD)</th>
-                  <th style={{ width: 96 }}>Total (USD)</th>
+                  <th style={{ width: 104 }}>Unit Cost (USD)</th>
+                  <th style={{ width: 96 }}>Line Cost (USD)</th>
                   <th style={{ width: 80 }}>Weight</th>
                   <th style={{ width: 40 }} />
                 </tr>
@@ -1536,9 +1562,11 @@ export function NewPurchaseOrderPage() {
                           }} />
                       </td>
                       {/* Remaining is the pieces left after this purchase
-                          order; Balance is what those pieces are worth. */}
+                          order; Balance is what they will cost from the supplier. */}
                       <td className="np-td-num">{it.source_line_id ? figuresOf(it).available - issuingQty(it) : '—'}</td>
-                      <td className="np-td-num">{it.source_line_id ? `$${fmt((figuresOf(it).available - issuingQty(it)) * it.unit_price)}` : '—'}</td>
+                      <td className="np-td-num">{it.source_line_id && moneyOf(it.supplier_unit_cost) !== null
+                        ? `$${fmt(Math.round((figuresOf(it).available - issuingQty(it)) * (moneyOf(it.supplier_unit_cost) ?? 0) * 100) / 100)}`
+                        : '—'}</td>
                     </>}
                     <td>
                       <div className="np-inline-artwork"><ArtworkCellPicker
@@ -1554,13 +1582,16 @@ export function NewPurchaseOrderPage() {
                           ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
                           : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}</div>
                     </td>
+                    {/* What the supplier charges for one piece — never the customer's price. */}
                     <td>
-                      <input type="number" className="np-table-input np-num-input" min={0} step={0.01}
-                        value={it.unit_price}
-                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { unit_price: +e.target.value || 0 } })} />
+                      <input type="number" className="np-table-input np-num-input" min={0} step={0.01} placeholder="0.00"
+                        value={it.supplier_unit_cost ?? ''}
+                        onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { supplier_unit_cost: e.target.value } })} />
                     </td>
                     <td style={{ textAlign: 'right', paddingRight: 8, fontWeight: 700, fontSize: 13 }}>
-                      ${fmt(it.line_total)}
+                      {moneyOf(it.supplier_unit_cost) !== null
+                        ? `$${fmt(Math.round((moneyOf(it.supplier_unit_cost) ?? 0) * issuingQty(it) * 100) / 100)}`
+                        : '—'}
                     </td>
                     <td>{poUnitWeightG(it) ? `${(poUnitWeightG(it) * issuingQty(it) / GRAMS_PER_LB).toFixed(2)} lbs` : '—'}</td>
                     <td>
@@ -1577,11 +1608,11 @@ export function NewPurchaseOrderPage() {
                 <td colSpan={7}><span className="live-summary-title">Apparel Summary</span></td>
                 <td><div className="live-summary-stat"><span>{coveredKey ? 'Order Qty' : 'Total Qty'}</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).total : item.qty_ordered), 0)}</strong></div></td>
                 <td><div className="live-summary-stat"><span>This PO</span><strong>{state.items.reduce((sum, item) => sum + issuingQty(item), 0)}</strong></div></td>
-                {state.po_scope === 'partial' && <><td /><td /><td><div className="live-summary-stat"><span>Remaining</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).available - issuingQty(item) : 0), 0)}</strong></div></td><td><div className="live-summary-stat"><span>Balance</span><strong>${fmt(state.items.reduce((sum, item) => sum + (item.source_line_id ? (figuresOf(item).available - issuingQty(item)) * item.unit_price : 0), 0))}</strong></div></td></>}
+                {state.po_scope === 'partial' && <><td /><td /><td><div className="live-summary-stat"><span>Remaining</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).available - issuingQty(item) : 0), 0)}</strong></div></td><td><div className="live-summary-stat"><span>Balance (Cost)</span><strong>${fmt(state.items.reduce((sum, item) => sum + (item.source_line_id ? (figuresOf(item).available - issuingQty(item)) * (moneyOf(item.supplier_unit_cost) ?? 0) : 0), 0))}</strong></div></td></>}
                 <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Weight</span><strong>{poWeightLbs ? `${poWeightLbs} lbs` : '—'}</strong></div></td>
                 <td></td>
-                <td><div className="live-summary-stat live-summary-total"><span>Section Total</span><strong>${fmt(itemsTotal)}</strong></div></td>
+                <td><div className="live-summary-stat live-summary-total"><span>Supplier Goods Cost</span><strong>{supplierCost.goods !== null ? `$${fmt(supplierCost.goods)}` : '—'}</strong></div></td>
                 <td></td>
               </tr></tfoot>
             </table>
@@ -1721,38 +1752,10 @@ export function NewPurchaseOrderPage() {
             What the factory charges us. The customer's prices and payments are never on a purchase order.
           </span>
         </div>
-        {costLines.length > 0 && (
-          <div className="np-table-wrap" style={{ overflowX: 'auto', marginBottom: 14 }}>
-            <table className="np-table" style={{ minWidth: 560 }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 36 }}>#</th>
-                  <th>Item</th>
-                  <th style={{ width: 90 }}>Qty</th>
-                  <th style={{ width: 150 }}>Unit Cost</th>
-                  <th style={{ width: 130 }}>Line Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {costLines.map((it, i) => {
-                  const unit = moneyOf(it.supplier_unit_cost)
-                  return (
-                    <tr key={it.id}>
-                      <td>{i + 1}</td>
-                      <td>{[it.item_name, it.color, it.size].filter(Boolean).join(' · ') || '—'}</td>
-                      <td>{issuingQty(it)}</td>
-                      <td>
-                        <input className="np-input" type="number" min={0} step="0.01" placeholder="0.00"
-                          value={it.supplier_unit_cost ?? ''}
-                          onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { supplier_unit_cost: e.target.value } })} />
-                      </td>
-                      <td>{unit !== null ? `$${fmt(Math.round(unit * issuingQty(it) * 100) / 100)}` : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+        {state.po_type === 'apparel' && (
+          <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+            Unit costs are typed on each line in the items table above; the goods cost adds them up.
+          </p>
         )}
         <div className="np-vendor-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
           <div className="np-field">
@@ -1883,6 +1886,32 @@ export function NewPurchaseOrderPage() {
           <textarea className="np-textarea" rows={2}
             placeholder="Package count, handling notes, delivery instructions…"
             value={state.tracking_notes} onChange={e => set('tracking_notes', e.target.value)} />
+        </div>
+
+        <div className="np-field" style={{ marginTop: 12 }}>
+          <label className="np-label">Shipping Label</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {state.shipping_labels
+              ? (/^(https?:\/\/|\/)/.test(state.shipping_labels)
+                  ? <a className="lb-action-btn" href={state.shipping_labels} target="_blank" rel="noreferrer">
+                      <FileText size={13} /> View label
+                    </a>
+                  : <span style={{ fontSize: 13, color: '#374151' }}>{state.shipping_labels}</span>)
+              : <span style={{ fontSize: 13, color: '#9ca3af' }}>No label uploaded</span>}
+            <label className="lb-action-btn" style={{ cursor: uploadingLabel ? 'default' : 'pointer', opacity: uploadingLabel ? 0.6 : 1 }}>
+              <UploadCloud size={13} /> {uploadingLabel ? 'Uploading…' : state.shipping_labels ? 'Replace label' : 'Upload label'}
+              <input type="file" hidden accept="application/pdf,image/png,image/jpeg,image/webp" disabled={uploadingLabel}
+                onChange={e => { onLabelFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
+            </label>
+            {state.shipping_labels && (
+              <button type="button" className="lb-action-btn" onClick={() => set('shipping_labels', '')}>
+                <Trash2 size={13} /> Remove
+              </button>
+            )}
+          </div>
+          <span style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
+            PDF or image of the carrier label (Shippo, UPS, USPS or the factory's). Saved with the PO.
+          </span>
         </div>
 
         {state.tracking_number.trim() !== '' && (
