@@ -19,14 +19,14 @@ export const STAGES = [
 export type Stage = typeof STAGES[number]
 
 export const STAGE_TONE: Record<string, string> = {
-  'To be Pushed': 'bg-orange-50 text-orange-600',
-  'Factory Audit': 'bg-purple-50 text-purple-600',
-  'In Production': 'bg-blue-50 text-blue-600',
-  Exception: 'bg-red-50 text-red-600',
-  Shipped: 'bg-green-50 text-green-700',
-  'Pre-Transit': 'bg-blue-50 text-blue-600',
-  'In Transit': 'bg-blue-50 text-blue-600',
-  Delivered: 'bg-green-50 text-green-700',
+  'To be Pushed': 'bg-orange-100 text-orange-600',
+  'Factory Audit': 'bg-purple-100 text-purple-600',
+  'In Production': 'bg-blue-100 text-blue-600',
+  Exception: 'bg-red-100 text-red-600',
+  Shipped: 'bg-green-100 text-green-700',
+  'Pre-Transit': 'bg-cyan-100 text-cyan-700',
+  'In Transit': 'bg-sky-100 text-sky-700',
+  Delivered: 'bg-green-100 text-green-700',
   Cancelled: 'bg-slate-100 text-slate-600',
 }
 
@@ -39,7 +39,7 @@ export const STAGE_TEXT: Record<string, string> = {
 }
 
 /** The summary cards, in the order the design lays them out. `filter` is what a click applies. */
-export const CARDS: { label: string; filter: string; icon: LucideIcon; tone: string; key: 'total' | 'issued' | 'pending' | Stage }[] = [
+export const CARDS: { label: string; filter: string; icon: LucideIcon; tone: string; solid?: boolean; key: 'total' | 'issued' | 'pending' | Stage }[] = [
   { label: 'Total PO', filter: '', icon: FileText, tone: 'bg-blue-50 text-blue-600', key: 'total' },
   { label: 'Issued', filter: 'Issued', icon: CheckCircle2, tone: 'bg-green-50 text-green-600', key: 'issued' },
   { label: 'Pending', filter: 'Pending', icon: Clock, tone: 'bg-orange-50 text-orange-500', key: 'pending' },
@@ -47,10 +47,10 @@ export const CARDS: { label: string; filter: string; icon: LucideIcon; tone: str
   { label: 'Factory Audit', filter: 'Factory Audit', icon: Search, tone: 'bg-purple-50 text-purple-600', key: 'Factory Audit' },
   { label: 'In Production', filter: 'In Production', icon: Settings, tone: 'bg-blue-50 text-blue-600', key: 'In Production' },
   { label: 'Exceptions', filter: 'Exception', icon: AlertTriangle, tone: 'bg-red-50 text-red-600', key: 'Exception' },
-  { label: 'Shipped', filter: 'Shipped', icon: Truck, tone: 'bg-green-50 text-green-600', key: 'Shipped' },
-  { label: 'Pre-Transit', filter: 'Pre-Transit', icon: Box, tone: 'bg-blue-50 text-blue-600', key: 'Pre-Transit' },
+  { label: 'Shipped', filter: 'Shipped', icon: Truck, tone: 'bg-teal-50 text-teal-600', key: 'Shipped' },
+  { label: 'Pre-Transit', filter: 'Pre-Transit', icon: Box, tone: 'bg-cyan-50 text-cyan-700', key: 'Pre-Transit' },
   { label: 'Transit', filter: 'In Transit', icon: Plane, tone: 'bg-indigo-50 text-indigo-600', key: 'In Transit' },
-  { label: 'Delivered', filter: 'Delivered', icon: CheckCircle2, tone: 'bg-green-500 text-white', key: 'Delivered' },
+  { label: 'Delivered', filter: 'Delivered', icon: CheckCircle2, tone: 'bg-green-50 text-green-600', solid: true, key: 'Delivered' },
 ]
 
 export const CANCELLED_ICON = XCircle

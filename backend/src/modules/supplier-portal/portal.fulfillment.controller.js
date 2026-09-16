@@ -12,6 +12,10 @@ exports.getOrderGrid = async (req, res) => {
   try { res.json(await svc.getOrderGrid(req.supplier.supplierId, req.query)) } catch (e) { send(res, e) }
 }
 
+exports.getProducts = async (req, res) => {
+  try { res.json({ products: await svc.getProducts(req.supplier.supplierId) }) } catch (e) { send(res, e) }
+}
+
 exports.getOrderRow = async (req, res) => {
   try {
     const row = await svc.getOrderRow(req.supplier.supplierId, req.params.id)

@@ -420,8 +420,87 @@ async function updateFactory(supplierId, factoryId, body = {}) {
   } catch (err) { return duplicate(err) }
 }
 
+/**
+ * Products and where their pieces stand, for the portal's Products and
+ * Inventory pages. One entry per product (name, colour, size) across every PO
+ * shared with this supplier: taken from the PO's own lines where it has them,
+ * else from the sales order it was raised from — the same rule as the grid's
+ * Items column. Quantities are split by the PO's stage: still with the
+ * factory, on the way, delivered. Cancelled POs are left out. No prices.
+ */
+async function getProducts(supplierId) {
+  const grid = await loadRows(supplierId)
+  const stageById = new Map(grid.map(r => [r.id, r]))
+  const { rows } = await db.query(
+    `WITH shared AS (
+       SELECT po.id, po.order_id FROM portal_po_visibility ppv
+         JOIN purchase_orders po ON po.id = ppv.po_id
+        WHERE ppv.supplier_id = $1 AND ppv.is_visible = TRUE AND po.deleted_at IS NULL
+     ), po_lines AS (
+       SELECT s.id AS po_id, NULL::uuid AS order_id, i.item_name AS name, i.category, i.color, i.size, i.qty_ordered AS qty
+         FROM shared s JOIN purchase_order_items i ON i.po_id = s.id
+       UNION ALL
+       SELECT s.id, NULL::uuid, COALESCE(a.item_name, a.item_description), a.category, a.color, a.size, a.quantity
+         FROM shared s JOIN po_apparel_items a ON a.purchase_order_id = s.id
+     ), order_lines AS (
+       SELECT s.id AS po_id, s.order_id, COALESCE(NULLIF(BTRIM(i.item), ''), 'Apparel') AS name, i.category, i.color, i.size, i.qty
+         FROM shared s JOIN order_items_apparel i ON i.order_id = s.order_id
+        WHERE NOT EXISTS (SELECT 1 FROM po_lines l WHERE l.po_id = s.id)
+       UNION ALL
+       SELECT s.id, s.order_id, 'DTF Transfers', 'DTF', NULL, i.size, i.qty
+         FROM shared s JOIN order_items_dtf i ON i.order_id = s.order_id
+        WHERE NOT EXISTS (SELECT 1 FROM po_lines l WHERE l.po_id = s.id)
+       UNION ALL
+       SELECT s.id, s.order_id, 'Gangsheets', 'Gangsheet', NULL, g.size, g.qty
+         FROM shared s JOIN order_items_gangsheet g ON g.order_id = s.order_id
+        WHERE NOT EXISTS (SELECT 1 FROM po_lines l WHERE l.po_id = s.id)
+     )
+     SELECT po_id, order_id, NULLIF(BTRIM(name), '') AS name, NULLIF(BTRIM(category), '') AS category,
+            NULLIF(BTRIM(color), '') AS color, NULLIF(BTRIM(size), '') AS size, COALESCE(qty, 0)::int AS qty
+       FROM (SELECT * FROM po_lines UNION ALL SELECT * FROM order_lines) x`,
+    [supplierId]
+  )
+
+  const WITH_FACTORY = ['To be Pushed', 'Factory Audit', 'In Production', 'Exception']
+  const ON_THE_WAY = ['Shipped', 'Pre-Transit', 'In Transit']
+  // A sales order split over several POs lends each of them all its lines;
+  // count those lines once, on the order's newest live PO.
+  const orderOwner = new Map()
+  for (const l of rows) {
+    const po = stageById.get(l.po_id)
+    if (!l.order_id || !po || po.stage === 'Cancelled') continue
+    const cur = orderOwner.get(l.order_id)
+    if (!cur || String(po.po_number) > String(stageById.get(cur).po_number)) orderOwner.set(l.order_id, l.po_id)
+  }
+  const products = new Map()
+  for (const l of rows) {
+    const po = stageById.get(l.po_id)
+    if (!po || po.stage === 'Cancelled') continue
+    if (l.order_id && orderOwner.get(l.order_id) !== l.po_id) continue
+    const name = l.name || 'Unnamed item'
+    const key = [name, l.color, l.size].map(v => String(v || '').toLowerCase()).join('|')
+    let p = products.get(key)
+    if (!p) {
+      p = { key, name, category: l.category, color: l.color, size: l.size, qty: 0,
+            with_factory: 0, on_the_way: 0, delivered: 0, pos: new Set(), customers: new Set(), last_ordered: null }
+      products.set(key, p)
+    }
+    p.qty += l.qty
+    if (WITH_FACTORY.includes(po.stage)) p.with_factory += l.qty
+    else if (ON_THE_WAY.includes(po.stage)) p.on_the_way += l.qty
+    else if (po.stage === 'Delivered') p.delivered += l.qty
+    p.pos.add(po.po_number)
+    if (po.customer_name) p.customers.add(po.customer_name)
+    if (po.issue_date && (!p.last_ordered || po.issue_date > p.last_ordered)) p.last_ordered = po.issue_date
+    if (!p.category && l.category) p.category = l.category
+  }
+  return [...products.values()]
+    .map(p => ({ ...p, po_count: p.pos.size, customer_count: p.customers.size, po_numbers: [...p.pos].sort().reverse(), pos: undefined, customers: undefined }))
+    .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name))
+}
+
 module.exports = {
   SUPPLIER_STAGES, STAGES,
-  stageOf, getOrderGrid, getOrderRow, updateOrderStage,
+  stageOf, getOrderGrid, getOrderRow, updateOrderStage, getProducts,
   listFactories, createFactory, updateFactory,
 }

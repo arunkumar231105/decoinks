@@ -38,6 +38,7 @@ router.get('/orders/:id/status-updates',  ctrl.getStatusUpdates);
 router.get('/purchase-orders/order-grid',    fulfillment.getOrderGrid);
 router.get('/purchase-orders/:id/stage',     fulfillment.getOrderRow);
 router.patch('/purchase-orders/:id/stage',   fulfillment.updateOrderStage);
+router.get('/products',                      fulfillment.getProducts);
 router.get('/factories',                     fulfillment.listFactories);
 router.post('/factories',                    fulfillment.createFactory);
 router.patch('/factories/:id',               fulfillment.updateFactory);

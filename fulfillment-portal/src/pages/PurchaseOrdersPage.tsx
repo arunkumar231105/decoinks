@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Eye, Filter, MoreVertical, Pencil, Search, X,
+  ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Filter, Plus, Search, X,
 } from 'lucide-react'
 import { TableStates, num } from '../components/ui'
 import api from '../services/api'
-import StageEditor from '../components/fulfillment/StageEditor'
 import FactoriesModal from '../components/fulfillment/FactoriesModal'
 import {
   CARDS, STAGE_TEXT, STAGE_TONE, STAGES, carrierUrl, type GridResponse, type GridRow,
@@ -19,7 +17,9 @@ import {
  * Laid out to the owner's design (16 Sep 2026).
  */
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 8
+// Purchase orders are issued from Printshop; the design's button opens its New PO form.
+const NEW_PO_URL = 'https://printshop.decoinkssuite.com/purchase-orders/new'
 const COLUMNS_KEY = 'fp-order-grid-hidden-columns'
 const MANAGE_FACTORIES = '__manage__'
 
@@ -46,52 +46,6 @@ const readHidden = (): ColumnKey[] => {
   try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || '[]') } catch { return [] }
 }
 
-/**
- * The row menu, drawn above everything so the table card never clips it. It
- * follows its button when the page or the table scrolls — closing on scroll
- * closed it the moment it opened whenever the click itself had scrolled the
- * table to reach the button.
- */
-function RowMenu({ anchor, onClose, onUpdate, onView }: {
-  anchor: HTMLElement; onClose: () => void; onUpdate: () => void; onView: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [rect, setRect] = useState(() => anchor.getBoundingClientRect())
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose()
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    const follow = () => {
-      if (!anchor.isConnected) { onClose(); return }
-      setRect(anchor.getBoundingClientRect())
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    window.addEventListener('scroll', follow, true)
-    window.addEventListener('resize', follow)
-    return () => {
-      document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey)
-      window.removeEventListener('scroll', follow, true); window.removeEventListener('resize', follow)
-    }
-  }, [anchor, onClose])
-  const width = 184
-  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))
-  const below = rect.bottom + 96 < window.innerHeight
-  const style = below ? { left, top: rect.bottom + 4 } : { left, top: rect.top - 96 - 4 }
-  return createPortal(
-    <div ref={ref} role="menu" style={{ ...style, width }} className="fixed z-[60] overflow-hidden rounded-lg border border-line bg-white py-1 shadow-pop">
-      <button role="menuitem" className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-ink hover:bg-slate-50" onClick={onUpdate}>
-        <Pencil size={15} /> Update stage
-      </button>
-      <button role="menuitem" className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-ink hover:bg-slate-50" onClick={onView}>
-        <Eye size={15} /> View details
-      </button>
-    </div>,
-    document.body,
-  )
-}
-
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -103,6 +57,7 @@ export default function PurchaseOrdersPage() {
   const courier = params.get('courier') ?? ''
   const pushFrom = params.get('push_from') ?? ''
   const pushTo = params.get('push_to') ?? ''
+  const sorted = params.has('sort')   // arrows show only once someone picks a column
   const sort = params.get('sort') ?? 'issue_date'
   const dir = params.get('dir') === 'asc' ? 'asc' : 'desc'
   const page = Math.max(1, Number(params.get('page')) || 1)
@@ -110,11 +65,8 @@ export default function PurchaseOrdersPage() {
   const [hidden, setHidden] = useState<ColumnKey[]>(readHidden)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const [moreFilters, setMoreFilters] = useState(Boolean(pushFrom || pushTo))
-  const [editing, setEditing] = useState<GridRow | null>(null)
   const [factoriesOpen, setFactoriesOpen] = useState(false)
-  const [menu, setMenu] = useState<{ row: GridRow; anchor: HTMLElement } | null>(null)
   const columnsRef = useRef<HTMLDivElement>(null)
-  const closeMenu = useCallback(() => setMenu(null), [])
 
   const update = (next: Record<string, string | number | null>, resetPage = true) => {
     const p = new URLSearchParams(params)
@@ -192,11 +144,11 @@ export default function PurchaseOrdersPage() {
   const cell = (r: GridRow, key: ColumnKey, index: number) => {
     switch (key) {
       case 'sno': return <span className="text-slate-700">{(page - 1) * PAGE_SIZE + index + 1}</span>
-      case 'po_number': return <span className="font-medium text-blue-600">{r.po_number}</span>
+      case 'po_number': return <span className="text-blue-600">{r.po_number}</span>
       case 'customer': return (
-        <div className="min-w-[140px]">
-          <div className="text-slate-900">{r.customer_name ?? '—'}</div>
-          {r.customer_location && <div className="text-xs text-slate-500">{r.customer_location}</div>}
+        <div className="max-w-[140px]">
+          <div className="truncate text-slate-900" title={r.customer_name ?? undefined}>{r.customer_name ?? '—'}</div>
+          {r.customer_location && <div className="truncate text-xs text-slate-500" title={r.customer_location}>{r.customer_location}</div>}
         </div>
       )
       case 'order_number': return r.order_number
@@ -207,23 +159,23 @@ export default function PurchaseOrdersPage() {
         : <span className="text-slate-400">—</span>
       case 'push_date': return r.push_date ? <span className="text-slate-800">{r.push_date}</span> : <span className="text-slate-400">—</span>
       case 'stage': return (
-        <span className={`inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${STAGE_TONE[r.stage] ?? STAGE_TONE.Cancelled}`}>
+        <span className={`inline-flex whitespace-nowrap rounded-md px-2 py-[3px] text-[12.5px] ${STAGE_TONE[r.stage] ?? STAGE_TONE.Cancelled}`}>
           {r.stage}
         </span>
       )
-      case 'items': return r.items ? <span className="block max-w-[200px] truncate text-slate-800" title={r.items}>{r.items}</span> : <span className="text-slate-400">—</span>
+      case 'items': return r.items ? <span className="block max-w-[110px] truncate text-slate-800" title={r.items}>{r.items}</span> : <span className="text-slate-400">—</span>
       case 'qty': return r.qty != null ? <span className="text-slate-800">{num(r.qty)}</span> : <span className="text-slate-400">—</span>
       case 'courier': return r.courier ? <span className="text-slate-800">{String(r.courier).toUpperCase()}</span> : <span className="text-slate-400">—</span>
       case 'tracking_number': {
         if (!r.tracking_number) return <span className="text-slate-400">—</span>
         const url = carrierUrl(r.courier, r.tracking_number)
         return url
-          ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-slate-800 hover:text-blue-600 hover:underline"
-              onClick={e => e.stopPropagation()} title={`Track on ${String(r.courier).toUpperCase()}`}>{r.tracking_number}</a>
-          : <span className="text-slate-800">{r.tracking_number}</span>
+          ? <a href={url} target="_blank" rel="noopener noreferrer" className="block max-w-[115px] truncate text-slate-800 hover:text-blue-600 hover:underline"
+              onClick={e => e.stopPropagation()} title={`Track ${r.tracking_number} on ${String(r.courier).toUpperCase()}`}>{r.tracking_number}</a>
+          : <span className="block max-w-[115px] truncate text-slate-800" title={r.tracking_number}>{r.tracking_number}</span>
       }
       case 'tracking_text': return r.tracking_text
-        ? <span className={`block max-w-[200px] truncate ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`} title={r.tracking_text}>{r.tracking_text}</span>
+        ? <span className={`block max-w-[110px] truncate ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`} title={r.tracking_text}>{r.tracking_text}</span>
         : <span className="text-slate-400">—</span>
     }
   }
@@ -236,14 +188,16 @@ export default function PurchaseOrdersPage() {
   )
 
   const renderCard = (c: typeof CARDS[number]) => {
-    const active = c.filter === '' ? !stage : stage === c.filter
+    const active = Boolean(stage) && stage === c.filter
     const Icon = c.icon
     return (
       <button key={c.label} type="button" onClick={() => update({ stage: c.filter || null })} aria-pressed={active}
-        className={`flex min-w-0 items-center gap-3.5 rounded-xl border bg-white px-4 py-3.5 text-left shadow-card transition hover:shadow-pop ${active ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-line hover:border-slate-300'}`}>
-        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${c.tone}`}><Icon size={22} /></span>
+        className={`flex min-w-0 items-center gap-3.5 rounded-lg border bg-white px-4 py-[15px] text-left shadow-card transition hover:shadow-pop ${active ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-line hover:border-slate-300'}`}>
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${c.tone}`}>
+          {c.solid ? <Icon size={24} fill="currentColor" stroke="white" strokeWidth={2} /> : <Icon size={22} />}
+        </span>
         <span className="min-w-0">
-          <span className="block truncate text-[13px] text-slate-600">{c.label}</span>
+          <span className="block truncate text-[14px] text-slate-700">{c.label}</span>
           {query.isLoading
             ? <span className="fp-skeleton mt-1 block h-6 w-10" />
             : <span className="block text-2xl font-bold leading-tight text-slate-900">{num(cardValue(c.key))}</span>}
@@ -254,9 +208,15 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
-      <header className="mb-5">
-        <h1 className="text-[26px] font-bold leading-tight text-slate-900 sm:text-[30px]">Supplier Order Management</h1>
-        <p className="mt-1 text-sm text-slate-500 sm:text-[15px]">Manage supplier PO issuance, factory progress and courier tracking from one operational grid.</p>
+      <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-bold leading-tight text-slate-900 sm:text-[32px]">Supplier Order Management</h1>
+          <p className="mt-1 text-sm text-slate-500 sm:text-[15px]">Manage supplier PO issuance, factory progress and courier tracking from one operational grid.</p>
+        </div>
+        <a href={NEW_PO_URL} target="_blank" rel="noopener noreferrer"
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2.5 self-start rounded-md bg-[#0f8f86] px-5 text-[15px] font-medium text-white shadow-sm transition hover:bg-[#0c7a72]">
+          <Plus size={20} /> Issue PO to Supplier
+        </a>
       </header>
 
       {/* Summary cards: six, then five — a click filters the grid */}
@@ -363,27 +323,26 @@ export default function PurchaseOrdersPage() {
           positioned) stays inside the card instead of widening the page. */}
       <div className="relative mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse">
+          <table className="w-full min-w-[1100px] border-collapse">
             <thead>
               <tr className="border-b border-line">
                 {visible.map(c => (
-                  <th key={c.key} className="whitespace-nowrap px-3.5 py-3.5 text-left text-[13px] font-semibold text-slate-800"
-                    aria-sort={sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-                    <button className="inline-flex items-center gap-1.5 hover:text-blue-600"
+                  <th key={c.key} className="whitespace-nowrap px-2 py-3.5 text-left text-[13px] font-semibold text-slate-800"
+                    aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+                    <button className="inline-flex items-center gap-1 hover:text-blue-600"
                       onClick={() => update({ sort: c.sort, dir: sort === c.sort && dir === 'desc' ? 'asc' : 'desc' })}>
                       {c.label}
-                      {sort === c.sort
+                      {sorted && sort === c.sort
                         ? (dir === 'asc' ? <ArrowUp size={14} className="text-blue-600" /> : <ArrowDown size={14} className="text-blue-600" />)
-                        : <ArrowUpDown size={14} className="text-slate-400" />}
+                        : <ArrowUpDown size={12} className="text-slate-500" />}
                     </button>
                   </th>
                 ))}
-                <th className="w-12 px-2 py-3.5"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               <TableStates
-                colSpan={visible.length + 1}
+                colSpan={visible.length}
                 loading={query.isLoading}
                 error={query.isError ? 'The purchase orders could not be loaded.' : null}
                 empty={!query.isLoading && !query.isError && rows.length === 0}
@@ -391,23 +350,16 @@ export default function PurchaseOrdersPage() {
                 onRetry={() => query.refetch()}
               />
               {!query.isLoading && !query.isError && rows.map((r, i) => (
-                <tr key={r.id} className="cursor-pointer border-b border-line text-[13.5px] last:border-0 hover:bg-slate-50"
+                <tr key={r.id} className="cursor-pointer border-b border-line text-[13px] last:border-0 hover:bg-slate-50" title={`Open ${r.po_number}`}
                   onClick={() => navigate(`/purchase-orders/${r.id}`)}>
-                  {visible.map(c => <td key={c.key} className="whitespace-nowrap px-3.5 py-3">{cell(r, c.key, i)}</td>)}
-                  <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
-                    <button aria-label={`Actions for ${r.po_number}`} aria-haspopup="menu"
-                      className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      onClick={e => { const anchor = e.currentTarget; setMenu(m => (m?.anchor === anchor ? null : { row: r, anchor })) }}>
-                      <MoreVertical size={17} />
-                    </button>
-                  </td>
+                  {visible.map(c => <td key={c.key} className="whitespace-nowrap px-2 py-[9px]">{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-line px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-line px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[13px] text-slate-700">
             {total === 0 ? 'No orders' : `Showing ${(page - 1) * PAGE_SIZE + 1} – ${Math.min(page * PAGE_SIZE, total)} of ${num(total)} orders`}
           </span>
@@ -424,12 +376,6 @@ export default function PurchaseOrdersPage() {
         </div>
       </div>
 
-      {menu && (
-        <RowMenu anchor={menu.anchor} onClose={closeMenu}
-          onUpdate={() => { setEditing(menu.row); setMenu(null) }}
-          onView={() => { navigate(`/purchase-orders/${menu.row.id}`); setMenu(null) }} />
-      )}
-      <StageEditor row={editing} onClose={() => setEditing(null)} />
       <FactoriesModal open={factoriesOpen} onClose={() => setFactoriesOpen(false)} />
     </>
   )

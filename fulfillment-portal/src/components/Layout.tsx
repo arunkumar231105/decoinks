@@ -165,7 +165,7 @@ export default function Layout() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-[64px] items-center gap-2 border-b border-line bg-white/95 px-3 backdrop-blur sm:px-5 lg:px-6">
+        <header className="sticky top-0 z-30 flex h-[60px] items-center gap-2 bg-canvas/95 px-3 backdrop-blur sm:px-5 lg:px-6">
           <button onClick={() => setNavOpen(true)} aria-label="Open menu"
             className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden">
             <Menu size={21} />
@@ -181,7 +181,7 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <main className="min-w-0 flex-1 px-4 pb-6 pt-2 sm:px-6 lg:pb-8">
           <Outlet />
         </main>
       </div>
