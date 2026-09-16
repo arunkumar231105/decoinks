@@ -113,13 +113,37 @@ export const useAuthStore = create<AuthState>((set) => ({
 }))
 
 // ── Global session-expired handler ────────────────────────────────────────────
-// api.ts dispatches this event when a /auth/refresh call fails (cookie gone/expired).
-// We listen here so any part of the app gets redirected to login.
+// api.ts dispatches this when the server refused the refresh token, or the
+// sign-in wall is confirmed up. Neither sends anyone to the login page first:
+// the Authentik sign-in behind the app lasts a year, so a fresh app session is
+// normally one call away (/auth/sso), or one silent trip through Authentik when
+// it is the proxy's own cookie that lapsed — which returns to the same page.
+// Only when both fail does the login page appear. The owner asked, 16 Sep 2026,
+// for sessions never to end on their own.
 if (typeof window !== 'undefined') {
-  window.addEventListener('auth:session-expired', () => {
-    tokenMemory.set(null)
-    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false })
-    // Let the router handle the redirect — no hard window.location so we keep SPA state
-    window.dispatchEvent(new CustomEvent('auth:redirect-to-login'))
+  let recovering = false
+  window.addEventListener('auth:session-expired', async () => {
+    if (recovering) return
+    recovering = true
+    try {
+      try {
+        const res = await api.post('/auth/sso')
+        const { token, user } = res.data.data
+        tokenMemory.set(token)
+        clearSsoRedirectGuard()
+        useAuthStore.setState({ user, isAuthenticated: true, isLoading: false })
+        return
+      } catch (err: any) {
+        // The network dropped while trying: stay signed in; the next request retries.
+        if (err?.code === 'ERR_CONNECTION_DROPPED') return
+      }
+      if (redirectToAuthentik()) return
+      tokenMemory.set(null)
+      useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false })
+      // Let the router handle the redirect — no hard window.location so we keep SPA state
+      window.dispatchEvent(new CustomEvent('auth:redirect-to-login'))
+    } finally {
+      recovering = false
+    }
   })
 }
