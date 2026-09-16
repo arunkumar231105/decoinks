@@ -1,6 +1,5 @@
 import {
-  AlertTriangle, CheckCircle2, ClipboardList, Clock, FileCheck2, Package, PlaneTakeoff,
-  Search, Send, Settings2, Truck, XCircle, type LucideIcon,
+  AlertTriangle, Box, CheckCircle2, Clock, FileText, Plane, Search, Send, Settings, Truck, XCircle, type LucideIcon,
 } from 'lucide-react'
 
 /**
@@ -20,38 +19,38 @@ export const STAGES = [
 export type Stage = typeof STAGES[number]
 
 export const STAGE_TONE: Record<string, string> = {
-  'To be Pushed': 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  'Factory Audit': 'bg-violet-50 text-violet-700 ring-violet-600/20',
-  'In Production': 'bg-sky-50 text-sky-700 ring-sky-600/20',
-  Exception: 'bg-rose-50 text-rose-700 ring-rose-600/20',
-  Shipped: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  'Pre-Transit': 'bg-cyan-50 text-cyan-700 ring-cyan-600/20',
-  'In Transit': 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
-  Delivered: 'bg-green-50 text-green-700 ring-green-600/20',
-  Cancelled: 'bg-slate-100 text-slate-600 ring-slate-500/20',
+  'To be Pushed': 'bg-orange-50 text-orange-600',
+  'Factory Audit': 'bg-purple-50 text-purple-600',
+  'In Production': 'bg-blue-50 text-blue-600',
+  Exception: 'bg-red-50 text-red-600',
+  Shipped: 'bg-green-50 text-green-700',
+  'Pre-Transit': 'bg-blue-50 text-blue-600',
+  'In Transit': 'bg-blue-50 text-blue-600',
+  Delivered: 'bg-green-50 text-green-700',
+  Cancelled: 'bg-slate-100 text-slate-600',
 }
 
 export const STAGE_TEXT: Record<string, string> = {
-  Exception: 'text-rose-600',
+  Exception: 'text-red-600',
   Delivered: 'text-green-700',
-  'In Transit': 'text-brand',
-  'Pre-Transit': 'text-brand',
-  Shipped: 'text-brand',
+  'In Transit': 'text-blue-600',
+  'Pre-Transit': 'text-blue-600',
+  Shipped: 'text-blue-600',
 }
 
 /** The summary cards, in the order the design lays them out. `filter` is what a click applies. */
 export const CARDS: { label: string; filter: string; icon: LucideIcon; tone: string; key: 'total' | 'issued' | 'pending' | Stage }[] = [
-  { label: 'Total PO', filter: '', icon: ClipboardList, tone: 'bg-blue-50 text-brand', key: 'total' },
-  { label: 'Issued', filter: 'Issued', icon: FileCheck2, tone: 'bg-green-50 text-green-600', key: 'issued' },
-  { label: 'Pending', filter: 'Pending', icon: Clock, tone: 'bg-amber-50 text-amber-600', key: 'pending' },
-  { label: 'To be Pushed', filter: 'To be Pushed', icon: Send, tone: 'bg-blue-50 text-brand', key: 'To be Pushed' },
-  { label: 'Factory Audit', filter: 'Factory Audit', icon: Search, tone: 'bg-violet-50 text-violet-600', key: 'Factory Audit' },
-  { label: 'In Production', filter: 'In Production', icon: Settings2, tone: 'bg-sky-50 text-sky-600', key: 'In Production' },
-  { label: 'Exceptions', filter: 'Exception', icon: AlertTriangle, tone: 'bg-rose-50 text-rose-600', key: 'Exception' },
-  { label: 'Shipped', filter: 'Shipped', icon: Truck, tone: 'bg-emerald-50 text-emerald-600', key: 'Shipped' },
-  { label: 'Pre-Transit', filter: 'Pre-Transit', icon: Package, tone: 'bg-cyan-50 text-cyan-600', key: 'Pre-Transit' },
-  { label: 'Transit', filter: 'In Transit', icon: PlaneTakeoff, tone: 'bg-indigo-50 text-indigo-600', key: 'In Transit' },
-  { label: 'Delivered', filter: 'Delivered', icon: CheckCircle2, tone: 'bg-green-50 text-green-600', key: 'Delivered' },
+  { label: 'Total PO', filter: '', icon: FileText, tone: 'bg-blue-50 text-blue-600', key: 'total' },
+  { label: 'Issued', filter: 'Issued', icon: CheckCircle2, tone: 'bg-green-50 text-green-600', key: 'issued' },
+  { label: 'Pending', filter: 'Pending', icon: Clock, tone: 'bg-orange-50 text-orange-500', key: 'pending' },
+  { label: 'To be Pushed', filter: 'To be Pushed', icon: Send, tone: 'bg-blue-50 text-blue-600', key: 'To be Pushed' },
+  { label: 'Factory Audit', filter: 'Factory Audit', icon: Search, tone: 'bg-purple-50 text-purple-600', key: 'Factory Audit' },
+  { label: 'In Production', filter: 'In Production', icon: Settings, tone: 'bg-blue-50 text-blue-600', key: 'In Production' },
+  { label: 'Exceptions', filter: 'Exception', icon: AlertTriangle, tone: 'bg-red-50 text-red-600', key: 'Exception' },
+  { label: 'Shipped', filter: 'Shipped', icon: Truck, tone: 'bg-green-50 text-green-600', key: 'Shipped' },
+  { label: 'Pre-Transit', filter: 'Pre-Transit', icon: Box, tone: 'bg-blue-50 text-blue-600', key: 'Pre-Transit' },
+  { label: 'Transit', filter: 'In Transit', icon: Plane, tone: 'bg-indigo-50 text-indigo-600', key: 'In Transit' },
+  { label: 'Delivered', filter: 'Delivered', icon: CheckCircle2, tone: 'bg-green-500 text-white', key: 'Delivered' },
 ]
 
 export const CANCELLED_ICON = XCircle

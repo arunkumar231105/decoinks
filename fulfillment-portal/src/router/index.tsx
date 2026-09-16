@@ -8,6 +8,7 @@ import DashboardPage from '../pages/DashboardPage'
 import OrdersPage from '../pages/OrdersPage'
 import OrderDetailPage from '../pages/OrderDetailPage'
 import PurchaseOrdersPage from '../pages/PurchaseOrdersPage'
+import PurchaseOrdersListPage from '../pages/PurchaseOrdersListPage'
 import PurchaseOrderDetailPage from '../pages/PurchaseOrderDetailPage'
 import ArtworksPage from '../pages/ArtworksPage'
 import ProfilePage from '../pages/ProfilePage'
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
       { path: 'orders/:id',      element: <OrderDetailPage /> },
       { path: 'orders/:id/status-updates', element: <ProductionStatusPage /> },
       { path: 'purchase-orders',     element: <PurchaseOrdersPage /> },
+      { path: 'purchase-orders/list', element: <PurchaseOrdersListPage /> },
       { path: 'purchase-orders/:id', element: <PurchaseOrderDetailPage /> },
       { path: 'status-update',     element: <StatusUpdatePage /> },
       { path: 'status-update/:id', element: <StatusUpdatePage /> },
