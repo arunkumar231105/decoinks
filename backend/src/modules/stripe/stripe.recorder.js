@@ -14,6 +14,7 @@
  * can never produce two ledger rows even if the first defence were bypassed.
  */
 
+const { SQL_SHOP_TODAY } = require('../../utils/shopTime')
 const db = require('../../config/db')
 const paymentsService = require('../payments/payments.service')
 const paylinks = require('./paylinks.service')
@@ -111,7 +112,7 @@ async function reconcileOrder(client, orderId) {
               WHEN paid.total > 0        THEN 'Partial'::payment_status
               ELSE o.payment_status END,
             amount_paid = paid.total,
-            payment_date = COALESCE(o.payment_date, CURRENT_DATE),
+            payment_date = COALESCE(o.payment_date, ${SQL_SHOP_TODAY}),
             payment_method = COALESCE(o.payment_method, 'Stripe'),
             updated_at = NOW()
        FROM (SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE order_id = $1) paid

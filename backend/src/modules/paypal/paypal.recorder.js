@@ -12,6 +12,7 @@
  * re-checks the derived statuses.
  */
 
+const { shopDate } = require('../../utils/shopTime')
 const db = require('../../config/db')
 const paymentsService = require('../payments/payments.service')
 const paylinks = require('../stripe/paylinks.service')
@@ -170,7 +171,8 @@ async function recordUnlinkedPayment({ transactionId, amount, currency = 'USD', 
     payment_method: 'PayPal',
     status: 'Completed',
     transaction_id: transactionId,
-    payment_date: paidAt ? String(paidAt).slice(0, 10) : null,
+    // The day in Pakistan when PayPal captured it (paidAt is a UTC timestamp).
+    payment_date: paidAt ? shopDate(paidAt) : null,
     // No customer and no invoice: this is what "unallocated" means, and the
     // invoice form offers exactly these for an agent to claim.
     invoice_id: null,

@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { cacheGet, cacheSet } = require('../../config/redis')
+const { SHOP_TZ, shopDate } = require('../../utils/shopTime')
 
 const TTL = 30
 
@@ -8,11 +9,14 @@ async function getStats() {
   const cached = await cacheGet(cacheKey)
   if (cached) return cached
 
-  const today = new Date().toISOString().split('T')[0]
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
-  const prevMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0]
-  const prevMonthEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]
+  // Shop (Pakistan) days — see utils/shopTime.js.
+  const today = shopDate()
+  const yesterday = shopDate(Date.now() - 86400000)
+  const [yy, mm] = today.split('-').map(Number)
+  const ymd = (y, m, d) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)   // pure calendar arithmetic, no clock
+  const monthStart = ymd(yy, mm - 1, 1)
+  const prevMonthStart = ymd(yy, mm - 2, 1)
+  const prevMonthEnd = ymd(yy, mm - 1, 0)
 
   const [leadsToday, leadsYesterday, totals, revenueMonth, revenuePrevMonth] = await Promise.all([
     query(`SELECT COUNT(*) FROM leads WHERE DATE(created_at) = $1 AND deleted_at IS NULL`, [today]),
@@ -149,13 +153,12 @@ async function getRecentActivity() {
 // breakdown: dtf + gangsheet = "DTF Transfers", apparel = "Custom Shirts".
 // Customer split: customer created inside the period = "New Customers".
 
-const iso = d => d.toISOString().slice(0, 10)
+const iso = d => d.toISOString().slice(0, 10)   // pure calendar arithmetic, no clock
 
 // The shop works on Pakistan time. A "day" on the dashboard runs from midnight
 // to midnight in Asia/Karachi (UTC+5, no DST), the same day the CRM's Leads
 // page counts — on UTC days the two disagreed every morning (Daily read 11
 // here against 36 in the CRM).
-const SHOP_TZ = 'Asia/Karachi'
 const SHOP_OFFSET_MS = 5 * 3600 * 1000
 
 /**
@@ -480,4 +483,4 @@ async function getOverview({ date_from, date_to } = {}) {
   return result
 }
 
-module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopSuppliers, getRecentActivity, getOverview }
+module.exports = { getStats, getLeadPipeline, getOrdersByStatus, getTopSuppliers, getRecentActivity, getOverview, resolvePeriod }

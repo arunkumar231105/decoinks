@@ -1,5 +1,6 @@
 const { query, getClient } = require('../../config/db')
 const { getNextNumber } = require('../../utils/counter')
+const { shopDate } = require('../../utils/shopTime')
 
 const STATUSES = ['Completed', 'Pending', 'Failed', 'Refunded']
 
@@ -159,6 +160,10 @@ async function create(data) {
     throw Object.assign(new Error('Fee cannot be negative or exceed the payment amount'), { statusCode: 400 })
   }
   const payment_number = await getNextNumber('PAY', 'payments', 'payment_number')
+  // A payment recorded without a date (Stripe, a webhook) is dated today in
+  // Pakistan. The database's CURRENT_DATE is the UTC day, which booked every
+  // payment between midnight and 05:00 Pakistan time on the previous date.
+  const day = payment_date || shopDate()
 
   const client = await getClient()
   try {
@@ -177,10 +182,10 @@ async function create(data) {
           customer_id, order_id, invoice_id, customer_name, recorded_by,
           received_from_name, received_into_account_id,
           sender_bank_name, sender_account_name, sender_account_last4, sender_reference)
-       VALUES ($1, $2, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, $8, $9,
+       VALUES ($1, $2, $2::date, $3, $4, $5, $6, $7, $8, $9,
                $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
-      [payment_number, payment_date || null, amount, fee, transaction_id || null,
+      [payment_number, day, amount, fee, transaction_id || null,
        payment_method || 'Bank Transfer', reference_no || null, notes || null, status || 'Completed',
        customer_id || null, order_id || null, invoice_id || null, name, recorded_by || null,
        received_from_name || name || null, received_into_account_id || null,

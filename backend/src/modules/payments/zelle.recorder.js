@@ -70,13 +70,13 @@ function bankSigned(authResults) {
 // Payments are dated on shop time: the day it was in Pakistan when the bank
 // sent the alert. A Zelle that arrives at 10:00 on the 16th in Pakistan is a
 // payment of the 16th, even though it was still the 15th in the US.
-const SHOP_TZ = 'Asia/Karachi'
+const { shopDate } = require('../../utils/shopTime')
 
 /** The calendar day in Pakistan when the bank sent the alert. */
 function localDate(dateHeader) {
   const s = String(dateHeader || '')
   const d = new Date(s)
-  if (!Number.isNaN(d.getTime())) return d.toLocaleDateString('en-CA', { timeZone: SHOP_TZ })
+  if (!Number.isNaN(d.getTime())) return shopDate(d)
   // A header JavaScript cannot read as a moment: keep the day it names.
   const m = s.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i)
   if (m) return `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`
@@ -123,7 +123,7 @@ function parseZelleEmail(input = {}) {
     if (next && !NOT_MEMO.test(next) && next.length <= 200) memo = next
   }
 
-  const paymentDate = localDate(input.date) || new Date().toLocaleDateString('en-CA', { timeZone: SHOP_TZ })
+  const paymentDate = localDate(input.date) || shopDate()
   return { ok: true, payer, amount: +amount.toFixed(2), memo, payment_date: paymentDate, message_id: messageId, sender: address }
 }
 
