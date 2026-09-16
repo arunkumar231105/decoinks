@@ -1,0 +1,11 @@
+/* The period box on the workflow list pages (Sales Orders, Payments, Quotes,
+   Invoices, Purchase Orders). "Sep 14, 2026 – Sep 16, 2026" did not fit one
+   filter column and ran out of its box. It now takes two columns where there
+   are several, and a very long range ends in an ellipsis inside the box, with
+   the full dates in its tooltip. Kept out of index.css, which is protected. */
+.ew-filters .ew-range-label { min-width: 0; overflow: hidden; }
+.ew-filters .ew-range-label svg { flex: none; }
+.ew-filters .ew-range-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 761px) {
+  .ew-filters .ew-range-label { grid-column: span 2; }
+}

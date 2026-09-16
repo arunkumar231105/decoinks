@@ -1,0 +1,88 @@
+/* Tracking timeline drawer and the clickable tracking number on Shipments.
+   Kept out of index.css, which is protected. */
+
+.sh-track-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border: 1px solid #cfe0f7; border-radius: 6px;
+  background: #f3f8ff; color: #0b5ed7;
+  font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .02em; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.sh-track-link:hover { background: #e3efff; border-color: #9cc2f3; text-decoration: underline; }
+.sh-track-link:focus-visible { outline: 3px solid rgba(37, 99, 235, .25); outline-offset: 2px; }
+
+.tt-drawer { width: min(520px, 100vw); box-sizing: border-box; padding: 0 0 28px; color: #0f172a; }
+
+.tt-head { display: flex; justify-content: space-between; gap: 12px; padding: 22px 22px 16px; border-bottom: 1px solid #e5e9f0; }
+.tt-head-main { min-width: 0; }
+.tt-head small { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+.tt-head h3 { margin: 6px 0 4px; display: flex; align-items: center; gap: 8px; font-size: 19px; }
+.tt-number { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.tt-sub { font-size: 13px; color: #64748b; }
+.tt-icon { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid #dce4ed; border-radius: 7px; background: #fff; color: #475569; cursor: pointer; }
+.tt-icon:hover { background: #f1f5f9; color: #0f172a; }
+.tt-close { width: 36px; height: 36px; }
+
+.tt-summary { margin: 16px 22px 0; padding: 14px 16px; border: 1px solid #dbe7f6; border-radius: 12px; background: linear-gradient(180deg, #f6faff, #fff); }
+.tt-summary-problem { border-color: #f5c2c2; background: linear-gradient(180deg, #fff5f5, #fff); }
+.tt-summary-returned { border-color: #f3d9a4; background: linear-gradient(180deg, #fffaf0, #fff); }
+.tt-summary-status { display: flex; gap: 12px; align-items: flex-start; color: #0b5ed7; }
+.tt-summary-problem .tt-summary-status { color: #d62929; }
+.tt-summary-returned .tt-summary-status { color: #c76d00; }
+.tt-summary-status strong { display: block; font-size: 16px; color: #0f172a; }
+.tt-summary-status span { display: block; margin-top: 2px; font-size: 13px; color: #475569; }
+.tt-summary dl { margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tt-summary dl div { min-width: 0; }
+.tt-summary dt { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+.tt-summary dd { margin: 2px 0 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+
+.tt-steps { list-style: none; margin: 18px 22px 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); }
+.tt-steps li { position: relative; padding-top: 22px; text-align: center; font-size: 11px; font-weight: 600; color: #94a3b8; }
+.tt-steps li span { position: absolute; top: 4px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #e2e8f0; border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; z-index: 1; }
+.tt-steps li::before { content: ''; position: absolute; top: 9px; left: -50%; right: 50%; height: 2px; background: #e2e8f0; }
+.tt-steps li:first-child::before { display: none; }
+.tt-steps li.done, .tt-steps li.current { color: #0f172a; }
+.tt-steps li.done span, .tt-steps li.current span { background: #0b74e5; box-shadow: 0 0 0 1px #0b74e5; }
+.tt-steps li.done::before, .tt-steps li.current::before { background: #0b74e5; }
+.tt-steps li.current span { box-shadow: 0 0 0 4px rgba(11, 116, 229, .2); }
+
+.tt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 22px 0; }
+.tt-actions a.lb-action-btn { text-decoration: none; }
+.tt-synced { margin-left: auto; font-size: 12px; color: #94a3b8; }
+.tt-spin { animation: tt-spin 1s linear infinite; }
+@keyframes tt-spin { to { transform: rotate(360deg); } }
+
+.tt-heading { margin: 22px 22px 8px; font-size: 14px; font-weight: 700; }
+
+.tt-list { list-style: none; margin: 0; padding: 0 22px; }
+.tt-day { margin: 14px 0 6px; font-size: 12px; font-weight: 700; color: #64748b; }
+.tt-row { position: relative; display: flex; gap: 12px; padding-bottom: 14px; }
+.tt-row::before { content: ''; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: #e5e9f0; }
+.tt-item:last-child .tt-row::before { display: none; }
+.tt-dot { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #eef2f7; color: #64748b; z-index: 1; }
+.tt-moving .tt-dot { background: #e6f0ff; color: #0b5ed7; }
+.tt-done .tt-dot { background: #e6f7ee; color: #0a8a45; }
+.tt-problem .tt-dot { background: #ffeded; color: #d62929; }
+.tt-returned .tt-dot { background: #fff4df; color: #c76d00; }
+.tt-latest .tt-dot { box-shadow: 0 0 0 4px rgba(11, 116, 229, .15); }
+.tt-latest.tt-done .tt-dot { box-shadow: 0 0 0 4px rgba(10, 138, 69, .15); }
+.tt-body { min-width: 0; flex: 1; padding-top: 3px; }
+.tt-title { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.tt-title strong { font-size: 14px; }
+.tt-title time { font-size: 12px; color: #64748b; white-space: nowrap; }
+.tt-body p { margin: 2px 0 0; font-size: 13px; color: #334155; overflow-wrap: anywhere; }
+.tt-where { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 12px; color: #64748b; }
+.tt-latest .tt-title strong { color: #0b5ed7; }
+.tt-latest.tt-done .tt-title strong { color: #0a8a45; }
+
+.tt-empty { display: flex; gap: 10px; align-items: flex-start; margin: 4px 22px 0; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 10px; color: #64748b; }
+.tt-empty strong, .tt-empty span { display: block; }
+.tt-empty strong { color: #334155; font-size: 14px; }
+.tt-empty span { font-size: 13px; margin-top: 2px; }
+
+@media (max-width: 480px) {
+  .tt-summary dl { grid-template-columns: 1fr; }
+  .tt-steps li { font-size: 10px; }
+  .tt-synced { margin-left: 0; width: 100%; }
+}

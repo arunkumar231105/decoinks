@@ -22,6 +22,7 @@ import { BulkUploadModal } from '../BulkUploadModal'
 import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { periodRange, type PeriodKey } from '../../utils/period'
 import { PeriodTabs } from '../PeriodTabs'
+import '../../styles/workflow-range.css'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -59,6 +60,16 @@ const date = (value: any) => {
   if (!value) return '—'
   const raw = String(value)
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+/**
+ * A period as it fits its box: "Sep 14 – Sep 16, 2026" when both ends share a
+ * year, a single date for one day. The full dates stay in the box's tooltip.
+ */
+const rangeText = (from: any, to: any) => {
+  const a = date(from), b = date(to)
+  if (a === b) return a
+  const sameYear = String(from).slice(0, 4) === String(to).slice(0, 4)
+  return `${sameYear ? a.replace(/,\s*\d{4}$/, '') : a} – ${b}`
 }
 /**
  * Date with the time of day, when we actually know it.
@@ -646,7 +657,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         <label><span>Source</span><select value={source} onChange={e => setSource(e.target.value)}><option>All</option>{sources.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
         {kind === 'orders' && <label><span>Channel</span><select value={group} onChange={e => setGroup(e.target.value)}><option>All</option>{ORDER_GROUPS.map(g => <option value={g.value} key={g.value}>{g.value}</option>)}</select></label>}
-        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label"><CalendarDays size={15}/><span>{periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}</span></div>}
+        {period === 'custom' ? <><label className="ew-date"><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}/></label><label className="ew-date"><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label></> : <div className="ew-range-label" title={periodRangeMemo[0] ? `${date(periodRangeMemo[0])} – ${date(periodRangeMemo[1])}` : 'All dates'}><CalendarDays size={15}/><span>{periodRangeMemo[0] ? rangeText(periodRangeMemo[0], periodRangeMemo[1]) : 'All dates'}</span></div>}
         <label><span>Sort By</span><select value={colSort ? '' : sortBy} onChange={e => { setColSort(null); setSortBy(e.target.value as SortKey) }}>
           <option value="date_desc">Date: newest first</option>
           <option value="date_asc">Date: oldest first</option>
