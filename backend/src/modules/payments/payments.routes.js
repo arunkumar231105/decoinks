@@ -52,6 +52,19 @@ router.get('/',        controller.list)
 router.get('/stats',   controller.stats)
 router.get('/filters', controller.filters)
 router.get('/export',  controller.exportCsv)
+// The waiting payment a new invoice or sales order most likely belongs to, with
+// the reasons. Read-only; above '/:id' so "recommend" is not taken for an id.
+router.get('/recommend', async (req, res, next) => {
+  try {
+    const { purpose, customer_id, customer_name, amount, other_amount, date, method } = req.query
+    const { recommendPayments } = require('./payments.match')
+    res.json({ data: await recommendPayments({
+      purpose: purpose === 'order' ? 'order' : 'invoice',
+      customerId: /^[0-9a-f-]{36}$/i.test(customer_id || '') ? customer_id : null,
+      customerName: customer_name, amount, otherAmount: other_amount, date, method,
+    }) })
+  } catch (err) { next(err) }
+})
 router.get('/:id',     controller.getOne)
 
 // The payment form's own rules (payments.rules.js). Payments the system records

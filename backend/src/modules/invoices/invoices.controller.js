@@ -16,16 +16,40 @@ async function getOne(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// The payment picked on the invoice form is attached by the save itself, so it
+// is attached whichever button saved (Save, Preview, Receipt, Send) — it used to
+// be a second request made only by some of them. The same attach as the ledger
+// uses: same customer, not on another invoice, no more than is owed; the invoice
+// status then follows the ledger. If it is refused the invoice is still saved
+// and the reason comes back as payment_error for the form to show.
+const MAY_ATTACH = ['Admin', 'Manager', 'Sales']   // as POST /payment-links/apply
+
+async function attachPicked(paymentId, invoice, user) {
+  if (!paymentId || !invoice?.id) return invoice
+  if (!MAY_ATTACH.includes(user?.role)) return { ...invoice, payment_error: 'Your role cannot attach payments to invoices.' }
+  const { query } = require('../../config/db')
+  const { rows } = await query(`SELECT invoice_id FROM payments WHERE id = $1`, [paymentId])
+  if (rows[0]?.invoice_id === invoice.id) return invoice
+  try {
+    await require('../stripe/stripe.recorder').attachPaymentToInvoice(paymentId, invoice.id)
+    return { ...(await service.getById(invoice.id)), _action: invoice._action, payment_attached: true }
+  } catch (err) {
+    return { ...invoice, payment_error: err.message }
+  }
+}
+
 async function create(req, res, next) {
   try {
-    const inv = await service.create({ ...req.body, created_by: req.user.id })
+    const { payment_id, ...body } = req.body
+    const inv = await attachPicked(payment_id, await service.create({ ...body, created_by: req.user.id }), req.user)
     return created(res, inv, inv?._action === 'updated' ? 'Invoice updated' : 'Invoice created')
   } catch (err) { next(err) }
 }
 
 async function update(req, res, next) {
   try {
-    return success(res, await service.update(req.params.id, req.body), 'Invoice updated')
+    const { payment_id, ...body } = req.body
+    return success(res, await attachPicked(payment_id, await service.update(req.params.id, body), req.user), 'Invoice updated')
   } catch (err) { next(err) }
 }
 

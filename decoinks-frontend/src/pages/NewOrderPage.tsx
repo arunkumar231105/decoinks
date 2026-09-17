@@ -715,6 +715,49 @@ export function NewOrderPage() {
   const charged     = useMemo(() => +(subtotal - discountAmt + rushServices + shippingCharges).toFixed(2), [subtotal, discountAmt, rushServices, shippingCharges])
   const taxAmt      = useMemo(() => +(charged * (taxPct / 100)).toFixed(2), [charged, taxPct])
   const total       = useMemo(() => +(charged + taxAmt).toFixed(2), [charged, taxAmt])
+
+  // Picking a payment carries its own details onto the order so the two never
+  // disagree about how or when it was paid.
+  const pickPayment = (id: string) => {
+    setPaymentId(id)
+    const chosen = selectablePayments.find(p => p.id === id)
+    if (!chosen) return
+    if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
+    if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
+    // The bank's or processor's own reference, which is what anyone reconciling
+    // actually searches for. Our internal payment number only stands in when
+    // there is none.
+    setPaymentReference(chosen.transaction_id || chosen.reference_no || chosen.payment_number || '')
+    const paid = Number(chosen.amount) || 0
+    setAmountPaid(paid)
+    // Terms follow the money: an amount that covers the order is Paid, anything
+    // less is an advance.
+    if (total > 0) setPaymentTerms(paid >= total - 0.005 ? 'Paid' : 'Advance')
+  }
+
+  // The payment this order most likely belongs to (same customer or name,
+  // amount equal to the total, paid around the order date), worked out by the
+  // server with its reasons and picked on a new order for the agent to check.
+  // Once the agent has touched the list, their choice stands.
+  const [paymentSuggestion, setPaymentSuggestion] = useState<any | null>(null)
+  const paymentTouched = useRef(false)
+  useEffect(() => {
+    if ((!customerId && !customerText.trim()) || !(total > 0)) { setPaymentSuggestion(null); return }
+    const timer = setTimeout(() => {
+      api.get('/payments/recommend', { params: {
+        purpose: 'order', customer_id: customerId || undefined, customer_name: customerText || undefined,
+        amount: total, date: orderDate || undefined,
+      } })
+        .then(r => setPaymentSuggestion(r.data?.data?.recommended ?? null))
+        .catch(() => setPaymentSuggestion(null))
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [customerId, customerText, total, orderDate])
+  useEffect(() => {
+    if (editOrderId || paymentTouched.current || paymentId || !paymentSuggestion) return
+    if (selectablePayments.some(p => p.id === paymentSuggestion.id)) pickPayment(paymentSuggestion.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentSuggestion?.id, selectablePayments, editOrderId])
   const balanceDue  = useMemo(() => +Math.max(0, total - (Number(amountPaid) || 0)).toFixed(2), [total, amountPaid])
 
   // â"€â"€ Table helpers â"€â"€
@@ -1581,38 +1624,33 @@ export function NewOrderPage() {
                 <select
                   className="no-info-select"
                   value={paymentId}
-                  onChange={e => {
-                    const id = e.target.value
-                    setPaymentId(id)
-                    // Carry the payment's own details onto the order so the two
-                    // never disagree about how or when it was paid.
-                    const chosen = selectablePayments.find(p => p.id === id)
-                    if (chosen) {
-                      if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
-                      if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
-                      // The bank's or processor's own reference, which is what
-                      // anyone reconciling actually searches for. Our internal
-                      // payment number only stands in when there is none.
-                      setPaymentReference(chosen.transaction_id || chosen.reference_no || chosen.payment_number || '')
-                      const paid = Number(chosen.amount) || 0
-                      setAmountPaid(paid)
-                      // Terms follow the money: an amount that covers the order
-                      // is Paid, anything less is an advance.
-                      if (total > 0) setPaymentTerms(paid >= total - 0.005 ? 'Paid' : 'Advance')
-                    }
-                  }}
+                  style={paymentId && paymentId === paymentSuggestion?.id ? { borderColor: '#16a34a', background: '#f0fdf4' } : undefined}
+                  onChange={e => { paymentTouched.current = true; pickPayment(e.target.value) }}
                 >
                   <option value="">— Select the payment for this order —</option>
                   {selectablePayments.map(p => (
                     <option key={p.id} value={p.id}>
-                      {[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
+                      {p.id === paymentSuggestion?.id ? '★ Recommended · ' : ''}{[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
                         p.customer_name, `$${Number(p.amount || 0).toFixed(2)}`,
                         p.order_number ? `(already on ${p.order_number})` : null]
                         .filter(Boolean).join('  ·  ')}
                     </option>
                   ))}
                 </select>
-                {!paymentId && (
+                {paymentSuggestion && (paymentId === paymentSuggestion.id ? (
+                  <small style={{ color: '#15803d', fontSize: 11.5, lineHeight: 1.5 }}>
+                    ★ Recommended: {paymentSuggestion.reasons.join(' · ')}. Check it is this job's payment — or choose another.
+                  </small>
+                ) : (
+                  <small style={{ color: '#475569', fontSize: 11.5, lineHeight: 1.5 }}>
+                    Suggested: {paymentSuggestion.payment_number} ({paymentSuggestion.reasons.join(' · ')}){' '}
+                    <button type="button" onClick={() => { paymentTouched.current = true; pickPayment(paymentSuggestion.id) }}
+                      style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                      Use it
+                    </button>
+                  </small>
+                ))}
+                {!paymentId && !paymentSuggestion && (
                   <small style={{ color: '#6b7280', fontSize: 11.5 }}>
                     Record the payment first, then pick it here.
                   </small>

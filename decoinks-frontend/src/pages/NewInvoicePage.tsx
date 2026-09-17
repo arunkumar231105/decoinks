@@ -731,8 +731,8 @@ export function NewInvoicePage() {
       // the invoice becomes the customer's business.
       if (navigateAfterSave.current === 'send' && inv?.id) {
         navigateAfterSave.current = null
-        Promise.resolve(chosenPayment ? applyChosenPayment(inv.id) : null)
-          .then(() => api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' }))
+        reportPayment(inv)
+        api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' })
           // The invoice's payment link is created here, the moment it is sent,
           // so it exists from the invoice's own beginning and never changes
           // afterwards. Copy Link and the customer's Pay Now both return this
@@ -747,6 +747,7 @@ export function NewInvoicePage() {
           .finally(() => navigate(`/invoices/${inv.id}`))
         return
       }
+      if (navigateAfterSave.current !== 'send') reportPayment(inv)
       if (navigateAfterSave.current === 'print' && inv?.id) {
         navigateAfterSave.current = null
         navigate(`/invoices/${inv.id}/print`)
@@ -758,10 +759,6 @@ export function NewInvoicePage() {
         return
       }
       navigateAfterSave.current = null
-      if (chosenPayment && inv?.id) {
-        applyChosenPayment(inv.id).finally(() => navigate(`/invoices/${inv.id}`))
-        return
-      }
       toast.success(inv?._action === 'updated' ? 'Invoice updated' : 'Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
@@ -962,6 +959,7 @@ export function NewInvoicePage() {
   const buildPayload = () => ({
     customer_id:      supplierId || null,
     quote_id:         quoteId || null,
+    payment_id:       chosenPayment || undefined,
     notes:            internalNotes || null,
     customer_notes:   supplierNotes || null,
     sales_agent_name: agentText || null,
@@ -1043,33 +1041,80 @@ export function NewInvoicePage() {
       .catch(() => setAdvancePayments([]))
   }, [supplierId])
 
+  /* The payment this invoice most likely belongs to — same customer (or name),
+   * amount equal to the total, paid around the quote — is worked out by the
+   * server with its reasons, and picked for the agent on a new invoice. The
+   * agent checks it and saves, or picks the right one; once they have touched
+   * the list their choice stands. */
+  const [recommendation, setRecommendation] = useState<{ recommended: any | null; candidates: any[] }>({ recommended: null, candidates: [] })
+  const paymentTouched = useRef(false)
+  const autoPicked = useRef('')
+
+  useEffect(() => {
+    paymentTouched.current = false
+    autoPicked.current = ''
+  }, [supplierId])
+
+  useEffect(() => {
+    if ((!supplierId && !supplierText.trim()) || !(total > 0)) { setRecommendation({ recommended: null, candidates: [] }); return }
+    const timer = setTimeout(() => {
+      api.get('/payments/recommend', { params: {
+        purpose:       'invoice',
+        customer_id:   supplierId || undefined,
+        customer_name: supplierText || undefined,
+        amount:        total,
+        other_amount:  sourceQuote?.total ?? undefined,
+        date:          sourceQuote?.created_at ?? undefined,
+        method:        sourceQuote?.payment_method ?? undefined,
+      } })
+        .then(r => setRecommendation(r.data?.data ?? { recommended: null, candidates: [] }))
+        .catch(() => setRecommendation({ recommended: null, candidates: [] }))
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [supplierId, supplierText, total, sourceQuote?.total, sourceQuote?.created_at, sourceQuote?.payment_method])
+
+  // Everything that can be attached: the customer's waiting payments, and any
+  // the matcher found by name (a payment keyed in with no customer chosen).
+  const paymentOptions = useMemo(() => {
+    const seen = new Set(advancePayments.map((p: any) => p.id))
+    return [...advancePayments, ...recommendation.candidates.filter((c: any) => !seen.has(c.id))]
+  }, [advancePayments, recommendation.candidates])
+  const recommendedId: string = recommendation.recommended?.id ?? ''
+
   const choosePayment = (id: string) => {
     setChosenPayment(id)
     // The invoice is paid the way that payment was made.
-    const picked = advancePayments.find((p: any) => p.id === id)
+    const picked = paymentOptions.find((p: any) => p.id === id)
     if (picked?.payment_method) setPaymentMethod(normalizePaymentMethod(picked.payment_method))
   }
+
+  useEffect(() => {
+    if (editInvoiceId || paymentTouched.current) return
+    if (recommendedId && recommendedId !== chosenPayment) {
+      autoPicked.current = recommendedId
+      choosePayment(recommendedId)
+    } else if (!recommendedId && autoPicked.current && chosenPayment === autoPicked.current) {
+      // the total or customer changed and the suggestion no longer holds
+      autoPicked.current = ''
+      setChosenPayment('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedId, editInvoiceId])
 
   // Said before saving rather than after: the server refuses a payment larger
   // than what the invoice still owes, and by then the invoice is already saved.
   const paymentTooLarge = () => {
-    const picked = advancePayments.find((p: any) => p.id === chosenPayment)
+    const picked = paymentOptions.find((p: any) => p.id === chosenPayment)
     if (!picked || Number(picked.amount) <= total + 0.01) return false
     toast.error(`Payment ${picked.payment_number} is $${Number(picked.amount).toFixed(2)}, more than this invoice's $${total.toFixed(2)}. Choose another payment or correct the invoice.`)
     return true
   }
 
-  const applyChosenPayment = async (invoiceId: string) => {
-    if (!chosenPayment) return
-    try {
-      await api.post('/payment-links/apply', { paymentId: chosenPayment, invoiceId })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Payment applied — this invoice is settled')
-    } catch (err: any) {
-      // The invoice is already saved; only the link to the payment failed, and
-      // saying so is better than a success message that hides it.
-      toast.apiError(err)
-    }
+  // The save attaches the payment (payment_id in the payload). The answer says
+  // whether it did; a refusal leaves the invoice saved and is said, not hidden.
+  const reportPayment = (inv: any) => {
+    if (inv?.payment_error) toast.error(`Invoice saved, but the payment was not attached: ${inv.payment_error}`)
+    else if (inv?.payment_attached) toast.success('Payment attached to this invoice')
   }
 
   /* ── Payment link ─────────────────────────────────────────────────────────
@@ -1749,29 +1794,44 @@ export function NewInvoicePage() {
                   {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              {supplierId && (
+              {(supplierId || paymentOptions.length > 0) && (
                 <div className="ni-payment-field">
                   <label className="ni-payment-label">
-                    Payment{advancePayments.length > 0 ? ` (${advancePayments.length} not on an invoice)` : ''}
+                    Payment{paymentOptions.length > 0 ? ` (${paymentOptions.length} not on an invoice)` : ''}
                   </label>
                   <select
                     className="ni-info-select"
-                    style={{ width: '100%' }}
+                    style={{ width: '100%', ...(chosenPayment && chosenPayment === recommendedId ? { borderColor: '#16a34a', background: '#f0fdf4' } : {}) }}
                     value={chosenPayment}
-                    disabled={advancePayments.length === 0}
-                    onChange={e => choosePayment(e.target.value)}
+                    disabled={paymentOptions.length === 0}
+                    onChange={e => { paymentTouched.current = true; choosePayment(e.target.value) }}
                   >
                     <option value="">
-                      {advancePayments.length ? "Don't attach a payment" : 'No payment of this customer is waiting for an invoice'}
+                      {paymentOptions.length ? "Don't attach a payment" : 'No payment of this customer is waiting for an invoice'}
                     </option>
-                    {advancePayments.map((p: any) => (
+                    {paymentOptions.map((p: any) => (
                       <option key={p.id} value={p.id}>
-                        {p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
+                        {p.id === recommendedId ? '★ Recommended · ' : ''}{p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
                         {p.payment_date ? ` · ${String(p.payment_date).slice(0, 10)}` : ''}
                         {p.unassigned ? ` · no customer on it${p.customer_name ? ` (from ${p.customer_name})` : ''}` : ''}
                       </option>
                     ))}
                   </select>
+                  {recommendation.recommended && (
+                    chosenPayment === recommendedId ? (
+                      <p style={{ fontSize: 11.5, color: '#15803d', marginTop: 6, lineHeight: 1.5 }}>
+                        ★ Recommended: {recommendation.recommended.reasons.join(' · ')}. Check it is this job's payment — or choose another.
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11.5, color: '#475569', marginTop: 6, lineHeight: 1.5 }}>
+                        Suggested: {recommendation.recommended.payment_number} ({recommendation.recommended.reasons.join(' · ')}){' '}
+                        <button type="button" onClick={() => { paymentTouched.current = true; choosePayment(recommendedId) }}
+                          style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          Use it
+                        </button>
+                      </p>
+                    )
+                  )}
                   {chosenPayment && (
                     <p style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
                       Attached when you save. The invoice is marked paid from the ledger, and the sales order

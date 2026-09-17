@@ -66,6 +66,8 @@ const createSchema = z.object({
   payment_terms:    z.string().optional().nullable(),
   payment_method:   z.string().optional().nullable(),
   mark_paid:        z.boolean().optional(),
+  // A received payment this invoice settles; attached as part of the save.
+  payment_id:       z.string().uuid().optional().nullable(),
   currency:         z.string().optional().nullable(),
   rush_services:    z.number().nonnegative().optional(),
   rush_charges:     z.number().nonnegative().optional(),
@@ -87,6 +89,7 @@ const updateSchema = z.object({
   quote_id:         z.string().uuid().optional().nullable(),
   order_type:       z.enum(['apparel', 'gangsheet', 'dtf']).optional().nullable(),
   mark_paid:        z.boolean().optional(),
+  payment_id:       z.string().uuid().optional().nullable(),
   issue_date:       z.string().optional().nullable(),
   // Kept so existing callers do not break; the service sets it from the issue
   // date regardless, because payment is due the day the invoice is raised.
