@@ -49,7 +49,11 @@ async function create(req, res, next) {
 async function update(req, res, next) {
   try {
     const { payment_id, ...body } = req.body
-    return success(res, await attachPicked(payment_id, await service.update(req.params.id, body), req.user), 'Invoice updated')
+    // Attaching a payment on its own is a save too, with nothing else to write.
+    const invoice = Object.keys(body).length || !payment_id
+      ? await service.update(req.params.id, body)
+      : await service.getById(req.params.id)
+    return success(res, await attachPicked(payment_id, invoice, req.user), 'Invoice updated')
   } catch (err) { next(err) }
 }
 
