@@ -35,7 +35,7 @@ router.post('/digi/sync', async (req, res) => {
   try {
     if (running) return res.status(409).json({ error: 'A sync is already running' })
     if (Date.now() - lastRun < 60 * 1000) return res.json({ skipped: true, message: 'Synced less than a minute ago' })
-    running = syncDigiOrders({ apply: true, log: () => {} })
+    running = syncDigiOrders({ apply: true, log: () => {}, trigger: 'manual' })
     const result = await running
     lastRun = Date.now()
     res.json({ success: true, ...result, rows: undefined })

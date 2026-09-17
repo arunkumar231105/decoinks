@@ -48,6 +48,52 @@ function cleanTracking(v) {
   return /^[0-9A-Z]{10,40}$/.test(t) && /\d{6}/.test(t) ? t : null
 }
 
+const intOrNull = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+
+/**
+ * An order's lines: DIGI's per-line status (queryOrderStatus.childOrderStatus)
+ * joined on platformOllId to the line as it was placed (BlankTex's goodsList).
+ */
+function linesOf(orderNo, goods, childStatus) {
+  const byId = new Map()
+  const lineNo = id => { const m = /(\d{3})$/.exec(String(id || '')); return m ? Number(m[1]) : null }
+  ;(Array.isArray(goods) ? goods : []).forEach((g, idx) => {
+    const id = g.platformOllId || `${orderNo}${String(idx + 1).padStart(3, '0')}`
+    byId.set(id, { line_id: id, placed: g })
+  })
+  for (const c of Array.isArray(childStatus) ? childStatus : []) {
+    if (!c.platformOllId) continue
+    const cur = byId.get(c.platformOllId) || { line_id: c.platformOllId }
+    cur.api_status = c
+    byId.set(c.platformOllId, cur)
+  }
+  return [...byId.values()].map(l => {
+    const g = l.placed || {}, c = l.api_status || {}
+    return {
+      line_id: l.line_id,
+      line_no: lineNo(l.line_id),
+      goods_status: c.goodsStatus || null,
+      goods_status_text: c.goodsStatusStr || null,
+      product_message: c.productMessage || null,
+      refund_status: g.refundStatus || null,
+      title: g.title || null,
+      style_code: g.styleCode || null,
+      style_name: g.styleName || null,
+      color_code: g.colorCode || null,
+      color_name: g.colorName || null,
+      size_code: g.sizeCode || null,
+      size_name: g.sizeName || null,
+      qty: intOrNull(g.num),
+      craft_type: intOrNull(g.craftType),
+      goods_type: intOrNull(g.goodsType),
+      print_position: g.printPosition != null ? String(g.printPosition) : null,
+      images: Array.isArray(g.imageList) ? g.imageList : [],
+      api_status: l.api_status || null,
+      placed: l.placed || null,
+    }
+  })
+}
+
 async function inBatches(endpoint, orderNos) {
   const out = []
   for (let i = 0; i < orderNos.length; i += BATCH) {
@@ -167,8 +213,29 @@ async function courierStates(rows, known, log) {
 }
 
 /** Sync every DIGI order. Dry run unless apply; returns a short summary. */
-async function syncDigiOrders({ apply = false, log = console.log } = {}) {
+async function syncDigiOrders({ apply = false, log = console.log, trigger = 'cron' } = {}) {
   if (!digi.isConfigured()) throw Object.assign(new Error('DIGI API is not configured (DIGI_API_SECRET_KEY)'), { status: 503 })
+  // Every applied sync leaves a row in digi_sync_runs, with its counts or its error.
+  let runId = null
+  if (apply) {
+    const { rows } = await db.query(`INSERT INTO digi_sync_runs (trigger) VALUES ($1) RETURNING id`, [trigger])
+    runId = rows[0].id
+  }
+  try {
+    const counts = await runSync({ apply, log })
+    if (runId) {
+      await db.query(
+        `UPDATE digi_sync_runs SET finished_at = NOW(), orders = $2, on_api = $3, tracked = $4, po_linked = $5, lines = $6, warehouses = $7 WHERE id = $1`,
+        [runId, counts.orders, counts.on_api ?? null, counts.tracked ?? null, counts.po_linked ?? null, counts.lines ?? null, counts.warehouses ?? null])
+    }
+    return counts
+  } catch (err) {
+    if (runId) await db.query(`UPDATE digi_sync_runs SET finished_at = NOW(), error = $2 WHERE id = $1`, [runId, String(err.message).slice(0, 2000)]).catch(() => {})
+    throw err
+  }
+}
+
+async function runSync({ apply, log }) {
   const { blanktex, poRefs, known } = await loadUniverse()
 
   const orders = new Map()
@@ -225,6 +292,24 @@ async function syncDigiOrders({ apply = false, log = console.log } = {}) {
       tracking_number: cleanTracking(d.trackingNumber) || cleanTracking(i.courierNumber),
       raw_tracking: String(d.trackingNumber || i.courierNumber || '').trim() || null,
       label_url: d.waybillDataPath || null,
+      // The rest of what DIGI says about the order (migration 149).
+      receiver_phone: i.phone || null,
+      receiver_address: i.address || null,
+      receiver_address2: i.addressOptional || null,
+      receiver_post_code: i.postCode != null && i.postCode !== '' ? String(i.postCode) : null,
+      platform_order_status: i.platformOrderStatus || null,
+      platform_refund_status: i.platformRefundStatus || null,
+      order_state_text: s.orderStateStr || null,
+      express_code: i.expressCode != null && i.expressCode !== '' ? String(i.expressCode) : null,
+      pre_shipping_time: validDate(utc(i.preShippingTime)),
+      platform_shop_code: i.platformShopCode || null,
+      platform_shop_name: i.platformShopName || null,
+      platform_type: Number.isFinite(Number(i.platformType)) && i.platformType !== null ? Number(i.platformType) : null,
+      delivery_shipping_time: validDate(utc(d.shippingTime)),
+      api_info: info.has(o.order_no) ? info.get(o.order_no) : null,
+      api_status: status.has(o.order_no) ? status.get(o.order_no) : null,
+      api_delivery: delivery.has(o.order_no) ? delivery.get(o.order_no) : null,
+      lines: linesOf(o.order_no, goods, s.childOrderStatus),
       items: goods.map(g => ({ title: g.title || null, color: g.colorName || null, size: g.sizeName || null, qty: Number(g.num) || 0 })),
       source: o.source,
       api_missing: !onApi,
@@ -265,6 +350,8 @@ async function syncDigiOrders({ apply = false, log = console.log } = {}) {
   const counts = { orders: rows.length, on_api: rows.filter(r => !r.api_missing).length, tracked: rows.filter(r => r.tracking_number).length,
     po_linked: rows.filter(r => r.po_id).length, order_linked: rows.filter(r => r.order_id).length }
   log(`[digi-sync] ${JSON.stringify(counts)}${apply ? '' : ' (dry run)'}`)
+  counts.lines = rows.reduce((a, r) => a + r.lines.length, 0)
+  counts.warehouses = Array.isArray(addresses) ? addresses.length : 0
   if (!apply) return { ...counts, rows }
 
   for (const r of rows) {
@@ -305,6 +392,64 @@ async function syncDigiOrders({ apply = false, log = console.log } = {}) {
        r.factory_address_id, r.factory_name, r.courier, r.tracking_number, r.label_url, JSON.stringify(r.items),
        r.courier_status, r.courier_status_text, r.courier_eta, r.courier_delivered, r.courier_synced_at,
        r.po_id, r.po_match, r.order_id, r.source, r.api_missing, Boolean(r.keep_courier)])
+
+    // Everything else DIGI returned. A field DIGI leaves out this time keeps
+    // what it said before; the raw replies are replaced whenever DIGI answers.
+    await db.query(
+      `UPDATE digi_orders SET
+         receiver_phone = COALESCE($2, receiver_phone), receiver_address = COALESCE($3, receiver_address),
+         receiver_address2 = COALESCE($4, receiver_address2), receiver_post_code = COALESCE($5, receiver_post_code),
+         platform_order_status = COALESCE($6, platform_order_status), platform_refund_status = COALESCE($7, platform_refund_status),
+         order_state_text = COALESCE($8, order_state_text), express_code = COALESCE($9, express_code),
+         pre_shipping_time = COALESCE($10, pre_shipping_time), platform_shop_code = COALESCE($11, platform_shop_code),
+         platform_shop_name = COALESCE($12, platform_shop_name), platform_type = COALESCE($13, platform_type),
+         delivery_shipping_time = COALESCE($14, delivery_shipping_time),
+         api_info = COALESCE($15::jsonb, api_info), api_status = COALESCE($16::jsonb, api_status),
+         api_delivery = COALESCE($17::jsonb, api_delivery)
+       WHERE order_no = $1`,
+      [r.order_no, r.receiver_phone, r.receiver_address, r.receiver_address2, r.receiver_post_code,
+       r.platform_order_status, r.platform_refund_status, r.order_state_text, r.express_code, r.pre_shipping_time,
+       r.platform_shop_code, r.platform_shop_name, r.platform_type, r.delivery_shipping_time,
+       r.api_info ? JSON.stringify(r.api_info) : null, r.api_status ? JSON.stringify(r.api_status) : null,
+       r.api_delivery ? JSON.stringify(r.api_delivery) : null])
+
+    for (const l of r.lines) {
+      await db.query(
+        `INSERT INTO digi_order_lines (line_id, order_no, line_no, goods_status, goods_status_text, product_message, refund_status,
+           title, style_code, style_name, color_code, color_name, size_code, size_name, qty, craft_type, goods_type,
+           print_position, images, api_status, placed, synced_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20::jsonb,$21::jsonb,NOW())
+         ON CONFLICT (line_id) DO UPDATE SET
+           order_no = EXCLUDED.order_no, line_no = COALESCE(EXCLUDED.line_no, digi_order_lines.line_no),
+           goods_status = COALESCE(EXCLUDED.goods_status, digi_order_lines.goods_status),
+           goods_status_text = COALESCE(EXCLUDED.goods_status_text, digi_order_lines.goods_status_text),
+           product_message = EXCLUDED.product_message,
+           refund_status = COALESCE(EXCLUDED.refund_status, digi_order_lines.refund_status),
+           title = COALESCE(EXCLUDED.title, digi_order_lines.title), style_code = COALESCE(EXCLUDED.style_code, digi_order_lines.style_code),
+           style_name = COALESCE(EXCLUDED.style_name, digi_order_lines.style_name), color_code = COALESCE(EXCLUDED.color_code, digi_order_lines.color_code),
+           color_name = COALESCE(EXCLUDED.color_name, digi_order_lines.color_name), size_code = COALESCE(EXCLUDED.size_code, digi_order_lines.size_code),
+           size_name = COALESCE(EXCLUDED.size_name, digi_order_lines.size_name), qty = COALESCE(EXCLUDED.qty, digi_order_lines.qty),
+           craft_type = COALESCE(EXCLUDED.craft_type, digi_order_lines.craft_type), goods_type = COALESCE(EXCLUDED.goods_type, digi_order_lines.goods_type),
+           print_position = COALESCE(EXCLUDED.print_position, digi_order_lines.print_position),
+           images = CASE WHEN jsonb_array_length(EXCLUDED.images) > 0 THEN EXCLUDED.images ELSE digi_order_lines.images END,
+           api_status = COALESCE(EXCLUDED.api_status, digi_order_lines.api_status),
+           placed = COALESCE(EXCLUDED.placed, digi_order_lines.placed), synced_at = NOW()`,
+        [l.line_id, r.order_no, l.line_no, l.goods_status, l.goods_status_text, l.product_message, l.refund_status,
+         l.title, l.style_code, l.style_name, l.color_code, l.color_name, l.size_code, l.size_name, l.qty, l.craft_type, l.goods_type,
+         l.print_position, JSON.stringify(l.images), l.api_status ? JSON.stringify(l.api_status) : null, l.placed ? JSON.stringify(l.placed) : null])
+    }
+  }
+
+  for (const a of Array.isArray(addresses) ? addresses : []) {
+    if (!a.id || !a.addressId) continue
+    await db.query(
+      `INSERT INTO digi_warehouses (id, address_id, alias, country, province, city, address, enabled, api_row, synced_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,NOW())
+       ON CONFLICT (id) DO UPDATE SET address_id = EXCLUDED.address_id, alias = EXCLUDED.alias, country = EXCLUDED.country,
+         province = EXCLUDED.province, city = EXCLUDED.city, address = EXCLUDED.address, enabled = EXCLUDED.enabled,
+         api_row = EXCLUDED.api_row, synced_at = NOW()`,
+      [String(a.id), a.addressId, a.addressAlias || null, a.country || null, a.province || null, a.city || null,
+       a.address || null, a.enabled ?? null, JSON.stringify(a)])
   }
   return counts
 }
