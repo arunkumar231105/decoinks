@@ -8,7 +8,6 @@ import DashboardPage from '../pages/DashboardPage'
 import OrdersPage from '../pages/OrdersPage'
 import OrderDetailPage from '../pages/OrderDetailPage'
 import PurchaseOrdersPage from '../pages/PurchaseOrdersPage'
-import PurchaseOrdersListPage from '../pages/PurchaseOrdersListPage'
 import PurchaseOrderDetailPage from '../pages/PurchaseOrderDetailPage'
 import ArtworksPage from '../pages/ArtworksPage'
 import ProfilePage from '../pages/ProfilePage'
@@ -16,8 +15,6 @@ import ProductionStatusPage from '../pages/ProductionStatusPage'
 import ReportsPage from '../pages/ReportsPage'
 import StatusUpdatePage from '../pages/StatusUpdatePage'
 import NotificationSettingsPage from '../pages/NotificationSettingsPage'
-import ProductsPage from '../pages/ProductsPage'
-import InventoryPage from '../pages/InventoryPage'
 
 function PrivateRoute({ children }: { children: ReactNode }) {
   const token       = useAuthStore((s) => s.token)
@@ -43,15 +40,12 @@ export const router = createBrowserRouter([
       { path: 'orders/:id',      element: <OrderDetailPage /> },
       { path: 'orders/:id/status-updates', element: <ProductionStatusPage /> },
       { path: 'purchase-orders',     element: <PurchaseOrdersPage /> },
-      { path: 'purchase-orders/list', element: <PurchaseOrdersListPage /> },
       { path: 'purchase-orders/:id', element: <PurchaseOrderDetailPage /> },
       { path: 'status-update',     element: <StatusUpdatePage /> },
       { path: 'status-update/:id', element: <StatusUpdatePage /> },
       { path: 'settings',          element: <NotificationSettingsPage /> },
       { path: 'reports',         element: <ReportsPage /> },
       { path: 'artworks',        element: <ArtworksPage /> },
-      { path: 'products',        element: <ProductsPage /> },
-      { path: 'inventory',       element: <InventoryPage /> },
       { path: 'profile',         element: <ProfilePage /> },
     ],
   },

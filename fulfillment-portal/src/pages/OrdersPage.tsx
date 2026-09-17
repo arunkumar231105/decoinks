@@ -131,7 +131,7 @@ export default function OrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-          <p className="text-sm text-gray-500 mt-1">Every sales order with a purchase order.</p>
+          <p className="text-sm text-gray-500 mt-1">All orders shared with you by Decoinks.</p>
         </div>
         <button
           onClick={() => exportCSV(orders)}
@@ -142,7 +142,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-7 gap-3">
         {statCards.map(({ label, value, icon: Icon, bg, color }) => (
           <div key={label} className="card py-3 px-4">
             <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center mb-2', bg)}>

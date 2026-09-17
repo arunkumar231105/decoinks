@@ -52,7 +52,7 @@ export default function ArtworksPage() {
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Artworks</h2>
-        <p className="text-sm text-gray-500 mt-1">Every print image on the orders.</p>
+        <p className="text-sm text-gray-500 mt-1">Every print image on the orders shared with you.</p>
       </div>
 
       {/* Filters */}

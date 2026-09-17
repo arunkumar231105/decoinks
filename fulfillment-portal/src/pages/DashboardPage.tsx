@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ClipboardList, CalendarDays, LayoutGrid, Shirt, ArrowRight,
+  ClipboardList, CalendarDays, LayoutGrid, Shirt, Hourglass, Factory,
+  Truck, CheckCircle2, XCircle, PauseCircle, ArrowRight,
 } from 'lucide-react'
 import {
   Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -9,7 +10,6 @@ import {
 import { PageHeader } from '../components/Layout'
 import { Panel, Pill, StatCard, TableStates, fmtDate, num } from '../components/ui'
 import api from '../services/api'
-import { CARDS, type GridResponse } from '../components/fulfillment/stages'
 
 /** Exactly what GET /api/supplier/dashboard returns. */
 interface Dashboard {
@@ -53,18 +53,6 @@ export default function DashboardPage() {
     return () => { alive = false }
   }, [])
 
-  // Purchase orders by stage, from the Supplier Order Management grid.
-  const [poSummary, setPoSummary] = useState<GridResponse['summary'] | null>(null)
-  const [poLoading, setPoLoading] = useState(true)
-  useEffect(() => {
-    let alive = true
-    api.get('/purchase-orders/order-grid', { params: { limit: 1 } })
-      .then(r => { if (alive) setPoSummary(r.data.summary) })
-      .catch(() => { if (alive) setPoSummary(null) })
-      .finally(() => { if (alive) setPoLoading(false) })
-    return () => { alive = false }
-  }, [])
-
   const statusData = (data?.ordersByStatus ?? []).filter(x => x.value > 0)
   const total = data?.totalOrders ?? 0
 
@@ -87,6 +75,22 @@ export default function DashboardPage() {
     pct: p.pct ?? (total ? (p.count / total) * 100 : 0),
   }))
 
+  // ordersByStatus is the authoritative breakdown. The endpoint's `completed`
+  // scalar only counts the literal 'Completed' status, so a set of Delivered
+  // orders was landing in "Pending" — derive every tile from the status list
+  // and fall back to the scalars only when the list is missing.
+  const byStatus = (...names: string[]) =>
+    statusData.filter(x => names.includes(x.name)).reduce((sum, x) => sum + x.value, 0)
+
+  const counts = {
+    pending: statusData.length ? byStatus('Draft', 'Confirmed', 'Pending', 'Not Started') : 0,
+    inProduction: statusData.length ? byStatus('In Production') : (data?.inProduction ?? 0),
+    shipped: statusData.length ? byStatus('Shipped', 'Ready to Ship') : (data?.shipped ?? 0),
+    completed: statusData.length ? byStatus('Completed', 'Delivered') : (data?.completed ?? 0),
+    cancelled: byStatus('Cancelled'),
+    onHold: byStatus('On Hold'),
+  }
+
   return (
     <>
       <PageHeader title="Dashboard" subtitle="Overview of your orders and production activities." />
@@ -100,32 +104,14 @@ export default function DashboardPage() {
         <StatCard icon={ClipboardList} label="DTF Transfers" value={num(byType('DTF Transfers'))} loading={loading} tone="bg-emerald-600" />
       </div>
 
-      {/* Purchase orders by stage — the same numbers as Supplier Order Management */}
-      <div className="mt-4 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold text-ink">Purchase orders</h2>
-        <Link to="/purchase-orders" className="fp-link text-[13px]">Open Order Management <ArrowRight size={13} className="inline" /></Link>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
-        {CARDS.map(c => {
-          const Icon = c.icon
-          const value = !poSummary ? 0
-            : c.key === 'total' ? poSummary.total
-            : c.key === 'issued' ? poSummary.issued
-            : c.key === 'pending' ? poSummary.pending
-            : poSummary.stages[c.key] ?? 0
-          return (
-            <Link key={c.label} to={c.filter ? `/purchase-orders?stage=${encodeURIComponent(c.filter)}` : '/purchase-orders'}
-              className="fp-card flex items-center gap-3 p-3.5 transition hover:border-slate-300 hover:shadow-pop">
-              <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${c.tone}`}><Icon size={19} /></span>
-              <span className="min-w-0">
-                <span className="block truncate text-[13px] font-medium text-muted">{c.label}</span>
-                {poLoading
-                  ? <span className="fp-skeleton mt-1 block h-6 w-10" />
-                  : <span className="block text-[22px] font-bold leading-tight text-ink">{num(value)}</span>}
-              </span>
-            </Link>
-          )
-        })}
+      {/* Status row */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+        <StatCard icon={Hourglass} label="Pending" value={num(counts.pending)} loading={loading} tone="bg-amber-500" />
+        <StatCard icon={Factory} label="In Production" value={num(counts.inProduction)} loading={loading} tone="bg-orange-500" />
+        <StatCard icon={Truck} label="Shipped" value={num(counts.shipped)} loading={loading} tone="bg-emerald-600" />
+        <StatCard icon={CheckCircle2} label="Completed" value={num(counts.completed)} loading={loading} tone="bg-brand" />
+        <StatCard icon={XCircle} label="Cancelled" value={num(counts.cancelled)} loading={loading} tone="bg-rose-600" />
+        <StatCard icon={PauseCircle} label="On Hold" value={num(counts.onHold)} loading={loading} tone="bg-violet-600" />
       </div>
 
       {/* Charts */}

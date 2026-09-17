@@ -1,19 +1,6 @@
 const router       = require('express').Router();
 const supplierAuth = require('../../middleware/supplierAuth');
 const ctrl         = require('./portal.controller');
-const fulfillment  = require('./portal.fulfillment.controller');
-const { scopeId }  = require('./portal.scope');
-
-// Which supplier a login speaks for — or null for the company login, which sees
-// every supplier's purchase orders (portal.scope.js). Services read req.scopeId.
-const withScope = async (req, res, next) => {
-  try { req.scopeId = await scopeId(req); }
-  catch (e) {
-    if (!e.status) console.error('[portal] scope lookup failed:', e.message);
-    return res.status(e.status || 500).json({ error: e.status ? e.message : 'Something went wrong' });
-  }
-  next();
-};
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────
 router.post('/auth/login',   ctrl.login);
@@ -29,12 +16,11 @@ const tokenFromQuery = (req, _res, next) => {
   }
   next();
 };
-router.get('/vault/:id/preview', tokenFromQuery, supplierAuth, withScope, ctrl.vaultAsset('preview'));
-router.get('/vault/:id/file',    tokenFromQuery, supplierAuth, withScope, ctrl.vaultAsset('file'));
+router.get('/vault/:id/preview', tokenFromQuery, supplierAuth, ctrl.vaultAsset('preview'));
+router.get('/vault/:id/file',    tokenFromQuery, supplierAuth, ctrl.vaultAsset('file'));
 
 // ── Protected routes (supplier JWT required) ──────────────────────────────────
 router.use(supplierAuth);
-router.use(withScope);
 
 router.get('/me',                       ctrl.getProfile);
 router.patch('/me/password',            ctrl.changePassword);
@@ -45,16 +31,6 @@ router.get('/orders',                   ctrl.getOrders);
 router.get('/orders/:id',               ctrl.getOrderDetail);
 router.post('/orders/:id/status-updates', ctrl.submitStatusUpdate);
 router.get('/orders/:id/status-updates',  ctrl.getStatusUpdates);
-
-// Supplier Order Management grid, stages and factories (portal.fulfillment.js).
-// Declared before /purchase-orders/:id so "order-grid" is never read as an id.
-router.get('/purchase-orders/order-grid',    fulfillment.getOrderGrid);
-router.get('/purchase-orders/:id/stage',     fulfillment.getOrderRow);
-router.patch('/purchase-orders/:id/stage',   fulfillment.updateOrderStage);
-router.get('/products',                      fulfillment.getProducts);
-router.get('/factories',                     fulfillment.listFactories);
-router.post('/factories',                    fulfillment.createFactory);
-router.patch('/factories/:id',               fulfillment.updateFactory);
 
 router.get('/purchase-orders',              ctrl.getPurchaseOrders);
 router.get('/purchase-orders/:id',          ctrl.getPODetail);

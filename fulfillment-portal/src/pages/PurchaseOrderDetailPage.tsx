@@ -3,8 +3,6 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
-import StageEditor from '../components/fulfillment/StageEditor'
-import { STAGE_TONE, type GridRow } from '../components/fulfillment/stages'
 import { ArrowLeft, Download, Truck } from 'lucide-react'
 import api from '../services/api'
 import { cn } from '../utils/cn'
@@ -65,19 +63,9 @@ export default function PurchaseOrderDetailPage() {
     queryKey: ['purchase-order', id],
     queryFn: () => api.get(`/purchase-orders/${id}`).then((r) => r.data.po),
     enabled: !!id,
-    refetchInterval: 60_000,
   })
 
   // ── Mutations ────────────────────────────────────────────────────────────────
-
-  // Where it stands in Supplier Order Management: stage, factory, push date.
-  const [stageOpen, setStageOpen] = useState(false)
-  const orderRow = useQuery({
-    queryKey: ['order-row', id],
-    queryFn: () => api.get(`/purchase-orders/${id}/stage`).then(r => r.data.row as GridRow),
-    enabled: Boolean(id),
-    refetchInterval: 60_000,
-  })
 
   const statusMutation = useMutation({
     mutationFn: (status: string) =>
@@ -195,45 +183,6 @@ export default function PurchaseOrderDetailPage() {
           </Link>
         </div>
       </div>
-
-      {/* Order management: stage, factory, push date */}
-      {orderRow.data && (
-        <div className="card">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="grid flex-1 grid-cols-2 gap-4 text-sm sm:grid-cols-5">
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-1">Stage</p>
-                <span className={`inline-flex whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${STAGE_TONE[orderRow.data.stage] ?? ''}`}>
-                  {orderRow.data.stage}
-                </span>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-0.5">{orderRow.data.supplier?.name ?? 'Supplier'} Order No</p>
-                <p className="font-semibold text-gray-900">{orderRow.data.supplier_order_numbers?.length ? orderRow.data.supplier_order_numbers.join(', ') : '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-0.5">Factory</p>
-                <p className="font-semibold text-gray-900">{orderRow.data.factory?.name ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-0.5">Push Date</p>
-                <p className="font-semibold text-gray-900">{orderRow.data.push_date ? fmtDate(orderRow.data.push_date) : '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-0.5">Tracking Status</p>
-                <p className="font-semibold text-gray-900">{orderRow.data.tracking_text ?? '—'}</p>
-              </div>
-            </div>
-            <button className="btn-primary flex items-center gap-2" onClick={() => setStageOpen(true)}>
-              Update stage
-            </button>
-          </div>
-          {orderRow.data.stage_note && orderRow.data.stage !== 'Exception' && (
-            <p className="mt-3 text-sm text-gray-600"><span className="font-medium text-gray-900">Note:</span> {orderRow.data.stage_note}</p>
-          )}
-        </div>
-      )}
-      <StageEditor row={stageOpen ? orderRow.data ?? null : null} onClose={() => setStageOpen(false)} />
 
       {/* Info strip */}
       <div className="card">
