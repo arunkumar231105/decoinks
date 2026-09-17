@@ -200,12 +200,16 @@ export default function PurchaseOrderDetailPage() {
       {orderRow.data && (
         <div className="card">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="grid flex-1 grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div className="grid flex-1 grid-cols-2 gap-4 text-sm sm:grid-cols-5">
               <div>
                 <p className="text-xs text-gray-500 font-medium mb-1">Stage</p>
                 <span className={`inline-flex whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${STAGE_TONE[orderRow.data.stage] ?? ''}`}>
                   {orderRow.data.stage}
                 </span>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 font-medium mb-0.5">{orderRow.data.supplier?.name ?? 'Supplier'} Order No</p>
+                <p className="font-semibold text-gray-900">{orderRow.data.supplier_order_numbers?.length ? orderRow.data.supplier_order_numbers.join(', ') : '—'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 font-medium mb-0.5">Factory</p>

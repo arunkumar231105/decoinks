@@ -46,7 +46,7 @@ const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean
 
 // Columns whose text wraps instead of being cut off, so the whole grid fits
 // narrower (and zoomed) screens with nothing hidden behind an ellipsis.
-const WRAP = new Set<ColumnKey>(['supplier', 'customer', 'factory', 'items', 'courier', 'tracking_number', 'tracking_text'])
+const WRAP = new Set<ColumnKey>(['supplier', 'customer', 'order_number', 'factory', 'items', 'courier', 'tracking_number', 'tracking_text'])
 
 const readHidden = (): ColumnKey[] => {
   try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || '[]') } catch { return [] }
@@ -162,7 +162,13 @@ export default function PurchaseOrdersPage() {
           {r.customer_location && <div className="text-xs text-slate-500">{r.customer_location}</div>}
         </div>
       )
-      case 'order_number': return r.order_number
+      case 'order_number': return r.supplier_order_numbers?.length
+        ? (
+          <div className="space-y-0.5" title={r.order_number ? `Our sales order: ${r.order_number}` : undefined}>
+            {r.supplier_order_numbers.map(n => <span key={n} className="block min-w-[70px] max-w-[120px] text-slate-800">{n}</span>)}
+          </div>
+        )
+        : r.order_number
         ? <span className={r.order_archived ? 'text-slate-400' : 'text-slate-800'} title={r.order_archived ? 'This sales order has been archived' : undefined}>{r.order_number}</span>
         : <span className="text-slate-400">—</span>
       case 'factory': return r.factory

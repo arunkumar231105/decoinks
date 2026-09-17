@@ -75,6 +75,11 @@ async function loadRows(supplierId) {
             NULLIF(CONCAT_WS(', ', NULLIF(BTRIM(c.city), ''), NULLIF(BTRIM(c.state), ''), NULLIF(BTRIM(c.country), '')), '') AS customer_location,
             f.id AS factory_id, f.name AS factory_name, f.is_active AS factory_active,
             NULLIF(BTRIM(o.production_facility), '') AS order_facility,
+            NULLIF(BTRIM(po.supplier_reference), '') AS supplier_reference,
+            po.created_at::date::text AS po_created, o.order_date::text AS order_date,
+            NULLIF(BTRIM(c.name), '') AS customer_only_name, NULLIF(BTRIM(o.shipping_name), '') AS shipping_name,
+            ARRAY(SELECT COALESCE(i.qty, 0) FROM order_items_apparel i WHERE i.order_id = po.order_id
+                   ORDER BY i.sort_order, i.id) AS order_line_qtys,
             sh.parcels,
             COALESCE(pl.qty, ol.qty) AS qty,
             COALESCE(pl.items, ol.items) AS items
@@ -133,7 +138,107 @@ async function loadRows(supplierId) {
       WHERE po.deleted_at IS NULL`,
     [supplierId]
   )
-  return rows.map(shapeRow)
+  const shaped = rows.map(shapeRow)
+  await attachSupplierOrderNumbers(shaped, rows)
+  return shaped
+}
+
+const normName = v => String(v || '').toLowerCase().replace(/[^a-z]/g, '')
+const DAY = 86400000
+const dayOf = v => (v ? Date.parse(`${String(v).slice(0, 10)}T00:00:00Z`) : NaN)
+
+/**
+ * DIGI's own order number for each DIGI purchase order — the number DIGI gave
+ * the blank order placed through BlankTex — shown instead of our sales order
+ * number (the owner, 17 Sep 2026).
+ *
+ * A PO carrying supplier_reference (27 older POs) keeps it. The rest are matched
+ * to BlankTex's DIGI orders (blanktex.purchases), which record neither our order
+ * nor our PO, the way the shop places them: one DIGI order per sales-order line,
+ * to the same recipient, within days. A sales order's lines are matched by
+ * recipient name, date and quantity (line pieces = the DIGI order's pieces);
+ * a one-line order may also match on its total. Nothing is guessed: no match,
+ * or two equally good ones, leaves our own number. The POs of one sales order
+ * carry nothing that tells them apart, so each shows all of that order's DIGI
+ * numbers. Read live on every load, so a new BlankTex order appears at once.
+ */
+async function attachSupplierOrderNumbers(shaped, raw) {
+  for (const r of shaped) r.supplier_order_numbers = []
+  const digi = raw.map((row, i) => ({ row, out: shaped[i] })).filter(x => /^digi\b/i.test(x.row.supplier_name || ''))
+  if (!digi.length) return
+
+  const claimed = new Set()
+  for (const { row, out } of digi) {
+    if (row.supplier_reference) { out.supplier_order_numbers = [row.supplier_reference]; claimed.add(row.supplier_reference) }
+  }
+
+  let purchases = []
+  try {
+    const { rows } = await db.query(
+      `SELECT b.order_no, b.recipient_name, COALESCE(b.order_time, b.created_at) AS placed_at,
+              COALESCE((SELECT SUM(i.quantity) FROM blanktex.purchase_items i WHERE i.purchase_id = b.purchase_id), 0)::int AS qty
+         FROM blanktex.purchases b
+         JOIN blanktex.suppliers bs ON bs.supplier_id = b.supplier_id AND bs.supplier_code = 'DIGI'
+        WHERE NULLIF(BTRIM(b.order_no), '') IS NOT NULL
+          AND COALESCE(b.status, '') !~* 'cancel'`)
+    purchases = rows.map(p => ({ ...p, name: normName(p.recipient_name), day: dayOf(new Date(p.placed_at).toISOString()) }))
+      .filter(p => !claimed.has(p.order_no))
+  } catch (err) {
+    // BlankTex's schema is another app's; without it the grid keeps our numbers.
+    console.error('[portal] BlankTex orders unavailable:', err.message)
+    return
+  }
+
+  // Sales orders whose DIGI POs have no stored number, oldest first.
+  const byOrder = new Map()
+  for (const x of digi) {
+    if (x.row.supplier_reference || !x.row.order_id) continue
+    const g = byOrder.get(x.row.order_id) || { items: [], row: x.row, created: 0 }
+    g.items.push(x)
+    g.created = Math.max(g.created, dayOf(x.row.po_created))
+    byOrder.set(x.row.order_id, g)
+  }
+  const orders = [...byOrder.values()].sort((a, b) => dayOf(a.row.order_date || a.row.po_created) - dayOf(b.row.order_date || b.row.po_created))
+
+  const taken = new Set()
+  for (const g of orders) {
+    const names = [g.row.customer_only_name, g.row.shipping_name, g.row.customer_name].map(normName).filter(n => n.length >= 4)
+    const start = dayOf(g.row.order_date || g.row.po_created) - 5 * DAY
+    const end = (g.created || start) + 10 * DAY
+    const sameName = n => names.some(m => m === n || (n.length > 5 && m.length > 5 && (m.startsWith(n) || n.startsWith(m))))
+    const orderDay = dayOf(g.row.order_date || g.row.po_created)
+    const cands = purchases.filter(p => !taken.has(p.order_no) && p.day >= start && p.day <= end && sameName(p.name))
+    if (!cands.length) continue
+
+    // The k closest candidates with exactly this many pieces — none if there are
+    // fewer than k, or the k-th ties with the next.
+    const closestK = (qty, k, pool) => {
+      const hits = pool.filter(p => p.qty === qty).sort((a, b) => Math.abs(a.day - orderDay) - Math.abs(b.day - orderDay))
+      if (hits.length < k) return null
+      if (hits.length > k && Math.abs(hits[k - 1].day - orderDay) === Math.abs(hits[k].day - orderDay)) return null
+      return hits.slice(0, k)
+    }
+
+    const lines = (g.row.order_line_qtys || []).map(Number).filter(q => q > 0)
+    let picked = []
+    if (lines.length > 1) {
+      const need = new Map()
+      for (const q of lines) need.set(q, (need.get(q) || 0) + 1)
+      for (const [q, k] of need) {
+        const hit = closestK(q, k, cands)
+        if (!hit) { picked = []; break }
+        picked.push(...hit)
+      }
+    }
+    if (!picked.length) {
+      const total = lines.reduce((a, b) => a + b, 0)
+      picked = (total && closestK(total, 1, cands)) || []
+    }
+    if (!picked.length) continue
+    for (const p of picked) taken.add(p.order_no)
+    const numbers = picked.map(p => p.order_no)
+    for (const { out } of g.items) out.supplier_order_numbers = numbers
+  }
 }
 
 /**
@@ -227,7 +332,7 @@ const SORTS = {
   po_number: r => r.po_number,
   supplier: r => (r.supplier?.name || '').toLowerCase(),
   customer: r => (r.customer_name || '').toLowerCase(),
-  order_number: r => r.order_number || '',
+  order_number: r => r.supplier_order_numbers?.[0] || r.order_number || '',
   factory: r => (r.factory?.name || '').toLowerCase(),
   push_date: r => r.push_date || '',
   issue_date: r => r.issue_date || '',
@@ -262,7 +367,7 @@ async function getOrderGrid(supplierId, query = {}) {
 
   let rows = all
   if (search) {
-    rows = rows.filter(r => [r.po_number, r.supplier?.name, r.order_number, r.customer_name, r.factory?.name, r.items, ...r.parcels.map(p => p.tracking_number)]
+    rows = rows.filter(r => [r.po_number, r.supplier?.name, r.order_number, ...(r.supplier_order_numbers || []), r.customer_name, r.factory?.name, r.items, ...r.parcels.map(p => p.tracking_number)]
       .some(v => String(v || '').toLowerCase().includes(search)))
   }
   if (stage === 'Pending') rows = rows.filter(r => NOT_YET_SHIPPED.includes(r.stage))

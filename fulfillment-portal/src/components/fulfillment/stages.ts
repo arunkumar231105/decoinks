@@ -81,6 +81,8 @@ export interface GridRow {
   customer_location: string | null
   order_id: string | null
   order_number: string | null
+  /** The supplier's own order number(s) — DIGI's from BlankTex — shown in place of ours. */
+  supplier_order_numbers: string[]
   order_archived: boolean
   // id is null when the name comes from the sales order's production facility.
   factory: { id: string | null; name: string; is_active: boolean; from_order?: boolean } | null
