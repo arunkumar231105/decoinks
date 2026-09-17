@@ -12,14 +12,35 @@
  * The SQL below reads that one parameter both ways, so a query is written once.
  */
 
-const httpError = (status, message) => Object.assign(new Error(message), { status })
+const db = require('../../config/db')
 
-/** The scope id for a request: null only for a company login's token. */
-function scopeId(req) {
-  if (req.supplier?.allSuppliers === true) return null
-  const id = req.supplier?.supplierId
-  if (!id) throw httpError(403, 'This login is not linked to a supplier')
-  return id
+const httpError = (status, message) => Object.assign(new Error(message), { status })
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// What a login may see is read from its row, not trusted from the token: a
+// session opened before a login changed (digi became the company login, a
+// login switched off) follows the change on its next request. Kept 30 s.
+const cache = new Map()
+const TTL_MS = 30 * 1000
+
+/** The scope id for a request: the supplier's id, or null for the company login. */
+async function scopeId(req) {
+  const userId = req.supplier?.portalUserId
+  if (!UUID.test(String(userId || ''))) throw httpError(403, 'This login is not linked to a supplier')
+
+  let hit = cache.get(userId)
+  if (!hit || hit.at < Date.now() - TTL_MS) {
+    const { rows } = await db.query(
+      `SELECT supplier_id, is_active, sees_all_suppliers FROM supplier_portal_users WHERE id = $1`, [userId])
+    hit = { at: Date.now(), row: rows[0] || null }
+    cache.set(userId, hit)
+  }
+  const row = hit.row
+  if (!row) throw httpError(401, 'This login no longer exists')
+  if (!row.is_active) throw httpError(403, 'Account is disabled. Contact your administrator.')
+  if (row.sees_all_suppliers) return null
+  if (!row.supplier_id) throw httpError(403, 'This login is not linked to a supplier')
+  return row.supplier_id
 }
 
 /** Purchase orders in scope, as (po_id, supplier_id). `$n` is the scope id. */

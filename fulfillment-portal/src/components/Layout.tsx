@@ -92,7 +92,15 @@ function AccountMenu() {
   const { signOut } = useSupplierAuth()
   const [open, setOpen] = useState(false)
   const ref = useClickAway(open, () => setOpen(false))
-  const name = supplier?.name?.trim() || 'Supplier'
+  // The server's current name for this login — the one saved at sign-in goes
+  // stale when a login changes (DIGI's became the company login, Decoinks).
+  const me = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api.get('/me').then(r => (r.data?.supplier ?? null) as { name?: string; email?: string | null } | null),
+    staleTime: 5 * 60 * 1000,
+  })
+  const name = me.data?.name?.trim() || supplier?.name?.trim() || 'Supplier'
+  const email = me.data ? me.data.email : supplier?.email
   const initials = name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
   return (
@@ -107,7 +115,7 @@ function AccountMenu() {
         <div role="menu" className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-line bg-white py-1 shadow-pop">
           <div className="border-b border-line px-4 py-3">
             <div className="truncate text-sm font-semibold text-ink">{name}</div>
-            {supplier?.email && <div className="truncate text-xs text-muted">{supplier.email}</div>}
+            {email && <div className="truncate text-xs text-muted">{email}</div>}
           </div>
           <Link role="menuitem" to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink hover:bg-slate-50"><User size={16} /> Profile</Link>
           <Link role="menuitem" to="/change-password" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink hover:bg-slate-50"><KeyRound size={16} /> Change password</Link>

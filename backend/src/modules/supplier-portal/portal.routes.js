@@ -6,9 +6,13 @@ const { scopeId }  = require('./portal.scope');
 
 // Which supplier a login speaks for — or null for the company login, which sees
 // every supplier's purchase orders (portal.scope.js). Services read req.scopeId.
-const withScope = (req, res, next) => {
-  try { req.scopeId = scopeId(req); next(); }
-  catch (e) { res.status(e.status || 403).json({ error: e.message }); }
+const withScope = async (req, res, next) => {
+  try { req.scopeId = await scopeId(req); }
+  catch (e) {
+    if (!e.status) console.error('[portal] scope lookup failed:', e.message);
+    return res.status(e.status || 500).json({ error: e.status ? e.message : 'Something went wrong' });
+  }
+  next();
 };
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────

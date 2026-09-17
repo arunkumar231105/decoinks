@@ -32,14 +32,14 @@ export function Sidebar({ collapsed = false, onNavigate }: { collapsed?: boolean
 
   const itemClass = (active: boolean) => [
     'group flex items-center rounded-lg text-[14px] transition',
-    collapsed ? 'h-11 w-11 justify-center' : 'h-[44px] gap-3 px-3',
+    collapsed ? 'h-11 w-11 justify-center [@media(max-height:760px)]:h-9' : 'h-[44px] gap-3 px-3 [@media(max-height:760px)]:h-9',
     active ? 'bg-[#233f8f] text-white' : 'text-slate-200 hover:bg-white/[0.07] hover:text-white',
   ].join(' ')
 
   return (
     <div className={`flex h-full flex-col bg-sidebar transition-[width] duration-200 ${collapsed ? 'w-[76px]' : 'w-[222px]'}`}>
       {/* Brand */}
-      <div className={`flex h-[72px] shrink-0 items-center ${collapsed ? 'justify-center' : 'px-5'}`}>
+      <div className={`flex h-[72px] shrink-0 items-center [@media(max-height:760px)]:h-14 ${collapsed ? 'justify-center' : 'px-5'}`}>
         <Link to="/" onClick={onNavigate} className="select-none text-white" aria-label="decoinks — Dashboard">
           {collapsed
             ? <span className="text-[26px] font-extrabold leading-none tracking-tight">d</span>
@@ -63,7 +63,7 @@ export function Sidebar({ collapsed = false, onNavigate }: { collapsed?: boolean
         })}
       </nav>
 
-      <div className={`shrink-0 py-4 ${collapsed ? 'flex justify-center px-2' : 'px-3'}`}>
+      <div className={`shrink-0 py-4 [@media(max-height:760px)]:py-2 ${collapsed ? 'flex justify-center px-2' : 'px-3'}`}>
         <div className={`mb-3 border-t border-white/15 ${collapsed ? 'hidden' : 'mx-1'}`} />
         <a href="mailto:support@decoinks.com" className={itemClass(false)} title={collapsed ? 'Help & Support' : undefined}>
           <HelpCircle size={20} strokeWidth={1.8} className="shrink-0" />
