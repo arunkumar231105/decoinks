@@ -1342,6 +1342,18 @@ export function NewQuotationPage() {
     },
     onError: (err: any) => {
       navigateAfterSave.current = null
+      // Name the field — and the row — the server refused, not just "Validation failed".
+      const details = err.response?.data?.details
+      if (Array.isArray(details) && details.length) {
+        const rowLabel = activeTab === 'dtf' ? 'DTF row' : activeTab === 'gangsheet' ? 'Gangsheet row' : 'Row'
+        const lines = details.slice(0, 3).map((d: any) => {
+          const line = String(d?.field ?? '').match(/^items\.(\d+)\.(\w+)/)
+          if (line) return `${rowLabel} ${Number(line[1]) + 1} — ${line[2].replace(/_/g, ' ')}: ${d.message}`
+          return `${d?.field ? `${String(d.field).replace(/_/g, ' ')}: ` : ''}${d?.message ?? d}`
+        })
+        toast.error(`Could not save quote — ${lines.join(' · ')}`)
+        return
+      }
       toast.error(err.response?.data?.message ?? 'Could not save quote')
     },
   })
@@ -1625,6 +1637,25 @@ export function NewQuotationPage() {
       })
     }
 
+    // Say which row is wrong before the server refuses the whole quote with a
+    // bare "Validation failed". A row whose Qty box was cleared saved as 0, and
+    // nothing said which of a dozen transfer rows it was.
+    const rowLabel = activeTab === 'dtf' ? 'DTF row' : activeTab === 'gangsheet' ? 'Gangsheet row' : 'Row'
+    const rowProblems = allItems.flatMap((item, i) => {
+      const problems: string[] = []
+      const qty = Number(item.qty)
+      if (!Number.isInteger(qty) || qty < 1) problems.push(`${rowLabel} ${i + 1}: quantity must be a whole number, at least 1`)
+      const rate = Number(item.unit_price)
+      if (!Number.isFinite(rate) || rate < 0) problems.push(`${rowLabel} ${i + 1}: rate must be 0 or more`)
+      const artworks = Number(item.artwork_count)
+      if (!Number.isInteger(artworks) || artworks < 0) problems.push(`${rowLabel} ${i + 1}: number of artworks must be a whole number`)
+      return problems
+    })
+    if (rowProblems.length) {
+      toast.error(rowProblems.slice(0, 3).join(' · ') + (rowProblems.length > 3 ? ` · and ${rowProblems.length - 3} more` : ''))
+      return
+    }
+
     const discountCharge  = otherCharges.find(c => c.key === 'discount')
     const shippingCharge  = otherCharges.find(c => c.key === 'shipping')
     const artworkCharge   = otherCharges.find(c => c.key === 'artwork')
@@ -1760,7 +1791,7 @@ export function NewQuotationPage() {
                     <td>{item.styleId ? <select className="nq-table-select" value={item.colorId ?? ''} onChange={e => selectApparelColor(item, e.target.value)}><option value="">Select color</option>{(item.availableColors ?? []).map(color => <option key={color.style_color_id} value={color.style_color_id}>{color.display_name}</option>)}</select> : <input className="nq-table-input" value={item.variant} onChange={e => updateApparelItem(item.id, { variant: e.target.value })} />}</td>
                     <td>{item.styleId ? <select className="nq-table-select" value={item.sizeId ?? ''} onChange={e => selectApparelSize(item, e.target.value)}><option value="">Select size</option>{(item.availableSizes ?? []).map(size => <option key={size.style_size_id} value={size.style_size_id}>{size.size_name}</option>)}</select> : <ApparelSizePicker value={item.sizes} onChange={sizes => updateApparelItem(item.id, { sizes })} />}</td>
                     <td><code className="nq-item-sku">{item.sku || (item.colorId && item.sizeId ? 'No SKU' : 'Select color + size')}</code></td>
-                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} step={1} aria-invalid={!(Number.isInteger(Number(item.qty)) && Number(item.qty) >= 1)} style={!(Number.isInteger(Number(item.qty)) && Number(item.qty) >= 1) ? { borderColor: '#dc2626', background: '#fef2f2' } : undefined} value={item.qty} onChange={e => updateApparelItem(item.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><div className="nq-artwork-pair"><ImageUploadCell imageUrl={item.front_image} label="Front" uploading={uploadingImg[`${item.id}-front_image`]} onUpload={f => uploadItemImage(item.id, 'front_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { front_image: null })} /><ImageUploadCell imageUrl={item.back_image} label="Back" uploading={uploadingImg[`${item.id}-back_image`]} onUpload={f => uploadItemImage(item.id, 'back_image', f, updateApparelItem)} onRemove={() => updateApparelItem(item.id, { back_image: null })} /></div></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={item.quotedCost} onChange={e => updateApparelItem(item.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(item.qty * item.quotedCost)}</td>
@@ -1802,7 +1833,7 @@ export function NewQuotationPage() {
                     <td><input className="nq-table-input" placeholder={`AW-${String(idx + 1).padStart(4, '0')}`} value={row.artworkNo} onChange={e => updateTransferRow(row.id, { artworkNo: e.target.value })} /></td>
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Width" aria-label={`Transfer ${idx + 1} width in inches`} value={row.width} onChange={e => updateTransferRow(row.id, { width: e.target.value })} /></td>
                     <td><input className="nq-table-input nq-dimension-input" type="number" min="0" step="any" inputMode="decimal" placeholder="Height" aria-label={`Transfer ${idx + 1} height in inches`} value={row.height} onChange={e => updateTransferRow(row.id, { height: e.target.value })} /></td>
-                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
+                    <td><div className="nq-qty-input"><input className="nq-table-input" type="number" min={1} step={1} aria-invalid={!(Number.isInteger(Number(row.qty)) && Number(row.qty) >= 1)} style={!(Number.isInteger(Number(row.qty)) && Number(row.qty) >= 1) ? { borderColor: '#dc2626', background: '#fef2f2' } : undefined} value={row.qty} onChange={e => updateTransferRow(row.id, { qty: +e.target.value })} /><span>pcs</span></div></td>
                     <td><ImageUploadCell imageUrl={row.artwork_image} label="Artwork" uploading={uploadingImg[`${row.id}-artwork_image`]} onUpload={f => uploadItemImage(row.id, 'artwork_image', f, updateTransferRow)} onRemove={() => updateTransferRow(row.id, { artwork_image: null })} /></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={row.quotedCost} onChange={e => updateTransferRow(row.id, { quotedCost: +e.target.value })} /></div></td>
                     <td className="nq-td-total">${fmt(row.qty * row.quotedCost)}</td>
@@ -1853,7 +1884,7 @@ export function NewQuotationPage() {
                       )}
                     </td>
                     <td><input className="nq-table-input" type="number" value={row.noArtworks} onChange={e => updateGangsheetRow(row.id, { noArtworks: +e.target.value })} /></td>
-                    <td><input className="nq-table-input" type="number" value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
+                    <td><input className="nq-table-input" type="number" min={1} step={1} aria-invalid={!(Number.isInteger(Number(row.qtySheets)) && Number(row.qtySheets) >= 1)} style={!(Number.isInteger(Number(row.qtySheets)) && Number(row.qtySheets) >= 1) ? { borderColor: '#dc2626', background: '#fef2f2' } : undefined} value={row.qtySheets} onChange={e => updateGangsheetRow(row.id, { qtySheets: +e.target.value })} /></td>
                     <td><ImageUploadCell imageUrl={row.front_image} label="Front" uploading={uploadingImg[`${row.id}-front_image`]} onUpload={f => uploadItemImage(row.id, 'front_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { front_image: null })} /></td>
                     <td><ImageUploadCell imageUrl={row.back_image} label="Back" uploading={uploadingImg[`${row.id}-back_image`]} onUpload={f => uploadItemImage(row.id, 'back_image', f, updateGangsheetRow)} onRemove={() => updateGangsheetRow(row.id, { back_image: null })} /></td>
                     <td><div className="nq-money-input nq-money-quoted"><span>$</span><input type="number" step="any" value={row.quotedCost} onChange={e => updateGangsheetRow(row.id, { quotedCost: +e.target.value })} /></div></td>
