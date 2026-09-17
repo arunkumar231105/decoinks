@@ -246,7 +246,21 @@ async function getById(id) {
   }
 }
 
+// An invoice raised from a quote means the quote was accepted. Quotes were left
+// Draft or Sent after being invoiced — ten of them at once — so the quote list
+// said "draft" about work already invoiced and paid.
 async function create(fields_in) {
+  const invoice = await createInvoice(fields_in)
+  const quoteId = invoice?.quote_id || fields_in?.quote_id
+  if (quoteId) {
+    await query(
+      `UPDATE quotations SET status = 'Approved', approved_at = COALESCE(approved_at, NOW()), updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL AND status IN ('Draft', 'Sent')`, [quoteId])
+  }
+  return invoice
+}
+
+async function createInvoice(fields_in) {
   const { quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
           subtotal, discount_amt, tax_amt,
           notes, created_by, order_type, items } = fields_in

@@ -709,9 +709,9 @@ async function create(data) {
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by, order_stage, process_status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,$32,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL OR $33::boolean THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,$32,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
                  -- kept in step with the status chosen on the line above
-                 CASE WHEN $3::uuid IS NOT NULL THEN 'Sent'   ELSE 'Draft' END,
+                 CASE WHEN $3::uuid IS NOT NULL OR $33::boolean THEN 'Sent' ELSE 'Draft' END,
                  CASE WHEN $3::uuid IS NOT NULL THEN 'Pushed' ELSE NULL    END)
        RETURNING *`,
       [
@@ -725,6 +725,9 @@ async function create(data) {
         resolvedShippingName, resolvedShippingAddress,
         resolvedAssignedTo, created_by,
         resolvedEntryDate,
+        // Raised against a received payment, the order is confirmed work — it was
+        // left Draft whenever it came from the order form rather than an invoice.
+        Boolean(payment_id),
       ]
     )
     const order = rows[0]
