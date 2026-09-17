@@ -65,6 +65,7 @@ export default function PurchaseOrderDetailPage() {
     queryKey: ['purchase-order', id],
     queryFn: () => api.get(`/purchase-orders/${id}`).then((r) => r.data.po),
     enabled: !!id,
+    refetchInterval: 60_000,
   })
 
   // ── Mutations ────────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ export default function PurchaseOrderDetailPage() {
     queryKey: ['order-row', id],
     queryFn: () => api.get(`/purchase-orders/${id}/stage`).then(r => r.data.row as GridRow),
     enabled: Boolean(id),
+    refetchInterval: 60_000,
   })
 
   const statusMutation = useMutation({

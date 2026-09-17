@@ -78,6 +78,7 @@ export default function ProductsView({ mode }: { mode: Mode }) {
   const query = useQuery({
     queryKey: ['portal-products'],
     queryFn: () => api.get('/products').then(r => (r.data?.products ?? []) as Product[]),
+    refetchInterval: 60_000,
   })
   const all = query.data ?? []
 

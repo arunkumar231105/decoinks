@@ -55,6 +55,24 @@ export const CARDS: { label: string; filter: string; icon: LucideIcon; tone: str
 
 export const CANCELLED_ICON = XCircle
 
+export interface Parcel {
+  tracking_number: string
+  carrier: string | null
+  code: string | null
+  text: string | null
+  eta: string | null
+  delivered_date: string | null
+}
+
+/** Text colour for one parcel's courier state. */
+export const PARCEL_TEXT: Record<string, string> = {
+  DELIVERED: 'text-green-700',
+  TRANSIT: 'text-blue-600',
+  PRE_TRANSIT: 'text-blue-600',
+  FAILURE: 'text-red-600',
+  RETURNED: 'text-red-600',
+}
+
 export interface GridRow {
   id: string
   po_number: string
@@ -64,7 +82,8 @@ export interface GridRow {
   order_id: string | null
   order_number: string | null
   order_archived: boolean
-  factory: { id: string; name: string; is_active: boolean } | null
+  // id is null when the name comes from the sales order's production facility.
+  factory: { id: string | null; name: string; is_active: boolean; from_order?: boolean } | null
   push_date: string | null
   issue_date: string | null
   stage: Stage
@@ -78,6 +97,8 @@ export interface GridRow {
   tracking_status: string | null
   tracking_text: string | null
   tracking_synced_at: string | null
+  /** Every parcel the PO went out in, newest first. */
+  parcels: Parcel[]
   po_status: string
 }
 

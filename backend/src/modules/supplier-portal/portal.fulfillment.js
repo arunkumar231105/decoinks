@@ -74,8 +74,8 @@ async function loadRows(supplierId) {
             COALESCE(NULLIF(BTRIM(c.name), ''), NULLIF(BTRIM(o.shipping_name), ''), o.contact_name) AS customer_name,
             NULLIF(CONCAT_WS(', ', NULLIF(BTRIM(c.city), ''), NULLIF(BTRIM(c.state), ''), NULLIF(BTRIM(c.country), '')), '') AS customer_location,
             f.id AS factory_id, f.name AS factory_name, f.is_active AS factory_active,
-            sh.tracking_status, sh.status_details AS tracking_details, sh.carrier AS sh_carrier,
-            sh.tracking_synced_at,
+            NULLIF(BTRIM(o.production_facility), '') AS order_facility,
+            sh.parcels,
             COALESCE(pl.qty, ol.qty) AS qty,
             COALESCE(pl.items, ol.items) AS items
        FROM ${PO_SCOPE(1)} ppv
@@ -84,15 +84,32 @@ async function loadRows(supplierId) {
        LEFT JOIN orders o ON o.id = po.order_id
        LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, po.customer_id)
        LEFT JOIN supplier_factories f ON f.id = po.factory_id AND f.supplier_id = po.supplier_id
-       -- The parcel carrying this PO's tracking number, as the courier sync last read it.
+       -- The parcels this PO went out in, as the ten-minute courier sync last read
+       -- them: the one carrying the PO's own tracking number (or handed in on the
+       -- PO), else — most POs carry no number of their own — the parcels of the
+       -- sales order it was raised from. No order here has POs to two suppliers,
+       -- so an order's parcels are its PO's. A parcel the shop marked Delivered is
+       -- delivered even if the courier could not read the number.
        LEFT JOIN LATERAL (
-         SELECT s.tracking_status, s.status_details, s.carrier, s.tracking_synced_at
+         SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                  'tracking_number', BTRIM(s.tracking_number),
+                  'carrier', NULLIF(BTRIM(s.carrier), ''),
+                  'code', CASE WHEN s.status::text = 'Delivered' THEN 'DELIVERED'
+                               ELSE COALESCE(NULLIF(UPPER(BTRIM(s.tracking_status)), ''),
+                                    CASE s.status::text WHEN 'In Transit' THEN 'TRANSIT' WHEN 'Picked Up' THEN 'TRANSIT'
+                                                        WHEN 'Label Created' THEN 'PRE_TRANSIT' WHEN 'Exception' THEN 'FAILURE' END) END,
+                  'details', NULLIF(BTRIM(s.status_details), ''),
+                  'eta', s.estimated_delivery,
+                  'delivered_date', s.delivered_date,
+                  'synced_at', s.tracking_synced_at
+                ) ORDER BY s.created_at DESC), '[]'::jsonb) AS parcels
            FROM shipments s
           WHERE s.deleted_at IS NULL
-            AND NULLIF(BTRIM(po.tracking_number), '') IS NOT NULL
-            AND s.tracking_number = BTRIM(po.tracking_number)
-          ORDER BY s.tracking_synced_at DESC NULLS LAST, s.updated_at DESC
-          LIMIT 1
+            AND NULLIF(BTRIM(s.tracking_number), '') IS NOT NULL
+            AND CASE WHEN NULLIF(BTRIM(po.tracking_number), '') IS NOT NULL
+                     THEN BTRIM(s.tracking_number) = BTRIM(po.tracking_number) OR s.from_po_id = po.id OR s.po_id = po.id
+                     ELSE s.from_po_id = po.id OR s.po_id = po.id OR (po.order_id IS NOT NULL AND s.order_id = po.order_id)
+                END
        ) sh ON TRUE
        -- What is being made: the PO's own lines where it has them…
        LEFT JOIN LATERAL (
@@ -119,6 +136,35 @@ async function loadRows(supplierId) {
   return rows.map(shapeRow)
 }
 
+/**
+ * One courier state for all of a PO's parcels. A label printed but never used
+ * does not hold back a parcel that has moved; one parcel still travelling keeps
+ * the PO in transit; a failed parcel counts only if nothing was delivered.
+ */
+function courierStateOf(parcels) {
+  const codes = parcels.map(p => p.code).filter(Boolean)
+  if (!codes.length) return null
+  if (codes.includes('TRANSIT')) return 'TRANSIT'
+  const moved = codes.filter(c => c !== 'PRE_TRANSIT')
+  if (!moved.length) return 'PRE_TRANSIT'
+  if (moved.includes('DELIVERED')) return 'DELIVERED'
+  return moved.includes('RETURNED') ? 'RETURNED' : 'FAILURE'
+}
+
+function parcelsOf(r) {
+  const seen = new Set()
+  const out = []
+  for (const p of Array.isArray(r.parcels) ? r.parcels : []) {
+    if (!p.tracking_number || seen.has(p.tracking_number)) continue
+    seen.add(p.tracking_number)
+    out.push({ ...p, text: p.details || humanTracking(p.code) })
+  }
+  // A number handed in on the PO that no shipment row carries yet.
+  const own = String(r.tracking_number || '').trim()
+  if (own && !seen.has(own)) out.unshift({ tracking_number: own, carrier: r.po_carrier || null, code: null, text: null })
+  return out
+}
+
 function stageOf(r) {
   const courier = String(r.tracking_status || '').toUpperCase()
   if (r.po_status === 'Cancelled') return 'Cancelled'
@@ -135,9 +181,13 @@ function stageOf(r) {
 }
 
 function shapeRow(r) {
+  const parcels = parcelsOf(r)
+  const courierState = courierStateOf(parcels)
+  const lead = parcels.find(p => p.code === courierState) || parcels[0] || null
+  r = { ...r, tracking_status: courierState, tracking_number: lead?.tracking_number || null }
   const stage = stageOf(r)
   const trackingText =
-    (r.tracking_status && (r.tracking_details || humanTracking(r.tracking_status))) ||
+    (courierState && (lead?.text || humanTracking(courierState))) ||
     (stage === 'Exception' && r.supplier_stage === 'Exception' ? (r.supplier_stage_note || 'Exception') : null) ||
     (stage === 'Shipped' && r.tracking_number ? 'Awaiting first scan' : null)
   return {
@@ -149,7 +199,10 @@ function shapeRow(r) {
     order_id: r.order_id,
     order_number: r.order_number,
     order_archived: r.order_archived,
-    factory: r.factory_id ? { id: r.factory_id, name: r.factory_name, is_active: r.factory_active } : null,
+    // The factory set in the portal, else the production facility on the sales order.
+    factory: r.factory_id
+      ? { id: r.factory_id, name: r.factory_name, is_active: r.factory_active }
+      : r.order_facility ? { id: null, name: r.order_facility, is_active: true, from_order: true } : null,
     push_date: r.pushed_at,
     issue_date: r.issue_date,
     stage,
@@ -160,11 +213,12 @@ function shapeRow(r) {
     stage_note: r.supplier_stage_note,
     items: r.items,
     qty: r.qty,
-    courier: r.sh_carrier || r.po_carrier || null,
-    tracking_number: String(r.tracking_number || '').trim() || null,
-    tracking_status: r.tracking_status || null,
+    courier: [...new Set(parcels.map(p => p.carrier).filter(Boolean).map(c => String(c).toUpperCase()))].join(', ') || null,
+    tracking_number: r.tracking_number,
+    tracking_status: courierState,
     tracking_text: trackingText,
-    tracking_synced_at: r.tracking_synced_at,
+    tracking_synced_at: parcels.map(p => p.synced_at).filter(Boolean).sort().pop() || null,
+    parcels: parcels.map(p => ({ tracking_number: p.tracking_number, carrier: p.carrier, code: p.code, text: p.text, eta: p.eta || null, delivered_date: p.delivered_date || null })),
     po_status: r.po_status,
   }
 }
@@ -208,7 +262,7 @@ async function getOrderGrid(supplierId, query = {}) {
 
   let rows = all
   if (search) {
-    rows = rows.filter(r => [r.po_number, r.supplier?.name, r.order_number, r.customer_name, r.tracking_number, r.factory?.name, r.items]
+    rows = rows.filter(r => [r.po_number, r.supplier?.name, r.order_number, r.customer_name, r.factory?.name, r.items, ...r.parcels.map(p => p.tracking_number)]
       .some(v => String(v || '').toLowerCase().includes(search)))
   }
   if (stage === 'Pending') rows = rows.filter(r => NOT_YET_SHIPPED.includes(r.stage))
@@ -217,9 +271,10 @@ async function getOrderGrid(supplierId, query = {}) {
   if (supplier === 'none') rows = rows.filter(r => !r.supplier)
   else if (supplier) rows = rows.filter(r => r.supplier?.id === supplier)
   if (factory === 'none') rows = rows.filter(r => !r.factory)
+  else if (factory.startsWith('order:')) rows = rows.filter(r => r.factory && !r.factory.id && r.factory.name === factory.slice(6))
   else if (factory) rows = rows.filter(r => r.factory?.id === factory)
   if (courier === 'none') rows = rows.filter(r => !r.courier)
-  else if (courier) rows = rows.filter(r => String(r.courier || '').toLowerCase() === courier)
+  else if (courier) rows = rows.filter(r => r.parcels.some(p => String(p.carrier || '').toLowerCase() === courier))
   if (pushFrom) rows = rows.filter(r => r.push_date && r.push_date >= pushFrom)
   if (pushTo) rows = rows.filter(r => r.push_date && r.push_date <= pushTo)
 
@@ -240,12 +295,16 @@ async function getOrderGrid(supplierId, query = {}) {
     `SELECT f.id, f.name, s.name AS supplier_name FROM supplier_factories f JOIN suppliers s ON s.id = f.supplier_id
       WHERE ($1::uuid IS NULL OR f.supplier_id = $1) ORDER BY LOWER(f.name)`, [supplierId])
   for (const f of listed) factories.set(f.id, supplierId === null ? `${f.name} (${f.supplier_name})` : f.name)
-  for (const r of all) if (r.factory && !factories.has(r.factory.id)) factories.set(r.factory.id, r.factory.name)
+  for (const r of all) {
+    if (r.factory?.id && !factories.has(r.factory.id)) factories.set(r.factory.id, r.factory.name)
+    // A production facility named on the sales order.
+    if (r.factory && !r.factory.id) factories.set(`order:${r.factory.name}`, r.factory.name)
+  }
 
   const suppliers = new Map()
   for (const r of all) if (r.supplier) suppliers.set(r.supplier.id, r.supplier.name)
 
-  const couriers = [...new Set(all.map(r => r.courier).filter(Boolean).map(c => String(c).toUpperCase()))].sort()
+  const couriers = [...new Set(all.flatMap(r => r.parcels.map(p => p.carrier)).filter(Boolean).map(c => String(c).toUpperCase()))].sort()
 
   return {
     rows: rows.slice((page - 1) * limit, page * limit),

@@ -8,7 +8,7 @@ import { TableStates, num } from '../components/ui'
 import api from '../services/api'
 import FactoriesModal from '../components/fulfillment/FactoriesModal'
 import {
-  CARDS, STAGE_TEXT, STAGE_TONE, STAGES, carrierUrl, type GridResponse, type GridRow,
+  CARDS, PARCEL_TEXT, STAGE_TEXT, STAGE_TONE, STAGES, carrierUrl, type GridResponse, type GridRow,
 } from '../components/fulfillment/stages'
 
 /**
@@ -114,6 +114,9 @@ export default function PurchaseOrdersPage() {
       },
     }).then(r => r.data as GridResponse),
     placeholderData: keepPreviousData,
+    // Live: Printshop changes and the ten-minute courier sync show up within a minute.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   const data = query.data
@@ -175,14 +178,31 @@ export default function PurchaseOrdersPage() {
       case 'qty': return r.qty != null ? <span className="text-slate-800">{num(r.qty)}</span> : <span className="text-slate-400">—</span>
       case 'courier': return r.courier ? <span className="text-slate-800">{String(r.courier).toUpperCase()}</span> : <span className="text-slate-400">—</span>
       case 'tracking_number': {
-        if (!r.tracking_number) return <span className="text-slate-400">—</span>
-        const url = carrierUrl(r.courier, r.tracking_number)
-        return url
-          ? <a href={url} target="_blank" rel="noopener noreferrer" className="block min-w-[90px] max-w-[130px] break-all text-slate-800 hover:text-blue-600 hover:underline"
-              onClick={e => e.stopPropagation()} title={`Track ${r.tracking_number} on ${String(r.courier).toUpperCase()}`}>{r.tracking_number}</a>
-          : <span className="block min-w-[90px] max-w-[130px] break-all text-slate-800">{r.tracking_number}</span>
+        if (!r.parcels.length) return <span className="text-slate-400">—</span>
+        return (
+          <div className="space-y-1">
+            {r.parcels.map(p => {
+              const url = carrierUrl(p.carrier, p.tracking_number)
+              return url
+                ? <a key={p.tracking_number} href={url} target="_blank" rel="noopener noreferrer"
+                    className="block min-w-[90px] max-w-[130px] break-all text-slate-800 hover:text-blue-600 hover:underline"
+                    onClick={e => e.stopPropagation()} title={`Track ${p.tracking_number} on ${String(p.carrier).toUpperCase()}`}>{p.tracking_number}</a>
+                : <span key={p.tracking_number} className="block min-w-[90px] max-w-[130px] break-all text-slate-800">{p.tracking_number}</span>
+            })}
+          </div>
+        )
       }
-      case 'tracking_text': return r.tracking_text
+      case 'tracking_text': return r.parcels.some(p => p.text)
+        ? (
+          <div className="space-y-1">
+            {r.parcels.map(p => (
+              <span key={p.tracking_number} className={`block min-w-[84px] max-w-[160px] ${p.code ? PARCEL_TEXT[p.code] ?? 'text-slate-800' : 'text-slate-400'}`}>
+                {p.text ?? 'Awaiting first scan'}
+              </span>
+            ))}
+          </div>
+        )
+        : r.tracking_text
         ? <span className={`block min-w-[84px] max-w-[160px] ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`}>{r.tracking_text}</span>
         : <span className="text-slate-400">—</span>
     }
