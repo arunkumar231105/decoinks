@@ -1,6 +1,6 @@
 /**
  * Refresh digi_orders from the DIGI API — the data behind Printshop's Supplier
- * Order Management page. Read-only towards DIGI. Runs every ten minutes from
+ * Order Management page. Read-only towards DIGI. Runs every two minutes from
  * cron (scripts/cron/digi-orders.sh). Dry run by default; --apply writes.
  */
 const { pool } = require('../src/config/db')

@@ -27,7 +27,7 @@ const shippo = require('../../utils/shippo')
 
 const BATCH = 50
 const GAP_MS = 150
-const SHIPPO_EVERY_MS = 55 * 60 * 1000   // Shippo is asked at most hourly per parcel
+const SHIPPO_EVERY_MS = 10 * 60 * 1000   // Shippo is asked at most every ten minutes per parcel
 const SHIPPO_PER_RUN = 40
 const DAY = 86400000
 
@@ -169,7 +169,9 @@ function matchPO(order, pos, claimedOrders) {
 }
 
 async function courierStates(rows, known, log) {
-  const tracked = rows.filter(r => r.tracking_number && r.order_status === 12)
+  // Every parcel with a number, shipped or not yet: DIGI buys the label before it
+  // prints, and a parcel can be scanned before DIGI marks the order shipped.
+  const tracked = rows.filter(r => r.tracking_number && r.order_status !== 13 && r.order_status !== 15)
   if (!tracked.length) return
   const { rows: ships } = await db.query(
     `SELECT DISTINCT ON (BTRIM(s.tracking_number)) BTRIM(s.tracking_number) AS tn, s.tracking_status, s.status_details,
@@ -228,6 +230,8 @@ async function syncDigiOrders({ apply = false, log = console.log, trigger = 'cro
         `UPDATE digi_sync_runs SET finished_at = NOW(), orders = $2, on_api = $3, tracked = $4, po_linked = $5, lines = $6, warehouses = $7 WHERE id = $1`,
         [runId, counts.orders, counts.on_api ?? null, counts.tracked ?? null, counts.po_linked ?? null, counts.lines ?? null, counts.warehouses ?? null])
     }
+    // Two-minute runs add up; a fortnight of them is plenty to look back on.
+    if (runId) await db.query(`DELETE FROM digi_sync_runs WHERE started_at < NOW() - INTERVAL '14 days'`).catch(() => {})
     return counts
   } catch (err) {
     if (runId) await db.query(`UPDATE digi_sync_runs SET finished_at = NOW(), error = $2 WHERE id = $1`, [runId, String(err.message).slice(0, 2000)]).catch(() => {})
@@ -343,6 +347,26 @@ async function runSync({ apply, log }) {
       const p = one.get(r.order_id)
       if (p) { r.tracking_number = p.tn; r.courier = r.courier || p.carrier }
     }
+  }
+
+  // Still nothing: the parcel Printshop recorded for the same recipient, on the
+  // same courier, shipped within a few days of DIGI's ship time — when exactly
+  // one such parcel exists and no other DIGI order already carries it.
+  const taken = new Set(rows.map(r => r.tracking_number).filter(Boolean))
+  for (const r of rows.filter(x => !x.tracking_number && x.raw_tracking && x.consignee_name)) {
+    const at = r.shipping_time || r.order_time
+    if (!at) continue
+    const { rows: cands } = await db.query(
+      `SELECT DISTINCT BTRIM(s.tracking_number) AS tn, s.carrier
+         FROM shipments s
+        WHERE s.deleted_at IS NULL AND NULLIF(BTRIM(s.tracking_number), '') IS NOT NULL
+          AND (LOWER(REGEXP_REPLACE(COALESCE(s.recipient_name, ''), '[^a-zA-Z]', '', 'g')) = $1
+               OR LOWER(REGEXP_REPLACE(COALESCE(s.customer_name, ''), '[^a-zA-Z]', '', 'g')) = $1)
+          AND ($2::text IS NULL OR UPPER(COALESCE(s.carrier, '')) = UPPER($2))
+          AND COALESCE(s.ship_date, s.created_at::date) BETWEEN ($3::timestamptz - INTERVAL '4 days')::date AND ($3::timestamptz + INTERVAL '3 days')::date`,
+      [normName(r.consignee_name), r.courier, at])
+    const free = cands.filter(c => !taken.has(c.tn))
+    if (free.length === 1) { r.tracking_number = free[0].tn; r.courier = r.courier || free[0].carrier; taken.add(free[0].tn) }
   }
 
   await courierStates(rows, known, log)

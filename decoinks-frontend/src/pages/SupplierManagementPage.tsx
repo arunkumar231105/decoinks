@@ -10,7 +10,7 @@ import '../styles/supplier-management.css'
 
 /**
  * Supplier Order Management — every order pushed to DIGI, with where it stands,
- * from the DIGI API (backend: modules/supplier-orders, synced every ten minutes).
+ * from the DIGI API (backend: modules/supplier-orders, synced every two minutes).
  * Laid out to the owner's design (17 Sep 2026). Read-only: status, factory and
  * tracking are DIGI's and the courier's.
  */
@@ -162,8 +162,8 @@ export function SupplierManagementPage() {
       },
     }).then(r => r.data as GridResponse),
     placeholderData: keepPreviousData,
-    // Live: the server syncs DIGI every ten minutes; the page looks every minute.
-    refetchInterval: 60_000,
+    // Live: the server syncs DIGI every two minutes; the page looks every 30 seconds.
+    refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   })
   const sync = useMutation({

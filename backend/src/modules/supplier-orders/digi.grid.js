@@ -20,6 +20,12 @@ function stageOf(r) {
   const s = Number(r.order_status)
   if (s === 13 || s === 15) return 'Cancelled'
   if (s === 3 || s === 14) return 'Exception'
+  // A parcel the courier has already moved is past DIGI's own status, which can
+  // lag a scan by hours.
+  const moved = String(r.courier_status || '').toUpperCase()
+  if (s !== 12 && moved === 'DELIVERED') return 'Delivered'
+  if (s !== 12 && moved === 'TRANSIT') return 'In Transit'
+  if (s !== 12 && (moved === 'FAILURE' || moved === 'RETURNED')) return 'Exception'
   if (s === 12) {
     const c = String(r.courier_status || '').toUpperCase()
     if (c === 'DELIVERED') return 'Delivered'
@@ -57,11 +63,14 @@ function shape(r) {
   const stage = stageOf(r)
   const shipped = Number(r.order_status) === 12
   const reason = [r.status_reason, r.line_messages].filter(Boolean).join(' · ') || null
+  const courierText = r.courier_status_text || HUMAN_COURIER[String(r.courier_status || '').toUpperCase()] || null
   const trackingText = stage === 'Exception'
-    ? (reason || r.courier_status_text || HUMAN_COURIER[String(r.courier_status || '').toUpperCase()] || DIGI_STATUS[r.order_status] || 'Exception')
-    : shipped
-      ? (r.courier_status_text || HUMAN_COURIER[String(r.courier_status || '').toUpperCase()] || 'Shipped by DIGI')
-      : null
+    ? (reason || courierText || DIGI_STATUS[r.order_status] || 'Exception')
+    : stage === 'Cancelled'
+      ? (r.tracking_number ? 'Cancelled — label not used' : null)
+      : courierText
+        || (shipped ? 'Shipped by DIGI — awaiting first scan' : null)
+        || (r.tracking_number ? `Label created — ${DIGI_STATUS[r.order_status] || 'not shipped yet'}` : null)
   const items = Array.isArray(r.items) ? r.items : []
   const itemTitles = [...new Set(items.map(i => i.title).filter(Boolean))]
   const location = [r.receiver_city, r.receiver_province, r.receiver_country].filter(Boolean).join(', ') || null
@@ -84,11 +93,11 @@ function shape(r) {
     items: itemTitles.join(', ') || null,
     item_lines: items,
     qty: r.goods_total_qty,
-    // Before DIGI ships, the label it has already bought is not a shipment yet.
-    courier: shipped ? r.courier : null,
-    tracking_number: shipped ? r.tracking_number : null,
+    // DIGI buys the label before it prints, so the number is there from the start.
+    courier: r.courier || null,
+    tracking_number: r.tracking_number || null,
     tracking_text: trackingText,
-    courier_status: shipped ? r.courier_status : null,
+    courier_status: r.courier_status || null,
     courier_eta: r.courier_eta,
     delivered_date: r.courier_delivered,
     shipping_time: r.shipping_time,
