@@ -28,7 +28,7 @@ type ColumnKey =
   | 'items' | 'qty' | 'courier' | 'tracking_number' | 'tracking_text'
 
 const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean }[] = [
-  { key: 'sno', label: 'S.No', sort: 'issue_date' },
+  { key: 'sno', label: 'S.No', sort: 'po_number' },
   { key: 'po_number', label: 'PO#', sort: 'po_number', required: true },
   // Every supplier's POs are in one grid (the company login), so each says whose it is.
   { key: 'supplier', label: 'Supplier', sort: 'supplier' },
@@ -65,7 +65,7 @@ export default function PurchaseOrdersPage() {
   const pushFrom = params.get('push_from') ?? ''
   const pushTo = params.get('push_to') ?? ''
   const sorted = params.has('sort')   // arrows show only once someone picks a column
-  const sort = params.get('sort') ?? 'issue_date'
+  const sort = params.get('sort') ?? 'po_number'
   const dir = params.get('dir') === 'asc' ? 'asc' : 'desc'
   const page = Math.max(1, Number(params.get('page')) || 1)
 
@@ -157,7 +157,7 @@ export default function PurchaseOrdersPage() {
       case 'po_number': return <span className="text-blue-600">{r.po_number}</span>
       case 'supplier': return r.supplier ? <span className="block min-w-[56px] max-w-[84px] text-slate-800">{r.supplier.name}</span> : <span className="text-slate-400">—</span>
       case 'customer': return (
-        <div className="min-w-[100px] max-w-[160px]">
+        <div className="min-w-[96px] max-w-[140px]">
           <div className="text-slate-900">{r.customer_name ?? '—'}</div>
           {r.customer_location && <div className="text-xs text-slate-500">{r.customer_location}</div>}
         </div>
@@ -180,7 +180,7 @@ export default function PurchaseOrdersPage() {
           {r.stage}
         </span>
       )
-      case 'items': return r.items ? <span className="block min-w-[90px] max-w-[160px] text-slate-800">{r.items}</span> : <span className="text-slate-400">—</span>
+      case 'items': return r.items ? <span className="block min-w-[86px] max-w-[140px] text-slate-800">{r.items}</span> : <span className="text-slate-400">—</span>
       case 'qty': return r.qty != null ? <span className="text-slate-800">{num(r.qty)}</span> : <span className="text-slate-400">—</span>
       case 'courier': return r.courier ? <span className="text-slate-800">{String(r.courier).toUpperCase()}</span> : <span className="text-slate-400">—</span>
       case 'tracking_number': {
@@ -202,14 +202,14 @@ export default function PurchaseOrdersPage() {
         ? (
           <div className="space-y-1">
             {r.parcels.map(p => (
-              <span key={p.tracking_number} className={`block min-w-[84px] max-w-[160px] ${p.code ? PARCEL_TEXT[p.code] ?? 'text-slate-800' : 'text-slate-400'}`}>
+              <span key={p.tracking_number} className={`block min-w-[80px] max-w-[140px] ${p.code ? PARCEL_TEXT[p.code] ?? 'text-slate-800' : 'text-slate-400'}`}>
                 {p.text ?? 'Awaiting first scan'}
               </span>
             ))}
           </div>
         )
         : r.tracking_text
-        ? <span className={`block min-w-[84px] max-w-[160px] ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`}>{r.tracking_text}</span>
+        ? <span className={`block min-w-[80px] max-w-[140px] ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`}>{r.tracking_text}</span>
         : <span className="text-slate-400">—</span>
     }
   }
@@ -369,7 +369,7 @@ export default function PurchaseOrdersPage() {
             <thead>
               <tr className="border-b border-line">
                 {visible.map(c => (
-                  <th key={c.key} className="px-1.5 py-3.5 text-left 2xl:px-2 align-middle text-[13px] font-semibold text-slate-800"
+                  <th key={c.key} className="px-[5px] py-3.5 text-left min-[1600px]:px-1.5 2xl:px-2 align-middle text-[13px] font-semibold text-slate-800"
                     aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     <button className="inline-flex items-center gap-1 text-left hover:text-blue-600"
                       onClick={() => update({ sort: c.sort, dir: sort === c.sort && dir === 'desc' ? 'asc' : 'desc' })}>
@@ -394,7 +394,7 @@ export default function PurchaseOrdersPage() {
               {!query.isLoading && !query.isError && rows.map((r, i) => (
                 <tr key={r.id} className="cursor-pointer border-b border-line text-[13px] last:border-0 hover:bg-slate-50" title={`Open ${r.po_number}`}
                   onClick={() => navigate(`/purchase-orders/${r.id}`)}>
-                  {visible.map(c => <td key={c.key} className={`px-1.5 py-[9px] 2xl:px-2 ${WRAP.has(c.key) ? '' : 'whitespace-nowrap'}`}>{cell(r, c.key, i)}</td>)}
+                  {visible.map(c => <td key={c.key} className={`px-[5px] py-[9px] min-[1600px]:px-1.5 2xl:px-2 ${WRAP.has(c.key) ? '' : 'whitespace-nowrap'}`}>{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>

@@ -795,7 +795,7 @@ async function getSupplierPOs(supplierId, { page = 1, limit = 10, search, status
        LEFT JOIN orders o ON o.id = po.order_id
        LEFT JOIN suppliers s ON s.id = po.supplier_id
        WHERE ${where}
-       ORDER BY COALESCE(po.order_date, po.created_at::date) DESC, po.po_number DESC
+       ORDER BY po.po_number DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     ),

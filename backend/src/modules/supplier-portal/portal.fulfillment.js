@@ -140,7 +140,35 @@ async function loadRows(supplierId) {
   )
   const shaped = rows.map(shapeRow)
   await attachSupplierOrderNumbers(shaped, rows)
+  attachPushDates(shaped, rows)
   return shaped
+}
+
+/**
+ * The day the order went to the supplier, where the data says it.
+ *
+ * The date set in the portal wins. Otherwise the supplier's own order number
+ * carries it: TSI's "TSI 260818-89" and "TS-PA-260501-03" (yymmdd), and DIGI's
+ * "ORD-260820210740" (yymmddHHMMSS, placed in Pakistan time — it matches
+ * BlankTex's order_time in Asia/Karachi). Checked against the sales order date
+ * on all 115 stored numbers: every one falls 1 day before to 3 days after it.
+ * With no such number the push date stays empty.
+ */
+function attachPushDates(shaped, raw) {
+  const fromNumber = (n) => {
+    const m = /^(?:TSI |TS-PA-)(\d{2})(\d{2})(\d{2})-/.exec(n || '') || /^ORD-(\d{2})(\d{2})(\d{2})\d{6}$/.exec(n || '')
+    if (!m) return null
+    const iso = `20${m[1]}-${m[2]}-${m[3]}`
+    const t = Date.parse(`${iso}T00:00:00Z`)
+    return Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== iso ? null : iso
+  }
+  shaped.forEach((r, i) => {
+    r.push_date_source = r.push_date ? 'portal' : null
+    if (r.push_date) return
+    const numbers = [raw[i].supplier_reference, ...(r.supplier_order_numbers || [])].filter(Boolean)
+    const dates = numbers.map(fromNumber).filter(Boolean).sort()
+    if (dates.length) { r.push_date = dates[0]; r.push_date_source = 'supplier_order' }
+  })
 }
 
 const normName = v => String(v || '').toLowerCase().replace(/[^a-z]/g, '')
@@ -362,7 +390,8 @@ async function getOrderGrid(supplierId, query = {}) {
   const DATE = /^\d{4}-\d{2}-\d{2}$/
   const pushFrom = DATE.test(String(query.push_from || '')) ? query.push_from : null
   const pushTo = DATE.test(String(query.push_to || '')) ? query.push_to : null
-  const sortKey = SORTS[query.sort] ? query.sort : 'issue_date'
+  // PO number, newest first, unless a column is picked.
+  const sortKey = SORTS[query.sort] ? query.sort : 'po_number'
   const dir = String(query.dir || '').toLowerCase() === 'asc' ? 1 : -1
 
   let rows = all

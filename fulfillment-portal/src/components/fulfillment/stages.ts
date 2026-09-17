@@ -87,6 +87,8 @@ export interface GridRow {
   // id is null when the name comes from the sales order's production facility.
   factory: { id: string | null; name: string; is_active: boolean; from_order?: boolean } | null
   push_date: string | null
+  /** 'portal' when set here, 'supplier_order' when read from the supplier's order number. */
+  push_date_source?: 'portal' | 'supplier_order' | null
   issue_date: string | null
   stage: Stage
   stage_editable: boolean
