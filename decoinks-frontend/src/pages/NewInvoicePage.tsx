@@ -488,6 +488,9 @@ export function NewInvoicePage() {
   const [quoteText, setQuoteText] = useState('')
   const [quoteId, setQuoteId] = useState<string>(fromQuoteId ?? '')
   const [invoiceDate, setInvoiceDate] = useState(todayISO())
+  // Once the agent sets the date, or an existing invoice brings its own, the
+  // date is theirs; until then it follows the payment picked (below).
+  const invoiceDateTouched = useRef(false)
   const [dueDate, setDueDate] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [supplierText, setsupplierText] = useState('')
@@ -587,6 +590,16 @@ export function NewInvoicePage() {
     if (sourceQuote.billing_address) setBillingAddress(sourceQuote.billing_address)
     if (sourceQuote.shipping_address) setShippingAddress(sourceQuote.shipping_address)
     // Quote ref
+    // An invoice being edited opens on its own dates. They were never loaded, so
+    // the form showed today's date and saving moved the invoice to today.
+    if (sourceQuote._isInvoice) {
+      if (sourceQuote.issue_date) setInvoiceDate(String(sourceQuote.issue_date).slice(0, 10))
+      if (sourceQuote.due_date) setDueDate(String(sourceQuote.due_date).slice(0, 10))
+      invoiceDateTouched.current = true
+    } else if (sourceQuote.quote_date && !invoiceDateTouched.current) {
+      // From a quote: its date, until a payment says otherwise.
+      setInvoiceDate(String(sourceQuote.quote_date).slice(0, 10))
+    }
     // An invoice being edited carries its quote as quote_id; its own id is the
     // invoice's. Taking id here sent the invoice as its own quote, and every
     // save failed with "Referenced record does not exist".
@@ -1090,11 +1103,21 @@ export function NewInvoicePage() {
   }, [advancePayments, recommendation.candidates])
   const recommendedId: string = recommendation.recommended?.id ?? ''
 
+  // The owner's rule: an invoice is dated the day its payment came in. A new
+  // invoice takes that date from the payment picked — the latest one when it is
+  // paid in parts — unless the agent has set the date themselves.
+  const dateFromPayments = (payments: any[]) => {
+    if (invoiceDateTouched.current || editInvoiceId) return
+    const days = payments.map(p => String(p?.payment_date || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
+    if (days.length) setInvoiceDate(days[days.length - 1])
+  }
+
   const choosePayment = (id: string) => {
     setChosenPayment(id)
     // The invoice is paid the way that payment was made.
     const picked = paymentOptions.find((p: any) => p.id === id)
     if (picked?.payment_method) setPaymentMethod(normalizePaymentMethod(picked.payment_method))
+    if (picked) dateFromPayments([picked])
   }
 
   useEffect(() => {
@@ -1298,7 +1321,7 @@ export function NewInvoicePage() {
         </div>
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Invoice Date</span>
-          <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
+          <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => { invoiceDateTouched.current = true; setInvoiceDate(e.target.value) }} />
         </div>
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Due Date</span>
@@ -1896,6 +1919,7 @@ export function NewInvoicePage() {
                       paymentTouched.current = true
                       setChosenPayment('')
                       setMultiPayments(picked)
+                      dateFromPayments(picked)
                       setMultiOpen(false)
                     }}
                   />

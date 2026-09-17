@@ -927,7 +927,9 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
 
   const ordNumber = await getNextNumber('ORD', 'orders', 'order_number')
   const total = +Number(invoice.total).toFixed(2)
-  const orderDate = new Date().toISOString().split('T')[0]
+  // Dated the day the payment came in (else the invoice's date), not today.
+  const day = await require('../orders/orders.service').invoiceDocumentDate(q, invoiceId)
+  const orderDate = day?.document_date || new Date().toISOString().split('T')[0]
 
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
@@ -937,7 +939,7 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
         shipping_charges, rush_services,
         payment_terms, payment_method, currency, contact_name, contact_email,
         contact_phone, shipping_name, shipping_address, notes, created_by, quotation_id)
-     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$25)
+     VALUES ($1,$2,$3,$4,$5,$6,$6,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$25)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
@@ -1034,7 +1036,10 @@ async function updateStatus(id, status, actor) {
 
         if (!existing[0]) {
           const total = +Number(invoice.total).toFixed(2)
-          const orderDate = new Date().toISOString().split('T')[0]
+          // Dated the day the payment came in (else the invoice's date), not today.
+          const ordersSvc = require('../orders/orders.service')
+          const day = await ordersSvc.invoiceDocumentDate(client, id)
+          const orderDate = day?.document_date || new Date().toISOString().split('T')[0]
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
                (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
@@ -1043,7 +1048,7 @@ async function updateStatus(id, status, actor) {
                 shipping_charges, rush_services,
                 payment_terms, payment_method, currency, contact_name, contact_email,
                 contact_phone, shipping_name, shipping_address, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             VALUES ($1,$2,$3,$4,$5,$6,$6,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
               ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
@@ -1059,6 +1064,12 @@ async function updateStatus(id, status, actor) {
           )
           autoOrderId = ordRows[0].id
           await copyInvoiceItemsToOrder(client, id, autoOrderId, orderType)
+          // Its payments pay the order too, and the invoice points back at it.
+          await ordersSvc.linkInvoicePayments(client, autoOrderId, id)
+          await client.query(
+            `UPDATE invoices SET order_id = COALESCE(order_id, $2), updated_at = NOW() WHERE id = $1`,
+            [id, autoOrderId]
+          )
 
           await client.query(
             `INSERT INTO pipeline_events

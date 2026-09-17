@@ -82,6 +82,7 @@ const intakeFields = {
 }
 
 const createSchema = z.object({
+  quote_date:        z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Quote date must be a date').optional().nullable(),
   entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),
@@ -100,6 +101,7 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
+  quote_date:        z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Quote date must be a date').optional().nullable(),
   entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),

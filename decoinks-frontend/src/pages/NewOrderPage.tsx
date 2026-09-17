@@ -201,6 +201,15 @@ export function NewOrderPage() {
   const [customerOpen, setCustomerOpen]   = useState(false)
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
+  // Entry Date sits beside Order Date and moves with it unless set apart. It was
+  // shown in the lists but had no field, so it kept the day the order was keyed.
+  const [entryDate, setEntryDate] = useState(todayISO())
+  const orderDateTouched = useRef(false)
+  const changeOrderDate = (next: string, byHand = true) => {
+    if (byHand) orderDateTouched.current = true
+    setEntryDate(prev => (!prev || prev === orderDate ? next : prev))
+    setOrderDate(next)
+  }
   const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
   const [quotationId, setQuotationId] = useState('')
   const [invoiceId, setInvoiceId] = useState(fromInvoiceId ?? '')
@@ -258,7 +267,7 @@ export function NewOrderPage() {
   // state (dropdown open, upload flags) is deliberately not persisted.
   const { restored, clearDraft } = useFormDraft(
     'order:new',
-    { customerId, customerText, agentId, orderDate, orderType, quotationId, invoiceId,
+    { customerId, customerText, agentId, orderDate, entryDate, orderType, quotationId, invoiceId,
       apparel, gangsheet, gangsheetArtworks, dtf,
       paymentTerms, paymentMethod, paymentStatus, amountPaid, paymentReference, paymentDate,
       dueDate, rushServices, shippingCharges, discountPct, taxPct,
@@ -271,6 +280,8 @@ export function NewOrderPage() {
       if (str(saved.customerText) !== undefined) setCustomerText(saved.customerText as string)
       if (str(saved.agentId) !== undefined) setAgentId(saved.agentId as string)
       if (str(saved.orderDate) !== undefined) setOrderDate(saved.orderDate as string)
+      if (str(saved.entryDate) !== undefined) setEntryDate(saved.entryDate as string)
+      else if (str(saved.orderDate) !== undefined) setEntryDate(saved.orderDate as string)
       if (str(saved.orderType) !== undefined) setOrderType(saved.orderType as OrderType)
       if (str(saved.quotationId) !== undefined) setQuotationId(saved.quotationId as string)
       if (str(saved.invoiceId) !== undefined) setInvoiceId(saved.invoiceId as string)
@@ -433,6 +444,8 @@ export function NewOrderPage() {
     setCustomerId(existingOrder.customer_id ?? null)
     setCustomerText(existingOrder.customer_name ?? existingOrder.contact_name ?? '')
     setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
+    setEntryDate(existingOrder.entry_date?.slice(0, 10) ?? existingOrder.order_date?.slice(0, 10) ?? todayISO())
+    orderDateTouched.current = true
     setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
     setPaymentMethod(paymentMethodName(existingOrder.payment_method))
@@ -506,6 +519,12 @@ export function NewOrderPage() {
 
   useEffect(() => {
     if (!sourceInvoice) return
+    // From an invoice: dated the day its payment came in, else the invoice's date.
+    if (!orderDateTouched.current) {
+      const paidDays = (sourceInvoice.payments ?? []).map((p: any) => String(p.payment_date || '').slice(0, 10)).filter(Boolean).sort()
+      const day = paidDays[paidDays.length - 1] || String(sourceInvoice.issue_date || '').slice(0, 10)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) changeOrderDate(day, false)
+    }
     if (sourceInvoice.customer_id) setCustomerId(sourceInvoice.customer_id)
     const custName = sourceInvoice.customer_name || sourceInvoice.supplier_name || ''
     if (custName) { setCustomerText(custName); setContactName(custName); setShippingName(custName) }
@@ -723,7 +742,12 @@ export function NewOrderPage() {
     const chosen = selectablePayments.find(p => p.id === id)
     if (!chosen) return
     if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
-    if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
+    if (chosen.payment_date) {
+      setPaymentDate(String(chosen.payment_date).slice(0, 10))
+      // A new order is dated the day its payment came in, unless the agent set
+      // the date themselves.
+      if (!editOrderId && !orderDateTouched.current) changeOrderDate(String(chosen.payment_date).slice(0, 10), false)
+    }
     // The bank's or processor's own reference, which is what anyone reconciling
     // actually searches for. Our internal payment number only stands in when
     // there is none.
@@ -924,6 +948,7 @@ export function NewOrderPage() {
       quotation_id:       quotationId || sourceInvoice?.quote_id || null,
       order_type:       orderType,
       order_date:       orderDate,
+      entry_date:       entryDate || orderDate,
       due_date:         dueDate || null,
       // Send the term that was picked. This used to rewrite 'Paid' to
       // 'Due on Receipt' on the way out, so choosing Paid and saving came back
@@ -1151,7 +1176,12 @@ export function NewOrderPage() {
 
         <div className="no-info-field no-info-select-field">
           <span className="no-info-label">Order Date</span>
-          <input type="date" className="no-info-select" value={orderDate} onChange={e => setOrderDate(e.target.value)} />
+          <input type="date" className="no-info-select" value={orderDate} onChange={e => changeOrderDate(e.target.value)} />
+        </div>
+
+        <div className="no-info-field no-info-select-field">
+          <span className="no-info-label">Entry Date</span>
+          <input type="date" className="no-info-select" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
         </div>
 
         <div className="no-info-field no-info-select-field">

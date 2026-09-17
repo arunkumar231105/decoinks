@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { ArrowLeft, ChevronRight, CreditCard, FileText, Package } from 'lucide-react'
@@ -87,6 +87,23 @@ export function InvoiceDetailPage() {
   const [newStatus, setNewStatus] = useState('')
   const [orderTypeModal, setOrderTypeModal] = useState(false)
   const [selectedOrderType, setSelectedOrderType] = useState<'apparel'|'gangsheet'|'dtf'>('apparel')
+
+  // A paid invoice is not edited — its money is settled — but its date can still
+  // be put right (the day the payment came in). Opened from the list's Edit on a
+  // settled invoice, too.
+  const location = useLocation()
+  const [dateModalOpen, setDateModalOpen] = useState(Boolean((location.state as any)?.editDate))
+  const [newIssueDate, setNewIssueDate] = useState('')
+  const dateMutation = useMutation({
+    mutationFn: (issue_date: string) => api.put(`/invoices/${id}`, { issue_date }).then(r => r.data),
+    onSuccess: () => {
+      setDateModalOpen(false)
+      toast.success('Invoice date updated')
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
+    onError: (err) => toast.error(getApiError(err)),
+  })
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [payAmount, setPayAmount] = useState('')
@@ -299,7 +316,15 @@ export function InvoiceDetailPage() {
       <div className="np-info-bar">
         {[
           { label: 'Invoice #',   value: invoice.invoice_number },
-          { label: 'Issue Date',  value: fmtDate(invoice.issue_date) },
+          { label: 'Issue Date',  value: <>
+            {fmtDate(invoice.issue_date)}
+            {invoice.status !== 'Void' && (
+              <button type="button" onClick={() => { setNewIssueDate(String(invoice.issue_date ?? '').slice(0, 10)); setDateModalOpen(true) }}
+                style={{ marginLeft: 8, border: 'none', background: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                Change date
+              </button>
+            )}
+          </> },
           { label: 'Due Date',    value: fmtDate(invoice.due_date) },
           ...(invoice.paid_at ? [{ label: 'Paid On', value: fmtDate(invoice.paid_at) }] : []),
         ].map(({ label, value }) => (
@@ -613,6 +638,28 @@ export function InvoiceDetailPage() {
         busy={linkPaymentsMutation.isPending}
         onConfirm={ids => linkPaymentsMutation.mutate(ids)}
       />
+
+      {dateModalOpen && invoice.status !== 'Void' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 20px 40px rgba(0,0,0,0.18)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px' }}>Invoice Date</h3>
+            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 14px', lineHeight: 1.5 }}>
+              {invoice.invoice_number}: only the date changes — the due date moves with it; amounts and payments stay as they are.
+            </p>
+            <input type="date" className="np-input" style={{ width: '100%' }}
+              value={newIssueDate || String(invoice.issue_date ?? '').slice(0, 10)}
+              onChange={e => setNewIssueDate(e.target.value)} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="lb-action-btn" onClick={() => setDateModalOpen(false)} disabled={dateMutation.isPending}>Cancel</button>
+              <button className="lb-action-btn lb-action-primary"
+                disabled={dateMutation.isPending || !/^\d{4}-\d{2}-\d{2}$/.test(newIssueDate || String(invoice.issue_date ?? '').slice(0, 10))}
+                onClick={() => dateMutation.mutate(newIssueDate || String(invoice.issue_date ?? '').slice(0, 10))}>
+                {dateMutation.isPending ? 'Saving…' : 'Save date'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Convert to Order modal ── */}
       {orderTypeModal && (

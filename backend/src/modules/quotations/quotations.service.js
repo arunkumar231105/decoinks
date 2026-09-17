@@ -70,7 +70,7 @@ async function list({ page = 1, limit = 10, status = '', supplier_id = '', searc
   const { rows } = await query(
     `SELECT q.*, c.name AS supplier_name, u.name AS created_by_name,
             COALESCE(NULLIF(item_totals.total_qty,0),NULLIF(linked_po.order_total_qty,0),linked_po.total_artworks,0)::INT AS total_qty,
-            COALESCE(q.due_date,q.created_at::date) AS export_quote_date,
+            COALESCE(q.quote_date,q.due_date,q.created_at::date) AS export_quote_date,
             COALESCE(q.due_date,q.entry_date,q.created_at::date) AS export_valid_until,
             CASE WHEN linked_po.order_id IS NOT NULL THEN 'Approved' ELSE q.status::text END AS export_status,
             COALESCE(item_totals.items_total, 0)::NUMERIC(14,2) AS items_total
@@ -148,7 +148,7 @@ async function getById(id) {
 }
 
 async function create({
-  lead_id, customer_id, supplier_id, order_type, entry_date, valid_until, discount_pct = 0, notes, items = [], created_by,
+  lead_id, customer_id, supplier_id, order_type, quote_date, entry_date, valid_until, discount_pct = 0, notes, items = [], created_by,
   company_name, customer_name, billing_email, contact_number, whatsapp, wechat,
   customer_category, customer_source,
   shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
@@ -176,9 +176,9 @@ async function create({
          customer_category, customer_source,
          shipping_country, shipping_state, shipping_city, zip_code, shipping_address, billing_address,
          due_date, sales_agent_id, internal_notes, customer_requirement_summary, quote_estimate,
-         estimated_shipping, rush_services, payment_terms, payment_method, customer_notes, customer_id
+         estimated_shipping, rush_services, payment_terms, payment_method, customer_notes, customer_id, quote_date
        )
-       VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
+       VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
        RETURNING *`,
       [
         quote_number, lead_id || null, supplier_id || null, order_type || null, resolvedEntryDate, resolvedValidUntil,
@@ -190,6 +190,8 @@ async function create({
         internal_notes || null, customer_requirement_summary || null, quote_estimate || null,
         estimated_shipping || 0, rush_services || 0, payment_terms || 'Advance',
         payment_method || null, customer_notes || null, customer_id || null,
+        // The date it was quoted; the database fills the entry date when unsaid.
+        quote_date || null,
       ]
     )
     const qId = rows[0].id
@@ -221,7 +223,7 @@ async function create({
 // sends only the lines it changed, must not blank the customer, the address or
 // the order type. Writing every column unconditionally is what used to do that.
 const EDITABLE_COLUMNS = [
-  'lead_id', 'customer_id', 'supplier_id', 'order_type', 'entry_date', 'valid_until', 'notes',
+  'lead_id', 'customer_id', 'supplier_id', 'order_type', 'quote_date', 'entry_date', 'valid_until', 'notes',
   'company_name', 'customer_name', 'billing_email', 'contact_number', 'whatsapp', 'wechat',
   'customer_category', 'customer_source', 'shipping_country', 'shipping_state', 'shipping_city',
   'zip_code', 'due_date', 'sales_agent_id', 'internal_notes', 'customer_requirement_summary',

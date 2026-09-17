@@ -1180,7 +1180,7 @@ export function NewQuotationPage() {
   useEffect(() => {
     if (!quotationData || formInitialized) return
     const q = quotationData as Record<string, any>
-    const savedQuoteDate = q.created_at ? String(q.created_at).slice(0, 10) : today()
+    const savedQuoteDate = q.quote_date ? String(q.quote_date).slice(0, 10) : q.created_at ? String(q.created_at).slice(0, 10) : today()
     setQuoteDate(savedQuoteDate)
     setEntryDate(q.entry_date ? String(q.entry_date).slice(0, 10) : savedQuoteDate)
     setValidUntil(q.valid_until ? String(q.valid_until).slice(0, 10) : addDays(savedQuoteDate, 7))
@@ -1674,6 +1674,8 @@ export function NewQuotationPage() {
       customer_requirement_summary: customerReqSummary || undefined,
       quote_estimate:               quoteEstimate ? +quoteEstimate : undefined,
       valid_until:                  validUntil || undefined,
+      // The Quote Date field was never sent, so changing it saved nothing.
+      quote_date:                   quoteDate || undefined,
       entry_date:                   entryDate || undefined,
     })
   }

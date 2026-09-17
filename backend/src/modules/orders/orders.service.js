@@ -528,6 +528,16 @@ async function attachPayment(client, { orderId, invoiceId, paymentId, allocatedA
   }
 }
 
+// The day a document raised from an invoice is dated: when its payment came in
+// (the latest, for one paid in parts), else the invoice's own date.
+async function invoiceDocumentDate(q, invoiceId) {
+  const { rows } = await q.query(
+    `SELECT (SELECT max(p.payment_date) FROM payments p WHERE p.invoice_id = i.id)::text AS payment_date,
+            COALESCE((SELECT max(p.payment_date) FROM payments p WHERE p.invoice_id = i.id), i.issue_date)::text AS document_date
+       FROM invoices i WHERE i.id = $1`, [invoiceId])
+  return rows[0] || null
+}
+
 // An order raised from an invoice takes the payments already on that invoice —
 // one, or the parts linked together with Multiple Payments. They are taken all
 // or none: only when, with any the order already holds, they come to no more
@@ -544,7 +554,7 @@ async function linkInvoicePayments(client, orderId, invoiceId) {
 
 async function create(data) {
   const {
-    customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
+    customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, entry_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     amount_paid, payment_reference, payment_date, payment_id,
     rush_services = 0, shipping_charges = 0,
@@ -557,7 +567,12 @@ async function create(data) {
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
   const today = new Date().toISOString().split('T')[0]
-  const resolvedOrderDate = order_date || today
+  // Raised from an invoice, the order is dated the day its payment came in (the
+  // latest, when paid in parts), else the invoice's own date — not the day
+  // someone pressed Convert.
+  const invoiceDay = invoice_id && !order_date ? await invoiceDocumentDate({ query }, invoice_id) : null
+  const resolvedOrderDate = order_date || invoiceDay?.document_date || today
+  const resolvedEntryDate = entry_date || resolvedOrderDate
   const resolvedDueDate = due_date || resolvedOrderDate
   let resolvedShipping = Number(shipping_charges) || 0
   let resolvedRush     = Number(rush_services) || 0
@@ -694,7 +709,7 @@ async function create(data) {
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by, order_stage, process_status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,$32,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
                  -- kept in step with the status chosen on the line above
                  CASE WHEN $3::uuid IS NOT NULL THEN 'Sent'   ELSE 'Draft' END,
                  CASE WHEN $3::uuid IS NOT NULL THEN 'Pushed' ELSE NULL    END)
@@ -703,12 +718,13 @@ async function create(data) {
         order_number, resolvedQuotationId, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         resolvedOrderDate, resolvedDueDate,
         resolvedTerms, resolvedPaymentMethod, effectiveStatus, resolvedCurrency,
-        effectivePaid, payment_reference || null, payment_date || null,
+        effectivePaid, payment_reference || null, payment_date || invoiceDay?.payment_date || null,
         resolvedRush, resolvedShipping, totals.subtotal, resolvedDiscountPct, totals.discount_amt,
         resolvedTaxPct, totals.tax_amt, totals.total, resolvedNotes,
         resolvedContactName, resolvedContactEmail, resolvedContactPhone,
         resolvedShippingName, resolvedShippingAddress,
         resolvedAssignedTo, created_by,
+        resolvedEntryDate,
       ]
     )
     const order = rows[0]
@@ -832,6 +848,7 @@ async function update(id, data, actorId) {
       `UPDATE orders SET
          customer_id      = COALESCE($1, customer_id),
          order_date       = COALESCE($2,  order_date),
+         entry_date       = COALESCE($39, entry_date),
          due_date         = COALESCE($3,  due_date),
          payment_terms    = COALESCE($4,  payment_terms),
          payment_method   = COALESCE($5,  payment_method),
@@ -880,6 +897,7 @@ async function update(id, data, actorId) {
         data.assigned_team, data.estimated_production_time, data.total_print_locations,
         id,
         targetPaid, data.payment_reference ?? null, data.payment_date ?? null,
+        data.entry_date ?? null,
       ]
     )
     if (!updated[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
@@ -1305,4 +1323,4 @@ function getOrderCsvTemplate() {
   return [headers, ex1, ex2, ex3].map(r => r.join(',')).join('\n') + '\n'
 }
 
-module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate, linkInvoicePayments }
+module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate, linkInvoicePayments, invoiceDocumentDate }

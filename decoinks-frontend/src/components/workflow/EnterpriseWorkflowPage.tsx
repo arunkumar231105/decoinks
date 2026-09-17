@@ -137,7 +137,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
 }> = {
   quotations: {
     title: 'Quotations', subtitle: 'Manage and track quotations for leads and customers.', api: '/quotations', newPath: '/quotes/new', newLabel: 'New Quotation',
-    search: 'Search by quote no, customer, email, phone or sales agent…', numberKey: 'quote_number', dateKey: 'created_at',
+    search: 'Search by quote no, customer, email, phone or sales agent…', numberKey: 'quote_number', dateKey: 'quote_date',
     statuses: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
     kpis: [
       { label: 'Total Quotes', icon: FileText, value: (_, t) => t, tone: 'blue' },
@@ -149,7 +149,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'quote_number', label: 'Quotation No.', render: r => <strong className="ew-link">{r.quote_number}</strong> },
       { key: 'revision_number', label: 'Revision', numeric: true },
-      { key: 'created_at', label: 'Quote Date', render: r => date(r.created_at) },
+      { key: 'quote_date', label: 'Quote Date', render: r => date(r.quote_date || r.created_at) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
@@ -564,11 +564,15 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     // /quotes/:id already opens the quotation form for editing; the drawer just
     // never offered it, so a quote could only be edited by typing the URL.
     if (kind === 'quotations') return () => navigate(`/quotes/${row.id}`)
-    // A paid or voided invoice is a settled document; editing it would move
-    // money someone has already received.
+    // A paid invoice is a settled document; editing it would move money someone
+    // has already received. Its date can still be corrected, so Edit opens the
+    // invoice with the date dialog. A voided one is not edited at all.
     if (kind === 'invoices') {
-      const settled = ['Paid', 'Partially Paid', 'Void'].includes(String(row.status || ''))
-      return settled ? null : () => navigate('/invoices/new', { state: { editInvoiceId: row.id } })
+      const status = String(row.status || '')
+      if (status === 'Void') return null
+      return ['Paid', 'Partially Paid'].includes(status)
+        ? () => navigate(`/invoices/${row.id}`, { state: { editDate: true } })
+        : () => navigate('/invoices/new', { state: { editInvoiceId: row.id } })
     }
     return null
   }
@@ -851,7 +855,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   </>
   if (kind === 'quotations') return <>
     <DrawerSection title="Overview" fields={[
-      { label: 'Quote Date', value: date(row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Quote Date', value: date(row.quote_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
       { label: 'Source', value: first(row, 'customer_source', 'source') }, { label: 'Sent Via', value: first(row, 'sent_via') },
       { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Shipping', value: Number(row.estimated_shipping || row.shipping_amount || 0) ? money(row.estimated_shipping || row.shipping_amount) : 'Not included' },
       { label: 'Sales Agent', value: first(row, 'sales_agent_name', 'created_by_name', 'agent_name') },
