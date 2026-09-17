@@ -131,7 +131,7 @@ export default function OrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-          <p className="text-sm text-gray-500 mt-1">All orders shared with you by Decoinks.</p>
+          <p className="text-sm text-gray-500 mt-1">Every sales order with a purchase order.</p>
         </div>
         <button
           onClick={() => exportCSV(orders)}

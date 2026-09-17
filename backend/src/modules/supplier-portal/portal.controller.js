@@ -11,7 +11,8 @@ exports.refreshToken = async (req, res) => {
     if (decoded.role !== 'supplier') return res.status(403).json({ error: 'Not a supplier token' });
     const newToken = jwt.sign(
       { supplierId: decoded.supplierId, portalUserId: decoded.portalUserId,
-        username: decoded.username, role: 'supplier' },
+        username: decoded.username, role: 'supplier',
+        ...(decoded.allSuppliers === true ? { allSuppliers: true } : {}) },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_SUPPLIER_EXPIRY || '7d' }
     );
@@ -38,7 +39,7 @@ exports.login = async (req, res) => {
 
 exports.getDashboard = async (req, res) => {
   try {
-    const data = await svc.getDashboard(req.supplier.supplierId);
+    const data = await svc.getDashboard(req.scopeId);
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -49,7 +50,7 @@ exports.getDashboard = async (req, res) => {
 
 exports.getOrders = async (req, res) => {
   try {
-    const result = await svc.getSupplierOrders(req.supplier.supplierId, req.query);
+    const result = await svc.getSupplierOrders(req.scopeId, req.query);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -58,7 +59,7 @@ exports.getOrders = async (req, res) => {
 
 exports.getOrderDetail = async (req, res) => {
   try {
-    const order = await svc.getSupplierOrderDetail(req.supplier.supplierId, req.params.id);
+    const order = await svc.getSupplierOrderDetail(req.scopeId, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found or not shared with you' });
     res.json({ order });
   } catch (e) {
@@ -71,7 +72,7 @@ exports.getOrderDetail = async (req, res) => {
 
 exports.getPurchaseOrders = async (req, res) => {
   try {
-    const result = await svc.getSupplierPOs(req.supplier.supplierId, req.query);
+    const result = await svc.getSupplierPOs(req.scopeId, req.query);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -80,7 +81,7 @@ exports.getPurchaseOrders = async (req, res) => {
 
 exports.getPODetail = async (req, res) => {
   try {
-    const po = await svc.getSupplierPODetail(req.supplier.supplierId, req.params.id);
+    const po = await svc.getSupplierPODetail(req.scopeId, req.params.id);
     if (!po) return res.status(404).json({ error: 'Purchase order not found or not shared with you' });
     res.json({ po });
   } catch (e) {
@@ -92,7 +93,7 @@ exports.getPODetail = async (req, res) => {
 
 exports.getArtworks = async (req, res) => {
   try {
-    const artworks = await svc.getSupplierArtworks(req.supplier.supplierId);
+    const artworks = await svc.getSupplierArtworks(req.scopeId);
     res.json({ artworks });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -109,7 +110,7 @@ exports.getArtworks = async (req, res) => {
  */
 exports.vaultAsset = (kind) => async (req, res) => {
   try {
-    const asset = await svc.getVaultAssetForSupplier(req.supplier.supplierId, req.params.id);
+    const asset = await svc.getVaultAssetForSupplier(req.scopeId, req.params.id);
     if (!asset) return res.status(404).json({ error: 'Artwork not found' });
 
     const nc = require('../nextcloud/nextcloud.service');
@@ -154,7 +155,7 @@ exports.vaultAsset = (kind) => async (req, res) => {
 
 exports.getNotifications = async (req, res) => {
   try {
-    const notifications = await svc.getNotifications(req.supplier.supplierId);
+    const notifications = await svc.getNotifications(req.scopeId);
     res.json({ notifications });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -163,7 +164,7 @@ exports.getNotifications = async (req, res) => {
 
 exports.markRead = async (req, res) => {
   try {
-    await svc.markNotificationRead(req.supplier.supplierId, req.params.id);
+    await svc.markNotificationRead(req.scopeId, req.params.id);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -174,7 +175,7 @@ exports.markRead = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
   try {
-    const supplier = await svc.getProfile(req.supplier.supplierId);
+    const supplier = await svc.getProfile(req.scopeId);
     res.json({ supplier });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -201,7 +202,7 @@ exports.updatePOStatus = async (req, res) => {
   try {
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'status is required' });
-    const result = await svc.updatePOStatus(req.supplier.supplierId, req.params.id, status);
+    const result = await svc.updatePOStatus(req.scopeId, req.params.id, status);
     res.json({ success: true, ...result });
   } catch (e) {
     const code = e.status === 403 ? 403 : e.status === 404 ? 404 : e.status === 422 ? 422 : 500;
@@ -213,7 +214,7 @@ exports.addTracking = async (req, res) => {
   try {
     const { tracking_number, carrier, tracking_notes } = req.body;
     if (!tracking_number) return res.status(400).json({ error: 'tracking_number is required' });
-    const result = await svc.addTracking(req.supplier.supplierId, req.params.id, { tracking_number, carrier, tracking_notes });
+    const result = await svc.addTracking(req.scopeId, req.params.id, { tracking_number, carrier, tracking_notes });
     res.json({ success: true, ...result });
   } catch (e) {
     const code = e.status === 403 ? 403 : e.status === 404 ? 404 : 500;
@@ -227,7 +228,7 @@ exports.submitStatusUpdate = async (req, res) => {
   try {
     const { status, notes } = req.body;
     if (!status) return res.status(400).json({ error: 'status is required' });
-    const update = await svc.submitStatusUpdate(req.supplier.supplierId, req.params.id, { status, notes });
+    const update = await svc.submitStatusUpdate(req.scopeId, req.params.id, { status, notes });
     res.json({ update });
   } catch (e) {
     if (e.status === 403) return res.status(403).json({ error: e.message });
@@ -237,7 +238,7 @@ exports.submitStatusUpdate = async (req, res) => {
 
 exports.getStatusUpdates = async (req, res) => {
   try {
-    const updates = await svc.getStatusUpdates(req.supplier.supplierId, req.params.id);
+    const updates = await svc.getStatusUpdates(req.scopeId, req.params.id);
     res.json({ updates });
   } catch (e) {
     res.status(500).json({ error: e.message });

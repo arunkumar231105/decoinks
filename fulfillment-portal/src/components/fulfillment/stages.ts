@@ -58,6 +58,7 @@ export const CANCELLED_ICON = XCircle
 export interface GridRow {
   id: string
   po_number: string
+  supplier: { id: string; name: string } | null
   customer_name: string | null
   customer_location: string | null
   order_id: string | null
@@ -86,7 +87,7 @@ export interface GridResponse {
   page: number
   limit: number
   summary: { total: number; issued: number; pending: number; stages: Record<string, number> }
-  filters: { stages: string[]; factories: { id: string; name: string }[]; couriers: string[] }
+  filters: { stages: string[]; factories: { id: string; name: string }[]; suppliers?: { id: string; name: string }[]; couriers: string[] }
 }
 
 export interface Factory {
@@ -96,6 +97,14 @@ export interface Factory {
   country: string | null
   is_active: boolean
   po_count?: number
+  supplier_id?: string
+  supplier_name?: string
+}
+
+/** GET /factories — `suppliers` comes only for the company login, which picks whose a new factory is. */
+export interface FactoriesResponse {
+  factories: Factory[]
+  suppliers?: { id: string; name: string }[]
 }
 
 export function carrierUrl(carrier?: string | null, number?: string | null) {

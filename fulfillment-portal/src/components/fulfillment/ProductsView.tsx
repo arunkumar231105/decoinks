@@ -39,7 +39,7 @@ const PAGE_SIZE = 10
 const COPY: Record<Mode, { title: string; subtitle: string }> = {
   products: {
     title: 'Products',
-    subtitle: 'Every product on the purchase orders shared with you — how much was ordered, on how many POs, and when last.',
+    subtitle: 'Every product on the purchase orders — how much was ordered, on how many POs, and when last.',
   },
   inventory: {
     title: 'Inventory',
@@ -229,7 +229,7 @@ export default function ProductsView({ mode }: { mode: Mode }) {
                 loading={query.isLoading}
                 error={query.isError ? 'The products could not be loaded.' : null}
                 empty={!query.isLoading && !query.isError && shown.length === 0}
-                emptyMessage={filtersOn ? 'No products match these filters.' : 'No purchase orders with products have been shared with you yet.'}
+                emptyMessage={filtersOn ? 'No products match these filters.' : 'No purchase orders with products yet.'}
                 onRetry={() => query.refetch()}
               />
               {!query.isLoading && !query.isError && shown.map((p, i) => (

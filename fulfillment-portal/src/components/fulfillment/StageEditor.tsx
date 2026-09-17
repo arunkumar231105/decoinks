@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Info, Plus, X } from 'lucide-react'
 import api from '../../services/api'
-import { SUPPLIER_STAGES, apiError, type Factory, type GridRow } from './stages'
+import { SUPPLIER_STAGES, apiError, type Factory, type FactoriesResponse, type GridRow } from './stages'
 
 /**
  * Move one purchase order along: its stage, the factory making it, the day it
@@ -33,13 +33,16 @@ export default function StageEditor({ row, onClose }: { row: GridRow | null; onC
 
   const factories = useQuery({
     queryKey: ['factories'],
-    queryFn: () => api.get('/factories').then(r => r.data.factories as Factory[]),
+    queryFn: () => api.get('/factories').then(r => r.data as FactoriesResponse),
     enabled: Boolean(row),
   })
-  const active = (factories.data ?? []).filter(f => f.is_active || f.id === row?.factory?.id)
+  // A PO can only go to a factory of the supplier it was issued to.
+  const active = (factories.data?.factories ?? [])
+    .filter(f => !f.supplier_id || !row?.supplier || f.supplier_id === row.supplier.id)
+    .filter(f => f.is_active || f.id === row?.factory?.id)
 
   const addFactory = useMutation({
-    mutationFn: (name: string) => api.post('/factories', { name }).then(r => r.data.factory as Factory),
+    mutationFn: (name: string) => api.post('/factories', { name, supplier_id: row?.supplier?.id }).then(r => r.data.factory as Factory),
     onSuccess: f => {
       qc.invalidateQueries({ queryKey: ['factories'] })
       setFactoryId(f.id)
@@ -86,7 +89,7 @@ export default function StageEditor({ row, onClose }: { row: GridRow | null; onC
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h3 id="stage-editor-title" className="text-base font-semibold text-ink">Update {row.po_number}</h3>
-            <p className="mt-0.5 text-[13px] text-muted">{[row.customer_name, row.order_number].filter(Boolean).join(' · ')}</p>
+            <p className="mt-0.5 text-[13px] text-muted">{[row.supplier?.name, row.customer_name, row.order_number].filter(Boolean).join(' · ')}</p>
           </div>
           <button className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-slate-100" onClick={onClose} aria-label="Close">
             <X size={16} />

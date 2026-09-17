@@ -75,19 +75,19 @@ export default function PurchaseOrdersListPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['#', t('po.number'), t('po.orderId'), t('po.issueDate'), t('po.dueDate'), t('common.status')].map((h) => (
+                {['#', t('po.number'), 'Supplier', t('po.orderId'), t('po.issueDate'), t('po.dueDate'), t('common.status')].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
               ) : pos.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
               ) : (
                 pos.map((po: {
-                  id: string; po_number: string; order_id: string | null; order_number: string | null
+                  id: string; po_number: string; supplier_name: string | null; order_id: string | null; order_number: string | null
                   issue_date: string; due_date: string | null; status: string; total: number | null
                 }, idx: number) => (
                   <tr
@@ -97,6 +97,7 @@ export default function PurchaseOrdersListPage() {
                   >
                     <td className="px-4 py-3 text-sm text-gray-500">{(page - 1) * 10 + idx + 1}</td>
                     <td className="px-4 py-3 text-sm font-medium text-accent">{po.po_number}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{po.supplier_name ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{po.order_number ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{fmt(po.issue_date)}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{fmt(po.due_date)}</td>

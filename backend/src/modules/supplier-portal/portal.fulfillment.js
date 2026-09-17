@@ -24,6 +24,7 @@
 const db = require('../../config/db')
 const { validateTransition } = require('../../utils/stateMachine')
 const { shopDate } = require('../../utils/shopTime')
+const { PO_SCOPE } = require('./portal.scope')
 
 const SUPPLIER_STAGES = ['To be Pushed', 'Factory Audit', 'In Production', 'Exception']
 
@@ -40,7 +41,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 async function assertVisible(supplierId, poId) {
   if (!UUID.test(String(poId || ''))) throw httpError(404, 'Purchase order not found or not shared with you')
   const { rows } = await db.query(
-    `SELECT 1 FROM portal_po_visibility WHERE po_id = $1 AND supplier_id = $2 AND is_visible = TRUE`,
+    `SELECT 1 FROM ${PO_SCOPE(2)} ppv WHERE ppv.po_id = $1`,
     [poId, supplierId]
   )
   if (!rows.length) throw httpError(404, 'Purchase order not found or not shared with you')
@@ -57,7 +58,10 @@ const humanTracking = (code) => {
   }
 }
 
-/** Every PO shared with this supplier, one row each, with its worked-out stage. */
+/**
+ * Every PO in scope, one row each, with its worked-out stage: those shared with
+ * the supplier, or for the company login (supplierId null) every live PO.
+ */
 async function loadRows(supplierId) {
   const { rows } = await db.query(
     `SELECT po.id, po.po_number, po.status::text AS po_status,
@@ -66,6 +70,7 @@ async function loadRows(supplierId) {
             COALESCE(po.order_date, po.created_at::date)::text AS issue_date,
             po.tracking_number, po.carrier AS po_carrier,
             po.order_id, o.order_number, (o.deleted_at IS NOT NULL) AS order_archived,
+            sup.id AS supplier_id, sup.name AS supplier_name,
             COALESCE(NULLIF(BTRIM(c.name), ''), NULLIF(BTRIM(o.shipping_name), ''), o.contact_name) AS customer_name,
             NULLIF(CONCAT_WS(', ', NULLIF(BTRIM(c.city), ''), NULLIF(BTRIM(c.state), ''), NULLIF(BTRIM(c.country), '')), '') AS customer_location,
             f.id AS factory_id, f.name AS factory_name, f.is_active AS factory_active,
@@ -73,11 +78,12 @@ async function loadRows(supplierId) {
             sh.tracking_synced_at,
             COALESCE(pl.qty, ol.qty) AS qty,
             COALESCE(pl.items, ol.items) AS items
-       FROM portal_po_visibility ppv
+       FROM ${PO_SCOPE(1)} ppv
        JOIN purchase_orders po ON po.id = ppv.po_id
+       LEFT JOIN suppliers sup ON sup.id = po.supplier_id
        LEFT JOIN orders o ON o.id = po.order_id
        LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, po.customer_id)
-       LEFT JOIN supplier_factories f ON f.id = po.factory_id AND f.supplier_id = ppv.supplier_id
+       LEFT JOIN supplier_factories f ON f.id = po.factory_id AND f.supplier_id = po.supplier_id
        -- The parcel carrying this PO's tracking number, as the courier sync last read it.
        LEFT JOIN LATERAL (
          SELECT s.tracking_status, s.status_details, s.carrier, s.tracking_synced_at
@@ -107,7 +113,7 @@ async function loadRows(supplierId) {
                  UNION ALL
                  SELECT 'Gangsheets', g.qty FROM order_items_gangsheet g WHERE g.order_id = po.order_id) y
        ) ol ON TRUE
-      WHERE ppv.supplier_id = $1 AND ppv.is_visible = TRUE AND po.deleted_at IS NULL`,
+      WHERE po.deleted_at IS NULL`,
     [supplierId]
   )
   return rows.map(shapeRow)
@@ -137,6 +143,7 @@ function shapeRow(r) {
   return {
     id: r.id,
     po_number: r.po_number,
+    supplier: r.supplier_id ? { id: r.supplier_id, name: r.supplier_name } : null,
     customer_name: r.customer_name,
     customer_location: r.customer_location,
     order_id: r.order_id,
@@ -164,6 +171,7 @@ function shapeRow(r) {
 
 const SORTS = {
   po_number: r => r.po_number,
+  supplier: r => (r.supplier?.name || '').toLowerCase(),
   customer: r => (r.customer_name || '').toLowerCase(),
   order_number: r => r.order_number || '',
   factory: r => (r.factory?.name || '').toLowerCase(),
@@ -190,6 +198,7 @@ async function getOrderGrid(supplierId, query = {}) {
   const search = String(query.search || '').trim().toLowerCase()
   const stage = String(query.stage || '').trim()
   const factory = String(query.factory || '').trim()
+  const supplier = String(query.supplier || '').trim()
   const courier = String(query.courier || '').trim().toLowerCase()
   const DATE = /^\d{4}-\d{2}-\d{2}$/
   const pushFrom = DATE.test(String(query.push_from || '')) ? query.push_from : null
@@ -199,12 +208,14 @@ async function getOrderGrid(supplierId, query = {}) {
 
   let rows = all
   if (search) {
-    rows = rows.filter(r => [r.po_number, r.order_number, r.customer_name, r.tracking_number, r.factory?.name, r.items]
+    rows = rows.filter(r => [r.po_number, r.supplier?.name, r.order_number, r.customer_name, r.tracking_number, r.factory?.name, r.items]
       .some(v => String(v || '').toLowerCase().includes(search)))
   }
   if (stage === 'Pending') rows = rows.filter(r => NOT_YET_SHIPPED.includes(r.stage))
   else if (stage === 'Issued') rows = rows.filter(r => r.stage !== 'Cancelled')
   else if (stage) rows = rows.filter(r => r.stage === stage)
+  if (supplier === 'none') rows = rows.filter(r => !r.supplier)
+  else if (supplier) rows = rows.filter(r => r.supplier?.id === supplier)
   if (factory === 'none') rows = rows.filter(r => !r.factory)
   else if (factory) rows = rows.filter(r => r.factory?.id === factory)
   if (courier === 'none') rows = rows.filter(r => !r.courier)
@@ -223,11 +234,16 @@ async function getOrderGrid(supplierId, query = {}) {
   const counts = Object.fromEntries(STAGES.map(s => [s, 0]))
   for (const r of all) counts[r.stage] = (counts[r.stage] || 0) + 1
 
+  // Factories are each supplier's own; the company login sees whose each is.
   const factories = new Map()
-  for (const r of all) if (r.factory) factories.set(r.factory.id, r.factory.name)
   const { rows: listed } = await db.query(
-    `SELECT id, name FROM supplier_factories WHERE supplier_id = $1 ORDER BY LOWER(name)`, [supplierId])
-  for (const f of listed) factories.set(f.id, f.name)
+    `SELECT f.id, f.name, s.name AS supplier_name FROM supplier_factories f JOIN suppliers s ON s.id = f.supplier_id
+      WHERE ($1::uuid IS NULL OR f.supplier_id = $1) ORDER BY LOWER(f.name)`, [supplierId])
+  for (const f of listed) factories.set(f.id, supplierId === null ? `${f.name} (${f.supplier_name})` : f.name)
+  for (const r of all) if (r.factory && !factories.has(r.factory.id)) factories.set(r.factory.id, r.factory.name)
+
+  const suppliers = new Map()
+  for (const r of all) if (r.supplier) suppliers.set(r.supplier.id, r.supplier.name)
 
   const couriers = [...new Set(all.map(r => r.courier).filter(Boolean).map(c => String(c).toUpperCase()))].sort()
 
@@ -245,6 +261,7 @@ async function getOrderGrid(supplierId, query = {}) {
     filters: {
       stages: STAGES,
       factories: [...factories].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+      suppliers: [...suppliers].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
       couriers,
     },
   }
@@ -268,11 +285,14 @@ async function updateOrderStage(supplierId, poId, body = {}) {
   if (note && note.length > 500) throw httpError(422, 'The note can be at most 500 characters')
 
   let factoryId = has('factory_id') ? (body.factory_id || null) : undefined
-  if (factoryId && !UUID.test(String(factoryId))) throw httpError(422, 'That factory is not one of yours')
+  if (factoryId && !UUID.test(String(factoryId))) throw httpError(422, "That factory is not this PO's supplier's")
   if (factoryId) {
+    // A PO can only go to a factory of the supplier it was issued to.
     const { rows } = await db.query(
-      `SELECT id, is_active FROM supplier_factories WHERE id = $1 AND supplier_id = $2`, [factoryId, supplierId])
-    if (!rows.length) throw httpError(422, 'That factory is not one of yours')
+      `SELECT f.id, f.is_active FROM supplier_factories f
+         JOIN purchase_orders po ON po.id = $2 AND po.supplier_id = f.supplier_id
+        WHERE f.id = $1`, [factoryId, poId])
+    if (!rows.length) throw httpError(422, "That factory is not this PO's supplier's")
     if (!rows[0].is_active) throw httpError(422, 'That factory is switched off — switch it on first')
   }
 
@@ -356,10 +376,12 @@ async function getOrderRow(supplierId, poId) {
 async function listFactories(supplierId) {
   const { rows } = await db.query(
     `SELECT f.id, f.name, f.city, f.country, f.is_active, f.created_at,
+            f.supplier_id, s.name AS supplier_name,
             (SELECT COUNT(*)::int FROM purchase_orders po
               WHERE po.factory_id = f.id AND po.deleted_at IS NULL) AS po_count
        FROM supplier_factories f
-      WHERE f.supplier_id = $1
+       JOIN suppliers s ON s.id = f.supplier_id
+      WHERE ($1::uuid IS NULL OR f.supplier_id = $1)
       ORDER BY f.is_active DESC, LOWER(f.name)`,
     [supplierId]
   )
@@ -389,13 +411,30 @@ const duplicate = (err) => {
   throw err
 }
 
+/** The suppliers the company login can add a factory for: those with live POs, then the rest. */
+async function listSuppliers() {
+  const { rows } = await db.query(
+    `SELECT s.id, s.name FROM suppliers s
+      WHERE EXISTS (SELECT 1 FROM purchase_orders p WHERE p.supplier_id = s.id AND p.deleted_at IS NULL)
+      ORDER BY LOWER(s.name)`)
+  return rows
+}
+
 async function createFactory(supplierId, body = {}) {
   const f = cleanFactory(body, { partial: false })
+  if (supplierId === null) {
+    // The company login says whose factory it is.
+    const chosen = String(body.supplier_id || '')
+    if (!UUID.test(chosen)) throw httpError(422, 'Pick the supplier this factory belongs to')
+    const { rows } = await db.query(`SELECT 1 FROM suppliers WHERE id = $1`, [chosen])
+    if (!rows.length) throw httpError(422, 'Pick the supplier this factory belongs to')
+    supplierId = chosen
+  }
   try {
     const { rows } = await db.query(
       `INSERT INTO supplier_factories (supplier_id, name, city, country)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, name, city, country, is_active, created_at, 0 AS po_count`,
+       RETURNING id, name, city, country, is_active, created_at, supplier_id, 0 AS po_count`,
       [supplierId, f.name, f.city ?? null, f.country ?? null]
     )
     return rows[0]
@@ -411,8 +450,8 @@ async function updateFactory(supplierId, factoryId, body = {}) {
   try {
     const { rows } = await db.query(
       `UPDATE supplier_factories SET ${cols.map((c, i) => `${c} = $${i + 3}`).join(', ')}, updated_at = NOW()
-        WHERE id = $1 AND supplier_id = $2
-        RETURNING id, name, city, country, is_active, created_at`,
+        WHERE id = $1 AND ($2::uuid IS NULL OR supplier_id = $2)
+        RETURNING id, name, city, country, is_active, created_at, supplier_id`,
       params
     )
     if (!rows.length) throw httpError(404, 'Factory not found')
@@ -433,9 +472,9 @@ async function getProducts(supplierId) {
   const stageById = new Map(grid.map(r => [r.id, r]))
   const { rows } = await db.query(
     `WITH shared AS (
-       SELECT po.id, po.order_id FROM portal_po_visibility ppv
+       SELECT po.id, po.order_id FROM ${PO_SCOPE(1)} ppv
          JOIN purchase_orders po ON po.id = ppv.po_id
-        WHERE ppv.supplier_id = $1 AND ppv.is_visible = TRUE AND po.deleted_at IS NULL
+        WHERE po.deleted_at IS NULL
      ), po_lines AS (
        SELECT s.id AS po_id, NULL::uuid AS order_id, i.item_name AS name, i.category, i.color, i.size, i.qty_ordered AS qty
          FROM shared s JOIN purchase_order_items i ON i.po_id = s.id
@@ -502,5 +541,5 @@ async function getProducts(supplierId) {
 module.exports = {
   SUPPLIER_STAGES, STAGES,
   stageOf, getOrderGrid, getOrderRow, updateOrderStage, getProducts,
-  listFactories, createFactory, updateFactory,
+  listFactories, listSuppliers, createFactory, updateFactory,
 }

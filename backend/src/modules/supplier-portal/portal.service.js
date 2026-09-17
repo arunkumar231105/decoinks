@@ -2,6 +2,7 @@ const db     = require('../../config/db');
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const { validateTransition } = require('../../utils/stateMachine');
+const { PO_SCOPE, ORDER_SCOPE } = require('./portal.scope');
 
 // Money columns arrive from pg as strings; the portal formats numbers.
 const money = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -16,7 +17,11 @@ async function loginSupplier(username, password) {
             s.phone, s.address_line1, s.city, s.state, s.country
      FROM supplier_portal_users spu
      JOIN suppliers s ON s.id = spu.supplier_id
-     WHERE LOWER(spu.username) = $1 OR LOWER(s.email) = $1`,
+     WHERE LOWER(spu.username) = $1
+        -- The company login answers to its username only, never a supplier's email.
+        OR (LOWER(s.email) = $1 AND spu.sees_all_suppliers = FALSE)
+     ORDER BY (LOWER(spu.username) = $1) DESC
+     LIMIT 1`,
     [loginId]
   );
   if (!rows[0]) throw new Error('Invalid credentials');
@@ -34,6 +39,8 @@ async function loginSupplier(username, password) {
       portalUserId: user.id,
       username:     user.username,
       role:         'supplier',
+      // Decoinks' own login: every supplier's purchase orders (portal.scope.js).
+      ...(user.sees_all_suppliers ? { allSuppliers: true } : {}),
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_SUPPLIER_EXPIRY || '7d' }
@@ -42,11 +49,9 @@ async function loginSupplier(username, password) {
   return {
     token,
     mustChangePw: user.must_change_pw,
-    supplier: {
-      id:    user.supplier_id,
-      name:  user.company_name,
-      email: user.company_email,
-    },
+    supplier: user.sees_all_suppliers
+      ? { id: null, name: 'Decoinks', email: null, all_suppliers: true }
+      : { id: user.supplier_id, name: user.company_name, email: user.company_email },
   };
 }
 
@@ -56,17 +61,17 @@ async function getDashboard(supplierId) {
   const [statusRes, trendRes, recentRes, typeRes, prevWeekRes, thisWeekRes] = await Promise.all([
     db.query(
       `SELECT o.status, COUNT(*) AS count
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
        GROUP BY o.status`,
       [supplierId]
     ),
     db.query(
       `SELECT DATE(o.order_date) AS date, COUNT(*) AS orders
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
          AND o.order_date >= NOW() - INTERVAL '7 days'
        GROUP BY DATE(o.order_date)
        ORDER BY date`,
@@ -74,34 +79,34 @@ async function getDashboard(supplierId) {
     ),
     db.query(
       `SELECT o.id, o.order_number, o.status, o.order_type, o.order_date, o.due_date
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
        ORDER BY o.order_date DESC LIMIT 5`,
       [supplierId]
     ),
     db.query(
       `SELECT o.order_type, COUNT(*) AS count
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
        GROUP BY o.order_type`,
       [supplierId]
     ),
     db.query(
       `SELECT COUNT(*) AS count
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
          AND o.order_date >= NOW() - INTERVAL '14 days'
          AND o.order_date <  NOW() - INTERVAL '7 days'`,
       [supplierId]
     ),
     db.query(
       `SELECT COUNT(*) AS count
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
-       WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE
+       WHERE TRUE
          AND o.order_date >= NOW() - INTERVAL '7 days'`,
       [supplierId]
     ),
@@ -170,7 +175,7 @@ const SUPPLIER_POS_FOR_ORDER = `
   LEFT JOIN LATERAL (
     SELECT string_agg(p.po_number, ', ' ORDER BY p.po_number) AS po_number
       FROM purchase_orders p
-     WHERE p.deleted_at IS NULL AND p.supplier_id = pov.supplier_id
+     WHERE p.deleted_at IS NULL AND (pov.supplier_id IS NULL OR p.supplier_id = pov.supplier_id)
        AND (p.order_id = o.id
             OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = p.id AND poo.order_id = o.id))
   ) pos ON TRUE`;
@@ -290,7 +295,8 @@ async function artworksForOrders(orderIds, supplierId = null) {
 
   // The vault is a second store on another server; if it cannot be read the
   // order still loads with whatever the order itself carries.
-  const vault = supplierId
+  // supplierId is null for the company login, which still gets the vault.
+  const vault = supplierId !== undefined
     ? await vaultArtworksForOrders(orderIds, supplierId).catch((err) => {
         console.error('[portal] vault artwork lookup failed:', err.message);
         return [];
@@ -333,8 +339,7 @@ async function vaultArtworksForOrders(orderIds, supplierId) {
      wanted AS (
        SELECT co.* FROM cust_orders co
         WHERE co.id = ANY($1::uuid[])
-          AND EXISTS (SELECT 1 FROM portal_order_visibility pov
-                       WHERE pov.order_id = co.id AND pov.supplier_id = $2 AND pov.is_visible = TRUE)
+          AND EXISTS (SELECT 1 FROM ${ORDER_SCOPE(2)} pov WHERE pov.order_id = co.id)
      ),
      candidates AS (
        SELECT w.id AS order_id, w.order_number, w.orders_for_customer,
@@ -392,9 +397,9 @@ async function getVaultAssetForSupplier(supplierId, assetId) {
     `SELECT v.path, v.file_name, v.mime_type
        FROM artwork_vault_assets v
       WHERE v.id = $1 AND v.mime_type LIKE 'image/%'
-        AND EXISTS (SELECT 1 FROM portal_order_visibility pov
+        AND EXISTS (SELECT 1 FROM ${ORDER_SCOPE(2)} pov
                       JOIN orders o ON o.id = pov.order_id
-                     WHERE pov.supplier_id = $2 AND pov.is_visible = TRUE AND o.customer_id = v.customer_id)`,
+                     WHERE o.customer_id = v.customer_id)`,
     [assetId, supplierId]
   );
   return rows[0] || null;
@@ -406,7 +411,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
   page  = Math.max(1, parseInt(page) || 1);
   limit = Math.min(500, Math.max(1, parseInt(limit) || 10));
   const offset     = (page - 1) * limit;
-  const conditions = ['pov.supplier_id = $1', 'pov.is_visible = TRUE', 'o.deleted_at IS NULL'];
+  const conditions = ['o.deleted_at IS NULL'];
   const params     = [supplierId];
 
   if (status)     { params.push(status);            conditions.push(`o.status = $${params.length}`); }
@@ -415,14 +420,14 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
     params.push(`%${search}%`);
     conditions.push(`(o.order_number ILIKE $${params.length} OR o.shipping_name ILIKE $${params.length}
                       OR EXISTS (SELECT 1 FROM purchase_orders p
-                                  WHERE p.deleted_at IS NULL AND p.supplier_id = pov.supplier_id
+                                  WHERE p.deleted_at IS NULL AND (pov.supplier_id IS NULL OR p.supplier_id = pov.supplier_id)
                                     AND p.order_id = o.id AND p.po_number ILIKE $${params.length}))`);
   }
   if (date_from)  { params.push(date_from);          conditions.push(`o.order_date >= $${params.length}`); }
   if (date_to)    { params.push(date_to);            conditions.push(`o.order_date < $${params.length}::date + INTERVAL '1 day'`); }
 
   const where = conditions.join(' AND ');
-  const baseConditions = ['pov.supplier_id = $1', 'pov.is_visible = TRUE', 'o.deleted_at IS NULL'];
+  const baseConditions = ['o.deleted_at IS NULL'];
 
   const [dataRes, countRes, aggRes] = await Promise.all([
     db.query(
@@ -433,7 +438,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
               COALESCE(shp.ship_date, o.shipped_at::date) AS shipped_date,
               shp.delivered_date,
               q.total_qty, q.size_summary
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
        LEFT JOIN customers c ON c.id = o.customer_id
        ${SUPPLIER_POS_FOR_ORDER}
@@ -445,7 +450,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
       [...params, limit, offset]
     ),
     db.query(
-      `SELECT COUNT(*) FROM portal_order_visibility pov JOIN orders o ON o.id = pov.order_id WHERE ${where}`,
+      `SELECT COUNT(*) FROM ${ORDER_SCOPE(1)} pov JOIN orders o ON o.id = pov.order_id WHERE ${where}`,
       params
     ),
     // The order state machine runs Draft → Confirmed → In Production → QC →
@@ -461,7 +466,7 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
          COUNT(*) FILTER (WHERE o.status = 'In Production')    AS in_production,
          COUNT(*) FILTER (WHERE o.status = 'Shipped')          AS shipped,
          COUNT(*) FILTER (WHERE o.status = 'Delivered')        AS delivered
-       FROM portal_order_visibility pov
+       FROM ${ORDER_SCOPE(1)} pov
        JOIN orders o ON o.id = pov.order_id
        WHERE ${baseConditions.join(' AND ')}`,
       [supplierId]
@@ -487,14 +492,16 @@ async function getSupplierOrders(supplierId, { page = 1, limit = 10, status, sea
 
 async function getSupplierOrderDetail(supplierId, orderId) {
   if (!UUID_RE.test(String(orderId || ''))) return null;
-  const { rows: anyVis } = await db.query(
-    `SELECT supplier_id FROM portal_order_visibility WHERE order_id = $1 AND is_visible = TRUE`,
-    [orderId]
+  const { rows: inScope } = await db.query(
+    `SELECT 1 FROM ${ORDER_SCOPE(2)} pov WHERE pov.order_id = $1`,
+    [orderId, supplierId]
   );
-  if (!anyVis.length) return null;
-
-  const belongsToSupplier = anyVis.some((r) => r.supplier_id === supplierId);
-  if (!belongsToSupplier) {
+  if (!inScope.length) {
+    const { rows: anyVis } = await db.query(
+      `SELECT 1 FROM portal_order_visibility WHERE order_id = $1 AND is_visible = TRUE`,
+      [orderId]
+    );
+    if (!anyVis.length) return null;
     const err = new Error('Access denied');
     err.status = 403;
     throw err;
@@ -515,12 +522,19 @@ async function getSupplierOrderDetail(supplierId, orderId) {
             c.address_line1 AS c_line1, c.city AS c_city, c.state AS c_state, c.zip AS c_zip, c.country AS c_country,
             ca.contact_person AS a_contact, ca.line1 AS a_line1, ca.line2 AS a_line2, ca.city AS a_city,
             ca.state AS a_state, ca.zipcode AS a_zip, ca.country AS a_country,
-            s.name AS vendor_name, s.name AS supplier_name,
+            COALESCE(s.name, sup.names) AS vendor_name, COALESCE(s.name, sup.names) AS supplier_name,
             pos.po_number, pos.po_number AS purchase_order_number,
             q.total_qty, q.size_summary
      FROM orders o
-     JOIN portal_order_visibility pov ON pov.order_id = o.id AND pov.supplier_id = $2
+     JOIN ${ORDER_SCOPE(2)} pov ON pov.order_id = o.id
      LEFT JOIN suppliers s ON s.id = pov.supplier_id
+     -- The company login: every supplier with a live PO on this order.
+     LEFT JOIN LATERAL (
+       SELECT string_agg(DISTINCT s2.name, ', ') AS names
+         FROM purchase_orders p JOIN suppliers s2 ON s2.id = p.supplier_id
+        WHERE p.deleted_at IS NULL
+          AND (p.order_id = o.id OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = p.id AND poo.order_id = o.id))
+     ) sup ON TRUE
      LEFT JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
        SELECT a.* FROM customer_addresses a
@@ -578,12 +592,13 @@ async function getSupplierOrderDetail(supplierId, orderId) {
     shipmentsFor({ orderIds: [orderId] }),
     db.query(
       `SELECT p.id, p.po_number, p.status::text AS status, p.po_type, p.po_scope,
-              COALESCE(p.order_date, p.created_at::date) AS issue_date, p.tracking_number, p.carrier
+              COALESCE(p.order_date, p.created_at::date) AS issue_date, p.tracking_number, p.carrier,
+              s.name AS supplier_name
          FROM purchase_orders p
-        WHERE p.deleted_at IS NULL AND p.supplier_id = $2
+         LEFT JOIN suppliers s ON s.id = p.supplier_id
+        WHERE p.deleted_at IS NULL
           AND (p.order_id = $1 OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = p.id AND poo.order_id = $1))
-          AND EXISTS (SELECT 1 FROM portal_po_visibility ppv
-                       WHERE ppv.po_id = p.id AND ppv.supplier_id = $2 AND ppv.is_visible = TRUE)
+          AND p.id IN (SELECT ppv.po_id FROM ${PO_SCOPE(2)} ppv)
         ORDER BY p.po_number`,
       [orderId, supplierId]
     ),
@@ -634,8 +649,9 @@ async function getSupplierOrderDetail(supplierId, orderId) {
 // ── Purchase Orders ───────────────────────────────────────────────────────────
 
 async function getSupplierPODetail(supplierId, poId) {
+  if (!UUID_RE.test(String(poId || ''))) return null;
   const { rows: vis } = await db.query(
-    `SELECT 1 FROM portal_po_visibility WHERE po_id = $1 AND supplier_id = $2 AND is_visible = TRUE`,
+    `SELECT 1 FROM ${PO_SCOPE(2)} ppv WHERE ppv.po_id = $1`,
     [poId, supplierId]
   );
   if (!vis.length) return null;
@@ -757,12 +773,12 @@ async function getSupplierPOs(supplierId, { page = 1, limit = 10, search, status
   page  = Math.max(1, parseInt(page) || 1);
   limit = Math.min(500, Math.max(1, parseInt(limit) || 10));
   const offset     = (page - 1) * limit;
-  const conditions = ['ppv.supplier_id = $1', 'ppv.is_visible = TRUE', 'po.deleted_at IS NULL'];
+  const conditions = ['po.deleted_at IS NULL'];
   const params     = [supplierId];
 
   if (search) {
     params.push(`%${search}%`);
-    conditions.push(`(po.po_number ILIKE $${params.length} OR o.order_number ILIKE $${params.length})`);
+    conditions.push(`(po.po_number ILIKE $${params.length} OR o.order_number ILIKE $${params.length} OR s.name ILIKE $${params.length})`);
   }
   if (status) { params.push(status); conditions.push(`po.status::text = $${params.length}`); }
   const where = conditions.join(' AND ');
@@ -773,26 +789,28 @@ async function getSupplierPOs(supplierId, { page = 1, limit = 10, search, status
               COALESCE(po.order_date, po.created_at::date) AS issue_date, po.expected_date,
               COALESCE(po.need_by_date, po.required_dispatch_date, po.expected_date, o.due_date) AS due_date,
               NULL::numeric AS total,
-              po.order_id, o.order_number, po.tracking_number, po.carrier
-       FROM portal_po_visibility ppv
+              po.order_id, o.order_number, po.tracking_number, po.carrier, s.name AS supplier_name
+       FROM ${PO_SCOPE(1)} ppv
        JOIN purchase_orders po ON po.id = ppv.po_id
        LEFT JOIN orders o ON o.id = po.order_id
+       LEFT JOIN suppliers s ON s.id = po.supplier_id
        WHERE ${where}
        ORDER BY COALESCE(po.order_date, po.created_at::date) DESC, po.po_number DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     ),
     db.query(
-      `SELECT COUNT(*) FROM portal_po_visibility ppv
+      `SELECT COUNT(*) FROM ${PO_SCOPE(1)} ppv
          JOIN purchase_orders po ON po.id = ppv.po_id
          LEFT JOIN orders o ON o.id = po.order_id
+         LEFT JOIN suppliers s ON s.id = po.supplier_id
         WHERE ${where}`,
       params
     ),
     db.query(
       `SELECT po.status::text AS status, COUNT(*)::int AS count
-         FROM portal_po_visibility ppv JOIN purchase_orders po ON po.id = ppv.po_id
-        WHERE ppv.supplier_id = $1 AND ppv.is_visible = TRUE AND po.deleted_at IS NULL
+         FROM ${PO_SCOPE(1)} ppv JOIN purchase_orders po ON po.id = ppv.po_id
+        WHERE po.deleted_at IS NULL
         GROUP BY 1`,
       [supplierId]
     ),
@@ -809,9 +827,8 @@ async function getSupplierPOs(supplierId, { page = 1, limit = 10, search, status
 
 async function getSupplierArtworks(supplierId) {
   const { rows } = await db.query(
-    `SELECT pov.order_id FROM portal_order_visibility pov
-       JOIN orders o ON o.id = pov.order_id AND o.deleted_at IS NULL
-      WHERE pov.supplier_id = $1 AND pov.is_visible = TRUE`,
+    `SELECT pov.order_id FROM ${ORDER_SCOPE(1)} pov
+       JOIN orders o ON o.id = pov.order_id AND o.deleted_at IS NULL`,
     [supplierId]
   );
   return artworksForOrders(rows.map((r) => r.order_id), supplierId);
@@ -821,7 +838,7 @@ async function getSupplierArtworks(supplierId) {
 
 async function getNotifications(supplierId) {
   const { rows } = await db.query(
-    `SELECT * FROM portal_notifications WHERE supplier_id = $1 ORDER BY created_at DESC LIMIT 50`,
+    `SELECT * FROM portal_notifications WHERE ($1::uuid IS NULL OR supplier_id = $1) ORDER BY created_at DESC LIMIT 50`,
     [supplierId]
   );
   return rows;
@@ -829,7 +846,7 @@ async function getNotifications(supplierId) {
 
 async function markNotificationRead(supplierId, notifId) {
   await db.query(
-    `UPDATE portal_notifications SET is_read = TRUE WHERE id = $1 AND supplier_id = $2`,
+    `UPDATE portal_notifications SET is_read = TRUE WHERE id = $1 AND ($2::uuid IS NULL OR supplier_id = $2)`,
     [notifId, supplierId]
   );
 }
@@ -837,6 +854,9 @@ async function markNotificationRead(supplierId, notifId) {
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 async function getProfile(supplierId) {
+  if (supplierId === null) {
+    return { name: 'Decoinks', email: null, phone: null, address_line1: null, city: null, state: null, country: null, all_suppliers: true };
+  }
   const { rows } = await db.query(
     `SELECT s.name, s.email, s.phone, s.address_line1, s.city, s.state, s.country
      FROM suppliers s WHERE s.id = $1`,
@@ -888,8 +908,13 @@ async function sendOrderToPortal(orderId, sentByUserId) {
 
 async function updatePOStatus(supplierId, poId, status) {
   // Confirm this PO is visible to this supplier
+  if (!UUID_RE.test(String(poId || ''))) {
+    const err = new Error('Purchase order not found or access denied');
+    err.status = 403;
+    throw err;
+  }
   const { rows: vis } = await db.query(
-    `SELECT 1 FROM portal_po_visibility WHERE po_id = $1 AND supplier_id = $2 AND is_visible = TRUE`,
+    `SELECT 1 FROM ${PO_SCOPE(2)} ppv WHERE ppv.po_id = $1`,
     [poId, supplierId]
   );
   if (!vis.length) {
@@ -930,8 +955,13 @@ async function updatePOStatus(supplierId, poId, status) {
 // ── PO Tracking Upload ────────────────────────────────────────────────────────
 
 async function addTracking(supplierId, poId, { tracking_number, carrier, tracking_notes }) {
+  if (!UUID_RE.test(String(poId || ''))) {
+    const err = new Error('Purchase order not found or access denied');
+    err.status = 403;
+    throw err;
+  }
   const { rows: vis } = await db.query(
-    `SELECT 1 FROM portal_po_visibility WHERE po_id = $1 AND supplier_id = $2 AND is_visible = TRUE`,
+    `SELECT 1 FROM ${PO_SCOPE(2)} ppv WHERE ppv.po_id = $1`,
     [poId, supplierId]
   );
   if (!vis.length) {
@@ -1029,8 +1059,13 @@ async function recordSupplierParcel(po) {
 // ── Status Updates ────────────────────────────────────────────────────────────
 
 async function submitStatusUpdate(supplierId, orderId, { status, notes }) {
+  if (!UUID_RE.test(String(orderId || ''))) {
+    const err = new Error('Order not found or access denied');
+    err.status = 403;
+    throw err;
+  }
   const { rows: vis } = await db.query(
-    `SELECT 1 FROM portal_order_visibility WHERE order_id = $1 AND supplier_id = $2 AND is_visible = TRUE`,
+    `SELECT 1 FROM ${ORDER_SCOPE(2)} pov WHERE pov.order_id = $1`,
     [orderId, supplierId]
   );
   if (!vis.length) {
@@ -1040,8 +1075,13 @@ async function submitStatusUpdate(supplierId, orderId, { status, notes }) {
   }
 
   const { rows } = await db.query(
+    // The company login writes on behalf of the order's supplier (its newest live PO's).
     `INSERT INTO portal_status_updates (order_id, supplier_id, status, notes)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
+     VALUES ($1, COALESCE($2::uuid, (
+       SELECT p.supplier_id FROM purchase_orders p
+        WHERE p.deleted_at IS NULL AND p.supplier_id IS NOT NULL
+          AND (p.order_id = $1 OR EXISTS (SELECT 1 FROM po_orders poo WHERE poo.po_id = p.id AND poo.order_id = $1))
+        ORDER BY p.created_at DESC LIMIT 1)), $3, $4) RETURNING *`,
     [orderId, supplierId, status, notes || null]
   );
   return rows[0];
@@ -1052,7 +1092,7 @@ async function getStatusUpdates(supplierId, orderId) {
     `SELECT psu.*, s.name AS supplier_name
      FROM portal_status_updates psu
      JOIN suppliers s ON s.id = psu.supplier_id
-     WHERE psu.order_id = $1 AND psu.supplier_id = $2
+     WHERE psu.order_id = $1 AND ($2::uuid IS NULL OR psu.supplier_id = $2)
      ORDER BY psu.submitted_at DESC`,
     [orderId, supplierId]
   );

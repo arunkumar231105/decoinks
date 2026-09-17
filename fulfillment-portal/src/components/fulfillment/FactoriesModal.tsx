@@ -3,12 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, Factory as FactoryIcon, Pencil, Plus, X } from 'lucide-react'
 import api from '../../services/api'
-import { apiError, type Factory } from './stages'
+import { apiError, type Factory, type FactoriesResponse } from './stages'
 
-type Draft = { name: string; city: string; country: string }
+type Draft = { name: string; city: string; country: string; supplier_id?: string }
 const EMPTY: Draft = { name: '', city: '', country: '' }
 
-/** The supplier's own list of factories: add, rename, switch off. */
+/**
+ * Factories: add, rename, switch off. A supplier sees its own; the company login
+ * sees every supplier's and says whose a new one is.
+ */
 export default function FactoriesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const [draft, setDraft] = useState<Draft>(EMPTY)
@@ -17,7 +20,7 @@ export default function FactoriesModal({ open, onClose }: { open: boolean; onClo
 
   const list = useQuery({
     queryKey: ['factories'],
-    queryFn: () => api.get('/factories').then(r => r.data.factories as Factory[]),
+    queryFn: () => api.get('/factories').then(r => r.data as FactoriesResponse),
     enabled: open,
   })
 
@@ -28,7 +31,7 @@ export default function FactoriesModal({ open, onClose }: { open: boolean; onClo
 
   const create = useMutation({
     mutationFn: (d: Draft) => api.post('/factories', d),
-    onSuccess: () => { refresh(); setDraft(EMPTY); toast.success('Factory added') },
+    onSuccess: () => { refresh(); setDraft(d => ({ ...EMPTY, supplier_id: d.supplier_id })); toast.success('Factory added') },
     onError: err => toast.error(apiError(err, 'Could not add the factory')),
   })
   const update = useMutation({
@@ -38,7 +41,9 @@ export default function FactoriesModal({ open, onClose }: { open: boolean; onClo
   })
 
   if (!open) return null
-  const rows = list.data ?? []
+  const rows = list.data?.factories ?? []
+  const suppliers = list.data?.suppliers
+  const needsSupplier = Boolean(suppliers)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
@@ -52,12 +57,18 @@ export default function FactoriesModal({ open, onClose }: { open: boolean; onClo
           <button className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-slate-100" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
-        <form className="grid grid-cols-1 gap-2 border-b border-line px-5 py-4 sm:grid-cols-[1.4fr_1fr_1fr_auto]"
-          onSubmit={e => { e.preventDefault(); if (draft.name.trim()) create.mutate(draft) }}>
+        <form className={`grid grid-cols-1 gap-2 border-b border-line px-5 py-4 ${needsSupplier ? 'sm:grid-cols-[1fr_1.3fr_1fr_1fr_auto]' : 'sm:grid-cols-[1.4fr_1fr_1fr_auto]'}`}
+          onSubmit={e => { e.preventDefault(); if (draft.name.trim() && (!needsSupplier || draft.supplier_id)) create.mutate(draft) }}>
+          {suppliers && (
+            <select className="fp-input" aria-label="Supplier" value={draft.supplier_id ?? ''} onChange={e => setDraft({ ...draft, supplier_id: e.target.value || undefined })}>
+              <option value="">Supplier…</option>
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <input className="fp-input" placeholder="Factory name" maxLength={120} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} />
           <input className="fp-input" placeholder="City" maxLength={80} value={draft.city} onChange={e => setDraft({ ...draft, city: e.target.value })} />
           <input className="fp-input" placeholder="Country" maxLength={80} value={draft.country} onChange={e => setDraft({ ...draft, country: e.target.value })} />
-          <button type="submit" className="fp-btn fp-btn-primary h-10 whitespace-nowrap" disabled={!draft.name.trim() || create.isPending}>
+          <button type="submit" className="fp-btn fp-btn-primary h-10 whitespace-nowrap" disabled={!draft.name.trim() || (needsSupplier && !draft.supplier_id) || create.isPending}>
             <Plus size={14} /> Add
           </button>
         </form>
@@ -90,7 +101,7 @@ export default function FactoriesModal({ open, onClose }: { open: boolean; onClo
                         <div className="min-w-0 flex-1">
                           <p className={`truncate text-sm font-semibold ${f.is_active ? 'text-ink' : 'text-muted line-through'}`}>{f.name}</p>
                           <p className="truncate text-xs text-muted">
-                            {[f.city, f.country].filter(Boolean).join(', ') || 'No location'} · {f.po_count ?? 0} PO{(f.po_count ?? 0) === 1 ? '' : 's'}
+                            {needsSupplier && f.supplier_name ? `${f.supplier_name} · ` : ''}{[f.city, f.country].filter(Boolean).join(', ') || 'No location'} · {f.po_count ?? 0} PO{(f.po_count ?? 0) === 1 ? '' : 's'}
                           </p>
                         </div>
                         <button className="fp-btn h-9" onClick={() => { setEditing(f.id); setEdit({ name: f.name, city: f.city ?? '', country: f.country ?? '' }) }}>

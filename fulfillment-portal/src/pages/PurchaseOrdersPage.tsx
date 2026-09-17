@@ -24,12 +24,14 @@ const COLUMNS_KEY = 'fp-order-grid-hidden-columns'
 const MANAGE_FACTORIES = '__manage__'
 
 type ColumnKey =
-  | 'sno' | 'po_number' | 'customer' | 'order_number' | 'factory' | 'push_date' | 'stage'
+  | 'sno' | 'po_number' | 'supplier' | 'customer' | 'order_number' | 'factory' | 'push_date' | 'stage'
   | 'items' | 'qty' | 'courier' | 'tracking_number' | 'tracking_text'
 
 const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean }[] = [
   { key: 'sno', label: 'S.No', sort: 'issue_date' },
   { key: 'po_number', label: 'PO#', sort: 'po_number', required: true },
+  // Every supplier's POs are in one grid (the company login), so each says whose it is.
+  { key: 'supplier', label: 'Supplier', sort: 'supplier' },
   { key: 'customer', label: 'Customer', sort: 'customer' },
   { key: 'order_number', label: 'Order No', sort: 'order_number' },
   { key: 'factory', label: 'Factory', sort: 'factory' },
@@ -44,7 +46,7 @@ const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean
 
 // Columns whose text wraps instead of being cut off, so the whole grid fits
 // narrower (and zoomed) screens with nothing hidden behind an ellipsis.
-const WRAP = new Set<ColumnKey>(['customer', 'factory', 'items', 'courier', 'tracking_number', 'tracking_text'])
+const WRAP = new Set<ColumnKey>(['supplier', 'customer', 'factory', 'items', 'courier', 'tracking_number', 'tracking_text'])
 
 const readHidden = (): ColumnKey[] => {
   try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || '[]') } catch { return [] }
@@ -58,6 +60,7 @@ export default function PurchaseOrdersPage() {
   const [debounced, setDebounced] = useState(search)
   const stage = params.get('stage') ?? ''
   const factory = params.get('factory') ?? ''
+  const supplier = params.get('supplier') ?? ''
   const courier = params.get('courier') ?? ''
   const pushFrom = params.get('push_from') ?? ''
   const pushTo = params.get('push_to') ?? ''
@@ -102,10 +105,10 @@ export default function PurchaseOrdersPage() {
   }, [columnsOpen])
 
   const query = useQuery({
-    queryKey: ['order-grid', { search: params.get('search') ?? '', stage, factory, courier, pushFrom, pushTo, sort, dir, page }],
+    queryKey: ['order-grid', { search: params.get('search') ?? '', stage, supplier, factory, courier, pushFrom, pushTo, sort, dir, page }],
     queryFn: () => api.get('/purchase-orders/order-grid', {
       params: {
-        search: params.get('search') || undefined, stage: stage || undefined, factory: factory || undefined,
+        search: params.get('search') || undefined, stage: stage || undefined, supplier: supplier || undefined, factory: factory || undefined,
         courier: courier || undefined, push_from: pushFrom || undefined, push_to: pushTo || undefined,
         sort, dir, page, limit: PAGE_SIZE,
       },
@@ -118,7 +121,7 @@ export default function PurchaseOrdersPage() {
   const total = data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const visible = COLUMNS.filter(c => !hidden.includes(c.key))
-  const filtersOn = Boolean(params.get('search') || stage || factory || courier || pushFrom || pushTo)
+  const filtersOn = Boolean(params.get('search') || stage || supplier || factory || courier || pushFrom || pushTo)
 
   useEffect(() => { if (data && page > pages) update({ page: pages }, false) }, [data, page, pages]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -149,8 +152,9 @@ export default function PurchaseOrdersPage() {
     switch (key) {
       case 'sno': return <span className="text-slate-700">{(page - 1) * PAGE_SIZE + index + 1}</span>
       case 'po_number': return <span className="text-blue-600">{r.po_number}</span>
+      case 'supplier': return r.supplier ? <span className="block min-w-[56px] max-w-[84px] text-slate-800">{r.supplier.name}</span> : <span className="text-slate-400">—</span>
       case 'customer': return (
-        <div className="min-w-[104px] max-w-[180px]">
+        <div className="min-w-[100px] max-w-[160px]">
           <div className="text-slate-900">{r.customer_name ?? '—'}</div>
           {r.customer_location && <div className="text-xs text-slate-500">{r.customer_location}</div>}
         </div>
@@ -167,7 +171,7 @@ export default function PurchaseOrdersPage() {
           {r.stage}
         </span>
       )
-      case 'items': return r.items ? <span className="block min-w-[100px] max-w-[190px] text-slate-800">{r.items}</span> : <span className="text-slate-400">—</span>
+      case 'items': return r.items ? <span className="block min-w-[90px] max-w-[160px] text-slate-800">{r.items}</span> : <span className="text-slate-400">—</span>
       case 'qty': return r.qty != null ? <span className="text-slate-800">{num(r.qty)}</span> : <span className="text-slate-400">—</span>
       case 'courier': return r.courier ? <span className="text-slate-800">{String(r.courier).toUpperCase()}</span> : <span className="text-slate-400">—</span>
       case 'tracking_number': {
@@ -245,6 +249,14 @@ export default function PurchaseOrdersPage() {
               onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>
           )}
         </div>
+        <label className="relative min-w-0 flex-1 basis-[calc(50%-5px)] sm:basis-[150px]">
+          <span className="sr-only">Supplier</span>
+          <select className={selectClass} value={supplier} onChange={e => update({ supplier: e.target.value || null })}>
+            <option value="">Supplier: All</option>
+            {(data?.filters.suppliers ?? []).map(s => <option key={s.id} value={s.id}>Supplier: {s.name}</option>)}
+          </select>
+          <Chevron />
+        </label>
         <label className="relative min-w-0 flex-1 basis-[calc(50%-5px)] sm:basis-[160px]">
           <span className="sr-only">Factory</span>
           <select className={selectClass} value={factory}
@@ -335,7 +347,7 @@ export default function PurchaseOrdersPage() {
                     aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     <button className="inline-flex items-center gap-1 text-left hover:text-blue-600"
                       onClick={() => update({ sort: c.sort, dir: sort === c.sort && dir === 'desc' ? 'asc' : 'desc' })}>
-                      <span className={WRAP.has(c.key) ? '' : 'whitespace-nowrap'}>{c.label}</span>
+                      <span className={WRAP.has(c.key) || c.label.includes(' ') ? 'min-[1600px]:whitespace-nowrap' : 'whitespace-nowrap'}>{c.label}</span>
                       {sorted && sort === c.sort
                         ? (dir === 'asc' ? <ArrowUp size={14} className="text-blue-600" /> : <ArrowDown size={14} className="text-blue-600" />)
                         : <ArrowUpDown size={12} className="shrink-0 text-slate-500" />}
@@ -350,7 +362,7 @@ export default function PurchaseOrdersPage() {
                 loading={query.isLoading}
                 error={query.isError ? 'The purchase orders could not be loaded.' : null}
                 empty={!query.isLoading && !query.isError && rows.length === 0}
-                emptyMessage={filtersOn ? 'No purchase orders match these filters.' : 'No purchase orders have been shared with you yet.'}
+                emptyMessage={filtersOn ? 'No purchase orders match these filters.' : 'There are no purchase orders yet.'}
                 onRetry={() => query.refetch()}
               />
               {!query.isLoading && !query.isError && rows.map((r, i) => (
