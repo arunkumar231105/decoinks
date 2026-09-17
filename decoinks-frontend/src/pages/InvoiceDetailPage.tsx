@@ -39,6 +39,7 @@ interface Invoice {
   customer_name?: string | null
   order_id: string | null
   order_number: string | null
+  order_type?: string | null
   quote_id: string | null
   quote_number: string | null
   subtotal: number
@@ -265,7 +266,15 @@ export function InvoiceDetailPage() {
             <button
               className="lb-action-btn lb-action-primary"
               style={{ gap: 6 }}
-              onClick={() => setOrderTypeModal(true)}
+              onClick={() => {
+                // The order is the invoice's kind of work. The dialog used to
+                // start on Apparel whatever the invoice was, and a DTF invoice
+                // was converted into an Apparel order that way.
+                if (invoice.order_type === 'apparel' || invoice.order_type === 'dtf' || invoice.order_type === 'gangsheet') {
+                  setSelectedOrderType(invoice.order_type)
+                }
+                setOrderTypeModal(true)
+              }}
             >
               <Package size={13} /> Convert to Order
             </button>
@@ -671,6 +680,8 @@ export function InvoiceDetailPage() {
               <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:6 }}>Order Type</label>
               <select
                 value={selectedOrderType}
+                disabled={['apparel', 'dtf', 'gangsheet'].includes(String(invoice.order_type))}
+                title={['apparel', 'dtf', 'gangsheet'].includes(String(invoice.order_type)) ? 'Set by the invoice' : undefined}
                 onChange={e => setSelectedOrderType(e.target.value as any)}
                 style={{ width:'100%', padding:'8px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:14 }}
               >

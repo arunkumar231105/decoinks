@@ -1282,6 +1282,19 @@ async function convertToOrder(invoiceId, actorId, orderType) {
   )
   if (existing[0]) return { order: existing[0], alreadyExisted: true }
 
+  // The order is the invoice's kind of work. A DTF invoice converted as Apparel
+  // put its transfers into garment lines (ORD-2026-0161); a mismatch is refused.
+  const { rows: kind } = await query(
+    `SELECT i.invoice_number, COALESCE(NULLIF(i.order_type::text, ''), q.order_type::text) AS order_type
+       FROM invoices i LEFT JOIN quotations q ON q.id = i.quote_id WHERE i.id = $1`, [invoiceId])
+  const invoiceType = kind[0]?.order_type
+  if (invoiceType && invoiceType !== orderType) {
+    const label = { apparel: 'Apparel', dtf: 'DTF', gangsheet: 'Gangsheet' }
+    throw Object.assign(new Error(
+      `${kind[0].invoice_number} is a ${label[invoiceType] || invoiceType} invoice, so its sales order must be ${label[invoiceType] || invoiceType} too.`),
+      { statusCode: 422 })
+  }
+
   const orderSvc = require('../orders/orders.service')
   try {
     const order = await orderSvc.create({
