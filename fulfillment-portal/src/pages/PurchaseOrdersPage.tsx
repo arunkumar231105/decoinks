@@ -42,6 +42,10 @@ const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean
   { key: 'tracking_text', label: 'Tracking Status', sort: 'tracking_text' },
 ]
 
+// Columns whose text wraps instead of being cut off, so the whole grid fits
+// narrower (and zoomed) screens with nothing hidden behind an ellipsis.
+const WRAP = new Set<ColumnKey>(['customer', 'factory', 'items', 'courier', 'tracking_number', 'tracking_text'])
+
 const readHidden = (): ColumnKey[] => {
   try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || '[]') } catch { return [] }
 }
@@ -146,9 +150,9 @@ export default function PurchaseOrdersPage() {
       case 'sno': return <span className="text-slate-700">{(page - 1) * PAGE_SIZE + index + 1}</span>
       case 'po_number': return <span className="text-blue-600">{r.po_number}</span>
       case 'customer': return (
-        <div className="max-w-[140px]">
-          <div className="truncate text-slate-900" title={r.customer_name ?? undefined}>{r.customer_name ?? '—'}</div>
-          {r.customer_location && <div className="truncate text-xs text-slate-500" title={r.customer_location}>{r.customer_location}</div>}
+        <div className="min-w-[104px] max-w-[180px]">
+          <div className="text-slate-900">{r.customer_name ?? '—'}</div>
+          {r.customer_location && <div className="text-xs text-slate-500">{r.customer_location}</div>}
         </div>
       )
       case 'order_number': return r.order_number
@@ -163,19 +167,19 @@ export default function PurchaseOrdersPage() {
           {r.stage}
         </span>
       )
-      case 'items': return r.items ? <span className="block max-w-[110px] truncate text-slate-800" title={r.items}>{r.items}</span> : <span className="text-slate-400">—</span>
+      case 'items': return r.items ? <span className="block min-w-[100px] max-w-[190px] text-slate-800">{r.items}</span> : <span className="text-slate-400">—</span>
       case 'qty': return r.qty != null ? <span className="text-slate-800">{num(r.qty)}</span> : <span className="text-slate-400">—</span>
       case 'courier': return r.courier ? <span className="text-slate-800">{String(r.courier).toUpperCase()}</span> : <span className="text-slate-400">—</span>
       case 'tracking_number': {
         if (!r.tracking_number) return <span className="text-slate-400">—</span>
         const url = carrierUrl(r.courier, r.tracking_number)
         return url
-          ? <a href={url} target="_blank" rel="noopener noreferrer" className="block max-w-[115px] truncate text-slate-800 hover:text-blue-600 hover:underline"
+          ? <a href={url} target="_blank" rel="noopener noreferrer" className="block min-w-[90px] max-w-[130px] break-all text-slate-800 hover:text-blue-600 hover:underline"
               onClick={e => e.stopPropagation()} title={`Track ${r.tracking_number} on ${String(r.courier).toUpperCase()}`}>{r.tracking_number}</a>
-          : <span className="block max-w-[115px] truncate text-slate-800" title={r.tracking_number}>{r.tracking_number}</span>
+          : <span className="block min-w-[90px] max-w-[130px] break-all text-slate-800">{r.tracking_number}</span>
       }
       case 'tracking_text': return r.tracking_text
-        ? <span className={`block max-w-[110px] truncate ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`} title={r.tracking_text}>{r.tracking_text}</span>
+        ? <span className={`block min-w-[84px] max-w-[160px] ${STAGE_TEXT[r.stage] ?? 'text-slate-800'}`}>{r.tracking_text}</span>
         : <span className="text-slate-400">—</span>
     }
   }
@@ -323,18 +327,18 @@ export default function PurchaseOrdersPage() {
           positioned) stays inside the card instead of widening the page. */}
       <div className="relative mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-collapse">
+          <table className="w-full min-w-[960px] border-collapse">
             <thead>
               <tr className="border-b border-line">
                 {visible.map(c => (
-                  <th key={c.key} className="whitespace-nowrap px-2 py-3.5 text-left text-[13px] font-semibold text-slate-800"
+                  <th key={c.key} className="px-1.5 py-3.5 text-left 2xl:px-2 align-middle text-[13px] font-semibold text-slate-800"
                     aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-                    <button className="inline-flex items-center gap-1 hover:text-blue-600"
+                    <button className="inline-flex items-center gap-1 text-left hover:text-blue-600"
                       onClick={() => update({ sort: c.sort, dir: sort === c.sort && dir === 'desc' ? 'asc' : 'desc' })}>
-                      {c.label}
+                      <span className={WRAP.has(c.key) ? '' : 'whitespace-nowrap'}>{c.label}</span>
                       {sorted && sort === c.sort
                         ? (dir === 'asc' ? <ArrowUp size={14} className="text-blue-600" /> : <ArrowDown size={14} className="text-blue-600" />)
-                        : <ArrowUpDown size={12} className="text-slate-500" />}
+                        : <ArrowUpDown size={12} className="shrink-0 text-slate-500" />}
                     </button>
                   </th>
                 ))}
@@ -352,7 +356,7 @@ export default function PurchaseOrdersPage() {
               {!query.isLoading && !query.isError && rows.map((r, i) => (
                 <tr key={r.id} className="cursor-pointer border-b border-line text-[13px] last:border-0 hover:bg-slate-50" title={`Open ${r.po_number}`}
                   onClick={() => navigate(`/purchase-orders/${r.id}`)}>
-                  {visible.map(c => <td key={c.key} className="whitespace-nowrap px-2 py-[9px]">{cell(r, c.key, i)}</td>)}
+                  {visible.map(c => <td key={c.key} className={`px-1.5 py-[9px] 2xl:px-2 ${WRAP.has(c.key) ? '' : 'whitespace-nowrap'}`}>{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>

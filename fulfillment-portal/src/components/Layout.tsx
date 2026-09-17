@@ -121,12 +121,20 @@ function AccountMenu() {
 export default function Layout() {
   const [navOpen, setNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
+    // Until someone picks, laptops (under 1440px) start with the icon rail so
+    // the order grid has room for every column.
+    try {
+      const saved = localStorage.getItem(COLLAPSE_KEY)
+      return saved === null ? window.innerWidth < 1440 : saved === '1'
+    } catch { return window.innerWidth < 1440 }
   })
   const { pathname } = useLocation()
 
   useEffect(() => { setNavOpen(false) }, [pathname])
-  useEffect(() => { try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0') } catch { /* private mode */ } }, [collapsed])
+  const toggleCollapsed = () => setCollapsed(c => {
+    try { localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1') } catch { /* private mode */ }
+    return !c
+  })
   useEffect(() => {
     if (!navOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false) }
@@ -145,8 +153,11 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-canvas">
-      <aside className="sticky top-0 hidden h-screen shrink-0 lg:block">
-        <Sidebar collapsed={collapsed} />
+      {/* Navy all the way down however long the page is; the rail itself stays in view. */}
+      <aside className="hidden shrink-0 bg-sidebar lg:block">
+        <div className="sticky top-0 h-screen">
+          <Sidebar collapsed={collapsed} />
+        </div>
       </aside>
 
       {navOpen && (
@@ -170,7 +181,7 @@ export default function Layout() {
             className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden">
             <Menu size={21} />
           </button>
-          <button onClick={() => setCollapsed(c => !c)} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          <button onClick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className="hidden h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:grid">
             {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
           </button>
