@@ -124,6 +124,8 @@ export function SupplierManagementPage() {
   const [colsOpen, setColsOpen] = useState(false)
   const [dates, setDates] = useState(Boolean(pushFrom || pushTo))
   const [open, setOpen] = useState<Row | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [numbers, setNumbers] = useState('')
   const colsRef = useRef<HTMLDivElement>(null)
 
   const update = (next: Record<string, string | number | null>, resetPage = true) => {
@@ -165,6 +167,13 @@ export function SupplierManagementPage() {
     // Live: the server syncs DIGI every two minutes; the page looks every 30 seconds.
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+  })
+  // Orders placed straight on DIGI's site: nothing in Printshop knows their
+  // numbers, and DIGI's API cannot list them, so they are pasted in.
+  const addNumbers = useMutation({
+    mutationFn: (text: string) => api.post('/supplier-orders/digi/numbers', { numbers: text })
+      .then(r => r.data as { added: string[]; already_there: string[]; not_found_on_digi: string[]; invalid: string[] }),
+    onSuccess: r => { if (r.added.length) setNumbers(''); qc.invalidateQueries({ queryKey: ['digi-orders'] }) },
   })
   const sync = useMutation({
     mutationFn: () => api.post('/supplier-orders/digi/sync').then(r => r.data),
@@ -224,6 +233,9 @@ export function SupplierManagementPage() {
             <RefreshCw size={14} className={sync.isPending ? 'som-spin' : undefined} /> {sync.isPending ? 'Syncing…' : 'Sync now'}
           </button>
           {sync.isError && <span style={{ color: '#dc2626' }}>Sync failed — try again in a minute</span>}
+          <button onClick={() => { setAdding(true); addNumbers.reset() }} title="Orders placed straight on DIGI's website">
+            <Plus size={14} /> Add DIGI orders
+          </button>
         </div>
         <Link to="/purchase-orders/new" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
       </div>
@@ -346,6 +358,43 @@ export function SupplierManagementPage() {
           </nav>
         </div>
       </div>
+
+      {adding && (
+        <>
+          <button className="som-scrim" aria-label="Close" onClick={() => setAdding(false)} />
+          <aside className="som-drawer" role="dialog" aria-modal="true" aria-label="Add DIGI orders">
+            <header>
+              <div>
+                <small>DIGI orders placed outside BlankTex</small>
+                <h3>Add DIGI orders</h3>
+              </div>
+              <button className="som-x" onClick={() => setAdding(false)} aria-label="Close"><X size={20} /></button>
+            </header>
+            <p style={{ fontSize: 13.5, color: '#475569', margin: '0 0 12px' }}>
+              DIGI's API cannot list orders, so an order placed straight on DIGI's website only shows here once its number is added.
+              Paste order numbers from DIGI (ORD-… or SG…), one per line or separated by commas. Each is checked with DIGI, then kept in sync.
+            </p>
+            <textarea value={numbers} onChange={e => setNumbers(e.target.value)} rows={8} placeholder={'SG2077175909938122752\nORD-260916081911'}
+              style={{ width: '100%', border: '1px solid #e4e9f2', borderRadius: 8, padding: 10, font: 'inherit', fontSize: 13 }} aria-label="DIGI order numbers" />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button className="som-btn" style={{ background: '#2563eb', color: '#fff', borderColor: '#2563eb' }}
+                disabled={!numbers.trim() || addNumbers.isPending} onClick={() => addNumbers.mutate(numbers)}>
+                {addNumbers.isPending ? 'Checking with DIGI…' : 'Add orders'}
+              </button>
+              <button className="som-btn" onClick={() => setAdding(false)}>Close</button>
+            </div>
+            {addNumbers.isError && <p style={{ color: '#dc2626', fontSize: 13 }}>Could not reach DIGI — try again.</p>}
+            {addNumbers.data && (
+              <dl className="som-kv" style={{ marginTop: 16 }}>
+                <dt>Added</dt><dd style={{ color: '#15803d' }}>{addNumbers.data.added.join(', ') || '—'}</dd>
+                <dt>Already here</dt><dd>{addNumbers.data.already_there.join(', ') || '—'}</dd>
+                <dt>Not found on DIGI</dt><dd style={{ color: addNumbers.data.not_found_on_digi.length ? '#dc2626' : undefined }}>{addNumbers.data.not_found_on_digi.join(', ') || '—'}</dd>
+                {addNumbers.data.invalid.length > 0 && <><dt>Not an order number</dt><dd style={{ color: '#dc2626' }}>{addNumbers.data.invalid.join(', ')}</dd></>}
+              </dl>
+            )}
+          </aside>
+        </>
+      )}
 
       {open && (
         <>

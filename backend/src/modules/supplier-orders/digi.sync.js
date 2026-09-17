@@ -116,12 +116,26 @@ async function loadUniverse() {
   } catch (err) {
     console.error('[digi-sync] BlankTex orders unavailable:', err.message)
   }
+  // DIGI numbers on Printshop POs — a merged or deleted PO's order is still a
+  // real DIGI order, so those count too (tied to a PO only while it is live) —
+  // and on sales orders imported from DIGI's sheet (source_po_number).
   const { rows: poRefs } = await db.query(
-    `SELECT p.id, BTRIM(p.supplier_reference) AS order_no
+    `SELECT CASE WHEN p.deleted_at IS NULL THEN p.id END AS id, BTRIM(p.supplier_reference) AS order_no
        FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
-      WHERE s.name ~* '^digi' AND p.deleted_at IS NULL AND NULLIF(BTRIM(p.supplier_reference), '') IS NOT NULL`)
+      WHERE s.name ~* '^digi' AND NULLIF(BTRIM(p.supplier_reference), '') IS NOT NULL
+     UNION
+     SELECT NULL, BTRIM(o.source_po_number)
+       FROM orders o JOIN suppliers s ON s.id = o.supplier_id
+      WHERE s.name ~* '^digi' AND BTRIM(o.source_po_number) ~ '^(ORD-[0-9]{12}|SG[0-9]{19})$'`)
+  // Numbers a person added on the page (migration 150).
+  let manual = []
+  try {
+    ;({ rows: manual } = await db.query(`SELECT order_no FROM digi_order_numbers`))
+  } catch (err) {
+    console.error('[digi-sync] digi_order_numbers unavailable:', err.message)
+  }
   const { rows: known } = await db.query(`SELECT order_no, courier_status, courier_synced_at FROM digi_orders`)
-  return { blanktex, poRefs, known: new Map(known.map(k => [k.order_no, k])) }
+  return { blanktex, poRefs, manual, known: new Map(known.map(k => [k.order_no, k])) }
 }
 
 /** DIGI's POs in Printshop with what the name/date/pieces match needs. */
@@ -240,17 +254,18 @@ async function syncDigiOrders({ apply = false, log = console.log, trigger = 'cro
 }
 
 async function runSync({ apply, log }) {
-  const { blanktex, poRefs, known } = await loadUniverse()
+  const { blanktex, poRefs, manual, known } = await loadUniverse()
 
   const orders = new Map()
   for (const b of blanktex) orders.set(b.order_no, { order_no: b.order_no, source: 'blanktex', bt: b })
   for (const p of poRefs) {
     const o = orders.get(p.order_no) || { order_no: p.order_no, source: 'po_reference' }
-    o.ref_po_id = p.id
+    if (p.id) o.ref_po_id = p.id
     orders.set(p.order_no, o)
   }
+  for (const m of manual) if (!orders.has(m.order_no)) orders.set(m.order_no, { order_no: m.order_no, source: 'manual' })
   const orderNos = [...orders.keys()]
-  log(`[digi-sync] ${orderNos.length} DIGI orders known (${blanktex.length} from BlankTex, ${poRefs.length} on POs)`)
+  log(`[digi-sync] ${orderNos.length} DIGI orders known (${blanktex.length} from BlankTex, ${poRefs.length} on POs / orders, ${manual.length} added by hand)`)
   if (!orderNos.length) return { orders: 0 }
 
   const [info, status, delivery, addresses] = await Promise.all([
