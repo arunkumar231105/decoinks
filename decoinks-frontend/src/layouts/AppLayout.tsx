@@ -56,6 +56,7 @@ const mainNav = [
   { label: 'Orders', path: '/orders', icon: Package },
   { label: 'Payments', path: '/payments', icon: CircleDollarSign },
   { label: 'Purchase Orders', path: '/purchase-orders', icon: ShoppingCart },
+  { label: 'Supplier Management', path: '/supplier-management', icon: Truck },
   { label: 'Shipments', path: '/shipments', icon: Truck },
   { label: 'Claims', path: '/claims', icon: ShieldAlert },
   { label: 'Suppliers', path: '/suppliers', icon: Users },
