@@ -8,6 +8,7 @@ import toast from '../utils/toast'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
 import { CustomerContactsEditor, contactIsBlank, type ContactDraft } from '../components/customers/CustomerContactsEditor'
+import { splitUsAddress, lookupZip, streetWithoutCity } from '../utils/usAddress'
 
 const SEGMENTS = ['retail', 'reseller', 'corporate', 'non-profit', 'individual']
 const TIERS = ['Standard', 'Silver', 'Gold', 'Platinum']
@@ -139,12 +140,63 @@ export function NewCustomerPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [contacts, setContacts] = useState<ContactDraft[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const clearErrors = (...keys: (keyof typeof form)[]) => setErrors(e => {
+    if (!keys.some(key => e[key])) return e
+    const next = { ...e }; keys.forEach(key => delete next[key]); return next
+  })
   const set = (key: keyof typeof form, value: string) => {
     setForm(v => ({ ...v, [key]: value }))
     // Clear the field's error as soon as the user edits it.
-    setErrors(e => {
-      if (!e[key]) return e
-      const next = { ...e }; delete next[key]; return next
+    clearErrors(key)
+    if (key === 'shipping_line1' || key === 'billing_line1') fillFromAddressLine(key.startsWith('billing') ? 'billing' : 'shipping', value)
+    if ((key === 'shipping_zipcode' || key === 'billing_zipcode') && /^\d{5}$/.test(value)) fillFromZip(key.startsWith('billing') ? 'billing' : 'shipping', value)
+  }
+
+  // ── Address auto-fill ─────────────────────────────────────────────────────
+  // A whole US address put into Address Line 1 is split on the spot: the line
+  // keeps the street, and City, State and ZIP take the rest. When the address
+  // names its city without a comma before it, the ZIP says which words are the
+  // city. Anything that cannot be told for certain is left as it was typed.
+  type Side = 'shipping' | 'billing'
+  const sideKey = (side: Side, field: string) => `${side}_${field}` as keyof typeof form
+  const isUsAddress = (country?: string) => !country || resolveCountry(country) === 'United States'
+
+  const fillFromAddressLine = (side: Side, text: string) => {
+    if (!isUsAddress(form[sideKey(side, 'country')])) return
+    const parts = splitUsAddress(text)
+    if (!parts) return
+    const apply = (street: string, city: string) => {
+      setForm(v => v[sideKey(side, 'line1')] !== text ? v : {
+        ...v,
+        [sideKey(side, 'line1')]: street,
+        [sideKey(side, 'city')]: city,
+        [sideKey(side, 'state')]: parts.state,
+        [sideKey(side, 'zipcode')]: parts.zip,
+        [sideKey(side, 'country')]: 'United States',
+      })
+      clearErrors(sideKey(side, 'line1'), sideKey(side, 'city'), sideKey(side, 'state'), sideKey(side, 'zipcode'))
+    }
+    if (parts.city) { apply(parts.street, parts.city); return }
+    lookupZip(parts.zip).then(place => {
+      if (!place || place.state !== parts.state) return
+      const split = streetWithoutCity(parts.street, place)
+      if (split) apply(split.street, split.city)
+    })
+  }
+
+  // A ZIP typed on its own fills a blank City and State.
+  const fillFromZip = (side: Side, zip: string) => {
+    lookupZip(zip).then(place => {
+      if (!place) return
+      setForm(v => {
+        if (v[sideKey(side, 'zipcode')] !== zip || !isUsAddress(v[sideKey(side, 'country')])) return v
+        if (v[sideKey(side, 'city')] && v[sideKey(side, 'state')]) return v
+        return {
+          ...v,
+          [sideKey(side, 'city')]: v[sideKey(side, 'city')] || place.city,
+          [sideKey(side, 'state')]: v[sideKey(side, 'state')] || place.state,
+        }
+      })
     })
   }
 

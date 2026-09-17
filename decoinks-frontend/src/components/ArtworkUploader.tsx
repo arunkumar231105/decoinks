@@ -16,6 +16,8 @@ interface Artwork {
   height_inches: number | null
   location_on_product: string | null
   created_at: string
+  /** 'line' — attached on one of the record's own lines; removed from that line */
+  source?: 'line'
 }
 
 interface GangsheetStatus {
@@ -205,6 +207,12 @@ export default function ArtworkUploader({ orderId, quotationId }: Props) {
                         {aw.name}
                       </p>
                     </div>
+                    {aw.source === 'line' ? (
+                      <a href={aw.file_url ?? '#'} target="_blank" rel="noreferrer" title="Attached on the line — change or remove it there"
+                        style={{ position: 'absolute', top: 5, right: 5, background: 'rgba(255,255,255,0.9)', borderRadius: 6, padding: '2px 6px', fontSize: 10, fontWeight: 600, color: '#475569', textDecoration: 'none' }}>
+                        On line
+                      </a>
+                    ) : (
                     <button
                       onClick={() => deleteMutation.mutate(aw.id)}
                       disabled={deleteMutation.isPending}
@@ -213,6 +221,7 @@ export default function ArtworkUploader({ orderId, quotationId }: Props) {
                     >
                       <Trash2 size={13} />
                     </button>
+                    )}
                   </div>
                 )
               })}

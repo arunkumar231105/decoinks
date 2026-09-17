@@ -936,8 +936,8 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
         subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
         shipping_charges, rush_services,
         payment_terms, payment_method, currency, contact_name, contact_email,
-        contact_phone, shipping_name, shipping_address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        contact_phone, shipping_name, shipping_address, notes, created_by, quotation_id)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$25)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
@@ -949,10 +949,20 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
       invoice.customer_name, invoice.shipping_address, invoice.notes,
       actorId,
       Number(invoice.shipping_charges || 0), Number(invoice.rush_services || 0),
+      qtRows[0]?.quote_id || null,
     ]
   )
   const orderId = ordRows[0].id
   await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
+
+  // The invoice's payment pays its order too, so it is not left under Pending SO.
+  await require('../orders/orders.service').linkInvoicePayment(q, orderId, invoiceId)
+  if (qtRows[0]?.quote_id) {
+    await q.query(
+      `UPDATE artworks SET order_id = $1 WHERE quotation_id = $2 AND order_id IS NULL`,
+      [orderId, qtRows[0].quote_id]
+    ).catch(() => {})
+  }
 
   // The invoice has to point back. The order already carries invoice_id, but
   // the invoice page reads its own order_id to decide whether an order exists —

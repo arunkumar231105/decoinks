@@ -590,7 +590,7 @@ function TermsSection({ paymentTerms, paymentMethod, productionTime, deliveryMet
       <div className="nq-sidebar-card-header"><span>Payment Information</span></div>
       <div className="nq-terms-grid">
         <div className="nq-terms-field"><label>Payment Terms</label><select className="nq-select" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}><option>Advance</option><option>Net 15</option><option>Net 30</option></select></div>
-        <div className="nq-terms-field"><label>Payment Method</label><select className="nq-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Bank Transfer</option><option>Zelle</option><option>PayPal</option><option>Shopify</option><option>Cash App</option><option>Credit Card</option><option>Cash</option><option>Check</option></select></div>
+        <div className="nq-terms-field"><label>Payment Method</label><select className="nq-select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Bank Transfer</option><option>Zelle</option><option>PayPal</option><option>Stripe</option><option>Shopify</option><option>Cash App</option><option>Credit Card</option><option>Cash</option><option>Check</option></select></div>
       </div>
     </div>
   )
@@ -1323,6 +1323,8 @@ export function NewQuotationPage() {
       if (quoteId) {
         queryClient.invalidateQueries({ queryKey: ['quotation', quoteId] })
         queryClient.invalidateQueries({ queryKey: ['quote-print', quoteId] })
+        // Line artwork is listed in the Artworks card too
+        queryClient.invalidateQueries({ queryKey: ['quote-artworks', quoteId] })
       }
       // If preview was triggered, navigate to print page after save completes
       if (navigateAfterSave.current) {

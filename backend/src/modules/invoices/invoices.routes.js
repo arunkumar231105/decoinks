@@ -126,7 +126,10 @@ const statusSchema = z.object({
 
 const paymentSchema = z.object({
   amount:         z.number().positive(),
-  payment_method: z.enum(['cashapp', 'zelle', 'paypal', 'bank_transfer', 'cash', 'other']),
+  // Every method the Record Payment dialog offers; Stripe, Shopify, card and
+  // check were offered but refused here.
+  payment_method: z.enum(['cashapp', 'zelle', 'paypal', 'stripe', 'shopify', 'card', 'check',
+    'bank_transfer', 'deposit', 'cash', 'other']),
   reference_no:   z.string().optional().nullable(),
   notes:          z.string().optional().nullable(),
 })

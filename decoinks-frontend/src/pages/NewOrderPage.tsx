@@ -378,6 +378,13 @@ export function NewOrderPage() {
   useEffect(() => {
     if (methodPayment?.payment_method) setPaymentMethod(methodPayment.payment_method)
   }, [methodPayment])
+  // Editing an order already paid: its payment shows as the one picked, rather
+  // than an empty "Select the payment" that invites picking it a second time.
+  useEffect(() => {
+    if (!editOrderId || paymentId) return
+    const linked = selectablePayments.find(p => p.order_id === editOrderId)
+    if (linked) setPaymentId(linked.id)
+  }, [editOrderId, paymentId, selectablePayments])
 
   const { data: existingOrder } = useQuery({
     queryKey: ['edit-order', editOrderId],

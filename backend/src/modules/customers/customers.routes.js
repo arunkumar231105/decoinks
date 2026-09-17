@@ -111,6 +111,15 @@ router.get('/',        controller.list)
 router.get('/stats',   controller.stats)
 router.get('/filters', controller.filters)
 router.get('/export',  controller.exportCsv)
+// City and state for a US ZIP, so the customer form fills them from an address.
+// Above '/:id' for the same reason as the route below.
+router.get('/zip-lookup/:zip', async (req, res, next) => {
+  try {
+    const found = await require('../../utils/zipLookup').lookupUsZip(req.params.zip)
+    if (!found) return res.status(404).json({ error: 'ZIP code not found' })
+    res.json({ data: found })
+  } catch (e) { next(e) }
+})
 // Must stay above '/:id' — otherwise Express reads "portal-accounts" as an id.
 // Portal accounts are customer logins — usernames, and when each last signed
 // in. Managing them is an owner's job, not a salesperson's, and the route had

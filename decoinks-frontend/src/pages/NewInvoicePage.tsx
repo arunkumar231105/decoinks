@@ -573,7 +573,12 @@ export function NewInvoicePage() {
       setRatesLocked(true)
     }
     // Supplier / Customer
-    if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
+    // A quote keeps its customer in customer_id (supplier_id is the legacy
+    // column and is empty on quotes made today). Reading only supplier_id left
+    // a converted invoice with no customer chosen on the form, so the payments
+    // that customer had made were never offered to attach.
+    const customerRef = sourceQuote.customer_id ?? sourceQuote.supplier_id
+    if (customerRef) setSupplierId(customerRef)
     const supplierName = sourceQuote.customer_name ?? sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
     if (supplierName) setsupplierText(supplierName)
     if (sourceQuote.billing_email)  setBillingEmail(sourceQuote.billing_email)
@@ -990,6 +995,7 @@ export function NewInvoicePage() {
       toast.error('Please select a customer before saving')
       return
     }
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1000,6 +1006,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'print'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1011,6 +1018,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'receipt'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1028,11 +1036,28 @@ export function NewInvoicePage() {
   const [chosenPayment, setChosenPayment] = useState('')
 
   useEffect(() => {
-    if (!supplierId) { setAdvancePayments([]); setChosenPayment(''); return }
+    setChosenPayment('')   // a payment picked for another customer does not carry over
+    if (!supplierId) { setAdvancePayments([]); return }
     api.get('/payment-links/unallocated', { params: { customer_id: supplierId } })
       .then(r => setAdvancePayments((r.data?.data ?? r.data) || []))
       .catch(() => setAdvancePayments([]))
   }, [supplierId])
+
+  const choosePayment = (id: string) => {
+    setChosenPayment(id)
+    // The invoice is paid the way that payment was made.
+    const picked = advancePayments.find((p: any) => p.id === id)
+    if (picked?.payment_method) setPaymentMethod(normalizePaymentMethod(picked.payment_method))
+  }
+
+  // Said before saving rather than after: the server refuses a payment larger
+  // than what the invoice still owes, and by then the invoice is already saved.
+  const paymentTooLarge = () => {
+    const picked = advancePayments.find((p: any) => p.id === chosenPayment)
+    if (!picked || Number(picked.amount) <= total + 0.01) return false
+    toast.error(`Payment ${picked.payment_number} is $${Number(picked.amount).toFixed(2)}, more than this invoice's $${total.toFixed(2)}. Choose another payment or correct the invoice.`)
+    return true
+  }
 
   const applyChosenPayment = async (invoiceId: string) => {
     if (!chosenPayment) return
@@ -1134,6 +1159,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'send'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1709,6 +1735,7 @@ export function NewInvoicePage() {
                   <option value="cashapp">Cashapp</option>
                   <option value="zelle">Zelle</option>
                   <option value="paypal">PayPal</option>
+                  <option value="stripe">Stripe</option>
                   <option value="shopify">Shopify</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="deposit">Deposit</option>
@@ -1722,18 +1749,21 @@ export function NewInvoicePage() {
                   {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              {advancePayments.length > 0 && (
+              {supplierId && (
                 <div className="ni-payment-field">
                   <label className="ni-payment-label">
-                    Already paid? Apply a payment ({advancePayments.length} unclaimed)
+                    Payment{advancePayments.length > 0 ? ` (${advancePayments.length} not on an invoice)` : ''}
                   </label>
                   <select
                     className="ni-info-select"
                     style={{ width: '100%' }}
                     value={chosenPayment}
-                    onChange={e => setChosenPayment(e.target.value)}
+                    disabled={advancePayments.length === 0}
+                    onChange={e => choosePayment(e.target.value)}
                   >
-                    <option value="">Don't apply a payment</option>
+                    <option value="">
+                      {advancePayments.length ? "Don't attach a payment" : 'No payment of this customer is waiting for an invoice'}
+                    </option>
                     {advancePayments.map((p: any) => (
                       <option key={p.id} value={p.id}>
                         {p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
@@ -1744,8 +1774,8 @@ export function NewInvoicePage() {
                   </select>
                   {chosenPayment && (
                     <p style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
-                      Applied when you save. The invoice is marked paid from the ledger, so the figures
-                      have to agree — a payment larger than this invoice will be refused.
+                      Attached when you save. The invoice is marked paid from the ledger, and the sales order
+                      raised from this invoice carries the same payment.
                     </p>
                   )}
                 </div>
