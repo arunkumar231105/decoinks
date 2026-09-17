@@ -990,7 +990,8 @@ export function NewOrderPage() {
     // Required on a new order only. Editing an existing one must not demand a
     // payment it never had, and the invoice→order conversion does not come
     // through this form at all.
-    if (!editOrderId && !paymentId) {
+    // Raised from an invoice that already holds its payments: they come with it.
+    if (!editOrderId && !paymentId && !(fromInvoiceId && sourceInvoice?.payments?.length)) {
       toast.error('Add the payment for this sales order first, then select it here')
       return
     }

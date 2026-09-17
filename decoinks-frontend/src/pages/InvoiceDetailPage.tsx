@@ -8,11 +8,16 @@ import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { getValidTransitions, type UserRole } from '../utils/statusTransitions'
 import { getApiError } from '../utils/apiError'
+import { MultiPaymentLinker } from '../components/payments/MultiPaymentLinker'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Payment {
   id: string
+  payment_number?: string
+  payment_date?: string | null
+  customer_name?: string | null
+  received_from_name?: string | null
   amount: number
   payment_method: string
   reference_no: string | null
@@ -30,6 +35,8 @@ interface Invoice {
   created_at: string
   supplier_id: string | null
   supplier_name: string | null
+  customer_id?: string | null
+  customer_name?: string | null
   order_id: string | null
   order_number: string | null
   quote_id: string | null
@@ -165,6 +172,22 @@ export function InvoiceDetailPage() {
     onError: (err) => toast.error(getApiError(err)),
   })
 
+  // Multiple Payments: several received payments linked to this invoice and its
+  // sales order at once; the server refuses them unless they equal the total.
+  const [multiOpen, setMultiOpen] = useState(false)
+  const linkPaymentsMutation = useMutation({
+    mutationFn: (payment_ids: string[]) => api.post(`/invoices/${id}/payments`, { payment_ids }).then(r => r.data),
+    onSuccess: (body: any) => {
+      const result = body?.data ?? body
+      setMultiOpen(false)
+      toast.success(`${(result?.linked ?? []).join(' + ')} linked to ${result?.invoice_number ?? 'the invoice'}${result?.order_number ? ` and ${result.order_number}` : ''}`)
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
+    },
+    onError: (err) => toast.error(getApiError(err)),
+  })
+
   const handleConvertToOrder = (order_type: string) => {
     setOrderTypeModal(false)
     convertMutation.mutate(order_type)
@@ -236,6 +259,11 @@ export function InvoiceDetailPage() {
           <button className="lb-action-btn" onClick={() => navigate(`/invoices/${id}/receipt`)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🧾 Short Invoice
           </button>
+          {canRecordPayment && (
+            <button className="lb-action-btn" onClick={() => setMultiOpen(true)}>
+              <CreditCard size={13} /> Multiple Payments
+            </button>
+          )}
           {canRecordPayment && (
             <button className="lb-action-btn lb-action-primary" onClick={() => setPaymentModalOpen(true)}>
               <CreditCard size={13} /> Record Payment
@@ -389,6 +417,7 @@ export function InvoiceDetailPage() {
                 <table className="np-table">
                   <thead>
                     <tr>
+                      <th>Payment</th>
                       <th>Date</th>
                       <th>Method</th>
                       <th>Reference</th>
@@ -399,6 +428,7 @@ export function InvoiceDetailPage() {
                   <tbody>
                     {invoice.payments.map(p => (
                       <tr key={p.id} className="hover:bg-gray-50">
+                        <td style={{ padding: '8px', fontSize: '12px', fontWeight: 600 }}>{p.payment_number ?? '—'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{fmtDateTime(p.paid_at)}</td>
                         <td style={{ padding: '8px', fontSize: '13px' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -570,6 +600,19 @@ export function InvoiceDetailPage() {
           </div>
         </div>
       )}
+
+      <MultiPaymentLinker
+        open={multiOpen}
+        onClose={() => setMultiOpen(false)}
+        target={Number(invoice.total)}
+        targetLabel={invoice.order_number ? `invoice and sales order (${invoice.order_number}) total` : 'invoice total'}
+        customerId={invoice.customer_id ?? null}
+        customerName={invoice.customer_name ?? invoice.supplier_name ?? null}
+        date={invoice.issue_date ?? invoice.created_at}
+        linked={invoice.payments.map(p => ({ ...p, payment_number: p.payment_number ?? '—', amount: Number(p.amount) }))}
+        busy={linkPaymentsMutation.isPending}
+        onConfirm={ids => linkPaymentsMutation.mutate(ids)}
+      />
 
       {/* ── Convert to Order modal ── */}
       {orderTypeModal && (

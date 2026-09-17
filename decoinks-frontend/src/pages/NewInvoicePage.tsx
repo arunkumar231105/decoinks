@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
+import { MultiPaymentLinker, type LinkerPayment } from '../components/payments/MultiPaymentLinker'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -959,7 +960,8 @@ export function NewInvoicePage() {
   const buildPayload = () => ({
     customer_id:      supplierId || null,
     quote_id:         quoteId || null,
-    payment_id:       chosenPayment || undefined,
+    payment_id:       multiPayments.length ? undefined : chosenPayment || undefined,
+    payment_ids:      multiPayments.length ? multiPayments.map(p => p.id) : undefined,
     notes:            internalNotes || null,
     customer_notes:   supplierNotes || null,
     sales_agent_name: agentText || null,
@@ -1067,7 +1069,14 @@ export function NewInvoicePage() {
         date:          sourceQuote?.created_at ?? undefined,
         method:        sourceQuote?.payment_method ?? undefined,
       } })
-        .then(r => setRecommendation(r.data?.data ?? { recommended: null, candidates: [] }))
+        .then(r => {
+          // Read defensively: an unexpected answer must not take the invoice form down.
+          const found = r.data?.data
+          setRecommendation({
+            recommended: found?.recommended ?? null,
+            candidates: Array.isArray(found?.candidates) ? found.candidates : [],
+          })
+        })
         .catch(() => setRecommendation({ recommended: null, candidates: [] }))
     }, 350)
     return () => clearTimeout(timer)
@@ -1103,7 +1112,22 @@ export function NewInvoicePage() {
 
   // Said before saving rather than after: the server refuses a payment larger
   // than what the invoice still owes, and by then the invoice is already saved.
+  // Multiple Payments: several payments that together equal the total, linked
+  // on save (payment_ids). While chosen they stand in for the single picker.
+  const [multiPayments, setMultiPayments] = useState<LinkerPayment[]>([])
+  const [multiOpen, setMultiOpen] = useState(false)
+  const multiTotal = +multiPayments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2)
+  const heldPayments: LinkerPayment[] = (editingInvoice?.payments ?? []).map((p: any) => ({ ...p, amount: Number(p.amount) }))
+  const heldTotal = +heldPayments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2)
+  useEffect(() => { setMultiPayments([]) }, [supplierId])
+
   const paymentTooLarge = () => {
+    if (multiPayments.length) {
+      const together = +(heldTotal + multiTotal).toFixed(2)
+      if (Math.abs(together - total) <= 0.01) return false
+      toast.error(`The payments add up to $${together.toFixed(2)}, but the invoice is $${total.toFixed(2)}. They must be equal — open Multiple Payments and correct the selection, or the invoice.`)
+      return true
+    }
     const picked = paymentOptions.find((p: any) => p.id === chosenPayment)
     if (!picked || Number(picked.amount) <= total + 0.01) return false
     toast.error(`Payment ${picked.payment_number} is $${Number(picked.amount).toFixed(2)}, more than this invoice's $${total.toFixed(2)}. Choose another payment or correct the invoice.`)
@@ -1115,6 +1139,7 @@ export function NewInvoicePage() {
   const reportPayment = (inv: any) => {
     if (inv?.payment_error) toast.error(`Invoice saved, but the payment was not attached: ${inv.payment_error}`)
     else if (inv?.payment_attached) toast.success('Payment attached to this invoice')
+    else if (inv?.payments_linked?.length) toast.success(`${inv.payments_linked.join(' + ')} linked to this invoice`)
   }
 
   /* ── Payment link ─────────────────────────────────────────────────────────
@@ -1796,9 +1821,26 @@ export function NewInvoicePage() {
               </div>
               {(supplierId || paymentOptions.length > 0) && (
                 <div className="ni-payment-field">
-                  <label className="ni-payment-label">
-                    Payment{paymentOptions.length > 0 ? ` (${paymentOptions.length} not on an invoice)` : ''}
+                  <label className="ni-payment-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span>Payment{paymentOptions.length > 0 ? ` (${paymentOptions.length} not on an invoice)` : ''}</span>
+                    <button type="button" onClick={() => setMultiOpen(true)} disabled={!(total > 0)}
+                      style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 600, color: '#1d4ed8', cursor: 'pointer' }}>
+                      Multiple payments
+                    </button>
                   </label>
+                  {multiPayments.length > 0 ? (
+                    <div style={{ border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8, padding: '8px 10px', fontSize: 12.5, lineHeight: 1.55 }}>
+                      <strong>{multiPayments.map(p => p.payment_number).join(' + ')}</strong>
+                      {' '}= ${(heldTotal + multiTotal).toFixed(2)}{heldTotal > 0 ? ` (with $${heldTotal.toFixed(2)} already linked)` : ''}
+                      <div style={{ color: Math.abs(heldTotal + multiTotal - total) <= 0.01 ? '#15803d' : '#dc2626', fontWeight: 600 }}>
+                        {Math.abs(heldTotal + multiTotal - total) <= 0.01
+                          ? '✓ Equals the invoice total — linked to the invoice and its sales order when you save'
+                          : `Invoice total is now $${total.toFixed(2)} — the payments must equal it`}
+                      </div>
+                      <button type="button" onClick={() => setMultiOpen(true)} style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0, marginRight: 12 }}>Change</button>
+                      <button type="button" onClick={() => setMultiPayments([])} style={{ border: 'none', background: 'none', color: '#64748b', fontWeight: 600, cursor: 'pointer', padding: 0 }}>Remove</button>
+                    </div>
+                  ) : (<>
                   <select
                     className="ni-info-select"
                     style={{ width: '100%', ...(chosenPayment && chosenPayment === recommendedId ? { borderColor: '#16a34a', background: '#f0fdf4' } : {}) }}
@@ -1838,6 +1880,25 @@ export function NewInvoicePage() {
                       raised from this invoice carries the same payment.
                     </p>
                   )}
+                  </>)}
+                  <MultiPaymentLinker
+                    open={multiOpen}
+                    onClose={() => setMultiOpen(false)}
+                    target={total}
+                    targetLabel="invoice total"
+                    customerId={supplierId || null}
+                    customerName={supplierText || null}
+                    date={sourceQuote?.created_at ?? null}
+                    linked={heldPayments}
+                    initial={multiPayments.map(p => p.id)}
+                    confirmLabel="Use these payments"
+                    onConfirm={(_ids, picked) => {
+                      paymentTouched.current = true
+                      setChosenPayment('')
+                      setMultiPayments(picked)
+                      setMultiOpen(false)
+                    }}
+                  />
                 </div>
               )}
 

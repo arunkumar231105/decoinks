@@ -955,8 +955,8 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
   const orderId = ordRows[0].id
   await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
 
-  // The invoice's payment pays its order too, so it is not left under Pending SO.
-  await require('../orders/orders.service').linkInvoicePayment(q, orderId, invoiceId)
+  // The invoice's payments pay its order too, so none is left under Pending SO.
+  await require('../orders/orders.service').linkInvoicePayments(q, orderId, invoiceId)
   if (qtRows[0]?.quote_id) {
     await q.query(
       `UPDATE artworks SET order_id = $1 WHERE quotation_id = $2 AND order_id IS NULL`,

@@ -122,7 +122,43 @@ async function recommendPayments({ purpose = 'invoice', customerId, customerName
   const clear = strong && (!next || top.score - next.score >= 15)
   return {
     recommended: clear ? { ...top, confidence: top.score >= 90 ? 'high' : 'good' } : null,
-    candidates: scored.slice(0, 25),
+    recommended_set: target != null ? paymentsThatMakeUp(scored, target) : null,
+    candidates: scored.slice(0, 40),
+  }
+}
+
+// Two to four of the customer's waiting payments that add up to the total to the
+// cent — a job paid in parts. Suggested only when exactly one such set exists
+// (or one clearly best: all the same customer, paid closest together), so a
+// coincidence of amounts is not presented as an answer.
+function paymentsThatMakeUp(scored, target) {
+  const pool = scored.filter(p => p.amount > 0 && p.amount < target - CENTS).slice(0, 14)
+  const sets = []
+  const walk = (start, chosen, sum) => {
+    if (chosen.length >= 2 && Math.abs(sum - target) <= CENTS) { sets.push([...chosen]); return }
+    if (chosen.length === 4 || sum > target + CENTS) return
+    for (let i = start; i < pool.length; i++) walk(i + 1, [...chosen, pool[i]], +(sum + pool[i].amount).toFixed(2))
+  }
+  walk(0, [], 0)
+  if (!sets.length) return null
+
+  const spread = set => {
+    const days = set.map(p => Date.parse(p.payment_date || '') || 0).filter(Boolean)
+    return days.length ? (Math.max(...days) - Math.min(...days)) / DAY : 999
+  }
+  const rank = set => (set.every(p => p.reasons.includes('same customer')) ? 1000 : 0) - spread(set)
+  sets.sort((a, b) => rank(b) - rank(a))
+  if (sets.length > 1 && rank(sets[0]) - rank(sets[1]) < 5) return null
+
+  const best = sets[0]
+  return {
+    ids: best.map(p => p.id),
+    payment_numbers: best.map(p => p.payment_number),
+    total: +best.reduce((sum, p) => sum + p.amount, 0).toFixed(2),
+    reasons: [
+      best.every(p => p.reasons.includes('same customer')) ? 'same customer' : 'names match',
+      `${best.map(p => money(p.amount)).join(' + ')} = ${money(target)}`,
+    ],
   }
 }
 

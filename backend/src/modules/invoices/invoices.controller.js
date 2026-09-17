@@ -38,22 +38,46 @@ async function attachPicked(paymentId, invoice, user) {
   }
 }
 
+// Several payments picked together (Multiple Payments) are linked the same way,
+// with their total checked against the invoice's.
+async function attachAll(paymentIds, invoice, user) {
+  if (!paymentIds?.length || !invoice?.id) return invoice
+  if (!MAY_ATTACH.includes(user?.role)) return { ...invoice, payment_error: 'Your role cannot attach payments to invoices.' }
+  try {
+    const linked = await require('./invoice.payments').linkPayments(invoice.id, paymentIds, user.id)
+    return { ...(await service.getById(invoice.id)), _action: invoice._action, payments_linked: linked.linked }
+  } catch (err) {
+    return { ...invoice, payment_error: err.message }
+  }
+}
+
+const attachFromBody = (paymentId, paymentIds, invoice, user) => (paymentIds?.length
+  ? attachAll([...new Set([...paymentIds, paymentId].filter(Boolean))], invoice, user)
+  : attachPicked(paymentId, invoice, user))
+
 async function create(req, res, next) {
   try {
-    const { payment_id, ...body } = req.body
-    const inv = await attachPicked(payment_id, await service.create({ ...body, created_by: req.user.id }), req.user)
+    const { payment_id, payment_ids, ...body } = req.body
+    const inv = await attachFromBody(payment_id, payment_ids, await service.create({ ...body, created_by: req.user.id }), req.user)
     return created(res, inv, inv?._action === 'updated' ? 'Invoice updated' : 'Invoice created')
   } catch (err) { next(err) }
 }
 
 async function update(req, res, next) {
   try {
-    const { payment_id, ...body } = req.body
-    // Attaching a payment on its own is a save too, with nothing else to write.
-    const invoice = Object.keys(body).length || !payment_id
+    const { payment_id, payment_ids, ...body } = req.body
+    // Attaching payments on their own is a save too, with nothing else to write.
+    const invoice = Object.keys(body).length || !(payment_id || payment_ids?.length)
       ? await service.update(req.params.id, body)
       : await service.getById(req.params.id)
-    return success(res, await attachPicked(payment_id, invoice, req.user), 'Invoice updated')
+    return success(res, await attachFromBody(payment_id, payment_ids, invoice, req.user), 'Invoice updated')
+  } catch (err) { next(err) }
+}
+
+async function linkPayments(req, res, next) {
+  try {
+    const result = await require('./invoice.payments').linkPayments(req.params.id, req.body.payment_ids, req.user.id)
+    return success(res, result, `${result.linked.length} payment${result.linked.length === 1 ? '' : 's'} linked`)
   } catch (err) { next(err) }
 }
 
@@ -120,4 +144,4 @@ async function exportCsv(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, exportCsv, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder }
+module.exports = { list, exportCsv, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder, linkPayments }

@@ -506,15 +506,16 @@ async function attachPayment(client, { orderId, invoiceId, paymentId, allocatedA
   const pay = rows[0]
   if (!pay) throw Object.assign(new Error('The selected payment no longer exists'), { statusCode: 422 })
   if (!pay.order_id) {
-    // One payment per sales order (uq_payments_one_per_order). Said plainly
-    // instead of surfacing as a constraint error.
+    // The order form picks one payment. An order paid in parts gets its
+    // payments together, from its invoice's Multiple Payments, where their total
+    // is checked against the order's.
     const { rows: held } = await client.query(
       `SELECT p.payment_number, o.order_number FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.order_id = $1 AND p.id <> $2 LIMIT 1`, [orderId, paymentId])
     if (held[0]) {
       throw Object.assign(new Error(
-        `${held[0].order_number} already has payment ${held[0].payment_number}; a sales order takes one payment. ` +
-        'If that payment is the wrong one, correct it on the payment first.'), { statusCode: 422 })
+        `${held[0].order_number} already has payment ${held[0].payment_number}. ` +
+        'To pay it with several payments, link them together from its invoice (Multiple Payments).'), { statusCode: 422 })
     }
     await client.query(
       `UPDATE payments SET order_id = $1, invoice_id = COALESCE(invoice_id, $2), updated_at = NOW()
@@ -527,15 +528,17 @@ async function attachPayment(client, { orderId, invoiceId, paymentId, allocatedA
   }
 }
 
-// An order raised from an invoice takes the payment already applied to that
-// invoice, when there is exactly one and the order has none yet — a sales order
-// holds one payment. Several on the invoice are left for someone to choose.
-async function linkInvoicePayment(client, orderId, invoiceId) {
+// An order raised from an invoice takes the payments already on that invoice —
+// one, or the parts linked together with Multiple Payments. They are taken all
+// or none: only when, with any the order already holds, they come to no more
+// than the order's total (the database refuses more, migration 146).
+async function linkInvoicePayments(client, orderId, invoiceId) {
   await client.query(
     `UPDATE payments p SET order_id = $1, updated_at = NOW()
       WHERE p.invoice_id = $2 AND p.order_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM payments held WHERE held.order_id = $1)
-        AND (SELECT count(*) FROM payments other WHERE other.invoice_id = $2 AND other.order_id IS NULL) = 1`,
+        AND (SELECT COALESCE(sum(x.amount), 0) FROM payments x
+              WHERE x.order_id = $1 OR (x.invoice_id = $2 AND x.order_id IS NULL))
+            <= (SELECT total FROM orders WHERE id = $1) + 0.01`,
     [orderId, invoiceId])
 }
 
@@ -743,7 +746,7 @@ async function create(data) {
     // Raised from an invoice: the payments already applied to that invoice pay
     // this order too. Without this they kept an invoice and no order, and sat
     // under Pending SO although their sales order existed.
-    if (invoice_id) await linkInvoicePayment(client, order.id, invoice_id)
+    if (invoice_id) await linkInvoicePayments(client, order.id, invoice_id)
 
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
@@ -1302,4 +1305,4 @@ function getOrderCsvTemplate() {
   return [headers, ex1, ex2, ex3].map(r => r.join(',')).join('\n') + '\n'
 }
 
-module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate, linkInvoicePayment }
+module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate, linkInvoicePayments }

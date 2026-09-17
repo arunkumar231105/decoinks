@@ -1,6 +1,6 @@
 const { Router } = require('express')
 const { z } = require('zod')
-const { verifyToken } = require('../../middleware/auth')
+const { verifyToken, requireRole } = require('../../middleware/auth')
 const { validate } = require('../../middleware/validate')
 const controller = require('./invoices.controller')
 
@@ -68,6 +68,8 @@ const createSchema = z.object({
   mark_paid:        z.boolean().optional(),
   // A received payment this invoice settles; attached as part of the save.
   payment_id:       z.string().uuid().optional().nullable(),
+  // Or several that together equal its total (Multiple Payments).
+  payment_ids:      z.array(z.string().uuid()).optional(),
   currency:         z.string().optional().nullable(),
   rush_services:    z.number().nonnegative().optional(),
   rush_charges:     z.number().nonnegative().optional(),
@@ -90,6 +92,7 @@ const updateSchema = z.object({
   order_type:       z.enum(['apparel', 'gangsheet', 'dtf']).optional().nullable(),
   mark_paid:        z.boolean().optional(),
   payment_id:       z.string().uuid().optional().nullable(),
+  payment_ids:      z.array(z.string().uuid()).optional(),
   issue_date:       z.string().optional().nullable(),
   // Kept so existing callers do not break; the service sets it from the issue
   // date regardless, because payment is due the day the invoice is raised.
@@ -169,6 +172,11 @@ router.post('/:id/convert-to-order',
 router.put('/:id',              validate(updateSchema),  controller.update)
 router.patch('/:id/status',     validate(statusSchema),  controller.updateStatus)
 router.patch('/:id/payment',    validate(paymentSchema), controller.recordPayment)
+// Link received payments to the invoice and its sales order; together they must
+// equal the total exactly (invoice.payments.js).
+router.post('/:id/payments',    requireRole('Admin', 'Manager', 'Sales'),
+  validate(z.object({ payment_ids: z.array(z.string().uuid()).min(1) }).strict()),
+  controller.linkPayments)
 router.post('/bulk-delete', validate(z.object({ ids: z.array(z.string().uuid()).min(1) })), controller.bulkRemove)
 router.delete('/:id',           controller.remove)
 
