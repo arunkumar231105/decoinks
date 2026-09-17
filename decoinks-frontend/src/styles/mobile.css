@@ -1,0 +1,235 @@
+/* Printshop on a phone.
+ *
+ * Everything here lives inside a media query, so a desktop screen is not touched
+ * by any of it. Loaded after index.css (main.tsx) so these win where they must.
+ *
+ * What a phone needs that a desk does not: nothing clipped, one column, a finger
+ * can hit every control (44px), typing never zooms the page (16px inputs), and
+ * the long toolbars scroll sideways instead of running off the screen.
+ */
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  :root { --mob-gutter: 12px; }
+
+  /* The shell: header stays put, content gets its own gutter, nothing wider
+     than the screen escapes sideways. */
+  .app-shell, .main-column, .content-area { max-width: 100vw; overflow-x: hidden; }
+  .content-area { padding: 12px var(--mob-gutter) 88px !important; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    min-height: 56px; height: auto; padding: 8px var(--mob-gutter);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: #fff; border-bottom: 1px solid #e6eaf1;
+  }
+  .topbar .page-heading { min-width: 0; flex: 1; }
+  .topbar .page-heading h1, .topbar .page-heading h2, .topbar .page-heading .page-title {
+    font-size: 17px !important; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* The page subtitle is for a wide screen; the title alone says where you are. */
+  .topbar .page-heading p, .topbar .page-heading small, .topbar .page-heading .page-subtitle { display: none; }
+  .topbar-actions { gap: 6px; margin-left: auto; }
+  /* Header buttons are their icon only — "Import CSV" was cut to "Imp". */
+  .topbar-actions .lb-action-btn {
+    height: 40px; min-width: 40px; padding: 0 10px; gap: 0;
+    font-size: 0 !important; overflow: hidden;
+  }
+  .topbar-actions .lb-action-btn svg { flex: none; }
+  .mobile-menu { width: 44px; height: 44px; }
+
+  /* A search bar the width of the screen, under the title rather than beside it. */
+  .topbar .global-search, .topbar .gs-wrap, .topbar .search-wrap { flex-basis: 100%; order: 3; min-width: 0; }
+
+  /* The sidebar is a drawer; it must cover the screen, not squeeze beside it. */
+  .sidebar { width: min(86vw, 320px) !important; }
+  .sidebar-nav a, .sidebar-group-trigger { min-height: 44px; }
+  .collapse-button { display: none; }
+
+  /* ── Page furniture ─────────────────────────────────────────────────────── */
+  /* Toolbars: the search takes the row, the buttons share the next one. */
+  .ew-actions, .sh-toolbar, .cw-actionbar, .leads-actionbar, .lb-toolbar {
+    display: flex !important; flex-wrap: wrap; gap: 8px;
+  }
+  .ew-actions .ew-search, .sh-search, .leads-search { flex: 1 1 100% !important; height: 44px; min-width: 0 !important; }
+  .ew-actions .ew-btn, .sh-toolbar button, .cw-actionbar > button, .leads-actionbar > button,
+  .cw-actionbar .lb-action-btn, .leads-actionbar .lb-action-btn {
+    flex: 1 1 calc(50% - 4px); min-width: 0; height: 44px;
+  }
+  .ew-btn.ew-primary, .cw-actionbar .lb-action-primary, .leads-actionbar .lb-action-primary,
+  .sh-toolbar .lb-action-primary { min-width: 0 !important; flex-basis: 100%; }
+
+  /* Period tabs scroll sideways instead of clipping "This Quarter" in half. */
+  .ew-period, .pt-tabs, .period-tabs {
+    display: flex !important; width: 100%; max-width: 100%;
+    overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity; scrollbar-width: none;
+  }
+  .ew-period::-webkit-scrollbar, .pt-tabs::-webkit-scrollbar, .period-tabs::-webkit-scrollbar { display: none; }
+  .ew-period button, .pt-tabs button, .period-tabs button {
+    flex: 0 0 auto; height: 40px; padding: 0 14px; white-space: nowrap; scroll-snap-align: start;
+  }
+
+  /* KPI cards: two to a row, short enough to scroll past quickly. The customer
+     page packed seven into one row, which left "Total Customers" as "To…". */
+  .ew-kpis, .sh-stats, .leads-compact-kpis, .pay-kpis {
+    display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important;
+    overflow: visible !important;
+  }
+  .ew-kpi, .sh-stat, .leads-compact-kpis > * {
+    min-height: 68px !important; min-width: 0 !important; width: auto !important; padding: 10px !important;
+  }
+  .ew-kpi strong, .sh-stat strong, .leads-compact-kpis strong { font-size: 17px !important; line-height: 21px; }
+  .ew-kpi small, .sh-stat small, .leads-compact-kpis small,
+  .leads-compact-kpis span, .leads-compact-kpis em { white-space: normal !important; font-size: 10px; }
+
+  /* Filters: one per row, full width, finger-sized. */
+  .ew-filters, .sh-filters, .leads-filters, .leads-filter-row, .lb-filters {
+    display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; padding: 12px !important;
+  }
+  .ew-filters label, .sh-filters label, .leads-filters label, .leads-filter, .leads-filter-row label {
+    min-width: 0 !important; width: auto !important;
+  }
+  .leads-filter select, .leads-filters select, .sh-filters select { width: 100% !important; }
+
+  /* Filters fold away behind a button — five dropdowns and a date range are a
+     screenful, and they stood between the KPIs and the records. */
+  .ew-filters:not(.ew-filters-open) { display: none !important; }
+
+  /* Records read as cards, one under the other, each field beside its column
+     name. A twelve-column grid on a 390px screen is otherwise a side-scroll. */
+  .ew-table-card, .leads-table-card, .sh-table-card { border: 0; background: transparent; }
+  .ew-table-scroll, .leads-table-scroll, .sh-table-wrap { overflow: visible !important; min-height: 0 !important; }
+  .ew-table, .cw-table, .sh-table { min-width: 0 !important; width: 100%; display: block; font-size: 13px; }
+  .ew-table thead, .cw-table thead, .sh-table thead { display: none; }
+  .ew-table tbody, .ew-table tfoot, .cw-table tbody, .sh-table tbody { display: block; }
+  .ew-table tbody tr, .cw-table tbody tr, .sh-table tbody tr {
+    display: block; margin: 0 0 10px; padding: 6px 12px;
+    border: 1px solid #dce4ed; border-radius: 10px; background: #fff !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
+  }
+  .ew-table tbody td, .cw-table tbody td, .sh-table tbody td {
+    display: flex !important; align-items: center; justify-content: space-between; gap: 14px;
+    position: static !important; left: auto !important; box-shadow: none !important;
+    /* the column widths a desktop drags into place are inline styles; a card
+       row is as wide as the screen instead */
+    width: auto !important; min-width: 0 !important; max-width: none !important;
+    height: auto !important; min-height: 36px; padding: 5px 0 !important;
+    border-bottom: 1px solid #f1f5f9; white-space: normal !important; text-align: right;
+    overflow-wrap: anywhere;
+  }
+  /* The card carries the first six columns — whichever six the user has dragged
+     to the front — and tapping it opens the drawer with the whole record. */
+  .ew-table tbody td:nth-child(n + 8):not(:last-child), .cw-table tbody td:nth-child(n + 8):not(:last-child), .sh-table tbody td:nth-child(n + 8):not(:last-child) { display: none !important; }
+  .ew-table tbody td:last-child, .cw-table tbody td:last-child, .sh-table tbody td:last-child { border-bottom: 0; justify-content: flex-end; }
+  .ew-table tbody td::before, .cw-table tbody td::before, .sh-table tbody td::before {
+    content: attr(data-label); flex: 0 0 auto; max-width: 45%;
+    color: #64748b; font-size: 11px; font-weight: 800; text-align: left;
+  }
+  .ew-table tbody td:first-child::before, .ew-table tbody td:last-child::before, .cw-table tbody td:first-child::before, .cw-table tbody td:last-child::before, .sh-table tbody td:first-child::before, .sh-table tbody td:last-child::before { content: none; }
+  .ew-table tbody td small { text-align: right; }
+  .ew-table td.numeric { text-align: right; }
+  .ew-table .ew-empty {
+    display: block !important; height: auto !important; padding: 26px 14px !important;
+    text-align: center !important; white-space: normal !important;
+  }
+  .ew-table .ew-empty::before { content: none; }
+  .ew-table tbody tr:has(.ew-empty), .ew-table tbody tr.ew-skeleton { padding: 0; }
+  .ew-table .ew-skeleton td { display: block !important; min-height: 44px; }
+
+  /* The checkbox sits on a line of its own; keep it short. */
+  .ew-table tbody td:first-child, .cw-table tbody td:first-child, .sh-table tbody td:first-child {
+    min-height: 0; padding: 2px 0 6px !important; border-bottom: 0; justify-content: flex-start;
+  }
+  /* Column resize handles and drag affordances belong to a mouse. */
+  .ew-table td[data-col-handle]::after, .cw-table td::after, .sh-table td::after,
+  .col-drag-handle, .col-resize-handle { display: none !important; }
+  .ew-table tbody td[data-frozen], .cw-table tbody td[data-frozen], .sh-table tbody td[data-frozen] {
+    background: transparent !important; background-image: none !important;
+  }
+  .ew-icon-btn { width: 38px; height: 38px; }
+
+  .ew-pagination, .leads-pagination, .sh-pagination {
+    display: flex !important; flex-direction: row !important; flex-wrap: wrap;
+    align-items: center; justify-content: space-between; height: auto; gap: 8px; padding: 10px;
+  }
+  .ew-pagination button, .ew-pagination select,
+  .leads-pagination button, .leads-pagination select,
+  .sh-pagination button, .sh-pagination select { height: 38px; min-width: 38px; }
+  .leads-pagination p, .sh-pagination p { flex: 1 1 100%; margin: 0; }
+
+  /* The record drawer covers the screen on a phone. */
+  .ew-drawer { width: 100vw !important; border-left: 0; }
+  .ew-drawer header { min-height: 0; padding: 16px var(--mob-gutter); }
+  .ew-drawer h3 { font-size: 19px; margin: 8px 0; }
+  .ew-drawer-section { padding: 16px var(--mob-gutter); }
+  .ew-drawer-section div { grid-template-columns: 1fr; gap: 2px; margin: 10px 0; }
+  .ew-drawer-section strong { text-align: left; }
+  .ew-drawer-actions { flex-wrap: wrap; padding: 12px var(--mob-gutter); }
+  .ew-drawer-actions button { flex: 1 1 calc(50% - 5px); min-width: 0; height: 44px; }
+
+  /* ── Forms ──────────────────────────────────────────────────────────────── */
+  /* One column everywhere, and a 16px field so the phone does not zoom in when
+     it is tapped. */
+  .nq-grid, .ni-grid, .no-grid, .ncust-grid, .al-field-row, .nq-info-grid, .ni-info-grid,
+  .no-info-grid, .nq-terms-grid, .ni-payment-grid, .no-payment-grid, .od-body, .np-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .nq-sidebar, .ni-sidebar, .no-sidebar, .np-sidebar { width: 100% !important; position: static !important; }
+  input, select, textarea { font-size: 16px !important; }
+  .al-input, .nq-input, .ni-input, .no-info-select, .nq-select, .ni-select, .np-input,
+  input[type="text"], input[type="date"], input[type="number"], input[type="email"], input[type="tel"], select {
+    min-height: 44px;
+  }
+  .nq-table-input, .ni-table-input, .no-table-input { min-height: 40px; font-size: 15px !important; }
+
+  /* Line-item tables inside a form scroll sideways rather than push the card
+     off the screen (the order form's cards were 1110px wide on a 390px phone). */
+  .nq-card, .ni-card, .no-card, .np-card, .al-panel { max-width: 100%; overflow-x: auto; }
+  .nq-table-wrap, .ni-table-wrap, .no-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* The save bar sits on the bottom edge, its buttons full width and readable. */
+  .nq-bottom-bar, .ni-bottom-bar, .no-bottom-bar {
+    position: sticky; bottom: 0; z-index: 30;
+    display: flex !important; flex-wrap: wrap; gap: 8px;
+    padding: 10px var(--mob-gutter) calc(10px + env(safe-area-inset-bottom));
+    background: #fff; border-top: 1px solid #e6eaf1;
+  }
+  .nq-bottom-left, .nq-bottom-center, .nq-bottom-right,
+  .ni-bottom-left, .ni-bottom-right, .no-bottom-left { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; }
+  .nq-bottom-bar button, .ni-bottom-bar button, .no-bottom-bar button, .no-topbar-btn {
+    flex: 1 1 calc(50% - 4px); min-width: 0; height: 44px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .no-topbar { flex-wrap: wrap; gap: 8px; }
+  .no-bottom-panels { grid-template-columns: 1fr !important; }
+
+  /* ── Modals ─────────────────────────────────────────────────────────────── */
+  /* Every fixed-width dialog becomes the width of the screen. */
+  .MuiDialog-paper { margin: 12px !important; width: calc(100vw - 24px) !important; max-width: none !important; }
+  .modal-card, .lb-modal, .al-modal { width: calc(100vw - 24px) !important; max-width: none !important; }
+
+  /* Print pages are for paper; leave them their own width and let them scroll. */
+  .print-page { overflow-x: auto; }
+}
+
+/* The filter button belongs to the phone; a desktop shows the bar itself. */
+.ew-filters-toggle { display: none; }
+@media (max-width: 640px) {
+  .ew-filters-toggle {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 44px; margin-bottom: 8px;
+    border: 1px solid #dbe3ee; border-radius: 8px; background: #fff;
+    color: #0d1b3e; font: 700 13px inherit; cursor: pointer;
+  }
+  .ew-filters-toggle[aria-expanded="true"] { border-color: #0866e9; color: #0866e9; background: #f4f9ff; }
+}
+
+/* ── Small tablets and large phones ──────────────────────────────────────── */
+@media (min-width: 641px) and (max-width: 900px) {
+  .content-area { padding: 16px 16px 72px !important; }
+  .ew-kpis { grid-template-columns: repeat(3, 1fr) !important; }
+  .ew-filters { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ew-drawer { width: min(520px, 96vw) !important; }
+  .nq-sidebar, .ni-sidebar, .no-sidebar { width: 100% !important; }
+}

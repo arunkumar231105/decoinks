@@ -10,6 +10,8 @@ import { theme } from './utils/theme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
 import './styles/theme.css'
+// Phone layer — every rule inside a media query, so a desktop is untouched.
+import './styles/mobile.css'
 import { installInspectDeterrent } from './utils/deterInspect'
 
 installInspectDeterrent()
