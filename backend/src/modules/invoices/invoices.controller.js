@@ -16,16 +16,68 @@ async function getOne(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// The payment picked on the invoice form is attached by the save itself, so it
+// is attached whichever button saved (Save, Preview, Receipt, Send) — it used to
+// be a second request made only by some of them. The same attach as the ledger
+// uses: same customer, not on another invoice, no more than is owed; the invoice
+// status then follows the ledger. If it is refused the invoice is still saved
+// and the reason comes back as payment_error for the form to show.
+const MAY_ATTACH = ['Admin', 'Manager', 'Sales']   // as POST /payment-links/apply
+
+async function attachPicked(paymentId, invoice, user) {
+  if (!paymentId || !invoice?.id) return invoice
+  if (!MAY_ATTACH.includes(user?.role)) return { ...invoice, payment_error: 'Your role cannot attach payments to invoices.' }
+  const { query } = require('../../config/db')
+  const { rows } = await query(`SELECT invoice_id FROM payments WHERE id = $1`, [paymentId])
+  if (rows[0]?.invoice_id === invoice.id) return invoice
+  try {
+    await require('../stripe/stripe.recorder').attachPaymentToInvoice(paymentId, invoice.id)
+    return { ...(await service.getById(invoice.id)), _action: invoice._action, payment_attached: true }
+  } catch (err) {
+    return { ...invoice, payment_error: err.message }
+  }
+}
+
+// Several payments picked together (Multiple Payments) are linked the same way,
+// with their total checked against the invoice's.
+async function attachAll(paymentIds, invoice, user) {
+  if (!paymentIds?.length || !invoice?.id) return invoice
+  if (!MAY_ATTACH.includes(user?.role)) return { ...invoice, payment_error: 'Your role cannot attach payments to invoices.' }
+  try {
+    const linked = await require('./invoice.payments').linkPayments(invoice.id, paymentIds, user.id)
+    return { ...(await service.getById(invoice.id)), _action: invoice._action, payments_linked: linked.linked }
+  } catch (err) {
+    return { ...invoice, payment_error: err.message }
+  }
+}
+
+const attachFromBody = (paymentId, paymentIds, invoice, user) => (paymentIds?.length
+  ? attachAll([...new Set([...paymentIds, paymentId].filter(Boolean))], invoice, user)
+  : attachPicked(paymentId, invoice, user))
+
 async function create(req, res, next) {
   try {
-    const inv = await service.create({ ...req.body, created_by: req.user.id })
+    const { payment_id, payment_ids, ...body } = req.body
+    const inv = await attachFromBody(payment_id, payment_ids, await service.create({ ...body, created_by: req.user.id }), req.user)
     return created(res, inv, inv?._action === 'updated' ? 'Invoice updated' : 'Invoice created')
   } catch (err) { next(err) }
 }
 
 async function update(req, res, next) {
   try {
-    return success(res, await service.update(req.params.id, req.body), 'Invoice updated')
+    const { payment_id, payment_ids, ...body } = req.body
+    // Attaching payments on their own is a save too, with nothing else to write.
+    const invoice = Object.keys(body).length || !(payment_id || payment_ids?.length)
+      ? await service.update(req.params.id, body)
+      : await service.getById(req.params.id)
+    return success(res, await attachFromBody(payment_id, payment_ids, invoice, req.user), 'Invoice updated')
+  } catch (err) { next(err) }
+}
+
+async function linkPayments(req, res, next) {
+  try {
+    const result = await require('./invoice.payments').linkPayments(req.params.id, req.body.payment_ids, req.user.id)
+    return success(res, result, `${result.linked.length} payment${result.linked.length === 1 ? '' : 's'} linked`)
   } catch (err) { next(err) }
 }
 
@@ -92,4 +144,4 @@ async function exportCsv(req, res, next) {
   } catch (err) { next(err) }
 }
 
-module.exports = { list, exportCsv, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder }
+module.exports = { list, exportCsv, getOne, create, update, updateStatus, recordPayment, remove, bulkRemove, convertToOrder, linkPayments }

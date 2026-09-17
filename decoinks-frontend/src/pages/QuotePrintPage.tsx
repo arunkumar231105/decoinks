@@ -20,7 +20,7 @@ interface Artwork {
 }
 interface Quote {
   id: string; quote_number: string; status: string; order_type: string | null
-  created_at: string; valid_until: string | null
+  created_at: string; quote_date?: string | null; valid_until: string | null
   customer_name: string | null; company_name: string | null
   billing_email: string | null; contact_number: string | null
   shipping_address: string | null; shipping_city: string | null
@@ -412,7 +412,7 @@ export function QuotePrintPage() {
                 <tr>
                   <td className="hm-lbl">Quote Date</td>
                   <td className="hm-sep">:</td>
-                  <td className="hm-val">{fmtDate(quote.created_at)}</td>
+                  <td className="hm-val">{fmtDate(quote.quote_date || quote.created_at)}</td>
                 </tr>
                 <tr>
                   <td className="hm-lbl">Valid Until</td>

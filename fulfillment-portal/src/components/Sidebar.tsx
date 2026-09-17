@@ -1,70 +1,63 @@
-import { Link, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
-  BarChart3, FileText, HelpCircle, Home, Image, RefreshCw, Settings, ShoppingCart, Truck, type LucideIcon,
+  LayoutDashboard, ShoppingCart, RefreshCw, BarChart3, Settings, LogOut, Share2, FileText, Image,
 } from 'lucide-react'
+import { useSupplierAuth } from '../hooks/useSupplierAuth'
 
-/**
- * The navy rail. Full width with labels, or a narrow icon rail when collapsed
- * (desktop only — the mobile drawer always shows labels).
- */
-
-type Item = { to: string; label: string; icon: LucideIcon; isActive?: (path: string) => boolean }
-
-const NAV: Item[] = [
-  { to: '/', label: 'Dashboard', icon: Home, isActive: p => p === '/' },
+const NAV = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/purchase-orders', label: 'Purchase Orders', icon: FileText },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
-  // The order grid lives at /purchase-orders (and a PO's page under it);
-  // the plain list at /purchase-orders/list belongs to Purchase Orders.
-  { to: '/purchase-orders', label: 'Supplier Management', icon: Truck,
-    isActive: p => p.startsWith('/purchase-orders') && !p.startsWith('/purchase-orders/list') },
-  { to: '/purchase-orders/list', label: 'Purchase Orders', icon: FileText, isActive: p => p.startsWith('/purchase-orders/list') },
   { to: '/artworks', label: 'Artworks', icon: Image },
   { to: '/status-update', label: 'Status Update', icon: RefreshCw },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-export function Sidebar({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
-  const { pathname } = useLocation()
-
-  const itemClass = (active: boolean) => [
-    'group flex items-center rounded-lg text-[14.5px] font-medium transition',
-    collapsed ? 'h-11 w-11 justify-center' : 'h-11 gap-3 px-3.5',
-    active ? 'bg-[#1d4ed8] text-white shadow-sm' : 'text-slate-300 hover:bg-white/[0.07] hover:text-white',
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  [
+    'flex items-center gap-3 rounded-xl px-4 py-3 text-[15px] font-medium transition',
+    isActive ? 'bg-brand text-white shadow-sm' : 'text-slate-300 hover:bg-sidebarHover hover:text-white',
   ].join(' ')
 
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const { signOut } = useSupplierAuth()
+
   return (
-    <div className={`flex h-full flex-col bg-sidebar transition-[width] duration-200 ${collapsed ? 'w-[76px]' : 'w-[232px]'}`}>
+    <div className="flex h-full w-[248px] flex-col bg-sidebar">
       {/* Brand */}
-      <div className={`flex h-[72px] shrink-0 items-center ${collapsed ? 'justify-center' : 'px-6'}`}>
-        <Link to="/" onClick={onNavigate} className="select-none text-white" aria-label="decoinks — Dashboard">
-          {collapsed
-            ? <span className="text-[26px] font-extrabold leading-none tracking-tight">d</span>
-            : <span className="text-[27px] font-extrabold leading-none tracking-tight">decoinks</span>}
-        </Link>
+      <div className="flex items-center gap-3 px-5 py-6">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-logo text-white">
+          <Share2 size={22} />
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-[19px] font-bold leading-tight text-white">Decoinks</div>
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            Printshop CPS
+          </div>
+        </div>
       </div>
 
-      <nav className={`flex-1 space-y-1 overflow-y-auto py-3 ${collapsed ? 'flex flex-col items-center px-2' : 'px-3'}`} aria-label="Main">
-        {NAV.map(({ to, label, icon: Icon, isActive }) => {
-          const active = isActive ? isActive(pathname) : pathname === to || pathname.startsWith(`${to}/`)
-          return (
-            // A plain Link: which item is current is worked out above (the grid owns
-            // PO pages, the list owns /purchase-orders/list), and NavLink would
-            // replace that aria-current with its own exact-path match.
-            <Link key={to} to={to} onClick={onNavigate} className={itemClass(active)}
-              title={collapsed ? label : undefined} aria-current={active ? 'page' : undefined}>
-              <Icon size={19} className="shrink-0" />
-              {!collapsed && <span className="truncate">{label}</span>}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 space-y-1.5 px-3 py-4">
+        {NAV.map(({ to, label, icon: Icon, end }) => (
+          <NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}>
+            <Icon size={20} />
+            <span className="truncate">{label}</span>
+          </NavLink>
+        ))}
       </nav>
 
-      <div className={`shrink-0 border-t border-white/10 py-3 ${collapsed ? 'flex justify-center px-2' : 'px-3'}`}>
-        <a href="mailto:support@decoinks.com" className={itemClass(false)} title={collapsed ? 'Help & Support' : undefined}>
-          <HelpCircle size={19} className="shrink-0" />
-          {!collapsed && <span className="truncate">Help &amp; Support</span>}
-        </a>
+      <div className="space-y-1.5 border-t border-white/10 px-3 py-4">
+        <NavLink to="/settings" onClick={onNavigate} className={linkClass}>
+          <Settings size={20} />
+          <span>Settings</span>
+        </NavLink>
+        <button
+          onClick={signOut}
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-[15px] font-medium text-slate-300 transition hover:bg-sidebarHover hover:text-white"
+        >
+          <LogOut size={20} />
+          <span>Logout</span>
+        </button>
       </div>
     </div>
   )

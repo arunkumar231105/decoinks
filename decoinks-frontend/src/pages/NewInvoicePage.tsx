@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
+import { MultiPaymentLinker, type LinkerPayment } from '../components/payments/MultiPaymentLinker'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -487,6 +488,9 @@ export function NewInvoicePage() {
   const [quoteText, setQuoteText] = useState('')
   const [quoteId, setQuoteId] = useState<string>(fromQuoteId ?? '')
   const [invoiceDate, setInvoiceDate] = useState(todayISO())
+  // Once the agent sets the date, or an existing invoice brings its own, the
+  // date is theirs; until then it follows the payment picked (below).
+  const invoiceDateTouched = useRef(false)
   const [dueDate, setDueDate] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [supplierText, setsupplierText] = useState('')
@@ -573,7 +577,12 @@ export function NewInvoicePage() {
       setRatesLocked(true)
     }
     // Supplier / Customer
-    if (sourceQuote.supplier_id)   setSupplierId(sourceQuote.supplier_id)
+    // A quote keeps its customer in customer_id (supplier_id is the legacy
+    // column and is empty on quotes made today). Reading only supplier_id left
+    // a converted invoice with no customer chosen on the form, so the payments
+    // that customer had made were never offered to attach.
+    const customerRef = sourceQuote.customer_id ?? sourceQuote.supplier_id
+    if (customerRef) setSupplierId(customerRef)
     const supplierName = sourceQuote.customer_name ?? sourceQuote.supplier_name ?? sourceQuote.company_name ?? ''
     if (supplierName) setsupplierText(supplierName)
     if (sourceQuote.billing_email)  setBillingEmail(sourceQuote.billing_email)
@@ -581,6 +590,16 @@ export function NewInvoicePage() {
     if (sourceQuote.billing_address) setBillingAddress(sourceQuote.billing_address)
     if (sourceQuote.shipping_address) setShippingAddress(sourceQuote.shipping_address)
     // Quote ref
+    // An invoice being edited opens on its own dates. They were never loaded, so
+    // the form showed today's date and saving moved the invoice to today.
+    if (sourceQuote._isInvoice) {
+      if (sourceQuote.issue_date) setInvoiceDate(String(sourceQuote.issue_date).slice(0, 10))
+      if (sourceQuote.due_date) setDueDate(String(sourceQuote.due_date).slice(0, 10))
+      invoiceDateTouched.current = true
+    } else if (sourceQuote.quote_date && !invoiceDateTouched.current) {
+      // From a quote: its date, until a payment says otherwise.
+      setInvoiceDate(String(sourceQuote.quote_date).slice(0, 10))
+    }
     // An invoice being edited carries its quote as quote_id; its own id is the
     // invoice's. Taking id here sent the invoice as its own quote, and every
     // save failed with "Referenced record does not exist".
@@ -726,8 +745,8 @@ export function NewInvoicePage() {
       // the invoice becomes the customer's business.
       if (navigateAfterSave.current === 'send' && inv?.id) {
         navigateAfterSave.current = null
-        Promise.resolve(chosenPayment ? applyChosenPayment(inv.id) : null)
-          .then(() => api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' }))
+        reportPayment(inv)
+        api.patch(`/invoices/${inv.id}/status`, { status: 'Sent' })
           // The invoice's payment link is created here, the moment it is sent,
           // so it exists from the invoice's own beginning and never changes
           // afterwards. Copy Link and the customer's Pay Now both return this
@@ -742,6 +761,7 @@ export function NewInvoicePage() {
           .finally(() => navigate(`/invoices/${inv.id}`))
         return
       }
+      if (navigateAfterSave.current !== 'send') reportPayment(inv)
       if (navigateAfterSave.current === 'print' && inv?.id) {
         navigateAfterSave.current = null
         navigate(`/invoices/${inv.id}/print`)
@@ -753,10 +773,6 @@ export function NewInvoicePage() {
         return
       }
       navigateAfterSave.current = null
-      if (chosenPayment && inv?.id) {
-        applyChosenPayment(inv.id).finally(() => navigate(`/invoices/${inv.id}`))
-        return
-      }
       toast.success(inv?._action === 'updated' ? 'Invoice updated' : 'Invoice saved')
       navigate(inv?.id ? `/invoices/${inv.id}` : '/invoices')
     },
@@ -957,6 +973,8 @@ export function NewInvoicePage() {
   const buildPayload = () => ({
     customer_id:      supplierId || null,
     quote_id:         quoteId || null,
+    payment_id:       multiPayments.length ? undefined : chosenPayment || undefined,
+    payment_ids:      multiPayments.length ? multiPayments.map(p => p.id) : undefined,
     notes:            internalNotes || null,
     customer_notes:   supplierNotes || null,
     sales_agent_name: agentText || null,
@@ -990,6 +1008,7 @@ export function NewInvoicePage() {
       toast.error('Please select a customer before saving')
       return
     }
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1000,6 +1019,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'print'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1011,6 +1031,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'receipt'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1028,23 +1049,120 @@ export function NewInvoicePage() {
   const [chosenPayment, setChosenPayment] = useState('')
 
   useEffect(() => {
-    if (!supplierId) { setAdvancePayments([]); setChosenPayment(''); return }
+    setChosenPayment('')   // a payment picked for another customer does not carry over
+    if (!supplierId) { setAdvancePayments([]); return }
     api.get('/payment-links/unallocated', { params: { customer_id: supplierId } })
       .then(r => setAdvancePayments((r.data?.data ?? r.data) || []))
       .catch(() => setAdvancePayments([]))
   }, [supplierId])
 
-  const applyChosenPayment = async (invoiceId: string) => {
-    if (!chosenPayment) return
-    try {
-      await api.post('/payment-links/apply', { paymentId: chosenPayment, invoiceId })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Payment applied — this invoice is settled')
-    } catch (err: any) {
-      // The invoice is already saved; only the link to the payment failed, and
-      // saying so is better than a success message that hides it.
-      toast.apiError(err)
+  /* The payment this invoice most likely belongs to — same customer (or name),
+   * amount equal to the total, paid around the quote — is worked out by the
+   * server with its reasons, and picked for the agent on a new invoice. The
+   * agent checks it and saves, or picks the right one; once they have touched
+   * the list their choice stands. */
+  const [recommendation, setRecommendation] = useState<{ recommended: any | null; candidates: any[] }>({ recommended: null, candidates: [] })
+  const paymentTouched = useRef(false)
+  const autoPicked = useRef('')
+
+  useEffect(() => {
+    paymentTouched.current = false
+    autoPicked.current = ''
+  }, [supplierId])
+
+  useEffect(() => {
+    if ((!supplierId && !supplierText.trim()) || !(total > 0)) { setRecommendation({ recommended: null, candidates: [] }); return }
+    const timer = setTimeout(() => {
+      api.get('/payments/recommend', { params: {
+        purpose:       'invoice',
+        customer_id:   supplierId || undefined,
+        customer_name: supplierText || undefined,
+        amount:        total,
+        other_amount:  sourceQuote?.total ?? undefined,
+        date:          sourceQuote?.created_at ?? undefined,
+        method:        sourceQuote?.payment_method ?? undefined,
+      } })
+        .then(r => {
+          // Read defensively: an unexpected answer must not take the invoice form down.
+          const found = r.data?.data
+          setRecommendation({
+            recommended: found?.recommended ?? null,
+            candidates: Array.isArray(found?.candidates) ? found.candidates : [],
+          })
+        })
+        .catch(() => setRecommendation({ recommended: null, candidates: [] }))
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [supplierId, supplierText, total, sourceQuote?.total, sourceQuote?.created_at, sourceQuote?.payment_method])
+
+  // Everything that can be attached: the customer's waiting payments, and any
+  // the matcher found by name (a payment keyed in with no customer chosen).
+  const paymentOptions = useMemo(() => {
+    const seen = new Set(advancePayments.map((p: any) => p.id))
+    return [...advancePayments, ...recommendation.candidates.filter((c: any) => !seen.has(c.id))]
+  }, [advancePayments, recommendation.candidates])
+  const recommendedId: string = recommendation.recommended?.id ?? ''
+
+  // The owner's rule: an invoice is dated the day its payment came in. A new
+  // invoice takes that date from the payment picked — the latest one when it is
+  // paid in parts — unless the agent has set the date themselves.
+  const dateFromPayments = (payments: any[]) => {
+    if (invoiceDateTouched.current || editInvoiceId) return
+    const days = payments.map(p => String(p?.payment_date || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
+    if (days.length) setInvoiceDate(days[days.length - 1])
+  }
+
+  const choosePayment = (id: string) => {
+    setChosenPayment(id)
+    // The invoice is paid the way that payment was made.
+    const picked = paymentOptions.find((p: any) => p.id === id)
+    if (picked?.payment_method) setPaymentMethod(normalizePaymentMethod(picked.payment_method))
+    if (picked) dateFromPayments([picked])
+  }
+
+  useEffect(() => {
+    if (editInvoiceId || paymentTouched.current) return
+    if (recommendedId && recommendedId !== chosenPayment) {
+      autoPicked.current = recommendedId
+      choosePayment(recommendedId)
+    } else if (!recommendedId && autoPicked.current && chosenPayment === autoPicked.current) {
+      // the total or customer changed and the suggestion no longer holds
+      autoPicked.current = ''
+      setChosenPayment('')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedId, editInvoiceId])
+
+  // Said before saving rather than after: the server refuses a payment larger
+  // than what the invoice still owes, and by then the invoice is already saved.
+  // Multiple Payments: several payments that together equal the total, linked
+  // on save (payment_ids). While chosen they stand in for the single picker.
+  const [multiPayments, setMultiPayments] = useState<LinkerPayment[]>([])
+  const [multiOpen, setMultiOpen] = useState(false)
+  const multiTotal = +multiPayments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2)
+  const heldPayments: LinkerPayment[] = (editingInvoice?.payments ?? []).map((p: any) => ({ ...p, amount: Number(p.amount) }))
+  const heldTotal = +heldPayments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2)
+  useEffect(() => { setMultiPayments([]) }, [supplierId])
+
+  const paymentTooLarge = () => {
+    if (multiPayments.length) {
+      const together = +(heldTotal + multiTotal).toFixed(2)
+      if (Math.abs(together - total) <= 0.01) return false
+      toast.error(`The payments add up to $${together.toFixed(2)}, but the invoice is $${total.toFixed(2)}. They must be equal — open Multiple Payments and correct the selection, or the invoice.`)
+      return true
+    }
+    const picked = paymentOptions.find((p: any) => p.id === chosenPayment)
+    if (!picked || Number(picked.amount) <= total + 0.01) return false
+    toast.error(`Payment ${picked.payment_number} is $${Number(picked.amount).toFixed(2)}, more than this invoice's $${total.toFixed(2)}. Choose another payment or correct the invoice.`)
+    return true
+  }
+
+  // The save attaches the payment (payment_id in the payload). The answer says
+  // whether it did; a refusal leaves the invoice saved and is said, not hidden.
+  const reportPayment = (inv: any) => {
+    if (inv?.payment_error) toast.error(`Invoice saved, but the payment was not attached: ${inv.payment_error}`)
+    else if (inv?.payment_attached) toast.success('Payment attached to this invoice')
+    else if (inv?.payments_linked?.length) toast.success(`${inv.payments_linked.join(' + ')} linked to this invoice`)
   }
 
   /* ── Payment link ─────────────────────────────────────────────────────────
@@ -1134,6 +1252,7 @@ export function NewInvoicePage() {
       return
     }
     navigateAfterSave.current = 'send'
+    if (paymentTooLarge()) return
     saveMutation.mutate(buildPayload())
   }
 
@@ -1202,7 +1321,7 @@ export function NewInvoicePage() {
         </div>
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Invoice Date</span>
-          <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
+          <input type="date" className="ni-date-input" value={invoiceDate} onChange={e => { invoiceDateTouched.current = true; setInvoiceDate(e.target.value) }} />
         </div>
         <div className="ni-info-cell ni-info-cell-field">
           <span className="ni-info-label">Due Date</span>
@@ -1709,6 +1828,7 @@ export function NewInvoicePage() {
                   <option value="cashapp">Cashapp</option>
                   <option value="zelle">Zelle</option>
                   <option value="paypal">PayPal</option>
+                  <option value="stripe">Stripe</option>
                   <option value="shopify">Shopify</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="deposit">Deposit</option>
@@ -1722,32 +1842,87 @@ export function NewInvoicePage() {
                   {CURRENCY_OPTIONS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              {advancePayments.length > 0 && (
+              {(supplierId || paymentOptions.length > 0) && (
                 <div className="ni-payment-field">
-                  <label className="ni-payment-label">
-                    Already paid? Apply a payment ({advancePayments.length} unclaimed)
+                  <label className="ni-payment-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span>Payment{paymentOptions.length > 0 ? ` (${paymentOptions.length} not on an invoice)` : ''}</span>
+                    <button type="button" onClick={() => setMultiOpen(true)} disabled={!(total > 0)}
+                      style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 600, color: '#1d4ed8', cursor: 'pointer' }}>
+                      Multiple payments
+                    </button>
                   </label>
+                  {multiPayments.length > 0 ? (
+                    <div style={{ border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8, padding: '8px 10px', fontSize: 12.5, lineHeight: 1.55 }}>
+                      <strong>{multiPayments.map(p => p.payment_number).join(' + ')}</strong>
+                      {' '}= ${(heldTotal + multiTotal).toFixed(2)}{heldTotal > 0 ? ` (with $${heldTotal.toFixed(2)} already linked)` : ''}
+                      <div style={{ color: Math.abs(heldTotal + multiTotal - total) <= 0.01 ? '#15803d' : '#dc2626', fontWeight: 600 }}>
+                        {Math.abs(heldTotal + multiTotal - total) <= 0.01
+                          ? '✓ Equals the invoice total — linked to the invoice and its sales order when you save'
+                          : `Invoice total is now $${total.toFixed(2)} — the payments must equal it`}
+                      </div>
+                      <button type="button" onClick={() => setMultiOpen(true)} style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0, marginRight: 12 }}>Change</button>
+                      <button type="button" onClick={() => setMultiPayments([])} style={{ border: 'none', background: 'none', color: '#64748b', fontWeight: 600, cursor: 'pointer', padding: 0 }}>Remove</button>
+                    </div>
+                  ) : (<>
                   <select
                     className="ni-info-select"
-                    style={{ width: '100%' }}
+                    style={{ width: '100%', ...(chosenPayment && chosenPayment === recommendedId ? { borderColor: '#16a34a', background: '#f0fdf4' } : {}) }}
                     value={chosenPayment}
-                    onChange={e => setChosenPayment(e.target.value)}
+                    disabled={paymentOptions.length === 0}
+                    onChange={e => { paymentTouched.current = true; choosePayment(e.target.value) }}
                   >
-                    <option value="">Don't apply a payment</option>
-                    {advancePayments.map((p: any) => (
+                    <option value="">
+                      {paymentOptions.length ? "Don't attach a payment" : 'No payment of this customer is waiting for an invoice'}
+                    </option>
+                    {paymentOptions.map((p: any) => (
                       <option key={p.id} value={p.id}>
-                        {p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
+                        {p.id === recommendedId ? '★ Recommended · ' : ''}{p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
                         {p.payment_date ? ` · ${String(p.payment_date).slice(0, 10)}` : ''}
                         {p.unassigned ? ` · no customer on it${p.customer_name ? ` (from ${p.customer_name})` : ''}` : ''}
                       </option>
                     ))}
                   </select>
+                  {recommendation.recommended && (
+                    chosenPayment === recommendedId ? (
+                      <p style={{ fontSize: 11.5, color: '#15803d', marginTop: 6, lineHeight: 1.5 }}>
+                        ★ Recommended: {recommendation.recommended.reasons.join(' · ')}. Check it is this job's payment — or choose another.
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11.5, color: '#475569', marginTop: 6, lineHeight: 1.5 }}>
+                        Suggested: {recommendation.recommended.payment_number} ({recommendation.recommended.reasons.join(' · ')}){' '}
+                        <button type="button" onClick={() => { paymentTouched.current = true; choosePayment(recommendedId) }}
+                          style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          Use it
+                        </button>
+                      </p>
+                    )
+                  )}
                   {chosenPayment && (
                     <p style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
-                      Applied when you save. The invoice is marked paid from the ledger, so the figures
-                      have to agree — a payment larger than this invoice will be refused.
+                      Attached when you save. The invoice is marked paid from the ledger, and the sales order
+                      raised from this invoice carries the same payment.
                     </p>
                   )}
+                  </>)}
+                  <MultiPaymentLinker
+                    open={multiOpen}
+                    onClose={() => setMultiOpen(false)}
+                    target={total}
+                    targetLabel="invoice total"
+                    customerId={supplierId || null}
+                    customerName={supplierText || null}
+                    date={sourceQuote?.created_at ?? null}
+                    linked={heldPayments}
+                    initial={multiPayments.map(p => p.id)}
+                    confirmLabel="Use these payments"
+                    onConfirm={(_ids, picked) => {
+                      paymentTouched.current = true
+                      setChosenPayment('')
+                      setMultiPayments(picked)
+                      dateFromPayments(picked)
+                      setMultiOpen(false)
+                    }}
+                  />
                 </div>
               )}
 

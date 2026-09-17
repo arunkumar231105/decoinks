@@ -142,7 +142,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-7 gap-3">
         {statCards.map(({ label, value, icon: Icon, bg, color }) => (
           <div key={label} className="card py-3 px-4">
             <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center mb-2', bg)}>

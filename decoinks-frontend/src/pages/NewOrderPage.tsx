@@ -201,6 +201,15 @@ export function NewOrderPage() {
   const [customerOpen, setCustomerOpen]   = useState(false)
   const [agentId, setAgentId] = useState('')
   const [orderDate, setOrderDate] = useState(todayISO())
+  // Entry Date sits beside Order Date and moves with it unless set apart. It was
+  // shown in the lists but had no field, so it kept the day the order was keyed.
+  const [entryDate, setEntryDate] = useState(todayISO())
+  const orderDateTouched = useRef(false)
+  const changeOrderDate = (next: string, byHand = true) => {
+    if (byHand) orderDateTouched.current = true
+    setEntryDate(prev => (!prev || prev === orderDate ? next : prev))
+    setOrderDate(next)
+  }
   const [orderType, setOrderType] = useState<OrderType>(fromOrderType ?? 'apparel')
   const [quotationId, setQuotationId] = useState('')
   const [invoiceId, setInvoiceId] = useState(fromInvoiceId ?? '')
@@ -258,7 +267,7 @@ export function NewOrderPage() {
   // state (dropdown open, upload flags) is deliberately not persisted.
   const { restored, clearDraft } = useFormDraft(
     'order:new',
-    { customerId, customerText, agentId, orderDate, orderType, quotationId, invoiceId,
+    { customerId, customerText, agentId, orderDate, entryDate, orderType, quotationId, invoiceId,
       apparel, gangsheet, gangsheetArtworks, dtf,
       paymentTerms, paymentMethod, paymentStatus, amountPaid, paymentReference, paymentDate,
       dueDate, rushServices, shippingCharges, discountPct, taxPct,
@@ -271,6 +280,8 @@ export function NewOrderPage() {
       if (str(saved.customerText) !== undefined) setCustomerText(saved.customerText as string)
       if (str(saved.agentId) !== undefined) setAgentId(saved.agentId as string)
       if (str(saved.orderDate) !== undefined) setOrderDate(saved.orderDate as string)
+      if (str(saved.entryDate) !== undefined) setEntryDate(saved.entryDate as string)
+      else if (str(saved.orderDate) !== undefined) setEntryDate(saved.orderDate as string)
       if (str(saved.orderType) !== undefined) setOrderType(saved.orderType as OrderType)
       if (str(saved.quotationId) !== undefined) setQuotationId(saved.quotationId as string)
       if (str(saved.invoiceId) !== undefined) setInvoiceId(saved.invoiceId as string)
@@ -378,6 +389,13 @@ export function NewOrderPage() {
   useEffect(() => {
     if (methodPayment?.payment_method) setPaymentMethod(methodPayment.payment_method)
   }, [methodPayment])
+  // Editing an order already paid: its payment shows as the one picked, rather
+  // than an empty "Select the payment" that invites picking it a second time.
+  useEffect(() => {
+    if (!editOrderId || paymentId) return
+    const linked = selectablePayments.find(p => p.order_id === editOrderId)
+    if (linked) setPaymentId(linked.id)
+  }, [editOrderId, paymentId, selectablePayments])
 
   const { data: existingOrder } = useQuery({
     queryKey: ['edit-order', editOrderId],
@@ -426,6 +444,8 @@ export function NewOrderPage() {
     setCustomerId(existingOrder.customer_id ?? null)
     setCustomerText(existingOrder.customer_name ?? existingOrder.contact_name ?? '')
     setOrderDate(existingOrder.order_date?.slice(0, 10) ?? todayISO())
+    setEntryDate(existingOrder.entry_date?.slice(0, 10) ?? existingOrder.order_date?.slice(0, 10) ?? todayISO())
+    orderDateTouched.current = true
     setDueDate(existingOrder.due_date?.slice(0, 10) ?? '')
     setPaymentTerms(existingOrder.payment_terms ?? PAYMENT_TERMS[0])
     setPaymentMethod(paymentMethodName(existingOrder.payment_method))
@@ -499,6 +519,12 @@ export function NewOrderPage() {
 
   useEffect(() => {
     if (!sourceInvoice) return
+    // From an invoice: dated the day its payment came in, else the invoice's date.
+    if (!orderDateTouched.current) {
+      const paidDays = (sourceInvoice.payments ?? []).map((p: any) => String(p.payment_date || '').slice(0, 10)).filter(Boolean).sort()
+      const day = paidDays[paidDays.length - 1] || String(sourceInvoice.issue_date || '').slice(0, 10)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) changeOrderDate(day, false)
+    }
     if (sourceInvoice.customer_id) setCustomerId(sourceInvoice.customer_id)
     const custName = sourceInvoice.customer_name || sourceInvoice.supplier_name || ''
     if (custName) { setCustomerText(custName); setContactName(custName); setShippingName(custName) }
@@ -708,6 +734,54 @@ export function NewOrderPage() {
   const charged     = useMemo(() => +(subtotal - discountAmt + rushServices + shippingCharges).toFixed(2), [subtotal, discountAmt, rushServices, shippingCharges])
   const taxAmt      = useMemo(() => +(charged * (taxPct / 100)).toFixed(2), [charged, taxPct])
   const total       = useMemo(() => +(charged + taxAmt).toFixed(2), [charged, taxAmt])
+
+  // Picking a payment carries its own details onto the order so the two never
+  // disagree about how or when it was paid.
+  const pickPayment = (id: string) => {
+    setPaymentId(id)
+    const chosen = selectablePayments.find(p => p.id === id)
+    if (!chosen) return
+    if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
+    if (chosen.payment_date) {
+      setPaymentDate(String(chosen.payment_date).slice(0, 10))
+      // A new order is dated the day its payment came in, unless the agent set
+      // the date themselves.
+      if (!editOrderId && !orderDateTouched.current) changeOrderDate(String(chosen.payment_date).slice(0, 10), false)
+    }
+    // The bank's or processor's own reference, which is what anyone reconciling
+    // actually searches for. Our internal payment number only stands in when
+    // there is none.
+    setPaymentReference(chosen.transaction_id || chosen.reference_no || chosen.payment_number || '')
+    const paid = Number(chosen.amount) || 0
+    setAmountPaid(paid)
+    // Terms follow the money: an amount that covers the order is Paid, anything
+    // less is an advance.
+    if (total > 0) setPaymentTerms(paid >= total - 0.005 ? 'Paid' : 'Advance')
+  }
+
+  // The payment this order most likely belongs to (same customer or name,
+  // amount equal to the total, paid around the order date), worked out by the
+  // server with its reasons and picked on a new order for the agent to check.
+  // Once the agent has touched the list, their choice stands.
+  const [paymentSuggestion, setPaymentSuggestion] = useState<any | null>(null)
+  const paymentTouched = useRef(false)
+  useEffect(() => {
+    if ((!customerId && !customerText.trim()) || !(total > 0)) { setPaymentSuggestion(null); return }
+    const timer = setTimeout(() => {
+      api.get('/payments/recommend', { params: {
+        purpose: 'order', customer_id: customerId || undefined, customer_name: customerText || undefined,
+        amount: total, date: orderDate || undefined,
+      } })
+        .then(r => setPaymentSuggestion(r.data?.data?.recommended ?? null))
+        .catch(() => setPaymentSuggestion(null))
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [customerId, customerText, total, orderDate])
+  useEffect(() => {
+    if (editOrderId || paymentTouched.current || paymentId || !paymentSuggestion) return
+    if (selectablePayments.some(p => p.id === paymentSuggestion.id)) pickPayment(paymentSuggestion.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentSuggestion?.id, selectablePayments, editOrderId])
   const balanceDue  = useMemo(() => +Math.max(0, total - (Number(amountPaid) || 0)).toFixed(2), [total, amountPaid])
 
   // â"€â"€ Table helpers â"€â"€
@@ -874,6 +948,7 @@ export function NewOrderPage() {
       quotation_id:       quotationId || sourceInvoice?.quote_id || null,
       order_type:       orderType,
       order_date:       orderDate,
+      entry_date:       entryDate || orderDate,
       due_date:         dueDate || null,
       // Send the term that was picked. This used to rewrite 'Paid' to
       // 'Due on Receipt' on the way out, so choosing Paid and saving came back
@@ -940,7 +1015,8 @@ export function NewOrderPage() {
     // Required on a new order only. Editing an existing one must not demand a
     // payment it never had, and the invoice→order conversion does not come
     // through this form at all.
-    if (!editOrderId && !paymentId) {
+    // Raised from an invoice that already holds its payments: they come with it.
+    if (!editOrderId && !paymentId && !(fromInvoiceId && sourceInvoice?.payments?.length)) {
       toast.error('Add the payment for this sales order first, then select it here')
       return
     }
@@ -1100,7 +1176,12 @@ export function NewOrderPage() {
 
         <div className="no-info-field no-info-select-field">
           <span className="no-info-label">Order Date</span>
-          <input type="date" className="no-info-select" value={orderDate} onChange={e => setOrderDate(e.target.value)} />
+          <input type="date" className="no-info-select" value={orderDate} onChange={e => changeOrderDate(e.target.value)} />
+        </div>
+
+        <div className="no-info-field no-info-select-field">
+          <span className="no-info-label">Entry Date</span>
+          <input type="date" className="no-info-select" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
         </div>
 
         <div className="no-info-field no-info-select-field">
@@ -1574,38 +1655,33 @@ export function NewOrderPage() {
                 <select
                   className="no-info-select"
                   value={paymentId}
-                  onChange={e => {
-                    const id = e.target.value
-                    setPaymentId(id)
-                    // Carry the payment's own details onto the order so the two
-                    // never disagree about how or when it was paid.
-                    const chosen = selectablePayments.find(p => p.id === id)
-                    if (chosen) {
-                      if (chosen.payment_method) setPaymentMethod(chosen.payment_method)
-                      if (chosen.payment_date) setPaymentDate(String(chosen.payment_date).slice(0, 10))
-                      // The bank's or processor's own reference, which is what
-                      // anyone reconciling actually searches for. Our internal
-                      // payment number only stands in when there is none.
-                      setPaymentReference(chosen.transaction_id || chosen.reference_no || chosen.payment_number || '')
-                      const paid = Number(chosen.amount) || 0
-                      setAmountPaid(paid)
-                      // Terms follow the money: an amount that covers the order
-                      // is Paid, anything less is an advance.
-                      if (total > 0) setPaymentTerms(paid >= total - 0.005 ? 'Paid' : 'Advance')
-                    }
-                  }}
+                  style={paymentId && paymentId === paymentSuggestion?.id ? { borderColor: '#16a34a', background: '#f0fdf4' } : undefined}
+                  onChange={e => { paymentTouched.current = true; pickPayment(e.target.value) }}
                 >
                   <option value="">— Select the payment for this order —</option>
                   {selectablePayments.map(p => (
                     <option key={p.id} value={p.id}>
-                      {[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
+                      {p.id === paymentSuggestion?.id ? '★ Recommended · ' : ''}{[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
                         p.customer_name, `$${Number(p.amount || 0).toFixed(2)}`,
                         p.order_number ? `(already on ${p.order_number})` : null]
                         .filter(Boolean).join('  ·  ')}
                     </option>
                   ))}
                 </select>
-                {!paymentId && (
+                {paymentSuggestion && (paymentId === paymentSuggestion.id ? (
+                  <small style={{ color: '#15803d', fontSize: 11.5, lineHeight: 1.5 }}>
+                    ★ Recommended: {paymentSuggestion.reasons.join(' · ')}. Check it is this job's payment — or choose another.
+                  </small>
+                ) : (
+                  <small style={{ color: '#475569', fontSize: 11.5, lineHeight: 1.5 }}>
+                    Suggested: {paymentSuggestion.payment_number} ({paymentSuggestion.reasons.join(' · ')}){' '}
+                    <button type="button" onClick={() => { paymentTouched.current = true; pickPayment(paymentSuggestion.id) }}
+                      style={{ border: 'none', background: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                      Use it
+                    </button>
+                  </small>
+                ))}
+                {!paymentId && !paymentSuggestion && (
                   <small style={{ color: '#6b7280', fontSize: 11.5 }}>
                     Record the payment first, then pick it here.
                   </small>

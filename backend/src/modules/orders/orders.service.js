@@ -459,6 +459,15 @@ async function getById(id) {
 // does not count as different: "cashapp", "Cash App" and "cash_app" agree.
 const methodKey = value => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 
+// Invoices store their method as a form code ("bank_transfer"); orders and
+// payments store the name. An invoice's method becomes the name on its order.
+const METHOD_NAMES = {
+  cashapp: 'Cash App', zelle: 'Zelle', paypal: 'PayPal', stripe: 'Stripe', shopify: 'Shopify',
+  banktransfer: 'Bank Transfer', deposit: 'Bank Deposit', cash: 'Cash', card: 'Credit Card',
+  check: 'Cheque', other: 'Other',
+}
+const methodName = value => (value ? METHOD_NAMES[methodKey(value)] || String(value).trim() : null)
+
 function assertPaymentMethodMatches(chosen, payment) {
   if (!chosen || !payment?.payment_method || methodKey(chosen) === methodKey(payment.payment_method)) return
   throw Object.assign(new Error(
@@ -482,9 +491,70 @@ async function paymentBehindOrder(orderId) {
   return rows[0] || null
 }
 
+// Tie a payment to an order. Money lands in the bank before the order is keyed
+// in — the business runs on Advance terms — so the order form asks which payment
+// it belongs to, on a new order and on an edit alike.
+//
+// A payment can cover several orders (the combined-billing jobs did), so the
+// first order to claim it takes payments.order_id and any later one is recorded
+// as an allocation. That keeps recalc_invoice_paid correct, which counts a
+// payment once — through its allocations when it has them, through its own
+// invoice_id when it does not. Only the links change; no amount is touched.
+async function attachPayment(client, { orderId, invoiceId, paymentId, allocatedAmount }) {
+  const { rows } = await client.query(
+    `SELECT id, order_id FROM payments WHERE id = $1 FOR UPDATE`, [paymentId])
+  const pay = rows[0]
+  if (!pay) throw Object.assign(new Error('The selected payment no longer exists'), { statusCode: 422 })
+  if (!pay.order_id) {
+    // The order form picks one payment. An order paid in parts gets its
+    // payments together, from its invoice's Multiple Payments, where their total
+    // is checked against the order's.
+    const { rows: held } = await client.query(
+      `SELECT p.payment_number, o.order_number FROM payments p JOIN orders o ON o.id = p.order_id
+        WHERE p.order_id = $1 AND p.id <> $2 LIMIT 1`, [orderId, paymentId])
+    if (held[0]) {
+      throw Object.assign(new Error(
+        `${held[0].order_number} already has payment ${held[0].payment_number}. ` +
+        'To pay it with several payments, link them together from its invoice (Multiple Payments).'), { statusCode: 422 })
+    }
+    await client.query(
+      `UPDATE payments SET order_id = $1, invoice_id = COALESCE(invoice_id, $2), updated_at = NOW()
+        WHERE id = $3`, [orderId, invoiceId || null, paymentId])
+  } else if (pay.order_id !== orderId) {
+    await client.query(
+      `INSERT INTO payment_allocations (payment_id, order_id, allocated_amount)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [paymentId, orderId, allocatedAmount])
+  }
+}
+
+// The day a document raised from an invoice is dated: when its payment came in
+// (the latest, for one paid in parts), else the invoice's own date.
+async function invoiceDocumentDate(q, invoiceId) {
+  const { rows } = await q.query(
+    `SELECT (SELECT max(p.payment_date) FROM payments p WHERE p.invoice_id = i.id)::text AS payment_date,
+            COALESCE((SELECT max(p.payment_date) FROM payments p WHERE p.invoice_id = i.id), i.issue_date)::text AS document_date
+       FROM invoices i WHERE i.id = $1`, [invoiceId])
+  return rows[0] || null
+}
+
+// An order raised from an invoice takes the payments already on that invoice —
+// one, or the parts linked together with Multiple Payments. They are taken all
+// or none: only when, with any the order already holds, they come to no more
+// than the order's total (the database refuses more, migration 146).
+async function linkInvoicePayments(client, orderId, invoiceId) {
+  await client.query(
+    `UPDATE payments p SET order_id = $1, updated_at = NOW()
+      WHERE p.invoice_id = $2 AND p.order_id IS NULL
+        AND (SELECT COALESCE(sum(x.amount), 0) FROM payments x
+              WHERE x.order_id = $1 OR (x.invoice_id = $2 AND x.order_id IS NULL))
+            <= (SELECT total FROM orders WHERE id = $1) + 0.01`,
+    [orderId, invoiceId])
+}
+
 async function create(data) {
   const {
-    customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, due_date,
+    customer_id, supplier_id, supplier_name_text, quotation_id, invoice_id, order_type, order_date, entry_date, due_date,
     payment_terms, payment_method, payment_status = 'Unpaid', currency = 'USD',
     amount_paid, payment_reference, payment_date, payment_id,
     rush_services = 0, shipping_charges = 0,
@@ -497,13 +567,20 @@ async function create(data) {
 
   const order_number = await getNextNumber('ORD', 'orders', 'order_number')
   const today = new Date().toISOString().split('T')[0]
-  const resolvedOrderDate = order_date || today
+  // Raised from an invoice, the order is dated the day its payment came in (the
+  // latest, when paid in parts), else the invoice's own date — not the day
+  // someone pressed Convert.
+  const invoiceDay = invoice_id && !order_date ? await invoiceDocumentDate({ query }, invoice_id) : null
+  const resolvedOrderDate = order_date || invoiceDay?.document_date || today
+  const resolvedEntryDate = entry_date || resolvedOrderDate
   const resolvedDueDate = due_date || resolvedOrderDate
   let resolvedShipping = Number(shipping_charges) || 0
   let resolvedRush     = Number(rush_services) || 0
   let totals = calcTotals(items, order_type, resolvedRush, resolvedShipping, discount_pct, tax_pct)
   let resolvedCustomerId = customer_id || null
   let resolvedSupplierId = supplier_id || null
+  let resolvedDiscountPct = discount_pct
+  let resolvedTaxPct      = tax_pct
   let invoice = null
 
   if (invoice_id) {
@@ -511,6 +588,7 @@ async function create(data) {
       `SELECT i.id, i.status, i.subtotal, i.discount_amt, i.tax_amt, i.total, i.amount_paid, i.customer_id, i.supplier_id,
               i.shipping_charges, i.rush_services,
               i.customer_name, i.billing_email, i.contact_number, i.shipping_address,
+              i.quote_id, i.payment_terms, i.payment_method, i.currency, i.notes, i.discount_pct, i.tax_pct,
               existing_order.id AS existing_order_id
        FROM invoices i
        LEFT JOIN LATERAL (
@@ -544,9 +622,19 @@ async function create(data) {
     // sitting above a $0.00 shipping row.
     resolvedShipping = Number(invoice.shipping_charges || 0)
     resolvedRush     = Number(invoice.rush_services || 0)
+    resolvedDiscountPct = Number(invoice.discount_pct || 0)
+    resolvedTaxPct      = Number(invoice.tax_pct || 0)
     if (!resolvedCustomerId) resolvedCustomerId = invoice.customer_id
     if (!resolvedSupplierId) resolvedSupplierId = invoice.supplier_id
   }
+
+  // Everything else the invoice already knows comes with it — the quote it came
+  // from (and so that quote's artworks), its terms, method, currency and notes —
+  // unless the request says otherwise.
+  const resolvedQuotationId = quotation_id || invoice?.quote_id || null
+  const resolvedTerms       = payment_terms || invoice?.payment_terms || 'Advance'
+  const resolvedCurrency    = data.currency || invoice?.currency || currency
+  const resolvedNotes       = notes || invoice?.notes || null
 
   let totalQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
   if (invoice_id && items.length === 0) {
@@ -598,7 +686,7 @@ async function create(data) {
     : payment_status
 
   // Raised against a payment: the order takes that payment's method.
-  let resolvedPaymentMethod = payment_method || null
+  let resolvedPaymentMethod = payment_method || methodName(invoice?.payment_method) || null
   if (payment_id) {
     const { rows: payRows } = await query(
       `SELECT payment_number, payment_method FROM payments WHERE id = $1`, [payment_id])
@@ -621,21 +709,25 @@ async function create(data) {
          contact_name, contact_email, contact_phone,
          shipping_name, shipping_address,
          assigned_to, created_by, order_stage, process_status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,CURRENT_DATE,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,CASE WHEN $3::uuid IS NOT NULL OR $33::boolean THEN 'Confirmed'::order_status ELSE 'Draft'::order_status END,$32,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,
                  -- kept in step with the status chosen on the line above
-                 CASE WHEN $3::uuid IS NOT NULL THEN 'Sent'   ELSE 'Draft' END,
+                 CASE WHEN $3::uuid IS NOT NULL OR $33::boolean THEN 'Sent' ELSE 'Draft' END,
                  CASE WHEN $3::uuid IS NOT NULL THEN 'Pushed' ELSE NULL    END)
        RETURNING *`,
       [
-        order_number, quotation_id || null, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
+        order_number, resolvedQuotationId, invoice_id || null, resolvedCustomerId, resolvedSupplierId, order_type,
         resolvedOrderDate, resolvedDueDate,
-        payment_terms || 'Advance', resolvedPaymentMethod, effectiveStatus, currency,
-        effectivePaid, payment_reference || null, payment_date || null,
-        resolvedRush, resolvedShipping, totals.subtotal, discount_pct, totals.discount_amt,
-        tax_pct, totals.tax_amt, totals.total, notes || null,
+        resolvedTerms, resolvedPaymentMethod, effectiveStatus, resolvedCurrency,
+        effectivePaid, payment_reference || null, payment_date || invoiceDay?.payment_date || null,
+        resolvedRush, resolvedShipping, totals.subtotal, resolvedDiscountPct, totals.discount_amt,
+        resolvedTaxPct, totals.tax_amt, totals.total, resolvedNotes,
         resolvedContactName, resolvedContactEmail, resolvedContactPhone,
         resolvedShippingName, resolvedShippingAddress,
         resolvedAssignedTo, created_by,
+        resolvedEntryDate,
+        // Raised against a received payment, the order is confirmed work — it was
+        // left Draft whenever it came from the order form rather than an invoice.
+        Boolean(payment_id),
       ]
     )
     const order = rows[0]
@@ -666,23 +758,14 @@ async function create(data) {
     // counts a payment once — through its allocations when it has them, through
     // its own invoice_id when it does not.
     if (payment_id) {
-      const { rows: payRows } = await client.query(
-        `SELECT id, order_id, amount FROM payments WHERE id = $1 FOR UPDATE`, [payment_id])
-      const pay = payRows[0]
-      if (!pay) {
-        throw Object.assign(new Error('The selected payment no longer exists'), { statusCode: 422 })
-      }
-      if (!pay.order_id) {
-        await client.query(
-          `UPDATE payments SET order_id = $1, invoice_id = COALESCE(invoice_id, $2), updated_at = NOW()
-            WHERE id = $3`, [order.id, invoice_id || null, payment_id])
-      } else if (pay.order_id !== order.id) {
-        await client.query(
-          `INSERT INTO payment_allocations (payment_id, order_id, allocated_amount)
-           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-          [payment_id, order.id, totals.total])
-      }
+      await attachPayment(client, {
+        orderId: order.id, invoiceId: invoice_id, paymentId: payment_id, allocatedAmount: totals.total,
+      })
     }
+    // Raised from an invoice: the payments already applied to that invoice pay
+    // this order too. Without this they kept an invoice and no order, and sat
+    // under Pending SO although their sales order existed.
+    if (invoice_id) await linkInvoicePayments(client, order.id, invoice_id)
 
     await client.query(
       `INSERT INTO activity_logs (user_id, entity_type, entity_id, action, description)
@@ -692,10 +775,10 @@ async function create(data) {
     await client.query('COMMIT')
 
     // Link quote artworks to this order
-    if (quotation_id) {
+    if (resolvedQuotationId) {
       await query(
         `UPDATE artworks SET order_id = $1 WHERE quotation_id = $2 AND order_id IS NULL`,
-        [order.id, quotation_id]
+        [order.id, resolvedQuotationId]
       ).catch(() => {}) // non-fatal: artworks table may not exist yet
     }
 
@@ -740,8 +823,18 @@ async function update(id, data, actorId) {
     throw Object.assign(new Error('Sales order total quantity must be greater than zero'), { statusCode: 422 })
   }
 
-  // An order already paid keeps its payment's method.
-  if (data.payment_method) assertPaymentMethodMatches(data.payment_method, await paymentBehindOrder(id))
+  // An order already paid keeps its payment's method; a payment picked on this
+  // edit gives the order its method, so the one chosen must be that payment's.
+  let pickedPayment = null
+  if (data.payment_id) {
+    const { rows: payRows } = await query(
+      `SELECT payment_number, payment_method FROM payments WHERE id = $1`, [data.payment_id])
+    pickedPayment = payRows[0]
+    if (!pickedPayment) throw Object.assign(new Error('The selected payment no longer exists'), { statusCode: 422 })
+  }
+  if (data.payment_method) {
+    assertPaymentMethodMatches(data.payment_method, pickedPayment || await paymentBehindOrder(id))
+  }
 
   // Resolve the amount received + effective payment status for this update.
   const paidProvided = data.amount_paid !== undefined && data.amount_paid !== null
@@ -758,6 +851,7 @@ async function update(id, data, actorId) {
       `UPDATE orders SET
          customer_id      = COALESCE($1, customer_id),
          order_date       = COALESCE($2,  order_date),
+         entry_date       = COALESCE($39, entry_date),
          due_date         = COALESCE($3,  due_date),
          payment_terms    = COALESCE($4,  payment_terms),
          payment_method   = COALESCE($5,  payment_method),
@@ -806,6 +900,7 @@ async function update(id, data, actorId) {
         data.assigned_team, data.estimated_production_time, data.total_print_locations,
         id,
         targetPaid, data.payment_reference ?? null, data.payment_date ?? null,
+        data.entry_date ?? null,
       ]
     )
     if (!updated[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 })
@@ -814,6 +909,14 @@ async function update(id, data, actorId) {
       const tableMap = { apparel: 'order_items_apparel', gangsheet: 'order_items_gangsheet', dtf: 'order_items_dtf' }
       await client.query(`DELETE FROM ${tableMap[order_type]} WHERE order_id = $1`, [id])
       await insertItems(client, id, order_type, items)
+    }
+    // The payment picked on the edit is tied to the order here, as on a new one.
+    // Saving copied the payment's method, date and reference onto the order but
+    // never told the payment, so it kept no order and stayed under Pending SO.
+    if (data.payment_id) {
+      await attachPayment(client, {
+        orderId: id, invoiceId: existing.invoice_id, paymentId: data.payment_id, allocatedAmount: totals.total,
+      })
     }
     if (existing.invoice_id && (targetPaid > 0 || markPaid)) {
       await settleInvoiceFromOrder(client, existing.invoice_id, targetPaid)
@@ -1223,4 +1326,4 @@ function getOrderCsvTemplate() {
   return [headers, ex1, ex2, ex3].map(r => r.join(',')).join('\n') + '\n'
 }
 
-module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate }
+module.exports = { list, getById, getBoard, create, update, updateStatus, getInvoice, remove, convertToPO, bulkCreateOrdersFromCsv, getOrderCsvTemplate, linkInvoicePayments, invoiceDocumentDate }

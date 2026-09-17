@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from '../utils/toast'
 import { ArrowLeft, ChevronRight, CreditCard, FileText, Package } from 'lucide-react'
@@ -8,11 +8,16 @@ import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { getValidTransitions, type UserRole } from '../utils/statusTransitions'
 import { getApiError } from '../utils/apiError'
+import { MultiPaymentLinker } from '../components/payments/MultiPaymentLinker'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Payment {
   id: string
+  payment_number?: string
+  payment_date?: string | null
+  customer_name?: string | null
+  received_from_name?: string | null
   amount: number
   payment_method: string
   reference_no: string | null
@@ -30,8 +35,11 @@ interface Invoice {
   created_at: string
   supplier_id: string | null
   supplier_name: string | null
+  customer_id?: string | null
+  customer_name?: string | null
   order_id: string | null
   order_number: string | null
+  order_type?: string | null
   quote_id: string | null
   quote_number: string | null
   subtotal: number
@@ -80,6 +88,23 @@ export function InvoiceDetailPage() {
   const [newStatus, setNewStatus] = useState('')
   const [orderTypeModal, setOrderTypeModal] = useState(false)
   const [selectedOrderType, setSelectedOrderType] = useState<'apparel'|'gangsheet'|'dtf'>('apparel')
+
+  // A paid invoice is not edited — its money is settled — but its date can still
+  // be put right (the day the payment came in). Opened from the list's Edit on a
+  // settled invoice, too.
+  const location = useLocation()
+  const [dateModalOpen, setDateModalOpen] = useState(Boolean((location.state as any)?.editDate))
+  const [newIssueDate, setNewIssueDate] = useState('')
+  const dateMutation = useMutation({
+    mutationFn: (issue_date: string) => api.put(`/invoices/${id}`, { issue_date }).then(r => r.data),
+    onSuccess: () => {
+      setDateModalOpen(false)
+      toast.success('Invoice date updated')
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
+    onError: (err) => toast.error(getApiError(err)),
+  })
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [payAmount, setPayAmount] = useState('')
@@ -165,6 +190,22 @@ export function InvoiceDetailPage() {
     onError: (err) => toast.error(getApiError(err)),
   })
 
+  // Multiple Payments: several received payments linked to this invoice and its
+  // sales order at once; the server refuses them unless they equal the total.
+  const [multiOpen, setMultiOpen] = useState(false)
+  const linkPaymentsMutation = useMutation({
+    mutationFn: (payment_ids: string[]) => api.post(`/invoices/${id}/payments`, { payment_ids }).then(r => r.data),
+    onSuccess: (body: any) => {
+      const result = body?.data ?? body
+      setMultiOpen(false)
+      toast.success(`${(result?.linked ?? []).join(' + ')} linked to ${result?.invoice_number ?? 'the invoice'}${result?.order_number ? ` and ${result.order_number}` : ''}`)
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
+    },
+    onError: (err) => toast.error(getApiError(err)),
+  })
+
   const handleConvertToOrder = (order_type: string) => {
     setOrderTypeModal(false)
     convertMutation.mutate(order_type)
@@ -225,7 +266,15 @@ export function InvoiceDetailPage() {
             <button
               className="lb-action-btn lb-action-primary"
               style={{ gap: 6 }}
-              onClick={() => setOrderTypeModal(true)}
+              onClick={() => {
+                // The order is the invoice's kind of work. The dialog used to
+                // start on Apparel whatever the invoice was, and a DTF invoice
+                // was converted into an Apparel order that way.
+                if (invoice.order_type === 'apparel' || invoice.order_type === 'dtf' || invoice.order_type === 'gangsheet') {
+                  setSelectedOrderType(invoice.order_type)
+                }
+                setOrderTypeModal(true)
+              }}
             >
               <Package size={13} /> Convert to Order
             </button>
@@ -236,6 +285,11 @@ export function InvoiceDetailPage() {
           <button className="lb-action-btn" onClick={() => navigate(`/invoices/${id}/receipt`)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🧾 Short Invoice
           </button>
+          {canRecordPayment && (
+            <button className="lb-action-btn" onClick={() => setMultiOpen(true)}>
+              <CreditCard size={13} /> Multiple Payments
+            </button>
+          )}
           {canRecordPayment && (
             <button className="lb-action-btn lb-action-primary" onClick={() => setPaymentModalOpen(true)}>
               <CreditCard size={13} /> Record Payment
@@ -271,7 +325,15 @@ export function InvoiceDetailPage() {
       <div className="np-info-bar">
         {[
           { label: 'Invoice #',   value: invoice.invoice_number },
-          { label: 'Issue Date',  value: fmtDate(invoice.issue_date) },
+          { label: 'Issue Date',  value: <>
+            {fmtDate(invoice.issue_date)}
+            {invoice.status !== 'Void' && (
+              <button type="button" onClick={() => { setNewIssueDate(String(invoice.issue_date ?? '').slice(0, 10)); setDateModalOpen(true) }}
+                style={{ marginLeft: 8, border: 'none', background: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                Change date
+              </button>
+            )}
+          </> },
           { label: 'Due Date',    value: fmtDate(invoice.due_date) },
           ...(invoice.paid_at ? [{ label: 'Paid On', value: fmtDate(invoice.paid_at) }] : []),
         ].map(({ label, value }) => (
@@ -389,6 +451,7 @@ export function InvoiceDetailPage() {
                 <table className="np-table">
                   <thead>
                     <tr>
+                      <th>Payment</th>
                       <th>Date</th>
                       <th>Method</th>
                       <th>Reference</th>
@@ -399,6 +462,7 @@ export function InvoiceDetailPage() {
                   <tbody>
                     {invoice.payments.map(p => (
                       <tr key={p.id} className="hover:bg-gray-50">
+                        <td style={{ padding: '8px', fontSize: '12px', fontWeight: 600 }}>{p.payment_number ?? '—'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#6b7280' }}>{fmtDateTime(p.paid_at)}</td>
                         <td style={{ padding: '8px', fontSize: '13px' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -571,6 +635,41 @@ export function InvoiceDetailPage() {
         </div>
       )}
 
+      <MultiPaymentLinker
+        open={multiOpen}
+        onClose={() => setMultiOpen(false)}
+        target={Number(invoice.total)}
+        targetLabel={invoice.order_number ? `invoice and sales order (${invoice.order_number}) total` : 'invoice total'}
+        customerId={invoice.customer_id ?? null}
+        customerName={invoice.customer_name ?? invoice.supplier_name ?? null}
+        date={invoice.issue_date ?? invoice.created_at}
+        linked={invoice.payments.map(p => ({ ...p, payment_number: p.payment_number ?? '—', amount: Number(p.amount) }))}
+        busy={linkPaymentsMutation.isPending}
+        onConfirm={ids => linkPaymentsMutation.mutate(ids)}
+      />
+
+      {dateModalOpen && invoice.status !== 'Void' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 20px 40px rgba(0,0,0,0.18)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px' }}>Invoice Date</h3>
+            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 14px', lineHeight: 1.5 }}>
+              {invoice.invoice_number}: only the date changes — the due date moves with it; amounts and payments stay as they are.
+            </p>
+            <input type="date" className="np-input" style={{ width: '100%' }}
+              value={newIssueDate || String(invoice.issue_date ?? '').slice(0, 10)}
+              onChange={e => setNewIssueDate(e.target.value)} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="lb-action-btn" onClick={() => setDateModalOpen(false)} disabled={dateMutation.isPending}>Cancel</button>
+              <button className="lb-action-btn lb-action-primary"
+                disabled={dateMutation.isPending || !/^\d{4}-\d{2}-\d{2}$/.test(newIssueDate || String(invoice.issue_date ?? '').slice(0, 10))}
+                onClick={() => dateMutation.mutate(newIssueDate || String(invoice.issue_date ?? '').slice(0, 10))}>
+                {dateMutation.isPending ? 'Saving…' : 'Save date'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Convert to Order modal ── */}
       {orderTypeModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60 }}>
@@ -581,6 +680,8 @@ export function InvoiceDetailPage() {
               <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:6 }}>Order Type</label>
               <select
                 value={selectedOrderType}
+                disabled={['apparel', 'dtf', 'gangsheet'].includes(String(invoice.order_type))}
+                title={['apparel', 'dtf', 'gangsheet'].includes(String(invoice.order_type)) ? 'Set by the invoice' : undefined}
                 onChange={e => setSelectedOrderType(e.target.value as any)}
                 style={{ width:'100%', padding:'8px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:14 }}
               >

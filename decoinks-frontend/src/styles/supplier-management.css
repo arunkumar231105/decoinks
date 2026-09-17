@@ -1,0 +1,117 @@
+/* Supplier Order Management (DIGI orders). Kept out of index.css, which is
+   protected — imported by SupplierManagementPage only. Prefix: som- */
+
+.som { display: flex; flex-direction: column; gap: 16px; color: #0f172a; }
+
+.som-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.som-sync { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #64748b; }
+.som-sync button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e2e8f0; background: #fff;
+  border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; color: #334155; cursor: pointer; }
+.som-sync button:hover:not(:disabled) { background: #f8fafc; }
+.som-sync button:disabled { opacity: .6; cursor: default; }
+.som-spin { animation: som-rot 1s linear infinite; }
+@keyframes som-rot { to { transform: rotate(360deg); } }
+.som-issue { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 20px; border-radius: 6px;
+  background: #0f8f86; color: #fff !important; font-size: 15px; font-weight: 500; text-decoration: none;
+  box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+.som-issue:hover { background: #0c7a72; }
+
+.som-cards { display: grid; gap: 12px; }
+.som-cards.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.som-cards.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1279px) { .som-cards.six, .som-cards.five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .som-cards.six, .som-cards.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.som-card { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 15px 16px; text-align: left;
+  background: #fff; border: 1px solid #e4e9f2; border-radius: 8px; cursor: pointer; font: inherit;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06); transition: box-shadow .15s, border-color .15s; }
+.som-card:hover { box-shadow: 0 8px 24px rgba(15,23,42,.10); border-color: #cbd5e1; }
+.som-card.on { border-color: #3b82f6; box-shadow: 0 0 0 1px rgba(59,130,246,.3); }
+.som-card-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 8px; }
+.som-card-label { display: block; font-size: 14px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.som-card-value { display: block; font-size: 24px; font-weight: 700; line-height: 1.2; color: #0f172a; }
+
+.som-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.som-search { position: relative; flex: 2.2 1 260px; min-width: 0; }
+.som-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
+.som-search input { width: 100%; height: 40px; border: 1px solid #e4e9f2; border-radius: 8px; background: #fff;
+  padding: 0 34px 0 38px; font: inherit; font-size: 13px; color: #1e293b; outline: none; }
+.som-search input:focus, .som-select select:focus { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29,78,216,.12); }
+.som-search button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: #64748b; cursor: pointer; padding: 2px; }
+.som-select { position: relative; flex: 1 1 150px; min-width: 0; }
+.som-select select { width: 100%; height: 40px; appearance: none; border: 1px solid #e4e9f2; border-radius: 8px; background: #fff;
+  padding: 0 34px 0 12px; font: inherit; font-size: 13px; color: #1e293b; outline: none; cursor: pointer; }
+.som-select svg { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
+.som-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px;
+  border: 1px solid #e4e9f2; border-radius: 8px; background: #fff; font: inherit; font-size: 13px; color: #1e293b; cursor: pointer; white-space: nowrap; }
+.som-btn:hover { background: #f8fafc; }
+.som-btn.on { border-color: #3b82f6; color: #2563eb; }
+.som-btn.plain { border-color: transparent; background: transparent; color: #475569; }
+.som-cols { position: relative; }
+.som-cols-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 220px; padding: 8px;
+  background: #fff; border: 1px solid #e4e9f2; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.10); }
+.som-cols-menu label { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.som-cols-menu label:hover { background: #f8fafc; }
+.som-dates { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.som-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; }
+.som-dates input { height: 40px; border: 1px solid #e4e9f2; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 13px; }
+
+.som-table-card { position: relative; overflow: hidden; background: #fff; border: 1px solid #e4e9f2; border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06); }
+.som-scroll { overflow-x: auto; }
+.som-table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 13px; }
+.som-table th { padding: 14px 8px; text-align: left; font-weight: 600; color: #1e293b; border-bottom: 1px solid #e4e9f2; vertical-align: middle; }
+.som-table th button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; padding: 0; text-align: left; }
+.som-table th button:hover { color: #2563eb; }
+.som-table td { padding: 10px 8px; border-bottom: 1px solid #e4e9f2; vertical-align: middle; color: #1e293b; }
+.som-table tbody tr { cursor: pointer; }
+.som-table tbody tr:hover { background: #f8fafc; }
+.som-table tbody tr:last-child td { border-bottom: 0; }
+.som-nw { white-space: nowrap; }
+.som-muted { color: #94a3b8; }
+.som-sub { display: block; font-size: 12px; color: #64748b; }
+.som-link { color: #2563eb; }
+.som-wrap { display: block; min-width: 90px; max-width: 170px; }
+.som-pill { display: inline-flex; white-space: nowrap; border-radius: 6px; padding: 3px 8px; font-size: 12.5px; }
+.st-to-be-pushed { background: #ffedd5; color: #ea580c; }
+.st-factory-audit { background: #f3e8ff; color: #9333ea; }
+.st-in-production { background: #dbeafe; color: #2563eb; }
+.st-exception { background: #fee2e2; color: #dc2626; }
+.st-shipped { background: #dcfce7; color: #15803d; }
+.st-pre-transit { background: #cffafe; color: #0e7490; }
+.st-in-transit { background: #e0f2fe; color: #0369a1; }
+.st-delivered { background: #dcfce7; color: #15803d; }
+.st-cancelled { background: #f1f5f9; color: #475569; }
+.tx-exception { color: #dc2626; }
+.tx-delivered { color: #15803d; }
+.tx-in-transit, .tx-pre-transit, .tx-shipped { color: #2563eb; }
+
+.som-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border-top: 1px solid #e4e9f2; font-size: 13px; color: #334155; }
+.som-pages { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.som-pages button { display: grid; place-items: center; min-width: 36px; height: 36px; padding: 0 10px; border: 1px solid #e4e9f2; border-radius: 6px;
+  background: #fff; font: inherit; font-size: 13px; color: #334155; cursor: pointer; }
+.som-pages button:hover:not(:disabled) { background: #f8fafc; }
+.som-pages button:disabled { opacity: .4; cursor: default; }
+.som-pages button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+.som-empty { padding: 48px 16px; text-align: center; color: #64748b; }
+.som-skel { height: 18px; border-radius: 4px; background: linear-gradient(90deg, #f1f5f9, #e2e8f0, #f1f5f9); background-size: 200% 100%; animation: som-sh 1.2s infinite; }
+@keyframes som-sh { to { background-position: -200% 0; } }
+
+.som-scrim { position: fixed; inset: 0; z-index: 1200; background: rgba(15,23,42,.4); border: 0; }
+.som-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1201; width: min(520px, 100vw); overflow-y: auto;
+  background: #fff; box-shadow: -8px 0 24px rgba(15,23,42,.12); padding: 20px 22px 28px; }
+.som-drawer header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.som-drawer h3 { margin: 0; font-size: 20px; font-weight: 700; }
+.som-drawer small { color: #64748b; font-size: 12px; }
+.som-drawer section { border-top: 1px solid #e4e9f2; padding: 14px 0; }
+.som-drawer h4 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: #334155; text-transform: uppercase; letter-spacing: .04em; }
+.som-kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; font-size: 13.5px; }
+.som-kv dt { color: #64748b; }
+.som-kv dd { margin: 0; color: #0f172a; word-break: break-word; }
+.som-lines { width: 100%; border-collapse: collapse; font-size: 13px; }
+.som-lines th, .som-lines td { padding: 6px 4px; border-bottom: 1px solid #f1f5f9; text-align: left; }
+.som-lines td:last-child, .som-lines th:last-child { text-align: right; }
+.som-x { border: 0; background: none; color: #64748b; cursor: pointer; padding: 4px; border-radius: 6px; }
+.som-x:hover { background: #f1f5f9; }
+
+/* Printshop's table styles set headers in capitals; the design has them as written. */
+.som-table th, .som-table th button { text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 600; }

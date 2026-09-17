@@ -1,7 +1,6 @@
 const router       = require('express').Router();
 const supplierAuth = require('../../middleware/supplierAuth');
 const ctrl         = require('./portal.controller');
-const fulfillment  = require('./portal.fulfillment.controller');
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────
 router.post('/auth/login',   ctrl.login);
@@ -32,15 +31,6 @@ router.get('/orders',                   ctrl.getOrders);
 router.get('/orders/:id',               ctrl.getOrderDetail);
 router.post('/orders/:id/status-updates', ctrl.submitStatusUpdate);
 router.get('/orders/:id/status-updates',  ctrl.getStatusUpdates);
-
-// Supplier Order Management grid, stages and factories (portal.fulfillment.js).
-// Declared before /purchase-orders/:id so "order-grid" is never read as an id.
-router.get('/purchase-orders/order-grid',    fulfillment.getOrderGrid);
-router.get('/purchase-orders/:id/stage',     fulfillment.getOrderRow);
-router.patch('/purchase-orders/:id/stage',   fulfillment.updateOrderStage);
-router.get('/factories',                     fulfillment.listFactories);
-router.post('/factories',                    fulfillment.createFactory);
-router.patch('/factories/:id',               fulfillment.updateFactory);
 
 router.get('/purchase-orders',              ctrl.getPurchaseOrders);
 router.get('/purchase-orders/:id',          ctrl.getPODetail);

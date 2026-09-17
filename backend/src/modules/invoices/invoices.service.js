@@ -246,7 +246,21 @@ async function getById(id) {
   }
 }
 
+// An invoice raised from a quote means the quote was accepted. Quotes were left
+// Draft or Sent after being invoiced — ten of them at once — so the quote list
+// said "draft" about work already invoiced and paid.
 async function create(fields_in) {
+  const invoice = await createInvoice(fields_in)
+  const quoteId = invoice?.quote_id || fields_in?.quote_id
+  if (quoteId) {
+    await query(
+      `UPDATE quotations SET status = 'Approved', approved_at = COALESCE(approved_at, NOW()), updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL AND status IN ('Draft', 'Sent')`, [quoteId])
+  }
+  return invoice
+}
+
+async function createInvoice(fields_in) {
   const { quote_id, order_id, supplier_id, customer_id, issue_date, due_date,
           subtotal, discount_amt, tax_amt,
           notes, created_by, order_type, items } = fields_in
@@ -927,7 +941,9 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
 
   const ordNumber = await getNextNumber('ORD', 'orders', 'order_number')
   const total = +Number(invoice.total).toFixed(2)
-  const orderDate = new Date().toISOString().split('T')[0]
+  // Dated the day the payment came in (else the invoice's date), not today.
+  const day = await require('../orders/orders.service').invoiceDocumentDate(q, invoiceId)
+  const orderDate = day?.document_date || new Date().toISOString().split('T')[0]
 
   const { rows: ordRows } = await q.query(
     `INSERT INTO orders
@@ -936,8 +952,8 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
         subtotal, discount_pct, discount_amt, tax_pct, tax_amt, total,
         shipping_charges, rush_services,
         payment_terms, payment_method, currency, contact_name, contact_email,
-        contact_phone, shipping_name, shipping_address, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        contact_phone, shipping_name, shipping_address, notes, created_by, quotation_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$6,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$25)
      RETURNING id`,
     [
       ordNumber, invoiceId, invoice.supplier_id, invoice.customer_id, orderType,
@@ -949,10 +965,20 @@ async function autoCreateOrder(invoiceId, invoice, actorId, clientArg) {
       invoice.customer_name, invoice.shipping_address, invoice.notes,
       actorId,
       Number(invoice.shipping_charges || 0), Number(invoice.rush_services || 0),
+      qtRows[0]?.quote_id || null,
     ]
   )
   const orderId = ordRows[0].id
   await copyInvoiceItemsToOrder(q, invoiceId, orderId, orderType)
+
+  // The invoice's payments pay its order too, so none is left under Pending SO.
+  await require('../orders/orders.service').linkInvoicePayments(q, orderId, invoiceId)
+  if (qtRows[0]?.quote_id) {
+    await q.query(
+      `UPDATE artworks SET order_id = $1 WHERE quotation_id = $2 AND order_id IS NULL`,
+      [orderId, qtRows[0].quote_id]
+    ).catch(() => {})
+  }
 
   // The invoice has to point back. The order already carries invoice_id, but
   // the invoice page reads its own order_id to decide whether an order exists —
@@ -1024,7 +1050,10 @@ async function updateStatus(id, status, actor) {
 
         if (!existing[0]) {
           const total = +Number(invoice.total).toFixed(2)
-          const orderDate = new Date().toISOString().split('T')[0]
+          // Dated the day the payment came in (else the invoice's date), not today.
+          const ordersSvc = require('../orders/orders.service')
+          const day = await ordersSvc.invoiceDocumentDate(client, id)
+          const orderDate = day?.document_date || new Date().toISOString().split('T')[0]
           const { rows: ordRows } = await client.query(
             `INSERT INTO orders
                (order_number, invoice_id, supplier_id, customer_id, order_type, order_date, entry_date, due_date,
@@ -1033,7 +1062,7 @@ async function updateStatus(id, status, actor) {
                 shipping_charges, rush_services,
                 payment_terms, payment_method, currency, contact_name, contact_email,
                 contact_phone, shipping_name, shipping_address, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             VALUES ($1,$2,$3,$4,$5,$6,$6,$6,'Confirmed','Paid',$12,$7,$8,$9,$10,$11,$12,$23,$24,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
              RETURNING id`,
             [
               ordNumber, id, invoice.supplier_id, invoice.customer_id, orderType,
@@ -1049,6 +1078,12 @@ async function updateStatus(id, status, actor) {
           )
           autoOrderId = ordRows[0].id
           await copyInvoiceItemsToOrder(client, id, autoOrderId, orderType)
+          // Its payments pay the order too, and the invoice points back at it.
+          await ordersSvc.linkInvoicePayments(client, autoOrderId, id)
+          await client.query(
+            `UPDATE invoices SET order_id = COALESCE(order_id, $2), updated_at = NOW() WHERE id = $1`,
+            [id, autoOrderId]
+          )
 
           await client.query(
             `INSERT INTO pipeline_events
@@ -1260,6 +1295,19 @@ async function convertToOrder(invoiceId, actorId, orderType) {
     [invoiceId]
   )
   if (existing[0]) return { order: existing[0], alreadyExisted: true }
+
+  // The order is the invoice's kind of work. A DTF invoice converted as Apparel
+  // put its transfers into garment lines (ORD-2026-0161); a mismatch is refused.
+  const { rows: kind } = await query(
+    `SELECT i.invoice_number, COALESCE(NULLIF(i.order_type::text, ''), q.order_type::text) AS order_type
+       FROM invoices i LEFT JOIN quotations q ON q.id = i.quote_id WHERE i.id = $1`, [invoiceId])
+  const invoiceType = kind[0]?.order_type
+  if (invoiceType && invoiceType !== orderType) {
+    const label = { apparel: 'Apparel', dtf: 'DTF', gangsheet: 'Gangsheet' }
+    throw Object.assign(new Error(
+      `${kind[0].invoice_number} is a ${label[invoiceType] || invoiceType} invoice, so its sales order must be ${label[invoiceType] || invoiceType} too.`),
+      { statusCode: 422 })
+  }
 
   const orderSvc = require('../orders/orders.service')
   try {

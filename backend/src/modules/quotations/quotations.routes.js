@@ -82,6 +82,7 @@ const intakeFields = {
 }
 
 const createSchema = z.object({
+  quote_date:        z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Quote date must be a date').optional().nullable(),
   entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),
@@ -100,6 +101,7 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
+  quote_date:        z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Quote date must be a date').optional().nullable(),
   entry_date:        z.string().optional().nullable(),
   lead_id:            z.string().uuid().optional().nullable(),
   customer_id:        z.string().uuid().optional().nullable(),
@@ -137,12 +139,44 @@ router.delete('/:id',                 controller.remove)
 // ── Artwork attachments on a quote ────────────────────────────────────────────
 router.get('/:id/artworks', async (req, res) => {
   try {
-    const { rows } = await require('../../config/db').query(
+    const db = require('../../config/db')
+    const { rows } = await db.query(
       `SELECT id, artwork_no, name, file_url, file_type, status, created_at
        FROM artworks WHERE quotation_id = $1 ORDER BY created_at`,
       [req.params.id]
     )
-    res.json({ artworks: rows })
+    // Artwork attached on the quote's own lines (the Front / Back / Artwork
+    // cells) lives on quotation_items, not in artworks, so a quote whose art was
+    // all put on its lines listed none here. Each one is listed too, marked
+    // source 'line' — it is removed from its line, not from this list.
+    const { rows: lines } = await db.query(
+      `SELECT qi.id, qi.artwork_no, COALESCE(NULLIF(btrim(qi.description), ''), qi.category, 'Item') AS item,
+              qi.front_image, qi.back_image, qi.artwork_image, qi.sort_order, q.created_at
+         FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id
+        WHERE qi.quotation_id = $1
+        ORDER BY qi.sort_order NULLS LAST, qi.id`,
+      [req.params.id]
+    )
+    const seen = new Set(rows.map(a => a.file_url).filter(Boolean))
+    const fromLines = []
+    lines.forEach((line, index) => {
+      for (const [field, side] of [['front_image', 'Front'], ['back_image', 'Back'], ['artwork_image', 'Artwork']]) {
+        const url = line[field]
+        if (!url || seen.has(url)) continue
+        seen.add(url)
+        fromLines.push({
+          id: `line-${line.id}-${field}`,
+          artwork_no: line.artwork_no,
+          name: `Line ${index + 1} · ${line.item} — ${side}`,
+          file_url: url,
+          file_type: /\.pdf($|\?)/i.test(url) ? 'pdf' : 'image',
+          status: null,
+          created_at: line.created_at,
+          source: 'line',
+        })
+      }
+    })
+    res.json({ artworks: [...rows, ...fromLines] })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 

@@ -117,9 +117,10 @@ async function getById(id) {
   return { ...rows[0], allocations: await getAllocations(id) }
 }
 
-// One payment settles one sales order. uq_payments_one_per_order enforces it,
-// but the index speaks in constraint names — this says which order is already
-// settled and by which payment.
+// This form ties one payment to one sales order. An order paid in parts gets
+// its payments together from its invoice's Multiple Payments, where their total
+// is checked against the order's (migration 146) — so a second one is refused
+// here, with where to go instead.
 async function assertOrderUnsettled(orderId, exceptPaymentId = null) {
   if (!orderId) return
   const { rows } = await query(
@@ -131,7 +132,7 @@ async function assertOrderUnsettled(orderId, exceptPaymentId = null) {
     const r = rows[0]
     const err = new Error(
       `${r.order_number} par pehle se payment ${r.payment_number} ($${Number(r.amount).toFixed(2)}) lagi hui hai. ` +
-      `Ek sales order par ek hi payment lag sakti hai.`)
+      `Ek se zyada payments ke liye invoice par "Multiple Payments" se sab ek saath link karein — un ka total sales order ke barabar hona chahiye.`)
     err.status = 409
     throw err
   }

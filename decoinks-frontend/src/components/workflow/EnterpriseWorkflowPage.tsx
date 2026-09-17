@@ -137,7 +137,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
 }> = {
   quotations: {
     title: 'Quotations', subtitle: 'Manage and track quotations for leads and customers.', api: '/quotations', newPath: '/quotes/new', newLabel: 'New Quotation',
-    search: 'Search by quote no, customer, email, phone or sales agent…', numberKey: 'quote_number', dateKey: 'created_at',
+    search: 'Search by quote no, customer, email, phone or sales agent…', numberKey: 'quote_number', dateKey: 'quote_date',
     statuses: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
     kpis: [
       { label: 'Total Quotes', icon: FileText, value: (_, t) => t, tone: 'blue' },
@@ -149,7 +149,7 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
     columns: [
       { key: 'quote_number', label: 'Quotation No.', render: r => <strong className="ew-link">{r.quote_number}</strong> },
       { key: 'revision_number', label: 'Revision', numeric: true },
-      { key: 'created_at', label: 'Quote Date', render: r => date(r.created_at) },
+      { key: 'quote_date', label: 'Quote Date', render: r => date(r.quote_date || r.created_at) },
       { key: 'entry_date', label: 'Entry Date', render: r => date(r.entry_date || r.created_at) },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'customer', label: 'Customer Name', sortKey: 'customer_name', render: r => <PersonCell name={common.empty(r, 'customer_name')} sub={common.empty(r, 'billing_email', 'email')}/> },
@@ -564,11 +564,15 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
     // /quotes/:id already opens the quotation form for editing; the drawer just
     // never offered it, so a quote could only be edited by typing the URL.
     if (kind === 'quotations') return () => navigate(`/quotes/${row.id}`)
-    // A paid or voided invoice is a settled document; editing it would move
-    // money someone has already received.
+    // A paid invoice is a settled document; editing it would move money someone
+    // has already received. Its date can still be corrected, so Edit opens the
+    // invoice with the date dialog. A voided one is not edited at all.
     if (kind === 'invoices') {
-      const settled = ['Paid', 'Partially Paid', 'Void'].includes(String(row.status || ''))
-      return settled ? null : () => navigate('/invoices/new', { state: { editInvoiceId: row.id } })
+      const status = String(row.status || '')
+      if (status === 'Void') return null
+      return ['Paid', 'Partially Paid'].includes(status)
+        ? () => navigate(`/invoices/${row.id}`, { state: { editDate: true } })
+        : () => navigate('/invoices/new', { state: { editInvoiceId: row.id } })
     }
     return null
   }
@@ -779,9 +783,12 @@ function ItemsSection({ items = [] }: { items?: AnyRow[] }) {
   return <DrawerSection title={`Items / Products (${items.length})`}><div className="ew-detail-items-head"><span>Item</span><span>Qty</span><span>Amount</span></div>{items.length ? <div className="ew-detail-items">{items.map((item, index) => <div key={item.id || index}><span><b>{first(item, 'description', 'category', 'product_type')}</b><small>{[item.artwork_count ? `${item.artwork_count} artworks` : '', item.sizes || item.colors || ''].filter(Boolean).join(' · ') || '—'}</small></span><strong>{first(item, 'qty', 'quantity')}</strong><strong>{money(pick(item, 'amount') ?? Number(item.unit_price || 0) * Number(item.qty || 0))}</strong></div>)}</div> : <p className="ew-detail-empty">No items recorded.</p>}</DrawerSection>
 }
 
+// Artwork is recognised by its file, so a quote's line artwork shows as itself.
+const isImageDoc = (doc: AnyRow) => doc.file_type !== 'pdf' && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(String(doc.file_url || ''))
+
 function DocumentsSection({ title = 'Attachments', documents = [], generated, placeholders = [], navigate }: { title?: string; documents?: AnyRow[]; generated?: { label: string; path: string }; placeholders?: string[]; navigate: (path: string) => void }) {
   const docs = documents || []
-  return <DrawerSection title={`${title}${docs.length ? ` (${docs.length})` : ''}`}><div className="ew-documents">{generated && <button onClick={() => navigate(generated.path)}><FileText size={16}/><span>{generated.label}</span><Download size={15}/></button>}{docs.map((doc, index) => <a key={doc.id || index} href={doc.file_url || '#'} target="_blank" rel="noreferrer"><FileText size={16}/><span>{first(doc, 'filename', 'name', 'artwork_no')}</span><Download size={15}/></a>)}{placeholders.map(label => <button className="empty" disabled key={label}><FileText size={16}/><span>{label}</span><span>—</span></button>)}{!generated && !docs.length && !placeholders.length && <p className="ew-detail-empty">No attachments.</p>}</div></DrawerSection>
+  return <DrawerSection title={`${title}${docs.length ? ` (${docs.length})` : ''}`}><div className="ew-documents">{generated && <button onClick={() => navigate(generated.path)}><FileText size={16}/><span>{generated.label}</span><Download size={15}/></button>}{docs.map((doc, index) => <a key={doc.id || index} href={doc.file_url || '#'} target="_blank" rel="noreferrer">{isImageDoc(doc) ? <img src={doc.file_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#f1f5f9' }}/> : <FileText size={16}/>}<span>{first(doc, 'filename', 'name', 'artwork_no')}</span><Download size={15}/></a>)}{placeholders.map(label => <button className="empty" disabled key={label}><FileText size={16}/><span>{label}</span><span>—</span></button>)}{!generated && !docs.length && !placeholders.length && <p className="ew-detail-empty">No attachments.</p>}</div></DrawerSection>
 }
 
 function NotesSection({ row, label = 'Notes' }: { row: AnyRow; label?: string }) {
@@ -848,7 +855,7 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
   </>
   if (kind === 'quotations') return <>
     <DrawerSection title="Overview" fields={[
-      { label: 'Quote Date', value: date(row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
+      { label: 'Quote Date', value: date(row.quote_date || row.created_at) }, { label: 'Entry Date', value: date(row.entry_date || row.created_at) }, { label: 'Valid Until', value: date(row.valid_until) }, { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
       { label: 'Source', value: first(row, 'customer_source', 'source') }, { label: 'Sent Via', value: first(row, 'sent_via') },
       { label: 'Payment Terms', value: first(row, 'payment_terms') }, { label: 'Shipping', value: Number(row.estimated_shipping || row.shipping_amount || 0) ? money(row.estimated_shipping || row.shipping_amount) : 'Not included' },
       { label: 'Sales Agent', value: first(row, 'sales_agent_name', 'created_by_name', 'agent_name') },

@@ -96,6 +96,7 @@ const headerFields = {
   quotation_id:       z.string().uuid().optional().nullable(),
   invoice_id:         z.string().uuid().optional().nullable(),
   order_date:       isoDate.optional().nullable(),
+  entry_date:       isoDate.optional().nullable(),
   due_date:         isoDate.optional().nullable(),
   // 'Advance' is the term almost every order here runs on — the TSI and DIGI
   // sheets both say so — and 114 of 125 stored orders carry it. It was missing
