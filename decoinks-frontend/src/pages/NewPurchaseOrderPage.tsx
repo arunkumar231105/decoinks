@@ -57,6 +57,8 @@ interface POLineItem {
   catalog_color_id: string
   catalog_size_id: string
   catalog_sku: string
+  // The style's own code (DG001, 5000B) — catalog_sku holds the colour/size SKU.
+  style_code?: string
   product_image: string | null
   style_description: string
   availableColors?: CatalogColor[]
@@ -306,14 +308,14 @@ function reducer(state: POFormState, action: Action): POFormState {
     case 'ADD_CATALOG_ITEM': {
       const item = newItem(state.items.length)
       const style = action.style
-      return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
+      return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, style_code: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
     }
     // A style chosen on a line that already exists. Colour, size and SKU are
     // cleared, because the ones held belong to the style being replaced.
     case 'LINK_STYLE': {
       const style = action.style
       return { ...state, items: state.items.map(it => it.id !== action.id ? it : {
-        ...it, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [],
+        ...it, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, style_code: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [],
         catalog_color_id: '', catalog_size_id: '', color: '', size: '', catalog_variant_sku: '',
       }) }
     }
@@ -739,6 +741,110 @@ export function NewPurchaseOrderPage() {
 
   // A DTF order's lines (order_items_dtf) are its designs: name, size, pieces.
   const dtfLinesOf = (o: any): any[] => (o.order_type === 'dtf' ? (o.items ?? []) : [])
+
+  // ── Style, colour and size on every apparel line ──────────────────────────
+  // A line only shows its colour and size pickers once its style's lists are
+  // loaded, so a converted (or reopened) PO read as blank and every line had
+  // to be picked again (owner, 18 Sep 2026). Each line is filled from, in turn:
+  //   1. its own catalogue link (the sales order line, or this PO's line);
+  //   2. what an earlier PO of the same sales order chose for that line — a
+  //      second, partial PO repeats the first one's choice;
+  //   3. a style whose name is exactly the line's text, when only one is.
+  // Colour and size are then matched by id, else by name. Nothing is guessed
+  // beyond that; an unmatched line keeps its text and is picked by hand.
+  const filledLines = useRef('')
+  const lineKey = state.po_type === 'apparel' ? state.items.map(it => it.id).join(',') : ''
+  useEffect(() => {
+    if (!lineKey || filledLines.current === lineKey) return
+    if (fromOrderId && !isEdit && !sourceOrder) return          // the order's lines are not in yet
+    filledLines.current = lineKey
+    const items = state.items
+    ;(async () => {
+      const norm = (v?: string | null) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const styleOf = new Map<string, Promise<ApparelCatalogStyle | null>>()
+      const detail = (id: string) => {
+        if (!styleOf.has(id)) styleOf.set(id, api.get(`/products/${id}`).then(r => r.data.data as ApparelCatalogStyle).catch(() => null))
+        return styleOf.get(id)!
+      }
+      // What earlier POs of this sales order chose, the latest per order line.
+      const earlier = new Map<string, any>()
+      const poIds = [...new Set(((sourceOrder?.purchase_orders ?? []) as any[]).map(p => p.id))].filter(id => id !== editId)
+      if (poIds.length && items.some(it => it.source_line_id && !it.catalog_style_id)) {
+        const pos = (await Promise.all(poIds.map(id =>
+          api.get(`/purchase-orders/${id}`).then(r => r.data.data ?? r.data).catch(() => null)))).filter(Boolean)
+        pos.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)))
+        for (const po of pos) for (const line of po.items ?? []) {
+          if (line.source_line_id && line.catalog_style_id) earlier.set(line.source_line_id, line)
+        }
+      }
+      // "Adult XL" is XL, "2X" is XXL, "Youth Large" is L — how sizes get typed.
+      const WORD: Record<string, string> = { small: 's', medium: 'm', large: 'l', xlarge: 'xl', extralarge: 'xl',
+        '2x': 'xxl', '2xl': 'xxl', xxlarge: 'xxl', '3x': 'xxxl', '3xl': 'xxxl', '4x': '4xl', '5x': '5xl' }
+      const sizeKey = (v?: string | null) => {
+        const k = norm(String(v ?? '').replace(/\b(adult|adults|youth|kids?|men'?s|women'?s|unisex|size)\b/gi, ''))
+        return WORD[k] ?? k
+      }
+      // Youth and adult lines of one product text are different styles.
+      const groupOf = (it: POLineItem) => (/\b(youth|kids?|toddler|baby)\b/i.test(`${it.size} ${it.item_name}`) ? 'young' : '')
+      const siblingKey = (it: POLineItem) => `${norm(it.item_name)}|${norm(it.color)}|${groupOf(it)}`
+
+      let catalogue: ApparelCatalogStyle[] | null = null
+      const fill = async (it: POLineItem, styleId: string, colorId: string, sizeId: string, prior?: any) => {
+        const style = await detail(styleId)
+        if (!style) return null
+        const colors = style.colors ?? [], sizes = style.sizes ?? [], variants = style.variants ?? []
+        const color = colors.find(c => c.style_color_id === colorId)
+          ?? colors.find(c => [it.color, prior?.color].some(n => n && (norm(c.display_name) === norm(n) || norm(c.color_name) === norm(n))))
+        const size = sizes.find(z => z.style_size_id === sizeId)
+          ?? sizes.find(z => [it.size, prior?.size].some(n => n && (norm(z.size_name) === norm(n) || norm(z.size_code) === norm(n))))
+          ?? sizes.find(z => [it.size, prior?.size].some(n => n && (sizeKey(z.size_name) === sizeKey(n) || sizeKey(z.size_code) === sizeKey(n))))
+        const variant = variants.find(v => v.style_color_id === color?.style_color_id && v.style_size_id === size?.style_size_id)
+        dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: {
+          item_name: style.name || it.item_name, brand: style.brand || it.brand,
+          catalog_style_id: style.id, style_code: style.sku,
+          product_image: it.product_image || style.images?.[0]?.image_url || style.image_url || null,
+          style_description: it.style_description || style.description || '',
+          availableColors: colors, availableSizes: sizes, availableVariants: variants,
+          catalog_color_id: color?.style_color_id ?? '', color: color?.display_name ?? it.color,
+          catalog_size_id: size?.style_size_id ?? '', size: size?.size_name ?? it.size,
+          catalog_sku: variant?.sku_code ?? (color || size ? it.catalog_sku : style.sku),
+        } })
+        return { styleId: style.id, colorId: color?.style_color_id ?? '' }
+      }
+
+      // Pass 1: the line's own link, an earlier PO's choice, or an exact name.
+      const chosen = new Map<string, Set<string>>()      // sibling key → "style|colour" picked
+      const left: POLineItem[] = []
+      for (const it of items) {
+        if (it.availableColors?.length) continue
+        const prior = it.source_line_id ? earlier.get(it.source_line_id) : undefined
+        let styleId = it.catalog_style_id || prior?.catalog_style_id || ''
+        if (!styleId && it.item_name) {
+          catalogue ??= await api.get('/products', { params: { page: 1, limit: 500, product_type: 'Apparel' } })
+            .then(r => r.data.data?.rows ?? []).catch(() => [])
+          const named = (catalogue ?? []).filter(st => norm(st.name) === norm(it.item_name))
+          if (named.length === 1) styleId = named[0].id
+        }
+        if (!styleId) { left.push(it); continue }
+        const own = it.catalog_style_id === styleId
+        const got = await fill(it, styleId, own ? it.catalog_color_id : prior?.catalog_color_id ?? '', own ? it.catalog_size_id : prior?.catalog_size_id ?? '', prior)
+        if (got && !own && prior) {
+          const key = siblingKey(it)
+          chosen.set(key, (chosen.get(key) ?? new Set()).add(`${got.styleId}|${got.colorId}`))
+        } else if (!got) left.push(it)
+      }
+      // Pass 2: a line never picked takes what its twins on this order took —
+      // same product text, colour and adult/youth — when they all took one style.
+      for (const it of left) {
+        const picks = chosen.get(siblingKey(it))
+        if (!picks || picks.size !== 1) continue
+        const [styleId, colorId] = [...picks][0].split('|')
+        await fill(it, styleId, colorId, '')
+      }
+    })()
+    // Not cancelled when the order arrives mid-way: the lines are the same, and
+    // a cancelled fill would never be run again.
+  }, [lineKey, sourceOrder])
 
   function orderToCovered(o: any): CoveredOrder {
     const gsItems: any[] = (o.items ?? []).filter((it: any) => it.no_artworks != null || it.price_per_sheet != null)
@@ -1620,7 +1726,7 @@ export function NewPurchaseOrderPage() {
                 {state.items.map((it, i) => (
                   <tr key={it.id}>
                     <td className="np-td-num">{i + 1}</td>
-                    <td><ApparelStyleSelect value={it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
+                    <td><ApparelStyleSelect value={it.style_code || it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
                     <td><select className="np-table-select" value={it.category} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { category: e.target.value } })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td>
                       <div className="nq-quote-product"><div className="nq-quote-product-image">{it.product_image ? <img src={it.product_image} alt={it.item_name} /> : <Package size={20} />}</div><div><strong>{it.item_name}</strong><span>Brand: {it.brand || '—'}</span></div></div>
