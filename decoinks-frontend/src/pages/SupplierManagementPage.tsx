@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Box, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock,
-  Columns3, FileText, Filter, Plane, Plus, RefreshCw, Search, Send, Settings, Truck, X, type LucideIcon,
+  Download, FileText, Filter, Plane, Plus, RefreshCw, Search, Send, Settings, Truck, X, type LucideIcon,
 } from 'lucide-react'
 import { api } from '../services/api'
+import { useColumnDrag } from '../hooks/useColumnDrag'
+import { ColumnHideMenu } from '../components/ColumnHideMenu'
+import { ColumnFreezeField } from '../components/ColumnFreezeField'
+import { downloadCsv } from '../utils/actions'
 import '../styles/supplier-management.css'
 
 /**
@@ -35,6 +39,8 @@ interface Row {
   shipped_by: 'Factory' | 'Self' | null
   ship_date: string | null
   est_delivery: string | null
+  est_delivery_source?: 'courier' | 'estimate' | null
+  est_delivery_basis?: string | null
   delivered_on: string | null
   digi_status_label: string | null
   items: string | null
@@ -59,7 +65,6 @@ interface GridResponse {
 }
 
 const PAGE_SIZE = 8
-const COLUMNS_KEY = 'som-hidden-columns'
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z]+/g, '-')
 
 const CARDS: { label: string; filter: string; icon: LucideIcon; bg: string; fg: string; solid?: boolean; value: (g: GridResponse) => number }[] = [
@@ -116,7 +121,7 @@ function trackUrl(courier?: string | null, n?: string | null) {
   if (c.includes('FEDEX')) return `https://www.fedex.com/fedextrack/?trknbr=${t}`
   return null
 }
-const readHidden = (): ColumnKey[] => { try { return JSON.parse(localStorage.getItem(COLUMNS_KEY) || '[]') } catch { return [] } }
+const COLUMN_BY_KEY = Object.fromEntries(COLUMNS.map(c => [c.key, c])) as Record<ColumnKey, typeof COLUMNS[number]>
 
 function Chevron() { return <ChevronDown size={16} /> }
 
@@ -133,13 +138,16 @@ export function SupplierManagementPage() {
   const sort = params.get('sort') ?? 'push_date'
   const dir = params.get('dir') === 'asc' ? 'asc' : 'desc'
   const page = Math.max(1, Number(params.get('page')) || 1)
-  const [hidden, setHidden] = useState<ColumnKey[]>(readHidden)
-  const [colsOpen, setColsOpen] = useState(false)
+  // Drag columns into any order, freeze the first ones, hide the rest — the same
+  // grid tools as the other lists, remembered per user in this browser.
+  const columnDrag = useColumnDrag(COLUMNS.map(c => c.key), {
+    frozen: 2, storageKey: 'supplier-management', cellBackground: '#fff', headBackground: '#fff',
+  })
+  const [exporting, setExporting] = useState(false)
   const [dates, setDates] = useState(Boolean(pushFrom || pushTo))
   const [open, setOpen] = useState<Row | null>(null)
   const [adding, setAdding] = useState(false)
   const [numbers, setNumbers] = useState('')
-  const colsRef = useRef<HTMLDivElement>(null)
 
   const update = (next: Record<string, string | number | null>, resetPage = true) => {
     const p = new URLSearchParams(params)
@@ -153,13 +161,6 @@ export function SupplierManagementPage() {
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
-  useEffect(() => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(hidden)) } catch { /* private mode */ } }, [hidden])
-  useEffect(() => {
-    if (!colsOpen) return
-    const close = (e: MouseEvent) => { if (!colsRef.current?.contains(e.target as Node)) setColsOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [colsOpen])
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null) }
@@ -197,7 +198,44 @@ export function SupplierManagementPage() {
   const rows = data?.rows ?? []
   const total = data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const visible = COLUMNS.filter(c => !hidden.includes(c.key))
+  const visible = (columnDrag.visible as ColumnKey[]).map(k => COLUMN_BY_KEY[k]).filter(Boolean)
+
+  // Every order the filters leave — all pages, not only the eight on screen —
+  // with the columns on show, in the order they are shown.
+  const exportCsv = async () => {
+    setExporting(true)
+    try {
+      const all = await api.get('/supplier-orders/digi', {
+        params: {
+          search: params.get('search') || undefined, stage: stage || undefined, factory: factory || undefined,
+          courier: courier || undefined, push_from: pushFrom || undefined, push_to: pushTo || undefined,
+          sort, dir, page: 1, limit: 500,
+        },
+      }).then(r => r.data as GridResponse)
+      const text = (r: Row, key: ColumnKey, i: number): string => {
+        switch (key) {
+          case 'sno': return String(i + 1)
+          case 'po_number': return r.po_numbers.join(', ')
+          case 'customer': return [r.customer_name, r.customer_location].filter(Boolean).join(' — ')
+          case 'order_no': return r.order_no
+          case 'factory': return r.factory ?? ''
+          case 'push_date': return r.push_date ?? ''
+          case 'process_status': return r.process_status
+          case 'items': return r.items ?? ''
+          case 'qty': return r.qty != null ? String(r.qty) : ''
+          case 'shipped_by': return r.shipped_by ?? ''
+          case 'courier': return r.courier ?? ''
+          case 'tracking_number': return r.tracking_number ?? ''
+          case 'tracking_status': return r.tracking_status ?? ''
+          case 'ship_date': return r.ship_date ?? ''
+          case 'est_delivery': return r.est_delivery ? `${r.est_delivery}${r.est_delivery_source === 'estimate' ? ' (estimated)' : ''}` : ''
+          case 'delivered_on': return r.delivered_on ?? ''
+        }
+      }
+      downloadCsv(`digi-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+        all.rows.map((r, i) => Object.fromEntries(visible.map(c => [c.label, text(r, c.key, i)]))))
+    } finally { setExporting(false) }
+  }
   const filtersOn = Boolean(params.get('search') || stage || factory || courier || pushFrom || pushTo)
 
   const pageNumbers = useMemo(() => {
@@ -240,7 +278,11 @@ export function SupplierManagementPage() {
         ? <span className={`som-pill ${r.shipped_by === 'Self' ? 'sb-self' : 'sb-factory'}`} title={r.shipped_by === 'Self' ? 'Label bought by us and handed to DIGI' : "DIGI's own label"}>{r.shipped_by}</span>
         : dash
       case 'ship_date': return r.ship_date ? <span className="som-nw">{r.ship_date}</span> : dash
-      case 'est_delivery': return r.est_delivery ? <span className="som-nw">{r.est_delivery}</span> : dash
+      case 'est_delivery': return r.est_delivery
+        ? (r.est_delivery_source === 'estimate'
+          ? <span className="som-nw som-est" title={r.est_delivery_basis ?? 'Estimated'}>~{r.est_delivery}</span>
+          : <span className="som-nw" title="The courier's expected delivery">{r.est_delivery}</span>)
+        : dash
       case 'delivered_on': return r.delivered_on ? <span className="som-nw" style={{ color: '#15803d' }}>{r.delivered_on}</span> : dash
     }
   }
@@ -258,7 +300,12 @@ export function SupplierManagementPage() {
             <Plus size={14} /> Add DIGI orders
           </button>
         </div>
-        <Link to="/purchase-orders/new" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="som-btn" onClick={exportCsv} disabled={exporting} title="Every order these filters leave, with the columns on show">
+            <Download size={16} /> {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <Link to="/purchase-orders/new" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
+        </div>
       </div>
 
       {[CARDS.slice(0, 6), CARDS.slice(6)].map((group, gi) => (
@@ -317,20 +364,12 @@ export function SupplierManagementPage() {
           <Chevron />
         </label>
         <button className={`som-btn${dates ? ' on' : ''}`} onClick={() => setDates(v => !v)} aria-expanded={dates}><Filter size={16} /> Add filter</button>
-        <div className="som-cols" ref={colsRef}>
-          <button className="som-btn" onClick={() => setColsOpen(v => !v)} aria-expanded={colsOpen}><Columns3 size={16} /> Manage columns</button>
-          {colsOpen && (
-            <div className="som-cols-menu">
-              {COLUMNS.map(c => (
-                <label key={c.key} style={c.required ? { color: '#94a3b8', cursor: 'default' } : undefined}>
-                  <input type="checkbox" disabled={c.required} checked={!hidden.includes(c.key)}
-                    onChange={e => setHidden(h => e.target.checked ? h.filter(k => k !== c.key) : [...h, c.key])} />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
+        <ColumnHideMenu variant="button" label="Manage columns" buttonClassName="som-btn"
+          columns={COLUMNS.map(c => ({ key: c.key, label: c.label }))}
+          hidden={columnDrag.hidden} onToggle={columnDrag.toggleHidden} onShowAll={columnDrag.showAll}
+          onReset={columnDrag.resetLayout} canReset={columnDrag.customised} />
+        <ColumnFreezeField className="som-freeze" value={columnDrag.frozenCount}
+          max={columnDrag.visible.length} shown={columnDrag.frozenShown} onChange={columnDrag.setFrozenCount} />
         {filtersOn && <button className="som-btn plain" onClick={() => { setSearch(''); setParams(new URLSearchParams(), { replace: true }) }}><X size={15} /> Clear</button>}
       </div>
 
@@ -343,11 +382,11 @@ export function SupplierManagementPage() {
 
       <div className="som-table-card">
         <div className="som-scroll">
-          <table className="som-table">
+          <table ref={columnDrag.tableRef} className="som-table">
             <thead>
               <tr>
-                {visible.map(c => (
-                  <th key={c.key} aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+                {visible.map((c, ci) => (
+                  <th key={c.key} {...columnDrag.headProps(c.key, ci)} aria-sort={sorted && sort === c.sort ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     <button onClick={() => update({ sort: c.sort, dir: sort === c.sort && dir === 'desc' ? 'asc' : 'desc' })}>
                       {c.label}
                       {sorted && sort === c.sort
@@ -368,7 +407,7 @@ export function SupplierManagementPage() {
               )}
               {!query.isLoading && !query.isError && rows.map((r, i) => (
                 <tr key={r.order_no} onClick={() => setOpen(r)} title={`Open ${r.order_no}`}>
-                  {visible.map(c => <td key={c.key}>{cell(r, c.key, i)}</td>)}
+                  {visible.map((c, ci) => <td key={c.key} {...columnDrag.cellProps(c.key, ci)}>{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -464,7 +503,7 @@ export function SupplierManagementPage() {
                   : '—'}</dd>
                 <dt>Tracking status</dt><dd>{open.tracking_status ?? '—'}{open.tracking_detail && <span className="som-sub">{open.tracking_detail}</span>}</dd>
                 <dt>Ship date</dt><dd>{day(open.ship_date)}</dd>
-                <dt>Est. delivery</dt><dd>{day(open.est_delivery)}</dd>
+                <dt>Est. delivery</dt><dd>{day(open.est_delivery)}{open.est_delivery_source === 'estimate' && <span className="som-sub">{open.est_delivery_basis}</span>}</dd>
                 <dt>Delivered on</dt><dd>{day(open.delivered_on)}</dd>
                 <dt>Shipping label</dt><dd>{open.label_url ? <a className="som-link" href={open.label_url} target="_blank" rel="noopener noreferrer">Open label PDF</a> : '—'}</dd>
               </dl>

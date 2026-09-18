@@ -100,7 +100,60 @@ async function loadRows() {
     const f = byState.get(raw.first_scan_state)
     if (f) { r.factory = f; r.factory_source = 'first_scan' }
   })
+  estimateDelivery(shaped)
   return shaped
+}
+
+const DAY_MS = 86400000
+const dayNum = d => Math.round(Date.parse(`${d}T00:00:00Z`) / DAY_MS)
+const isoOf = n => new Date(n * DAY_MS).toISOString().slice(0, 10)
+const median = xs => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : null }
+
+/**
+ * An expected delivery day for every live order the courier has not dated.
+ * Couriers give an ETA only once a parcel moves, so for a label not yet
+ * scanned, or an order still in production, it is estimated from DIGI's own
+ * record here: the median days its parcels on that courier took from ship date
+ * to delivery (or from push date, before shipping). Marked 'estimate'.
+ */
+function estimateDelivery(rows) {
+  const delivered = rows.filter(r => r.delivered_on)
+  const byCourier = (field) => {
+    const out = new Map()
+    for (const r of delivered) {
+      if (!r[field]) continue
+      const days = dayNum(r.delivered_on) - dayNum(r[field])
+      if (days < 0 || days > 60) continue
+      const k = String(r.courier || '').toUpperCase()
+      if (!out.has(k)) out.set(k, [])
+      out.get(k).push(days)
+      if (!out.has('*')) out.set('*', [])
+      out.get('*').push(days)
+    }
+    return new Map([...out].map(([k, v]) => [k, median(v)]))
+  }
+  const transit = byCourier('ship_date')
+  const total = byCourier('push_date')
+  const today = dayNum(new Date().toISOString().slice(0, 10))
+  for (const r of rows) {
+    // A delivered parcel the courier never dated keeps what was to be expected
+    // of it (its own ship date plus the median), so the column reads through.
+    if (r.est_delivery || r.process_status === 'Cancelled' || TROUBLE_PROCESS.includes(r.process_status)) continue
+    const k = String(r.courier || '').toUpperCase()
+    const t = transit.get(k) ?? transit.get('*')
+    const all = total.get(k) ?? total.get('*')
+    if (t == null) continue
+    let est
+    if (r.ship_date && r.delivered_on) est = dayNum(r.ship_date) + t
+    else if (r.ship_date) est = Math.max(dayNum(r.ship_date) + t, today)
+    else if (r.push_date && all != null) est = Math.max(dayNum(r.push_date) + all, today + t)
+    else est = today + t
+    r.est_delivery = isoOf(est)
+    r.est_delivery_source = 'estimate'
+    r.est_delivery_basis = r.ship_date
+      ? `Estimated: ship date + ${t} days (median of DIGI's delivered ${k || 'parcels'})`
+      : `Estimated: push date + ${all} days (median of DIGI's delivered orders); not shipped yet`
+  }
 }
 
 function shape(r) {
@@ -148,7 +201,8 @@ function shape(r) {
     courier: r.courier || null,
     tracking_number: r.tracking_number || null,
     ship_date: r.ship_date || (shipped ? r.shipment_ship_date : null) || null,
-    est_delivery: tracking === 'Delivered' ? null : (r.eta_text || null),
+    est_delivery: r.eta_text || null,
+    est_delivery_source: r.eta_text ? 'courier' : null,
     delivered_on: r.delivered_text || null,
     courier_status: r.courier_status || null,
     shipping_time: r.shipping_time,
