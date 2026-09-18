@@ -132,7 +132,11 @@ async function loadRows() {
        LEFT JOIN purchase_orders p ON p.id = d.po_id AND p.deleted_at IS NULL
        LEFT JOIN orders o ON o.id = COALESCE(d.order_id, p.order_id)
        LEFT JOIN customers c ON c.id = o.customer_id
-      WHERE NOT (d.api_missing AND d.digi_id IS NULL AND d.order_status IS NULL)`)
+      WHERE NOT (d.api_missing AND d.digi_id IS NULL AND d.order_status IS NULL)
+        -- Only orders pushed to the factory (the owner, 18 Sep 2026): DIGI's
+        -- 1 Store Audit and 2 Pending Push have not reached a factory yet. They
+        -- appear by themselves once DIGI moves them on.
+        AND COALESCE(d.order_status, 0) NOT IN (1, 2)`)
   const shaped = rows.map(shape)
   // Last resort for the factory: the state the courier first scanned the parcel
   // in, when exactly one factory seen on other orders is in that state
