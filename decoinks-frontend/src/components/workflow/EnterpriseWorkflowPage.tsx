@@ -7,6 +7,7 @@ import {
   PackageCheck, Pencil, Plus, Printer, Search, Send, ShoppingBag,
   Trash2, Truck, Upload, Users, X,
   Link2,
+  SlidersHorizontal,
 } from 'lucide-react'
 import toast from '../../utils/toast'
 import { reportBulkDelete, confirmBulkDelete } from '../../utils/bulkDeleteResult'
@@ -520,6 +521,10 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
   // Orders starts with three — PO #, date and customer — and every other list
   // with its first column. Order, hidden columns and freeze are remembered per
   // list until the user changes them or resets the layout.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = [status, customer, product, source, group].filter(v => v && v !== 'All').length
+    + (dateFrom || dateTo ? 1 : 0)
+
   const columnDrag = useColumnDrag(config.columns.map(c => c.key),
     { frozen: kind === 'purchase-orders' ? 3 : 1, cellBackground: 'inherit', storageKey: kind })
   const shownColumns = useMemo(() => {
@@ -656,7 +661,13 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
         </article>)}
       </section>
 
-      <section className="ew-filters">
+      {/* On a phone the filter bar is a screenful on its own, so it is folded
+          away until asked for; on a desktop the button is not rendered at all. */}
+      <button type="button" className="ew-filters-toggle" aria-expanded={filtersOpen}
+        onClick={() => setFiltersOpen(open => !open)}>
+        <SlidersHorizontal size={15} /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+      </button>
+      <section className={`ew-filters${filtersOpen ? ' ew-filters-open' : ''}`}>
         <label><span>Status</span><select value={status} onChange={e => setStatus(e.target.value)}><option>All</option>{config.statuses.map(s => <option key={s}>{s}</option>)}</select></label>
         <label><span>Customer / Vendor</span><select value={customer} onChange={e => setCustomer(e.target.value)}><option>All</option>{customers.map(v => <option key={v}>{v}</option>)}</select></label>
         <label><span>Product Type</span><select value={product} onChange={e => setProduct(e.target.value)}><option>All</option>{products.map(v => <option value={v} key={v}>{titleCase(v)}</option>)}</select></label>
@@ -699,7 +710,7 @@ export function EnterpriseWorkflowPage({ kind }: { kind: EnterpriseWorkflowKind 
           {!loading && rows.length === 0 && <tr><td className="ew-empty" colSpan={shownColumns.length + 2}><strong>No matching records</strong><span>Try changing the period or clearing your filters.</span><button onClick={clearFilters}>Clear filters</button></td></tr>}
           {!loading && rows.map(row => <tr key={row.id} className={active?.id === row.id ? 'active' : ''} onClick={() => openDetail(row)}>
             <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)}/></td>
-            {shownColumns.map((c, index) => <td key={c.key} {...columnDrag.cellProps(c.key, index)} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
+            {shownColumns.map((c, index) => <td key={c.key} {...columnDrag.cellProps(c.key, index)} data-label={c.label} className={c.numeric ? 'numeric' : ''}>{c.render ? c.render(row) : common.empty(row, c.key)}</td>)}
             <td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
               {kind === 'invoices' && (
                 <CopyPayLinkButton

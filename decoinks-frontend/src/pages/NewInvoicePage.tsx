@@ -993,7 +993,7 @@ export function NewInvoicePage() {
     items:            buildItemsPayload(),
     payment_terms:    paymentTerms || null,
     payment_method:   paymentMethod || null,
-    mark_paid:        isPaid,
+    mark_paid:        isPaid && !coveredByPayment,
     currency:         currency.split(' - ')[0] || 'USD',
     rush_services:    rushServices,
     rush_charges:     rushCharges,
@@ -1157,6 +1157,17 @@ export function NewInvoicePage() {
     return true
   }
 
+  // The payment(s) attached settle the invoice: when they cover the total it is
+  // Paid on screen straight away, with no Mark as Paid needed. The server says
+  // the same on save — the ledger marks it Paid once the payment is attached —
+  // so mark_paid is not sent then, and a refused attach leaves it unpaid.
+  const pickedPayment = multiPayments.length || heldPayments.some(p => p.id === chosenPayment)
+    ? null : paymentOptions.find((p: any) => p.id === chosenPayment)
+  const attachedTotal = +(heldTotal + (multiPayments.length ? multiTotal : Number(pickedPayment?.amount ?? 0))).toFixed(2)
+  const coveredByPayment = total > 0 && attachedTotal >= total - 0.01
+  const paidNow = isPaid || coveredByPayment
+  const amountPaidNow = paidNow ? total : Math.min(attachedTotal, total)
+
   // The save attaches the payment (payment_id in the payload). The answer says
   // whether it did; a refusal leaves the invoice saved and is said, not hidden.
   const reportPayment = (inv: any) => {
@@ -1312,7 +1323,7 @@ export function NewInvoicePage() {
           <span className="ni-info-label">Invoice #</span>
           <div className="ni-invoice-number-row">
             <strong className="ni-info-val ni-teal">AUTO-GENERATED</strong>
-            <span className={cn('ni-badge', STATUS_BADGE_CLASS[invoiceStatus])}>{invoiceStatus}</span>
+            <span className={cn('ni-badge', STATUS_BADGE_CLASS[coveredByPayment ? 'Paid' : invoiceStatus])}>{coveredByPayment ? 'Paid' : invoiceStatus}</span>
           </div>
         </div>
         <div className="ni-info-cell ni-info-cell-field">
@@ -1342,11 +1353,11 @@ export function NewInvoicePage() {
         </div>
         <div className="ni-info-cell">
           <span className="ni-info-label">Payment Status</span>
-          <span className={cn('ni-badge', isPaid ? 'ni-badge-green' : 'ni-badge-red')}>{isPaid ? 'Paid' : 'Unpaid'}</span>
+          <span className={cn('ni-badge', paidNow ? 'ni-badge-green' : 'ni-badge-red')}>{paidNow ? 'Paid' : 'Unpaid'}</span>
         </div>
         <div className="ni-info-cell">
           <span className="ni-info-label">Outstanding Balance</span>
-          <strong className="ni-info-val ni-balance-val">${fmt(isPaid ? 0 : total)}</strong>
+          <strong className="ni-info-val ni-balance-val">${fmt(total - amountPaidNow)}</strong>
         </div>
       </div>
 
@@ -1952,21 +1963,28 @@ export function NewInvoicePage() {
                 <span>Send payment link to customer</span>
               </label>
               <div className="ni-payment-status-row">
-                <span className={cn('ni-badge', isPaid ? 'ni-badge-green' : 'ni-badge-red')}>
-                  {isPaid ? 'Paid' : 'Unpaid'}
+                <span className={cn('ni-badge', paidNow ? 'ni-badge-green' : 'ni-badge-red')}>
+                  {paidNow ? 'Paid' : 'Unpaid'}
                 </span>
-                <button
-                  className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-btn-active')}
-                  onClick={togglePaid}
-                >
-                  {isPaid ? <Check size={13} /> : null}
-                  {isPaid ? 'Marked Paid' : 'Mark as Paid'}
-                </button>
+                {coveredByPayment ? (
+                  <span className="ni-mark-paid-btn ni-mark-paid-btn-active" role="status">
+                    <Check size={13} /> Paid by attached payment
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={cn('ni-mark-paid-btn', isPaid && 'ni-mark-paid-btn-active')}
+                    onClick={togglePaid}
+                  >
+                    {isPaid ? <Check size={13} /> : null}
+                    {isPaid ? 'Marked Paid' : 'Mark as Paid'}
+                  </button>
+                )}
               </div>
               <div className="ni-payment-ledger">
                 <div><span>Previous Payments</span><strong>$0.00</strong></div>
-                <div><span>Amount Paid</span><strong>${fmt(isPaid ? total : 0)}</strong></div>
-                <div><span>Balance Due</span><strong className="ni-balance-val">${fmt(isPaid ? 0 : total)}</strong></div>
+                <div><span>Amount Paid</span><strong>${fmt(amountPaidNow)}</strong></div>
+                <div><span>Balance Due</span><strong className="ni-balance-val">${fmt(total - amountPaidNow)}</strong></div>
                 <div><span>Payment Date</span><strong>—</strong></div>
                 <div><span>Reference / Transaction ID</span><strong>—</strong></div>
               </div>

@@ -635,7 +635,7 @@ export function ShipmentsPage() {
               <tr key={s.id} className="sh-row" style={{ cursor: 'pointer' }} onClick={() => setDetailShipment(s)}>
                 {columnDrag.visible.map((label, i) => {
                   const c = CELLS[label]
-                  return <td key={label} {...columnDrag.cellProps(label, i, c.style)} className={c.className} title={c.title?.(s)}>{c.render(s)}</td>
+                  return <td key={label} {...columnDrag.cellProps(label, i, c.style)} data-label={label} className={c.className} title={c.title?.(s)}>{c.render(s)}</td>
                 })}
                 <td onClick={e => e.stopPropagation()}>
                   <button
