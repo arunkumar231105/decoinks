@@ -117,122 +117,12 @@ async function loadRows() {
     const f = byState.get(raw.first_scan_state)
     if (f) { r.factory = f; r.factory_source = 'first_scan' }
   })
-  estimateDelivery(shaped)
   return shaped
 }
 
-const DAY_MS = 86400000
-const dayNum = d => Math.round(Date.parse(`${d}T00:00:00Z`) / DAY_MS)
-const isoOf = n => new Date(n * DAY_MS).toISOString().slice(0, 10)
-const median = xs => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : null }
-
-/**
- * An expected delivery day for every live order the courier has not dated.
- * Couriers give an ETA only once a parcel moves, so for a label not yet
- * scanned, or an order still in production, it is estimated from DIGI's own
- * record here: the median days its parcels on that courier took from ship date
- * to delivery (or from push date, before shipping). Marked 'estimate'.
- */
-function estimateDelivery(rows) {
-  const delivered = rows.filter(r => r.delivered_on)
-  const byCourier = (field) => {
-    const out = new Map()
-    for (const r of delivered) {
-      if (!r[field]) continue
-      const days = dayNum(r.delivered_on) - dayNum(r[field])
-      if (days < 0 || days > 60) continue
-      const k = String(r.courier || '').toUpperCase()
-      if (!out.has(k)) out.set(k, [])
-      out.get(k).push(days)
-      if (!out.has('*')) out.set('*', [])
-      out.get('*').push(days)
-    }
-    return new Map([...out].map(([k, v]) => [k, median(v)]))
-  }
-  const transit = byCourier('ship_date')
-  const total = byCourier('push_date')
-  const today = dayNum(new Date().toISOString().slice(0, 10))
-  for (const r of rows) {
-    // A delivered parcel the courier never dated keeps what was to be expected
-    // of it (its own ship date plus the median), so the column reads through.
-    if (r.est_delivery || r.process_status === 'Cancelled' || TROUBLE_PROCESS.includes(r.process_status)) continue
-    const k = String(r.courier || '').toUpperCase()
-    const t = transit.get(k) ?? transit.get('*')
-    const all = total.get(k) ?? total.get('*')
-    if (t == null) continue
-    let est
-    if (r.ship_date && r.delivered_on) est = dayNum(r.ship_date) + t
-    else if (r.ship_date) est = Math.max(dayNum(r.ship_date) + t, today)
-    else if (r.push_date && all != null) est = Math.max(dayNum(r.push_date) + all, today + t)
-    else est = today + t
-    r.est_delivery = isoOf(est)
-    r.est_delivery_source = 'estimate'
-    r.est_delivery_basis = r.ship_date
-      ? `Estimated: ship date + ${t} days (median of DIGI's delivered ${k || 'parcels'})`
-      : `Estimated: push date + ${all} days (median of DIGI's delivered orders); not shipped yet`
-  }
-}
-
-function shape(r) {
-  const process = processOf(r)
-  const tracking = trackingOf(r)
-  const reason = [r.status_reason, r.line_messages].filter(Boolean).join(' · ') || null
-  const items = Array.isArray(r.items) ? r.items : []
-  const itemTitles = [...new Set(items.map(i => i.title).filter(Boolean))]
-  const shortTitles = [...new Set(itemTitles.map(shortItem).filter(Boolean))]
-  const location = [r.receiver_city, r.receiver_province, r.receiver_country].filter(Boolean).join(', ') || null
-  // DIGI's warehouse where it names one; otherwise the sender printed on the label.
-  const labelFactory = r.label_from_city && r.label_from_state && !SHOP_CITIES.includes(String(r.label_from_city).toUpperCase())
-    ? `${titleCase(r.label_from_city)}, ${String(r.label_from_state).toUpperCase()}` : null
-  const shipped = Number(r.order_status) === 12
-  const trackingDetail = reason && (TROUBLE_PROCESS.includes(process))
-    ? reason
-    : r.courier_status_text || (tracking === 'Awaiting scan' ? 'Shipped by DIGI — no courier scan yet' : null)
-  return {
-    order_no: r.order_no,
-    po_id: r.po_id,
-    po_number: r.po_number || null,
-    po_numbers: r.po_number ? [r.po_number] : (r.order_po_numbers ? r.order_po_numbers.split(', ') : []),
-    po_match: r.po_match,
-    sales_order_id: r.sales_order_id,
-    sales_order_number: r.order_number,
-    customer_name: r.consignee_name || r.printshop_customer || null,
-    customer_location: location,
-    factory: r.factory_name || labelFactory,
-    factory_source: r.factory_name ? 'digi' : labelFactory ? 'label' : null,
-    factory_detail: [r.label_from_name, r.label_from_address, labelFactory].filter(Boolean).join(', ') || null,
-    push_date: r.push_date,
-    order_time: r.order_time,
-    process_status: process,
-    tracking_status: tracking,
-    tracking_detail: trackingDetail,
-    // Kept for the drawer's pill: trouble on either side shows first.
-    stage: TROUBLE_PROCESS.includes(process) || TROUBLE_TRACKING.includes(tracking) ? 'Exception'
-      : process === 'Cancelled' ? 'Cancelled'
-      : tracking === 'Delivered' ? 'Delivered' : MOVING.includes(tracking) ? 'In Transit' : process,
-    digi_status: r.order_status,
-    digi_status_label: DIGI_STATUS[r.order_status] || null,
-    items: shortTitles.join(', ') || null,
-    items_full: itemTitles.join(', ') || null,
-    item_lines: items,
-    qty: r.goods_total_qty,
-    shipped_by: r.shipped_by || null,
-    courier: r.courier || null,
-    tracking_number: r.tracking_number || null,
-    ship_date: r.ship_date || (shipped ? r.shipment_ship_date : null) || null,
-    est_delivery: r.eta_text || null,
-    est_delivery_source: r.eta_text ? 'courier' : null,
-    delivered_on: r.delivered_text || null,
-    courier_status: r.courier_status || null,
-    shipping_time: r.shipping_time,
-    label_url: r.label_url,
-    label_created_on: r.label_created_on,
-    reason,
-    source: r.source,
-    synced_at: r.synced_at,
-    courier_synced_at: r.courier_synced_at,
-  }
-}
+// Est. Delivery is only ever the courier's own expected day, as its API gives
+// it (the owner, 18 Sep 2026: no estimate of ours). A courier dates a parcel
+// once it moves; before the first scan the column stays empty.
 
 const SORTS = {
   po_number: r => r.po_numbers[0] || '',
