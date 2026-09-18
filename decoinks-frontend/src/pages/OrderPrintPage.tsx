@@ -4,6 +4,7 @@ import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 import { rate } from '../utils/rate'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Order {
@@ -88,7 +89,7 @@ const fmt = (n: number | string | null | undefined) =>
   '$' + Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
+  fmtDay(d)
 
 function numberToWords(amount: number): string {
   if (!Number.isFinite(amount)) amount = 0   // guard: NaN/Infinity would infinite-loop below1000

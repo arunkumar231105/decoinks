@@ -6,6 +6,7 @@ import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 import { rateIn } from '../utils/rate'
 import { storageThumb } from '../utils/storageThumb'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Payment { paid_at: string; method: string; amount: number; reference: string | null }
@@ -69,7 +70,7 @@ interface Artwork {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
+  fmtDay(d)
 
 function numberToWords(amount: number): string {
   if (!Number.isFinite(amount)) amount = 0   // guard: NaN/Infinity would infinite-loop below1000

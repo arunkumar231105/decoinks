@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
+import { fmtDate } from '../utils/dates'
 
 type UserRole = 'Admin' | 'Manager' | 'Sales' | 'Production' | 'Viewer'
 
@@ -271,7 +272,7 @@ export function SettingsUsersPage() {
                         </span>
                       </td>
                       <td className="cust-muoed">
-                        {u.last_login ? new Date(u.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
+                        {fmtDate(u.last_login, 'Never')}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <button className="lb-icon-btn" onClick={(e) => setMenuAnchor({ el: e.currentTarget, id: u.id })}>

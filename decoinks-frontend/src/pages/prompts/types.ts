@@ -1,3 +1,4 @@
+import { fmtDate as fmtDay, fmtDateTime as fmtStampShared } from '../../utils/dates'
 // The shapes the Prompt Management API returns. Kept in one place so the list
 // and the detail screen cannot drift apart from each other.
 
@@ -123,17 +124,15 @@ export const PROVIDERS: Record<string, string[]> = {
 export const PROMPT_STATUSES = ['Active', 'Disabled', 'Archived'] as const
 
 export const fmtDate = (v?: string | null) =>
-  v ? new Date(v).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+  fmtDay(v)
 
 export const fmtDateTime = (v?: string | null) =>
-  v ? new Date(v).toLocaleString('en-US',
-    { day: 'numeric', month: 'short', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : '—'
+  fmtStampShared(v)
 
 // "Aug 28, 2026 02:15 PM" — the version table shows the minute a version went
 // live, because two versions can be published on the same day.
 export const fmtStamp = (v?: string | null) =>
-  v ? new Date(v).toLocaleString('en-US',
-    { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
+  fmtStampShared(v)
 
 // A stable colour per module, so a prompt keeps the same tile every time the
 // list is drawn. Derived from the name rather than stored: a colour is not a

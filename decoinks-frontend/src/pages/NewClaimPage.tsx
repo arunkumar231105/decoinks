@@ -9,6 +9,7 @@ import toast from '../utils/toast'
 import '../styles/claims.css'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
+import { fmtDate, fmtDateTime } from '../utils/dates'
 
 /**
  * New Claim / Refund.
@@ -45,10 +46,9 @@ const money = (v: any) => v == null || v === ''
   ? '—'
   : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const stamp = (v?: string | null) => v
-  ? new Date(v).toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric',
-                                          hour: '2-digit', minute: '2-digit' })
+  ? fmtDateTime(v)
   : '-'
-const day = (v: any) => (v ? String(v).slice(0, 10) : '—')
+const day = (v: any) => (v ? fmtDate(String(v).slice(0, 10)) : '—')
 const sizeLabel = (n?: number | null) =>
   !n ? '' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
 

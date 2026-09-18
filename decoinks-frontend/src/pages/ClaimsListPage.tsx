@@ -9,12 +9,12 @@ import '../styles/claims.css'
 import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { ColumnFreezeField } from '../components/ColumnFreezeField'
+import { fmtDate } from '../utils/dates'
 
 const STATUSES = ['All', 'Draft', 'Raised', 'Under Review', 'Need More Info', 'Approved', 'Refunded', 'Closed', 'Rejected']
 const money = (v: any) => v == null ? '—'
   : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-const date = (v: any) => v ? new Date(v).toLocaleDateString('en-US',
-  { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const date = (v: any) => fmtDate(v)
 
 export function ClaimsListPage() {
   const nav = useNavigate()

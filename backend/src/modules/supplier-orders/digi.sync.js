@@ -134,7 +134,10 @@ async function loadUniverse() {
   } catch (err) {
     console.error('[digi-sync] digi_order_numbers unavailable:', err.message)
   }
-  const { rows: known } = await db.query(`SELECT order_no, courier_status, courier_synced_at FROM digi_orders`)
+  const { rows: known } = await db.query(
+    `SELECT order_no, courier_status, courier_synced_at, courier_delivered_at, label_parsed_url, label_from_name, label_from_address,
+            label_from_city, label_from_state, label_from_zip, label_created_on, label_text
+       FROM digi_orders`)
   return { blanktex, poRefs, manual, known: new Map(known.map(k => [k.order_no, k])) }
 }
 
@@ -153,33 +156,173 @@ async function loadDigiPOs() {
   return rows
 }
 
-function matchPO(order, pos, claimedOrders) {
-  const names = [order.consignee_name].map(normName).filter(n => n.length >= 4)
-  if (!names.length || !order.order_time) return null
+const CANCELLED = new Set([13, 15])
+
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+/**
+ * The same person, allowing for how names get typed: "Amy M Gernak" is
+ * "Amy Gernak" (first and last word agree), "Thomas Garica" is "Thomas Garcia"
+ * (two letters off), and a name cut short still matches its start.
+ */
+function sameName(a, b) {
+  const n = normName(a), m = normName(b)
+  if (n.length < 4 || m.length < 4) return false
+  if (n === m || (n.length > 5 && m.length > 5 && (m.startsWith(n) || n.startsWith(m)))) return true
+  const wa = String(a).toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  const wb = String(b).toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  if (wa.length >= 2 && wb.length >= 2 && wa[0] === wb[0] && wa[wa.length - 1] === wb[wb.length - 1] && wa[0].length >= 2 && wa[wa.length - 1].length >= 3) return true
+  return n.length >= 8 && m.length >= 8 && editDistance(n, m) <= 2
+}
+
+/**
+ * The sales order a DIGI order was placed for: same customer, placed from five
+ * days before the order to ten days after its PO, and pieces that are one line
+ * of it or the whole of it — or, with `part`, no more than the whole (one of
+ * several DIGI orders the sales order was split into). The nearest day wins;
+ * a tie is no match.
+ */
+function salesOrderFor(order, pos, { part = false } = {}) {
+  if (!order.consignee_name || !order.order_time) return null
   const t = order.order_time.getTime()
   const qty = Number(order.goods_total_qty) || 0
-  const sameName = p => [p.customer_name, p.shipping_name, p.contact_name].map(normName).filter(n => n.length >= 4)
-    .some(m => names.some(n => m === n || (n.length > 5 && m.length > 5 && (m.startsWith(n) || n.startsWith(m)))))
+  if (!qty) return null
   const bySalesOrder = new Map()
   for (const p of pos) {
-    if (p.supplier_reference || !p.order_id) continue
+    // A PO already carrying a DIGI number is that order's, except as one of several.
+    if (!p.order_id || (p.supplier_reference && !part)) continue
     const from = new Date(p.order_date || p.created_at).getTime() - 5 * DAY
     const to = new Date(p.created_at).getTime() + 10 * DAY
-    if (t < from || t > to || !sameName(p)) continue
+    if (t < from || t > to) continue
+    if (![p.customer_name, p.shipping_name, p.contact_name].some(n => n && sameName(order.consignee_name, n))) continue
     const lines = (p.line_qtys || []).map(Number).filter(q => q > 0)
     const total = lines.reduce((a, b) => a + b, 0)
-    if (!qty || !(lines.includes(qty) || total === qty)) continue
-    const g = bySalesOrder.get(p.order_id) || { order_id: p.order_id, pos: [], day: Math.abs(new Date(p.order_date || p.created_at).getTime() - t) }
+    if (!(lines.includes(qty) || total === qty || (part && qty <= total))) continue
+    const g = bySalesOrder.get(p.order_id) || { order_id: p.order_id, total, pos: [], day: Math.abs(new Date(p.order_date || p.created_at).getTime() - t) }
     g.pos.push(p)
     bySalesOrder.set(p.order_id, g)
   }
   const groups = [...bySalesOrder.values()].sort((a, b) => a.day - b.day)
-  if (!groups.length) return null
-  if (groups.length > 1 && groups[0].day === groups[1].day) return null
-  const g = groups[0]
-  // A sales order split into several DIGI POs: which PO is which DIGI order is
-  // not in the data, so the order is tied and the PO only when it is the only one.
+  if (!groups.length || (groups.length > 1 && groups[0].day === groups[1].day)) return null
+  return groups[0]
+}
+
+function matchPO(order, pos) {
+  const g = salesOrderFor(order, pos)
+  if (!g) return null
+  // A sales order split into several DIGI POs is settled by linkSplitOrders.
   return { order_id: g.order_id, po_id: g.pos.length === 1 ? g.pos[0].id : null }
+}
+
+/**
+ * The DIGI orders of one sales order that are still without a PO (the owner,
+ * 18 Sep 2026: "po sary bany hwy ha"):
+ *   - as many open POs as open DIGI orders — the order was split into
+ *     identical POs, so they pair up in turn: the earliest DIGI order takes the
+ *     lowest PO number (which is which is not in the data; po_match says so);
+ *   - one PO for the order and the DIGI orders' pieces fit inside it — the
+ *     factory took the one PO as several DIGI orders, and they all carry it.
+ * Cancelled DIGI orders take a PO only when no live DIGI order has it.
+ */
+function linkSplitOrders(rows, pos) {
+  const livePos = pos.filter(p => p.order_id)
+  const taken = new Set(rows.filter(r => r.po_id).map(r => r.po_id))
+  for (const r of rows) {
+    if (r.po_id || r.order_id || CANCELLED.has(r.order_status)) continue
+    const g = salesOrderFor(r, pos, { part: true })
+    if (g) { r.order_id = g.order_id; r.po_match = 'same_sales_order' }
+  }
+  const byOrder = new Map()
+  for (const r of rows) {
+    if (!r.order_id || CANCELLED.has(r.order_status)) continue
+    if (!byOrder.has(r.order_id)) byOrder.set(r.order_id, [])
+    byOrder.get(r.order_id).push(r)
+  }
+  for (const [orderId, digiRows] of byOrder) {
+    const open = digiRows.filter(r => !r.po_id).sort((a, b) => (a.order_time || 0) - (b.order_time || 0))
+    if (!open.length) continue
+    const orderPos = livePos.filter(p => p.order_id === orderId)
+    const free = orderPos.filter(p => !taken.has(p.id)).sort((a, b) => a.po_number.localeCompare(b.po_number, 'en', { numeric: true }))
+    if (free.length && free.length === open.length) {
+      open.forEach((r, i) => { r.po_id = free[i].id; r.po_match = 'split_in_turn'; taken.add(free[i].id) })
+      continue
+    }
+    if (orderPos.length === 1) {
+      const lines = (orderPos[0].line_qtys || []).map(Number).filter(q => q > 0)
+      const total = lines.reduce((a, b) => a + b, 0)
+      const pieces = digiRows.reduce((a, r) => a + (Number(r.goods_total_qty) || 0), 0)
+      if (total && pieces <= total) {
+        for (const r of open) { r.po_id = orderPos[0].id; r.po_match = 'same_sales_order' }
+        taken.add(orderPos[0].id)
+      }
+    }
+  }
+  // A cancelled DIGI order keeps its sales order only through a PO nobody else has.
+  for (const r of rows) {
+    if (!CANCELLED.has(r.order_status) || r.po_id) continue
+    const g = salesOrderFor(r, pos)
+    const free = g && g.pos.filter(p => !taken.has(p.id))
+    if (free && free.length === 1 && g.pos.length === 1) { r.order_id = g.order_id; r.po_id = free[0].id; r.po_match = 'name_date_qty'; taken.add(free[0].id) }
+  }
+}
+
+const LABELS_PER_RUN = 40
+const pdfText = (() => { let parse = null; return async (buf) => { parse = parse || require('pdf-parse/lib/pdf-parse.js'); return (await parse(buf)).text } })()
+
+/**
+ * The sender printed on a shipping label: name, street, "CITY ST 12345", and the
+ * day it was created. USPS labels carry text; some UPS labels are only an image,
+ * and give nothing.
+ */
+function parseLabel(text) {
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean)
+  const c = /Created (\d{2})\/(\d{2})\/(\d{4})/.exec(text || '')
+  const out = { created: c ? `${c[3]}-${c[1]}-${c[2]}` : null }
+  const i = lines.findIndex(l => /^[A-Z][A-Z .'-]* [A-Z]{2} \d{5}(-\d{4})?$/.test(l))
+  if (i < 1) return out
+  const m = /^(.*) ([A-Z]{2}) (\d{5})(?:-\d{4})?$/.exec(lines[i])
+  return { ...out, name: i >= 2 ? lines[i - 2] : null, address: lines[i - 1], city: m[1], state: m[2], zip: m[3] }
+}
+
+/** Read each new label once; a label already read keeps what it said. */
+async function readLabels(rows, known, log) {
+  let read = 0
+  for (const r of rows) {
+    // DIGI buys its own labels through its goodFast service; any other label
+    // was bought by the shop and handed to DIGI.
+    r.shipped_by = r.label_url ? (/\/waybill\/goodFast\//.test(r.label_url) ? 'Factory' : 'Self') : null
+    if (!r.label_url) continue
+    const prev = known.get(r.order_no)
+    if (prev?.label_parsed_url === r.label_url) {
+      Object.assign(r, { label_from_name: prev.label_from_name, label_from_address: prev.label_from_address,
+        label_from_city: prev.label_from_city, label_from_state: prev.label_from_state, label_from_zip: prev.label_from_zip,
+        label_created_on: prev.label_created_on, label_text: prev.label_text, label_parsed_url: prev.label_parsed_url })
+      continue
+    }
+    if (read >= LABELS_PER_RUN) continue
+    read += 1
+    try {
+      const res = await fetch(r.label_url, { signal: AbortSignal.timeout(20000) })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const buf = Buffer.from(await res.arrayBuffer())
+      if (buf.length > 5 * 1024 * 1024) throw new Error('label larger than 5 MB')
+      const text = await pdfText(buf)
+      const l = parseLabel(text)
+      Object.assign(r, { label_from_name: l.name || null, label_from_address: l.address || null, label_from_city: l.city || null,
+        label_from_state: l.state || null, label_from_zip: l.zip || null, label_created_on: l.created || null,
+        label_text: String(text || '').trim().slice(0, 4000) || null, label_parsed_url: r.label_url })
+    } catch (err) {
+      log(`  label ${r.order_no}: ${err.message}`)
+    }
+  }
 }
 
 async function courierStates(rows, known, log) {
@@ -189,7 +332,10 @@ async function courierStates(rows, known, log) {
   if (!tracked.length) return
   const { rows: ships } = await db.query(
     `SELECT DISTINCT ON (BTRIM(s.tracking_number)) BTRIM(s.tracking_number) AS tn, s.tracking_status, s.status_details,
-            s.estimated_delivery, s.delivered_date, s.tracking_synced_at, s.status::text AS status
+            s.estimated_delivery, s.delivered_date, s.tracking_synced_at, s.status::text AS status,
+            (SELECT MAX((h ->> 'status_date')::timestamptz)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.tracking_history) = 'array' THEN s.tracking_history ELSE '[]'::jsonb END) h
+              WHERE UPPER(h ->> 'status') = 'DELIVERED' AND (h ->> 'status_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}') AS delivered_at
        FROM shipments s
       WHERE s.deleted_at IS NULL AND BTRIM(s.tracking_number) = ANY($1::text[])
       ORDER BY BTRIM(s.tracking_number), s.tracking_synced_at DESC NULLS LAST`,
@@ -203,12 +349,14 @@ async function courierStates(rows, known, log) {
       r.courier_status_text = s.status_details || null
       r.courier_eta = s.estimated_delivery || null
       r.courier_delivered = s.delivered_date || null
+      r.courier_delivered_at = s.delivered_at || null
       r.courier_synced_at = s.tracking_synced_at || new Date()
       continue
     }
     const prev = known.get(r.order_no)
     const fresh = prev?.courier_synced_at && Date.now() - new Date(prev.courier_synced_at).getTime() < SHIPPO_EVERY_MS
-    if (prev?.courier_status === 'DELIVERED' || fresh || asked >= SHIPPO_PER_RUN || !shippo.isConfigured()) {
+    // A delivered parcel is asked no more — once its delivered time is known.
+    if ((prev?.courier_status === 'DELIVERED' && prev?.courier_delivered_at) || fresh || asked >= SHIPPO_PER_RUN || !shippo.isConfigured()) {
       r.keep_courier = true
       continue
     }
@@ -219,6 +367,8 @@ async function courierStates(rows, known, log) {
       r.courier_status_text = t.status_details || null
       r.courier_eta = t.estimated_delivery || null
       r.courier_delivered = t.delivered_date || null
+      const scan = (Array.isArray(t.tracking_history) ? t.tracking_history : []).filter(h => String(h.status || '').toUpperCase() === 'DELIVERED' && h.status_date).pop()
+      r.courier_delivered_at = scan ? new Date(scan.status_date) : null
       r.courier_synced_at = new Date()
     } catch (err) {
       r.keep_courier = true
@@ -343,10 +493,11 @@ async function runSync({ apply, log }) {
   }
 
   // Name/date/pieces ties, oldest DIGI orders first.
-  for (const row of rows.filter(r => !r.po_id && !r.order_id).sort((a, b) => (a.order_time || 0) - (b.order_time || 0))) {
+  for (const row of rows.filter(r => !r.po_id && !r.order_id && !CANCELLED.has(r.order_status)).sort((a, b) => (a.order_time || 0) - (b.order_time || 0))) {
     const m = matchPO(row, pos)
     if (m) { row.order_id = m.order_id; row.po_id = m.po_id; row.po_match = 'name_date_qty' }
   }
+  linkSplitOrders(rows, pos)
 
   // A label DIGI only knows by name: the parcel Printshop recorded on the sales
   // order, when that order has exactly one.
@@ -384,6 +535,7 @@ async function runSync({ apply, log }) {
     if (free.length === 1) { r.tracking_number = free[0].tn; r.courier = r.courier || free[0].carrier; taken.add(free[0].tn) }
   }
 
+  await readLabels(rows, known, log)
   await courierStates(rows, known, log)
 
   const counts = { orders: rows.length, on_api: rows.filter(r => !r.api_missing).length, tracked: rows.filter(r => r.tracking_number).length,
@@ -444,13 +596,26 @@ async function runSync({ apply, log }) {
          platform_shop_name = COALESCE($12, platform_shop_name), platform_type = COALESCE($13, platform_type),
          delivery_shipping_time = COALESCE($14, delivery_shipping_time),
          api_info = COALESCE($15::jsonb, api_info), api_status = COALESCE($16::jsonb, api_status),
-         api_delivery = COALESCE($17::jsonb, api_delivery)
+         api_delivery = COALESCE($17::jsonb, api_delivery),
+         shipped_by = COALESCE($18, shipped_by),
+         label_from_name = CASE WHEN $19::text IS NULL THEN label_from_name ELSE $20 END,
+         label_from_address = CASE WHEN $19::text IS NULL THEN label_from_address ELSE $21 END,
+         label_from_city = CASE WHEN $19::text IS NULL THEN label_from_city ELSE $22 END,
+         label_from_state = CASE WHEN $19::text IS NULL THEN label_from_state ELSE $23 END,
+         label_from_zip = CASE WHEN $19::text IS NULL THEN label_from_zip ELSE $24 END,
+         label_created_on = CASE WHEN $19::text IS NULL THEN label_created_on ELSE $25::date END,
+         label_text = CASE WHEN $19::text IS NULL THEN label_text ELSE $26 END,
+         label_parsed_url = COALESCE($19, label_parsed_url),
+         courier_delivered_at = CASE WHEN $27 THEN courier_delivered_at ELSE COALESCE($28::timestamptz, courier_delivered_at) END
        WHERE order_no = $1`,
       [r.order_no, r.receiver_phone, r.receiver_address, r.receiver_address2, r.receiver_post_code,
        r.platform_order_status, r.platform_refund_status, r.order_state_text, r.express_code, r.pre_shipping_time,
        r.platform_shop_code, r.platform_shop_name, r.platform_type, r.delivery_shipping_time,
        r.api_info ? JSON.stringify(r.api_info) : null, r.api_status ? JSON.stringify(r.api_status) : null,
-       r.api_delivery ? JSON.stringify(r.api_delivery) : null])
+       r.api_delivery ? JSON.stringify(r.api_delivery) : null,
+       r.shipped_by || null, r.label_parsed_url || null, r.label_from_name || null, r.label_from_address || null,
+       r.label_from_city || null, r.label_from_state || null, r.label_from_zip || null, r.label_created_on || null,
+       r.label_text || null, Boolean(r.keep_courier), r.courier_delivered_at || null])
 
     for (const l of r.lines) {
       await db.query(

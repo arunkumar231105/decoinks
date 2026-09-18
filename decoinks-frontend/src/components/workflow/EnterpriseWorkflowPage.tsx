@@ -24,6 +24,7 @@ import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { periodRange, type PeriodKey } from '../../utils/period'
 import { PeriodTabs } from '../PeriodTabs'
 import '../../styles/workflow-range.css'
+import { fmtDate as fmtDay, fmtTime } from '../../utils/dates'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -60,7 +61,7 @@ const money = (value: any) => `$${Number(value || 0).toLocaleString('en-US', { m
 const date = (value: any) => {
   if (!value) return '—'
   const raw = String(value)
-  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return fmtDay(/^\d{4}-\d{2}-\d{2}/.test(raw) && raw.length > 10 && raw.endsWith('T00:00:00.000Z') ? raw.slice(0, 10) : raw)
 }
 /**
  * A period as it fits its box: "Sep 14 – Sep 16, 2026" when both ends share a
@@ -85,7 +86,7 @@ const dateTime = (row: AnyRow) => {
   if (!stamp) return day
   const d = new Date(String(stamp))
   if (Number.isNaN(d.getTime())) return day
-  return `${day}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+  return `${day}, ${fmtTime(d)}`
 }
 const titleCase = (value: any) => String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, (s: string) => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')
@@ -115,6 +116,32 @@ const ORDER_GROUPS = [
 const common = {
   empty: (r: AnyRow, ...keys: string[]) => pick(r, ...keys) ?? '—',
   status: (r: AnyRow) => <Badge>{titleCase(r.status)}</Badge>,
+}
+
+// A payment's two sides, as the owner reads them (18 Sep 2026): Paid Via is who
+// carried the money — Stripe, PayPal, Zelle, Shopify — and Payment Method is how
+// the customer paid — a card, Cash App, Link, Apple Pay, a bank. The book keeps
+// the carrier in payment_method and, for Stripe, the way in paid_via (read from
+// Stripe's charge); a payment typed in by hand may name the way itself in
+// payment_method ("Credit Card", "Cash App"). Display only — nothing is rewritten.
+const CARRIERS: Record<string, string> = {
+  stripe: 'Stripe', paypal: 'PayPal', zelle: 'Zelle', shopify: 'Shopify', venmo: 'Venmo',
+  'cash app': 'Cash App', square: 'Square', 'bank transfer': 'Bank', 'bank deposit': 'Bank', other: 'Other',
+}
+const WAYS: Record<string, string> = {
+  card: 'Credit Card', 'credit card': 'Credit Card', 'cash app pay': 'Cash App', 'cash app': 'Cash App',
+  link: 'Link', 'apple pay': 'Apple Pay', 'google pay': 'Google Pay', 'bank (ach)': 'Bank (ACH)',
+  'bank transfer': 'Bank Transfer', 'bank deposit': 'Bank Deposit', venmo: 'Venmo', zelle: 'Bank Transfer',
+}
+const paidVia = (r: AnyRow): string => {
+  const m = String(r.payment_method ?? '').trim()
+  return CARRIERS[m.toLowerCase()] ?? (WAYS[m.toLowerCase()] ? '—' : (m || '—'))
+}
+const paymentWay = (r: AnyRow): string => {
+  const via = String(r.paid_via ?? '').trim()
+  if (via) return WAYS[via.toLowerCase()] ?? via
+  const m = String(r.payment_method ?? '').trim().toLowerCase()
+  return WAYS[m] ?? '—'
 }
 
 // Filters survive leaving the page. Edit an order, save, come back, and the
@@ -319,6 +346,11 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { label: 'Pending SO', icon: Clock3, tone: 'amber',
         value: r => r.filter(x => x.has_sales_order === false
           && !['failed', 'refunded'].includes(String(x.status || '').trim().toLowerCase())).length },
+      // What those payments add up to — money in hand with no sales order yet.
+      { label: 'Pending SO Value', icon: CircleDollarSign, tone: 'amber',
+        value: r => money(r.filter(x => x.has_sales_order === false
+          && !['failed', 'refunded'].includes(String(x.status || '').trim().toLowerCase()))
+          .reduce((a, x) => a + Number(x.amount || 0), 0)) },
       { label: 'Average Payment', icon: CircleDollarSign, value: r => money(r.length ? r.reduce((a, x) => a + Number(x.amount || 0), 0) / r.length : 0), tone: 'purple' },
     ],
     columns: [
@@ -334,10 +366,10 @@ const CONFIG: Record<EnterpriseWorkflowKind, {
       { key: 'amount', label: 'Amount', numeric: true, render: r => <strong>{money(r.amount)}</strong> },
       { key: 'fee_amount', label: 'Fee', numeric: true, render: r => money(r.fee_amount) },
       { key: 'net_amount', label: 'Net Received', numeric: true, render: r => <strong>{money(r.net_amount)}</strong> },
-      { key: 'payment_method', label: 'Payment Method', render: r => titleCase(common.empty(r, 'payment_method')) },
-      // How the customer actually paid inside Stripe — Apple Pay, a card, a bank.
-      // The method stays "Stripe"; this is read from Stripe's charge.
-      { key: 'paid_via', label: 'Paid Via', render: r => common.empty(r, 'paid_via') },
+      // How the customer paid — card, Cash App, Link… — and who carried it —
+      // Stripe, PayPal, Zelle (see paidVia / paymentWay above).
+      { key: 'payment_method', label: 'Payment Method', sortKey: r => paymentWay(r), render: r => paymentWay(r) },
+      { key: 'paid_via', label: 'Paid Via', sortKey: r => paidVia(r), render: r => paidVia(r) },
       { key: 'received_into_account', label: 'Received Into', render: r => common.empty(r, 'received_into_account') },
       { key: 'status', label: 'Status', render: common.status },
       { key: 'order_number', label: 'Order ID', render: r => common.empty(r, 'order_number') },
@@ -821,7 +853,8 @@ function WorkflowDrawerContent({ kind, row, navigate }: { kind: EnterpriseWorkfl
       { label: 'Amount', value: <strong>{money(row.amount)}</strong> },
       { label: 'Processor Fee', value: money(row.fee_amount) },
       { label: 'Net Received', value: <strong>{money(row.net_amount ?? row.amount)}</strong> },
-      { label: 'Payment Method', value: titleCase(first(row, 'payment_method')) },
+      { label: 'Payment Method', value: paymentWay(row) },
+      { label: 'Paid Via', value: paidVia(row) },
       { label: 'Status', value: <Badge>{titleCase(row.status)}</Badge> },
       // "Reference No" is a bank or cheque reference, and a card payment has
       // none — its reference is the Transaction ID above. Showing the invoice

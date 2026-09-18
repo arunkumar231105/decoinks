@@ -6,6 +6,7 @@ import { ChevronRight, MapPin, RefreshCw } from 'lucide-react'
 import { api } from '../services/api'
 import { useFormDraft } from '../hooks/useFormDraft'
 import { DraftBanner } from '../components/DraftBanner'
+import { fmtDateTime } from '../utils/dates'
 
 // ─── Shippo tracking preview shape (returned by /shipments/track-preview) ─────
 
@@ -266,7 +267,7 @@ export function NewShipmentPage() {
                             {h.status_details && <div style={{ color: '#475569' }}>{h.status_details}</div>}
                             <div style={{ color: '#94a3b8' }}>
                               {fmtLoc(h.location?.city, h.location?.state, h.location?.zip)}
-                              {h.status_date ? ` — ${new Date(h.status_date).toLocaleString()}` : ''}
+                              {h.status_date ? ` — ${fmtDateTime(h.status_date)}` : ''}
                             </div>
                           </div>
                         </div>

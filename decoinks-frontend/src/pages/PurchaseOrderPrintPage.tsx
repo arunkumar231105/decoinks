@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -111,8 +112,7 @@ interface Artwork {
 
 const fmtDate = (d: string | null | undefined) => {
   if (!d) return '—'
-  const dt = new Date(d)
-  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-')
+  return fmtDay(d)
 }
 
 const CO = {

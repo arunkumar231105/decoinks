@@ -4,6 +4,7 @@ import {
   CheckCircle2, ExternalLink, FileText, Pencil, Truck, X,
 } from 'lucide-react'
 import { api } from '../../services/api'
+import { fmtDate, fmtDateTime } from '../../utils/dates'
 
 /**
  * A claim opened from the list, without leaving it.
@@ -19,10 +20,10 @@ import { api } from '../../services/api'
 const money = (v: any) => v == null || v === ''
   ? '—' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const day = (v: any) => v
-  ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  ? fmtDate(v)
   : '—'
 const stamp = (v: any) => v
-  ? new Date(v).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  ? fmtDateTime(v)
   : '-'
 const kb = (n?: number | null) => !n ? ''
   : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`

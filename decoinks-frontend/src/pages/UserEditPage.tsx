@@ -13,6 +13,7 @@ import {
 import toast from '../utils/toast'
 import { api } from '../services/api'
 import { useAuthStore } from '../store/authStore'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 type UserRole = 'Admin' | 'Manager' | 'Sales' | 'Production' | 'Viewer'
 
@@ -145,7 +146,7 @@ export function UserEditPage() {
   if (loading) return <div style={{ padding: 40, color: '#64748b' }}>Loading...</div>
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
+    fmtDay(d, 'Never')
 
   return (
     <div className="ue-page">

@@ -1,79 +1,181 @@
 /**
  * Supplier Order Management — DIGI's orders as one grid (Printshop).
  *
- * Rows come from digi_orders (kept by digi.sync.js). Where an order stands is
- * read from DIGI and then the courier:
- *   DIGI 1 Store Audit / 2 Pending Push → To be Pushed; 4 → Factory Audit;
- *   5 → In Production; 3 Rejected / 14 Refunding → Exception;
- *   13 Closed / 15 Refunded → Cancelled;
- *   12 Shipped → the courier's word: Pre-Transit, In Transit, Delivered, or
- *   Exception on a failure or return; Shipped until the courier has one.
+ * Rows come from digi_orders (kept by digi.sync.js). Two statuses, kept apart
+ * (the owner, 18 Sep 2026):
+ *   - Status: where DIGI says the order is — To be Pushed (1 Store Audit,
+ *     2 Pending Push), Factory Audit (4), In Production (5), Shipped (12),
+ *     Rejected (3), Refunding (14), Cancelled (13 Closed, 15 Refunded);
+ *   - Tracking: where the courier says the parcel is, in a word or two — Label
+ *     created, In transit, Out for delivery, Delivered, Returned, Exception.
+ *     The courier's full sentence stays available as tracking_detail.
  */
 const db = require('../../config/db')
 const { SHOP_TZ } = require('../../utils/shopTime')
 
-const STAGES = ['To be Pushed', 'Factory Audit', 'In Production', 'Exception', 'Shipped', 'Pre-Transit', 'In Transit', 'Delivered', 'Cancelled']
+const PROCESS = ['To be Pushed', 'Factory Audit', 'In Production', 'Shipped', 'Rejected', 'Refunding', 'Cancelled']
+const TRACKING = ['Pre-Transit', 'In Transit', 'Delivered', 'Returned', 'Exception']
 const PENDING = ['To be Pushed', 'Factory Audit', 'In Production']
+const MOVING = ['In Transit']
+const TROUBLE_PROCESS = ['Rejected', 'Refunding']
+const TROUBLE_TRACKING = ['Returned', 'Exception']
 const DIGI_STATUS = { 1: 'Store Audit', 2: 'Pending Push', 3: 'Rejected', 4: 'Factory Audit', 5: 'In Production', 12: 'Shipped', 13: 'Closed', 14: 'Refunding', 15: 'Refunded' }
 
-function stageOf(r) {
-  const s = Number(r.order_status)
-  if (s === 13 || s === 15) return 'Cancelled'
-  if (s === 3 || s === 14) return 'Exception'
-  // A parcel the courier has already moved is past DIGI's own status, which can
-  // lag a scan by hours.
-  const moved = String(r.courier_status || '').toUpperCase()
-  if (s !== 12 && moved === 'DELIVERED') return 'Delivered'
-  if (s !== 12 && moved === 'TRANSIT') return 'In Transit'
-  if (s !== 12 && (moved === 'FAILURE' || moved === 'RETURNED')) return 'Exception'
-  if (s === 12) {
-    const c = String(r.courier_status || '').toUpperCase()
-    if (c === 'DELIVERED') return 'Delivered'
-    if (c === 'TRANSIT') return 'In Transit'
-    if (c === 'PRE_TRANSIT') return 'Pre-Transit'
-    if (c === 'FAILURE' || c === 'RETURNED') return 'Exception'
-    return 'Shipped'
+function processOf(r) {
+  switch (Number(r.order_status)) {
+    case 13: case 15: return 'Cancelled'
+    case 3: return 'Rejected'
+    case 14: return 'Refunding'
+    case 12: return 'Shipped'
+    case 5: return 'In Production'
+    case 4: return 'Factory Audit'
+    default: return 'To be Pushed'
   }
-  if (s === 5) return 'In Production'
-  if (s === 4) return 'Factory Audit'
-  return 'To be Pushed'
 }
 
-const HUMAN_COURIER = { PRE_TRANSIT: 'Label created', TRANSIT: 'In transit', DELIVERED: 'Delivered', FAILURE: 'Delivery problem', RETURNED: 'Returned to sender' }
+// The courier's status: Pre-Transit (label made, not scanned yet), In Transit,
+// Delivered, Returned, Exception. What exactly happened is the description.
+function trackingOf(r) {
+  const st = Number(r.order_status)
+  if (!r.tracking_number || st === 13 || st === 15) return null
+  switch (String(r.courier_status || '').toUpperCase()) {
+    case 'DELIVERED': return 'Delivered'
+    case 'TRANSIT': return 'In Transit'
+    case 'RETURNED': return 'Returned'
+    case 'FAILURE': return 'Exception'
+    default: return 'Pre-Transit'
+  }
+}
+
+/**
+ * The courier's latest event in a few words (the owner, 18 Sep 2026: Tracking
+ * Status and Tracking Description apart). The courier's own sentence stays in
+ * tracking_detail.
+ */
+function trackingDescOf(r, status) {
+  const st = Number(r.order_status)
+  if (st === 13 || st === 15) return r.tracking_number ? 'Label not used' : null
+  if (!r.tracking_number) return null
+  const t = String(r.courier_status_text || '').toUpperCase()
+  if (!t) return status === 'Pre-Transit' ? (st === 12 ? 'Awaiting pickup' : 'Label created') : null
+  const rules = [
+    [/OUT FOR DELIVERY/, 'Out for delivery'],
+    [/AVAILABLE FOR PICK ?UP|READY FOR PICK ?UP|HELD AT/, 'Ready for pickup'],
+    [/PARCEL LOCKER/, 'Delivered – parcel locker'],
+    [/FRONT DOOR|PORCH/, 'Delivered – front door'],
+    [/MAILBOX/, 'Delivered – mailbox'],
+    [/FRONT DESK|RECEPTION|MAIL ROOM/, 'Delivered – front desk'],
+    [/LEFT WITH AN INDIVIDUAL/, 'Delivered – handed over'],
+    [/PICKED UP AT (THE )?(PO|POST OFFICE|POSTAL FACILITY)|PICKED IT UP AT/, 'Picked up at post office'],
+    [/INVESTIGATION CLOSED/, 'Investigation closed'],
+    [/RETURNED/, 'Returned to sender'],
+    [/NOT RECEIVED THE PACKAGE|AWAITING THE ITEM|LABEL CREATED|PRE-SHIPMENT/, 'Label created'],
+    [/ARRIVING LATE|DELAY/, 'Delayed'],
+    [/DEPARTED/, 'Departed facility'],
+    [/ARRIVED/, 'Arrived at facility'],
+    [/PROCESSED/, 'Processed at facility'],
+    [/IN TRANSIT TO NEXT FACILITY/, 'On the way to next facility'],
+    [/PICKED UP|ACCEPTED|ORIGIN SCAN/, 'Picked up'],
+    [/^DELIVERED$|DELIVERED/, 'Delivered'],
+    [/IN TRANSIT/, 'In transit'],
+  ]
+  for (const [re, label] of rules) if (re.test(t)) return label
+  const words = String(r.courier_status_text).replace(/[.]+$/, '').split(/\s+/).slice(0, 4).join(' ')
+  return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase()
+}
+
+const titleCase = s => String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
+
+/**
+ * An item's name for the grid, without where it is printed: "Custom Tshirt
+ * Front & Back (Both)" → "Custom T-Shirt" (the owner, 18 Sep 2026). The drawer
+ * and search keep the full title.
+ */
+function shortItem(title) {
+  let s = String(title || '')
+  s = s.replace(/\(\s*(both|only|front|back)\s*\)/gi, ' ')
+  s = s.replace(/\b(front|back)\b(\s*(&|and|\+|\/)\s*(front|back)\b)?/gi, ' ')
+  s = s.replace(/\bonly\b/gi, ' ')
+  s = s.replace(/\bt\s*-?\s*(shirt|hsirt|shrit)s?\b/gi, 'T-Shirt')
+  s = s.replace(/\(\s*\)/g, ' ')
+  s = s.replace(/[\s&+,/-]+$/g, '').replace(/^[\s&+,/-]+/g, '').replace(/\s{2,}/g, ' ').trim()
+  s = s.replace(/\b([a-z])([a-z]*)\b/g, (_m, a, b) => a.toUpperCase() + b)
+  return s || String(title || '').trim()
+}
+// The shop's own address on a label it bought is not a factory.
+const SHOP_CITIES = ['CORONA']
 
 async function loadRows() {
   const { rows } = await db.query(
     `SELECT d.*, (d.order_time AT TIME ZONE '${SHOP_TZ}')::date::text AS push_date,
+            (d.shipping_time AT TIME ZONE '${SHOP_TZ}')::date::text AS ship_date,
+            d.courier_eta::text AS eta_text, d.courier_delivered::text AS delivered_text,
             p.po_number, o.order_number, o.id AS sales_order_id,
             COALESCE(NULLIF(BTRIM(c.name), ''), NULLIF(BTRIM(o.shipping_name), '')) AS printshop_customer,
             -- A sales order split into several DIGI POs: its PO numbers, when the
             -- DIGI order could be tied to the order but not to one PO.
             (SELECT string_agg(p2.po_number, ', ' ORDER BY p2.po_number)
                FROM purchase_orders p2 JOIN suppliers s2 ON s2.id = p2.supplier_id AND s2.name ~* '^digi'
-              WHERE d.po_id IS NULL AND p2.order_id = d.order_id AND p2.deleted_at IS NULL) AS order_po_numbers
+              WHERE d.po_id IS NULL AND p2.order_id = d.order_id AND p2.deleted_at IS NULL) AS order_po_numbers,
+            -- The first ship date Printshop's own shipment has, for a parcel DIGI gave no ship time.
+            (SELECT MIN(s.ship_date)::text FROM shipments s
+              WHERE s.deleted_at IS NULL AND d.tracking_number IS NOT NULL AND BTRIM(s.tracking_number) = d.tracking_number) AS shipment_ship_date,
+            -- The state of the courier's first scan that names one: where the parcel entered the network.
+            (SELECT UPPER(h.ev -> 'location' ->> 'state')
+               FROM shipments s,
+                    jsonb_array_elements(CASE WHEN jsonb_typeof(s.tracking_history) = 'array' THEN s.tracking_history ELSE '[]'::jsonb END)
+                      WITH ORDINALITY AS h(ev, n)
+              WHERE s.deleted_at IS NULL AND d.tracking_number IS NOT NULL AND BTRIM(s.tracking_number) = d.tracking_number
+                AND NULLIF(h.ev -> 'location' ->> 'state', '') IS NOT NULL
+              ORDER BY h.n LIMIT 1) AS first_scan_state
        FROM digi_orders d
        LEFT JOIN purchase_orders p ON p.id = d.po_id AND p.deleted_at IS NULL
        LEFT JOIN orders o ON o.id = COALESCE(d.order_id, p.order_id)
        LEFT JOIN customers c ON c.id = o.customer_id
-      WHERE NOT (d.api_missing AND d.digi_id IS NULL AND d.order_status IS NULL)`)
-  return rows.map(shape)
+      WHERE NOT (d.api_missing AND d.digi_id IS NULL AND d.order_status IS NULL)
+        -- Only orders pushed to the factory (the owner, 18 Sep 2026): DIGI's
+        -- 1 Store Audit and 2 Pending Push have not reached a factory yet. They
+        -- appear by themselves once DIGI moves them on.
+        AND COALESCE(d.order_status, 0) NOT IN (1, 2)`)
+  const shaped = rows.map(shape)
+  // Last resort for the factory: the state the courier first scanned the parcel
+  // in, when exactly one factory seen on other orders is in that state
+  // (a UPS label that is only an image, with no warehouse from DIGI).
+  const byState = new Map()
+  for (const r of shaped) {
+    const st = r.factory && /, ([A-Z]{2})$/.exec(r.factory)?.[1]
+    if (!st) continue
+    byState.set(st, byState.has(st) && byState.get(st) !== r.factory ? null : r.factory)
+  }
+  rows.forEach((raw, i) => {
+    const r = shaped[i]
+    if (r.factory || !raw.first_scan_state) return
+    const f = byState.get(raw.first_scan_state)
+    if (f) { r.factory = f; r.factory_source = 'first_scan' }
+  })
+  return shaped
 }
 
+// Est. Delivery is only ever the courier's own expected day, as its API gives
+// it (the owner, 18 Sep 2026: no estimate of ours). A courier dates a parcel
+// once it moves; before the first scan the column stays empty.
+
 function shape(r) {
-  const stage = stageOf(r)
-  const shipped = Number(r.order_status) === 12
+  const process = processOf(r)
+  const tracking = trackingOf(r)
+  const trackingDesc = trackingDescOf(r, tracking)
   const reason = [r.status_reason, r.line_messages].filter(Boolean).join(' · ') || null
-  const courierText = r.courier_status_text || HUMAN_COURIER[String(r.courier_status || '').toUpperCase()] || null
-  const trackingText = stage === 'Exception'
-    ? (reason || courierText || DIGI_STATUS[r.order_status] || 'Exception')
-    : stage === 'Cancelled'
-      ? (r.tracking_number ? 'Cancelled — label not used' : null)
-      : courierText
-        || (shipped ? 'Shipped by DIGI — awaiting first scan' : null)
-        || (r.tracking_number ? `Label created — ${DIGI_STATUS[r.order_status] || 'not shipped yet'}` : null)
   const items = Array.isArray(r.items) ? r.items : []
   const itemTitles = [...new Set(items.map(i => i.title).filter(Boolean))]
+  const shortTitles = [...new Set(itemTitles.map(shortItem).filter(Boolean))]
   const location = [r.receiver_city, r.receiver_province, r.receiver_country].filter(Boolean).join(', ') || null
+  // DIGI's warehouse where it names one; otherwise the sender printed on the label.
+  const labelFactory = r.label_from_city && r.label_from_state && !SHOP_CITIES.includes(String(r.label_from_city).toUpperCase())
+    ? `${titleCase(r.label_from_city)}, ${String(r.label_from_state).toUpperCase()}` : null
+  const shipped = Number(r.order_status) === 12
+  const trackingDetail = reason && (TROUBLE_PROCESS.includes(process))
+    ? reason
+    : r.courier_status_text || (tracking === 'Pre-Transit' && shipped ? 'Shipped by DIGI — no courier scan yet' : null)
   return {
     order_no: r.order_no,
     po_id: r.po_id,
@@ -84,26 +186,40 @@ function shape(r) {
     sales_order_number: r.order_number,
     customer_name: r.consignee_name || r.printshop_customer || null,
     customer_location: location,
-    factory: r.factory_name,
+    factory: r.factory_name || labelFactory,
+    factory_source: r.factory_name ? 'digi' : labelFactory ? 'label' : null,
+    factory_detail: [r.label_from_name, r.label_from_address, labelFactory].filter(Boolean).join(', ') || null,
     push_date: r.push_date,
     order_time: r.order_time,
-    stage,
+    process_status: process,
+    tracking_status: tracking,
+    tracking_desc: trackingDesc,
+    tracking_detail: trackingDetail,
+    // Kept for the drawer's pill: trouble on either side shows first.
+    stage: TROUBLE_PROCESS.includes(process) || TROUBLE_TRACKING.includes(tracking) ? 'Exception'
+      : process === 'Cancelled' ? 'Cancelled'
+      : tracking === 'Delivered' ? 'Delivered' : MOVING.includes(tracking) ? 'In Transit' : process,
     digi_status: r.order_status,
     digi_status_label: DIGI_STATUS[r.order_status] || null,
-    items: itemTitles.join(', ') || null,
+    items: shortTitles.join(', ') || null,
+    items_full: itemTitles.join(', ') || null,
     item_lines: items,
     qty: r.goods_total_qty,
-    // DIGI buys the label before it prints, so the number is there from the start.
+    shipped_by: r.shipped_by || null,
     courier: r.courier || null,
     tracking_number: r.tracking_number || null,
-    tracking_text: trackingText,
+    ship_date: r.ship_date || (shipped ? r.shipment_ship_date : null) || null,
+    est_delivery: r.eta_text || null,
+    est_delivery_source: r.eta_text ? 'courier' : null,
+    delivered_on: r.delivered_text || null,
+    // Timestamps for the time under each date (the owner, 18 Sep 2026).
+    push_at: r.order_time || null,
+    ship_at: r.shipping_time || null,
+    delivered_at: r.courier_delivered_at || null,
     courier_status: r.courier_status || null,
-    courier_eta: r.courier_eta,
-    delivered_date: r.courier_delivered,
     shipping_time: r.shipping_time,
     label_url: r.label_url,
-    label_tracking_number: r.tracking_number,
-    label_courier: r.courier,
+    label_created_on: r.label_created_on,
     reason,
     source: r.source,
     synced_at: r.synced_at,
@@ -117,12 +233,32 @@ const SORTS = {
   order_no: r => r.order_no,
   factory: r => (r.factory || '').toLowerCase(),
   push_date: r => r.order_time ? new Date(r.order_time).getTime() : 0,
-  stage: r => STAGES.indexOf(r.stage),
+  process_status: r => PROCESS.indexOf(r.process_status),
   items: r => (r.items || '').toLowerCase(),
   qty: r => r.qty ?? -1,
+  shipped_by: r => r.shipped_by || '',
   courier: r => (r.courier || '').toLowerCase(),
   tracking_number: r => r.tracking_number || '',
-  tracking_text: r => (r.tracking_text || '').toLowerCase(),
+  tracking_status: r => (r.tracking_status ? TRACKING.indexOf(r.tracking_status) : 99),
+  tracking_desc: r => (r.tracking_desc || '').toLowerCase(),
+  ship_date: r => r.ship_date || '',
+  est_delivery: r => r.est_delivery || '',
+  delivered_on: r => r.delivered_on || '',
+}
+
+/**
+ * One filter for both statuses: 'Pending', 'Issued', 'Exception', 'p:<status>',
+ * 't:<tracking>', or 't:moving' for every parcel on its way.
+ */
+function statusFilter(value) {
+  if (!value) return () => true
+  if (value === 'Pending') return r => PENDING.includes(r.process_status)
+  if (value === 'Issued') return r => r.process_status !== 'Cancelled'
+  if (value === 'Exception') return r => TROUBLE_PROCESS.includes(r.process_status) || TROUBLE_TRACKING.includes(r.tracking_status)
+  if (value === 't:moving') return r => MOVING.includes(r.tracking_status)
+  if (value.startsWith('p:')) return r => r.process_status === value.slice(2)
+  if (value.startsWith('t:')) return r => r.tracking_status === value.slice(2)
+  return () => true
 }
 
 async function getGrid(query = {}) {
@@ -130,9 +266,10 @@ async function getGrid(query = {}) {
   const page = Math.max(1, parseInt(query.page, 10) || 1)
   const limit = Math.min(500, Math.max(1, parseInt(query.limit, 10) || 8))
   const search = String(query.search || '').trim().toLowerCase()
-  const stage = String(query.stage || '').trim()
+  const status = String(query.stage || '').trim()
   const factory = String(query.factory || '').trim()
   const courier = String(query.courier || '').trim().toLowerCase()
+  const shippedBy = String(query.shipped_by || '').trim()
   const DATE = /^\d{4}-\d{2}-\d{2}$/
   const from = DATE.test(String(query.push_from || '')) ? query.push_from : null
   const to = DATE.test(String(query.push_to || '')) ? query.push_to : null
@@ -143,15 +280,14 @@ async function getGrid(query = {}) {
   let rows = all
   if (search) {
     rows = rows.filter(r => [r.order_no, ...r.po_numbers, r.sales_order_number, r.customer_name, r.customer_location,
-      r.tracking_number, r.label_tracking_number, r.factory, r.items].some(v => String(v || '').toLowerCase().includes(search)))
+      r.tracking_number, r.factory, r.items, r.items_full].some(v => String(v || '').toLowerCase().includes(search)))
   }
-  if (stage === 'Pending') rows = rows.filter(r => PENDING.includes(r.stage))
-  else if (stage === 'Issued') rows = rows.filter(r => r.stage !== 'Cancelled')
-  else if (stage) rows = rows.filter(r => r.stage === stage)
+  rows = rows.filter(statusFilter(status))
   if (factory === 'none') rows = rows.filter(r => !r.factory)
   else if (factory) rows = rows.filter(r => r.factory === factory)
   if (courier === 'none') rows = rows.filter(r => !r.courier)
   else if (courier) rows = rows.filter(r => String(r.courier || '').toLowerCase() === courier)
+  if (shippedBy) rows = rows.filter(r => r.shipped_by === shippedBy)
   if (from) rows = rows.filter(r => r.push_date && r.push_date >= from)
   if (to) rows = rows.filter(r => r.push_date && r.push_date <= to)
 
@@ -163,8 +299,9 @@ async function getGrid(query = {}) {
     return String(b.order_no).localeCompare(String(a.order_no))
   })
 
-  const counts = Object.fromEntries(STAGES.map(s => [s, 0]))
-  for (const r of all) counts[r.stage] += 1
+  const count = f => all.filter(f).length
+  const processCounts = Object.fromEntries(PROCESS.map(s => [s, count(r => r.process_status === s)]))
+  const trackingCounts = Object.fromEntries(TRACKING.map(s => [s, count(r => r.tracking_status === s)]))
   const lastSync = all.map(r => r.synced_at).filter(Boolean).sort().pop() || null
 
   return {
@@ -174,12 +311,16 @@ async function getGrid(query = {}) {
     limit,
     summary: {
       total: all.length,
-      issued: all.filter(r => r.stage !== 'Cancelled').length,
-      pending: all.filter(r => PENDING.includes(r.stage)).length,
-      stages: counts,
+      issued: count(statusFilter('Issued')),
+      pending: count(statusFilter('Pending')),
+      exceptions: count(statusFilter('Exception')),
+      moving: count(statusFilter('t:moving')),
+      process: processCounts,
+      tracking: trackingCounts,
     },
     filters: {
-      stages: STAGES,
+      process: PROCESS,
+      tracking: TRACKING,
       factories: [...new Set(all.map(r => r.factory).filter(Boolean))].sort(),
       couriers: [...new Set(all.map(r => r.courier).filter(Boolean).map(c => String(c).toUpperCase()))].sort(),
     },
@@ -192,4 +333,4 @@ async function getOrder(orderNo) {
   return rows.find(r => r.order_no === orderNo) || null
 }
 
-module.exports = { getGrid, getOrder, stageOf, STAGES }
+module.exports = { getGrid, getOrder, processOf, trackingOf, PROCESS, TRACKING }

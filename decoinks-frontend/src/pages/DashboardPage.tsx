@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import { api } from '../services/api'
 import { RECENT_PERIODS, periodRange } from '../utils/period'
+import { fmtDayMonth } from '../utils/dates'
 
 // ── Types (mirror /dashboard/overview) ──────────────────────────────────────
 type Metric = { count: number; prev: number; dtf: number; shirt: number; value?: number; value_prev?: number; pending?: number; orders_covered?: number; reached?: number }
@@ -36,7 +37,7 @@ type Overview = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const money = (v?: number | string | null) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtDay = (v: string) => new Date(v + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const fmtDay = (v: string) => fmtDayMonth(v)
 const fmtRange = (a: string, b: string) => `${fmtDay(a)} – ${fmtDay(b)}`
 const pctOf = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : '0%')
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

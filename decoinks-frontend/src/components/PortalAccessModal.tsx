@@ -3,6 +3,7 @@ import { X, Eye, EyeOff, Loader2, ShieldCheck, ShieldOff, RefreshCw } from 'luci
 import toast from '../utils/toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { fmtDateTime } from '../utils/dates'
 
 interface Props {
   supplierId: string
@@ -73,7 +74,7 @@ export default function PortalAccessModal({ supplierId, supplierName, onClose }:
   }
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never'
+    fmtDateTime(d, 'Never')
 
   return (
     /* Backdrop */

@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
 import { ArtworkLightboxOverlay, ArtworkLightboxProvider, ArtworkThumb } from '../components/print/ArtworkLightbox'
 import { rate } from '../utils/rate'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuoteItem {
@@ -36,7 +37,7 @@ interface Quote {
 const fmt     = (n: number | null | undefined) =>
   '$ ' + Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
+  fmtDay(d)
 
 const CO = {
   address: 'Suite 111, 1218 Magnolia Avenue',

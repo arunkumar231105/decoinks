@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/authStore'
 import { getValidTransitions, type UserRole } from '../utils/statusTransitions'
 import { getApiError } from '../utils/apiError'
 import { MultiPaymentLinker } from '../components/payments/MultiPaymentLinker'
+import { fmtDate as fmtDay, fmtDateTime as fmtStamp } from '../utils/dates'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -217,10 +218,10 @@ export function InvoiceDetailPage() {
     n != null ? n.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    fmtDay(d)
 
   const fmtDateTime = (d: string) =>
-    new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    fmtStamp(d)
 
   // ── Loading / not found ──
 

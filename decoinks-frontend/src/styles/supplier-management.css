@@ -115,3 +115,42 @@
 
 /* Printshop's table styles set headers in capitals; the design has them as written. */
 .som-table th, .som-table th button { text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 600; }
+
+/* Order status pills beyond the design's set, tracking status text, and who shipped. */
+.st-rejected, .st-refunding { background: #fee2e2; color: #dc2626; }
+.tk-label-created, .tk-awaiting-scan { color: #0e7490; }
+.tk-in-transit, .tk-out-for-delivery, .tk-ready-for-pickup { color: #2563eb; }
+.tk-delayed { color: #c2410c; }
+.tk-delivered { color: #15803d; }
+.tk-returned, .tk-exception { color: #dc2626; }
+.tk-label-void { color: #94a3b8; }
+.tkp-label-created, .tkp-awaiting-scan { background: #cffafe; color: #0e7490; }
+.tkp-in-transit, .tkp-out-for-delivery, .tkp-ready-for-pickup { background: #e0f2fe; color: #0369a1; }
+.tkp-delayed { background: #ffedd5; color: #c2410c; }
+.tkp-delivered { background: #dcfce7; color: #15803d; }
+.tkp-returned, .tkp-exception { background: #fee2e2; color: #dc2626; }
+.tkp-label-void { background: #f1f5f9; color: #64748b; }
+.sb-factory { background: #f3e8ff; color: #7e22ce; }
+.sb-self { background: #fef3c7; color: #b45309; }
+.som-table { min-width: 1500px; }
+
+/* An estimated delivery day (no courier ETA yet) reads softer than the courier's own. */
+.som-est { color: #64748b; font-style: italic; }
+/* The freeze field in the filter row: caption and stepper on one line. */
+.som-freeze { display: inline-flex; align-items: center; gap: 8px; height: 40px; font-size: 13px; color: #1e293b; white-space: nowrap; position: relative; }
+.som-freeze div.cf-stepper { height: 40px; border-radius: 8px; }
+.som-freeze > span { font-size: 13px; color: #1e293b; }
+.som-freeze .cf-note { font-size: 11px; color: #64748b; }
+/* Headers are dragged by the whole cell. */
+.som-table th[draggable="true"] { cursor: grab; }
+.som-table th[data-dragging="true"] { cursor: grabbing; }
+
+/* Tracking Status pills and Tracking Description text, by courier status. */
+.tkp-pre-transit { background: #cffafe; color: #0e7490; }
+.tkp-in-transit { background: #e0f2fe; color: #0369a1; }
+.tk-pre-transit { color: #0e7490; }
+.tk-in-transit { color: #2563eb; }
+.som-table { min-width: 1640px; }
+
+/* The time beneath a date: small, there when you look for it. */
+.som-time { display: block; margin-top: 1px; font-size: 11px; line-height: 1.2; color: #94a3b8; }

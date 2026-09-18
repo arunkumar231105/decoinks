@@ -25,6 +25,7 @@ import { useAuthStore } from '../store/authStore'
 import ArtworkUploader from '../components/ArtworkUploader'
 import { APPAREL_CATEGORIES } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 type QuoteStatus = 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Expired'
 
@@ -518,7 +519,7 @@ function PreviousQuotesSection({ quoteId }: { quoteId?: string }) {
       : `Rev. ${r.revision_number - 1}`
 
   const fmtDate = (d: string) =>
-    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    fmtDay(d)
 
   const badgeClass = (s: string) =>
     s === 'Approved' ? 'nq-badge-approved'

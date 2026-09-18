@@ -44,6 +44,7 @@ import { PeriodTabs } from '../components/PeriodTabs'
 import { ShipmentImportModal } from '../components/ShipmentImportModal'
 import { LabelModal } from '../components/LabelModal'
 import { ScanTimeline, TrackingTimelineDrawer } from '../components/TrackingTimeline'
+import { fmtDate as fmtDateFull, fmtDateTime } from '../utils/dates'
 
 interface TrackingScan {
   status: string | null
@@ -107,7 +108,7 @@ const fmtDay = (value?: string | null) => {
   const m = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (!m) return value || '-'
   const [, year, month, day] = m
-  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? month} ${year.slice(2)}`
+  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? month} ${year}`
 }
 
 // The effective status a row shows: live carrier/Shippo status if present,
@@ -236,7 +237,7 @@ export function ShipmentsPage() {
   // What each column draws, by the same label. The columns can be dragged into
   // another order by their headers (hooks/useColumnDrag).
   const CELLS: Record<string, { className?: string; style?: CSSProperties; title?: (s: Shipment) => string | undefined; render: (s: Shipment) => ReactNode }> = {
-    'Ship Date': { className: 'sh-muted', render: s => s.ship_date ?? '-' },
+    'Ship Date': { className: 'sh-muted', render: s => fmtDateFull(s.ship_date, '-') },
     'Customer Name': { className: 'sh-customer', render: s => s.customer_name ?? '-' },
     'PO #': { className: 'sh-muted', render: s => s.po_number ?? '-' },
     'Carrier': { className: 'sh-muted', render: s => s.carrier ?? '-' },
@@ -252,7 +253,7 @@ export function ShipmentsPage() {
     'Last Scan City': { className: 'sh-muted', render: s => lastScanCityOf(s) ?? '-' },
     'Last Scan State': { className: 'sh-muted', render: s => lastScanStateOf(s) ?? '-' },
     'Estimated Delivery': { className: 'sh-muted', render: s => fmtDay(etaOf(s)) },
-    'Delivered Date': { className: 'sh-muted', render: s => s.delivered_date ?? '-' },
+    'Delivered Date': { className: 'sh-muted', render: s => fmtDateFull(s.delivered_date, '-') },
     'Tracking ID': {
       render: s => s.tracking_number
         ? (
@@ -764,10 +765,10 @@ function ShipmentDetailDialog({ shipment, onClose, onRefresh, refreshing }: {
     ['From', fmtLoc(s.address_from_city, s.address_from_state, s.address_from_postal_code)],
     ['Ship To', fmtLoc(s.ship_to_city, s.ship_to_state, s.ship_to_postal_code)],
     ['Last Scan', fmtLoc(lastScanCityOf(s), lastScanStateOf(s))],
-    ['Original ETA', originalEtaOf(s) ?? '—'],
+    ['Original ETA', fmtDateFull(originalEtaOf(s))],
     ['Estimated Delivery', etaOf(s) ? fmtDay(etaOf(s)) : '—'],
-    ['Delivered', s.delivered_date ?? '—'],
-    ['Last Synced', s.tracking_synced_at ? new Date(s.tracking_synced_at).toLocaleString() : 'Never'],
+    ['Delivered', fmtDateFull(s.delivered_date)],
+    ['Last Synced', fmtDateTime(s.tracking_synced_at, 'Never')],
   ]
   const history = Array.isArray(s.tracking_history) ? s.tracking_history : []
 
