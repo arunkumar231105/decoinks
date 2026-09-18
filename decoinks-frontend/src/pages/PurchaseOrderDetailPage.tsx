@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/authStore'
 import { getValidTransitions, type UserRole } from '../utils/statusTransitions'
 import { getApiError } from '../utils/apiError'
 import { rate } from '../utils/rate'
+import { fmtDate as fmtDay, fmtDateTime as fmtStamp } from '../utils/dates'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -266,10 +267,10 @@ export function PurchaseOrderDetailPage() {
     n != null ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'
 
   const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'
+    fmtDay(d, '-')
 
   const fmtDateTime = (d: string) =>
-    new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    fmtStamp(d)
 
   // â"€â"€ Loading / not found â"€â"€
 

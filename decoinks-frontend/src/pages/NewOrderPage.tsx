@@ -12,6 +12,7 @@ import { useAuthStore } from '../store/authStore'
 import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Types
@@ -1661,7 +1662,7 @@ export function NewOrderPage() {
                   <option value="">— Select the payment for this order —</option>
                   {selectablePayments.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.id === paymentSuggestion?.id ? '★ Recommended · ' : ''}{[p.payment_number, p.payment_date ? String(p.payment_date).slice(0, 10) : null,
+                      {p.id === paymentSuggestion?.id ? '★ Recommended · ' : ''}{[p.payment_number, p.payment_date ? fmtDay(String(p.payment_date).slice(0, 10)) : null,
                         p.customer_name, `$${Number(p.amount || 0).toFixed(2)}`,
                         p.order_number ? `(already on ${p.order_number})` : null]
                         .filter(Boolean).join('  ·  ')}

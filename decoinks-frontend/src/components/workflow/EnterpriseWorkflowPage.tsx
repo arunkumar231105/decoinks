@@ -24,6 +24,7 @@ import { BulkUploadOrdersModal } from '../BulkUploadOrdersModal'
 import { periodRange, type PeriodKey } from '../../utils/period'
 import { PeriodTabs } from '../PeriodTabs'
 import '../../styles/workflow-range.css'
+import { fmtDate as fmtDay, fmtTime } from '../../utils/dates'
 
 export type EnterpriseWorkflowKind = 'quotations' | 'invoices' | 'orders' | 'purchase-orders' | 'payments'
 
@@ -60,7 +61,7 @@ const money = (value: any) => `$${Number(value || 0).toLocaleString('en-US', { m
 const date = (value: any) => {
   if (!value) return '—'
   const raw = String(value)
-  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return fmtDay(/^\d{4}-\d{2}-\d{2}/.test(raw) && raw.length > 10 && raw.endsWith('T00:00:00.000Z') ? raw.slice(0, 10) : raw)
 }
 /**
  * A period as it fits its box: "Sep 14 – Sep 16, 2026" when both ends share a
@@ -85,7 +86,7 @@ const dateTime = (row: AnyRow) => {
   if (!stamp) return day
   const d = new Date(String(stamp))
   if (Number.isNaN(d.getTime())) return day
-  return `${day}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+  return `${day}, ${fmtTime(d)}`
 }
 const titleCase = (value: any) => String(value || '—').replace(/_/g, ' ').replace(/\b\w/g, (s: string) => s.toUpperCase())
 const pick = (row: AnyRow, ...keys: string[]) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && v !== '')

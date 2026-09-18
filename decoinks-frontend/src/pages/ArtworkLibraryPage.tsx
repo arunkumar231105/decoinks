@@ -9,6 +9,7 @@ import {
 import toast from '../utils/toast'
 import { api } from '../services/api'
 import { cn } from '../utils/cn'
+import { fmtDateTime } from '../utils/dates'
 
 type AssetType = 'reference' | 'artwork' | 'mockup' | 'gangsheet' | 'sent'
 
@@ -110,7 +111,7 @@ function isDirectUrl(url?: string | null) {
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
-  return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return fmtDateTime(value)
 }
 
 function fileSize(bytes = 0) {

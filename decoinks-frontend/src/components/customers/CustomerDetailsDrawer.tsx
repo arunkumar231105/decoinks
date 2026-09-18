@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, Mail, MessageSquare, Phone, X } from 'lucide-react'
 import { api } from '../../services/api'
+import { fmtDate as fmtDay, fmtDateTime } from '../../utils/dates'
 
 export interface CustomerDetails {
   id: string; customer_number?: string; name: string; display_name?: string; contact_person?: string
@@ -22,8 +23,8 @@ export interface CustomerDetails {
   addresses?: Array<{ address_type: string; contact_person?: string | null }>
 }
 
-const fmt = (value?: string) => value ? new Date(value).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
-const fmtDate = (value?: string) => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const fmt = (value?: string) => fmtDateTime(value)
+const fmtDate = (value?: string) => fmtDay(value)
 const money = (value?: number | string | null) => value == null ? '—' : Number(value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const initials = (name: string) => name.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase()
 const label = (value?: string) => value ? value.split(/[_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').replace('Non Profit', 'Non-Profit') : '—'

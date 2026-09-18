@@ -135,7 +135,7 @@ async function loadUniverse() {
     console.error('[digi-sync] digi_order_numbers unavailable:', err.message)
   }
   const { rows: known } = await db.query(
-    `SELECT order_no, courier_status, courier_synced_at, label_parsed_url, label_from_name, label_from_address,
+    `SELECT order_no, courier_status, courier_synced_at, courier_delivered_at, label_parsed_url, label_from_name, label_from_address,
             label_from_city, label_from_state, label_from_zip, label_created_on, label_text
        FROM digi_orders`)
   return { blanktex, poRefs, manual, known: new Map(known.map(k => [k.order_no, k])) }
@@ -243,7 +243,10 @@ async function courierStates(rows, known, log) {
   if (!tracked.length) return
   const { rows: ships } = await db.query(
     `SELECT DISTINCT ON (BTRIM(s.tracking_number)) BTRIM(s.tracking_number) AS tn, s.tracking_status, s.status_details,
-            s.estimated_delivery, s.delivered_date, s.tracking_synced_at, s.status::text AS status
+            s.estimated_delivery, s.delivered_date, s.tracking_synced_at, s.status::text AS status,
+            (SELECT MAX((h ->> 'status_date')::timestamptz)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.tracking_history) = 'array' THEN s.tracking_history ELSE '[]'::jsonb END) h
+              WHERE UPPER(h ->> 'status') = 'DELIVERED' AND (h ->> 'status_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}') AS delivered_at
        FROM shipments s
       WHERE s.deleted_at IS NULL AND BTRIM(s.tracking_number) = ANY($1::text[])
       ORDER BY BTRIM(s.tracking_number), s.tracking_synced_at DESC NULLS LAST`,
@@ -257,12 +260,14 @@ async function courierStates(rows, known, log) {
       r.courier_status_text = s.status_details || null
       r.courier_eta = s.estimated_delivery || null
       r.courier_delivered = s.delivered_date || null
+      r.courier_delivered_at = s.delivered_at || null
       r.courier_synced_at = s.tracking_synced_at || new Date()
       continue
     }
     const prev = known.get(r.order_no)
     const fresh = prev?.courier_synced_at && Date.now() - new Date(prev.courier_synced_at).getTime() < SHIPPO_EVERY_MS
-    if (prev?.courier_status === 'DELIVERED' || fresh || asked >= SHIPPO_PER_RUN || !shippo.isConfigured()) {
+    // A delivered parcel is asked no more — once its delivered time is known.
+    if ((prev?.courier_status === 'DELIVERED' && prev?.courier_delivered_at) || fresh || asked >= SHIPPO_PER_RUN || !shippo.isConfigured()) {
       r.keep_courier = true
       continue
     }
@@ -273,6 +278,8 @@ async function courierStates(rows, known, log) {
       r.courier_status_text = t.status_details || null
       r.courier_eta = t.estimated_delivery || null
       r.courier_delivered = t.delivered_date || null
+      const scan = (Array.isArray(t.tracking_history) ? t.tracking_history : []).filter(h => String(h.status || '').toUpperCase() === 'DELIVERED' && h.status_date).pop()
+      r.courier_delivered_at = scan ? new Date(scan.status_date) : null
       r.courier_synced_at = new Date()
     } catch (err) {
       r.keep_courier = true
@@ -508,7 +515,8 @@ async function runSync({ apply, log }) {
          label_from_zip = CASE WHEN $19::text IS NULL THEN label_from_zip ELSE $24 END,
          label_created_on = CASE WHEN $19::text IS NULL THEN label_created_on ELSE $25::date END,
          label_text = CASE WHEN $19::text IS NULL THEN label_text ELSE $26 END,
-         label_parsed_url = COALESCE($19, label_parsed_url)
+         label_parsed_url = COALESCE($19, label_parsed_url),
+         courier_delivered_at = CASE WHEN $27 THEN courier_delivered_at ELSE COALESCE($28::timestamptz, courier_delivered_at) END
        WHERE order_no = $1`,
       [r.order_no, r.receiver_phone, r.receiver_address, r.receiver_address2, r.receiver_post_code,
        r.platform_order_status, r.platform_refund_status, r.order_state_text, r.express_code, r.pre_shipping_time,
@@ -517,7 +525,7 @@ async function runSync({ apply, log }) {
        r.api_delivery ? JSON.stringify(r.api_delivery) : null,
        r.shipped_by || null, r.label_parsed_url || null, r.label_from_name || null, r.label_from_address || null,
        r.label_from_city || null, r.label_from_state || null, r.label_from_zip || null, r.label_created_on || null,
-       r.label_text || null])
+       r.label_text || null, Boolean(r.keep_courier), r.courier_delivered_at || null])
 
     for (const l of r.lines) {
       await db.query(

@@ -208,6 +208,10 @@ function shape(r) {
     est_delivery: r.eta_text || null,
     est_delivery_source: r.eta_text ? 'courier' : null,
     delivered_on: r.delivered_text || null,
+    // Timestamps for the time under each date (the owner, 18 Sep 2026).
+    push_at: r.order_time || null,
+    ship_at: r.shipping_time || null,
+    delivered_at: r.courier_delivered_at || null,
     courier_status: r.courier_status || null,
     shipping_time: r.shipping_time,
     label_url: r.label_url,

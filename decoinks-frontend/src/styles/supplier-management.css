@@ -151,3 +151,6 @@
 .tk-pre-transit { color: #0e7490; }
 .tk-in-transit { color: #2563eb; }
 .som-table { min-width: 1640px; }
+
+/* The time beneath a date: small, there when you look for it. */
+.som-time { display: block; margin-top: 1px; font-size: 11px; line-height: 1.2; color: #94a3b8; }

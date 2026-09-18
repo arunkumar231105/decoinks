@@ -20,6 +20,7 @@ import {
 import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import toast from '../utils/toast'
+import { fmtDate } from '../utils/dates'
 
 type VersionStatus = 'Approved' | 'Revision Requested' | 'Sent for Approval' | 'Original'
 
@@ -138,7 +139,7 @@ export function ArtworkFormPage() {
           </div>
           <div>
             <span>Uploaded</span>
-            <strong>{artwork?.created_at ? new Date(artwork.created_at).toLocaleDateString() : '-'}</strong>
+            <strong>{fmtDate(artwork?.created_at, '-')}</strong>
           </div>
           <div>
             <span>Uploaded By</span>

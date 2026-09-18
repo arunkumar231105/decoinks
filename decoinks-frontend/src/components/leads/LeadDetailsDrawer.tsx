@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Mail, MessageSquare, Phone, UserPlus, X } from 'lucide-react'
 import { api } from '../../services/api'
 import toast from '../../utils/toast'
+import { fmtDateTime } from '../../utils/dates'
 
 export interface LeadDetails {
   id: string; display_number?: string; lead_number: string; customer_name?: string; supplier_name?: string
@@ -15,7 +16,7 @@ export interface LeadDetails {
   qualification?: Record<string, boolean | number | string | null>; productInterest?: Array<{ product_type?: string }>
 }
 
-const fmt = (value?: string) => value ? new Date(value).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const fmt = (value?: string) => fmtDateTime(value)
 const initials = (name: string) => name.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase()
 
 export function LeadDetailsDrawer({ leadId, onClose }: { leadId: string | null; onClose: () => void }) {

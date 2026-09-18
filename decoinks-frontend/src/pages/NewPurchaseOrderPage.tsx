@@ -10,6 +10,7 @@ import { cn } from '../utils/cn'
 import { api } from '../services/api'
 import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1173,7 +1174,7 @@ export function NewPurchaseOrderPage() {
       : null
     return { goods, setup, freight, discount, total }
   })()
-  const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-US') : '—')
+  const fmtDate = (d?: string | null) => fmtDay(d)
 
   const saving = saveMutation.isPending
 
@@ -2003,7 +2004,7 @@ function OrderPickerModal({ existing, onPick, onClose }: {
             onClick={() => { onPick(o.id); onClose() }}>
             <span className="np-dropdown-name">{o.order_number}</span>
             <span className="np-dropdown-sub">
-              {o.status} · {o.supplier_name ?? o.contact_name ?? '—'} · {o.order_date ? new Date(o.order_date).toLocaleDateString() : ''}
+              {o.status} · {o.supplier_name ?? o.contact_name ?? '—'} · {o.order_date ? fmtDay(o.order_date) : ''}
             </span>
           </button>
         ))}

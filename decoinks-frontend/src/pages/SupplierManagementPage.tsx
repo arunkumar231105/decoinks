@@ -10,6 +10,7 @@ import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { ColumnFreezeField } from '../components/ColumnFreezeField'
 import { downloadCsv } from '../utils/actions'
+import { fmtDate, fmtDateTime, fmtTime } from '../utils/dates'
 import '../styles/supplier-management.css'
 
 /**
@@ -43,6 +44,9 @@ interface Row {
   est_delivery_source?: 'courier' | 'estimate' | null
   est_delivery_basis?: string | null
   delivered_on: string | null
+  push_at?: string | null
+  ship_at?: string | null
+  delivered_at?: string | null
   digi_status_label: string | null
   items: string | null
   items_full?: string | null
@@ -108,8 +112,13 @@ const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean
 ]
 
 const num = (n?: number | null) => Number(n ?? 0).toLocaleString('en-US')
-const when = (v?: string | null) => v ? new Date(v).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'
-const day = (v?: string | null) => v ? new Date(`${String(v).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const when = (v?: string | null) => fmtDateTime(v)
+const day = (v?: string | null) => fmtDate(v ? String(v).slice(0, 10) : null)
+// A date and, small beneath it, its time — when there is one.
+function DateCell({ date, at }: { date?: string | null; at?: string | null }) {
+  const time = fmtTime(at)
+  return <span className="som-nw">{fmtDate(date ? String(date).slice(0, 10) : at)}{time && <small className="som-time">{time}</small>}</span>
+}
 const ago = (v?: string | null) => {
   if (!v) return 'never'
   const m = Math.round((Date.now() - new Date(v).getTime()) / 60000)
@@ -222,7 +231,7 @@ export function SupplierManagementPage() {
           case 'customer': return [r.customer_name, r.customer_location].filter(Boolean).join(' — ')
           case 'order_no': return r.order_no
           case 'factory': return r.factory ?? ''
-          case 'push_date': return r.push_date ?? ''
+          case 'push_date': return r.push_at ? fmtDateTime(r.push_at) : fmtDate(r.push_date, '')
           case 'process_status': return r.process_status
           case 'items': return r.items ?? ''
           case 'qty': return r.qty != null ? String(r.qty) : ''
@@ -231,9 +240,9 @@ export function SupplierManagementPage() {
           case 'tracking_number': return r.tracking_number ?? ''
           case 'tracking_status': return r.tracking_status ?? ''
           case 'tracking_desc': return r.tracking_desc ?? ''
-          case 'ship_date': return r.ship_date ?? ''
-          case 'est_delivery': return r.est_delivery ? `${r.est_delivery}${r.est_delivery_source === 'estimate' ? ' (estimated)' : ''}` : ''
-          case 'delivered_on': return r.delivered_on ?? ''
+          case 'ship_date': return r.ship_at ? fmtDateTime(r.ship_at) : fmtDate(r.ship_date, '')
+          case 'est_delivery': return fmtDate(r.est_delivery, '')
+          case 'delivered_on': return r.delivered_at ? fmtDateTime(r.delivered_at) : fmtDate(r.delivered_on, '')
         }
       }
       downloadCsv(`digi-orders-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -263,7 +272,7 @@ export function SupplierManagementPage() {
       )
       case 'order_no': return <span className="som-nw">{r.order_no}</span>
       case 'factory': return r.factory ? <span className="som-wrap">{r.factory}</span> : dash
-      case 'push_date': return r.push_date ? <span className="som-nw">{r.push_date}</span> : dash
+      case 'push_date': return r.push_date ? <DateCell date={r.push_date} at={r.push_at} /> : dash
       case 'process_status': return <span className={`som-pill st-${slug(r.process_status)}`}>{r.process_status}</span>
       case 'items': return r.items ? <span className="som-wrap" title={r.items_full ?? undefined}>{r.items}</span> : dash
       case 'qty': return r.qty != null ? num(r.qty) : dash
@@ -284,13 +293,12 @@ export function SupplierManagementPage() {
       case 'shipped_by': return r.shipped_by
         ? <span className={`som-pill ${r.shipped_by === 'Self' ? 'sb-self' : 'sb-factory'}`} title={r.shipped_by === 'Self' ? 'Label bought by us and handed to DIGI' : "DIGI's own label"}>{r.shipped_by}</span>
         : dash
-      case 'ship_date': return r.ship_date ? <span className="som-nw">{r.ship_date}</span> : dash
+      case 'ship_date': return r.ship_date ? <DateCell date={r.ship_date} at={r.ship_at} /> : dash
+      // The courier gives the day only, so there is no time under it.
       case 'est_delivery': return r.est_delivery
-        ? (r.est_delivery_source === 'estimate'
-          ? <span className="som-nw som-est" title={r.est_delivery_basis ?? 'Estimated'}>~{r.est_delivery}</span>
-          : <span className="som-nw" title="The courier's expected delivery">{r.est_delivery}</span>)
+        ? <span className="som-nw" title="The courier's expected delivery day">{fmtDate(r.est_delivery)}</span>
         : dash
-      case 'delivered_on': return r.delivered_on ? <span className="som-nw" style={{ color: '#15803d' }}>{r.delivered_on}</span> : dash
+      case 'delivered_on': return r.delivered_on ? <span style={{ color: '#15803d' }}><DateCell date={r.delivered_on} at={r.delivered_at} /></span> : dash
     }
   }
 

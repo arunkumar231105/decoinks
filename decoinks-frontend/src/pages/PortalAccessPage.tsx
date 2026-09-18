@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, ShieldOff, UserRound } from 'lucide-react'
 import { api } from '../services/api'
 import toast from '../utils/toast'
+import { fmtDateTime } from '../utils/dates'
 
 /**
  * Customer Portal access.
@@ -159,7 +160,7 @@ export function PortalAccessPage() {
                   : access.data
                     ? <>
                         Portal access <strong>{access.data.is_active ? 'active' : 'disabled'}</strong> — username <strong>{access.data.username}</strong>.
-                        {' '}Last sign-in: {access.data.last_login ? new Date(access.data.last_login).toLocaleString() : 'never'}.
+                        {' '}Last sign-in: {fmtDateTime(access.data.last_login, 'never')}.
                       </>
                     : <>No portal account yet for this customer.</>}
               </div>
@@ -266,7 +267,7 @@ export function PortalAccessPage() {
                       </span>
                     </td>
                     <td style={{ padding: '10px', color: '#64748B' }}>
-                      {a.last_login ? new Date(a.last_login).toLocaleString() : 'Never'}
+                      {fmtDateTime(a.last_login, 'Never')}
                     </td>
                     <td style={{ padding: '10px' }}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

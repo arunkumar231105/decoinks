@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../services/api'
+import { fmtDate } from '../../utils/dates'
 
 /**
  * Multiple Payments — pick the several payments one job was paid with.
@@ -133,7 +134,7 @@ export function MultiPaymentLinker({
                   <tr key={p.id} style={{ borderTop: '1px solid #f1f5f9', color: '#64748b', background: '#f8fafc' }}>
                     <td style={{ padding: '8px 10px' }}><input type="checkbox" checked disabled aria-label={`${p.payment_number} already linked`} /></td>
                     <td style={{ padding: '8px 6px' }}>{p.payment_number} <small>(already on this invoice)</small></td>
-                    <td style={{ padding: '8px 6px' }}>{p.payment_date ? String(p.payment_date).slice(0, 10) : '—'}</td>
+                    <td style={{ padding: '8px 6px' }}>{p.payment_date ? fmtDate(String(p.payment_date).slice(0, 10)) : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>{p.received_from_name || p.customer_name || '—'}</td>
                     <td style={{ padding: '8px 6px' }}>{p.payment_method || '—'}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right' }}>{money(p.amount)}</td>
@@ -151,7 +152,7 @@ export function MultiPaymentLinker({
                         {p.unassigned && <small style={{ color: '#b45309', fontWeight: 500 }}> · no customer on it</small>}
                         {p.reasons?.length ? <div style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>{p.reasons.join(' · ')}</div> : null}
                       </td>
-                      <td style={{ padding: '8px 6px' }}>{p.payment_date ? String(p.payment_date).slice(0, 10) : '—'}</td>
+                      <td style={{ padding: '8px 6px' }}>{p.payment_date ? fmtDate(String(p.payment_date).slice(0, 10)) : '—'}</td>
                       <td style={{ padding: '8px 6px' }}>{p.received_from_name || p.customer_name || '—'}</td>
                       <td style={{ padding: '8px 6px' }}>{p.payment_method || '—'}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>{money(p.amount)}</td>

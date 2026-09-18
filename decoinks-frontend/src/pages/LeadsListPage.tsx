@@ -11,6 +11,7 @@ import { PeriodTabs } from '../components/PeriodTabs'
 import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { ColumnFreezeField } from '../components/ColumnFreezeField'
+import { fmtDate, fmtDateTime } from '../utils/dates'
 
 type Lead = { id:string; display_number?:string; lead_number:string; display_name:string; company_name?:string; email?:string; phone?:string; source?:string; stage:string; status:string; created_at:string; conversion_score?:number; urgency?:string; customer_intent?:string; product_interest_display?:string; estimated_value?:number; last_activity_at?:string; last_activity_description?:string; next_action_display?:string; next_action_at?:string; customer_id?:string }
 type ListResponse = { rows: Lead[]; total:number; page:number; limit:number }
@@ -22,7 +23,7 @@ const metricConfig = [
   ['total_inquiries','Total Inquiries',Users],['engaged','Engaged',Users],['qualified','Qualified',BadgeCheck],
   ['hot_leads','Hot Leads',Flame],['quotes_sent','Quotes Sent',FileText],['ready_to_order','Ready to Order',ShoppingBag],
 ] as const
-const fmt = (v?:string, time=false) => v ? new Date(v).toLocaleString('en-US', time ? { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' } : { month:'short', day:'numeric', year:'numeric' }) : '—'
+const fmt = (v?:string, time=false) => time ? fmtDateTime(v) : fmtDate(v)
 const sourceLabel = (value?:string) => value?.trim().toLowerCase()==='facebook messenger' ? 'FB Messenger' : value || '—'
 
 export function LeadsListPage(){

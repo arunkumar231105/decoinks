@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { usePrintAuth } from '../hooks/usePrintAuth'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Invoice {
@@ -237,7 +238,7 @@ const fmt = (n: number | string | null | undefined) =>
   '$' + Number(n ?? 0).toFixed(2)
 
 const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'
+  fmtDay(d)
 
 function bestAddress(...candidates: Array<string | null | undefined>) {
   const addresses = candidates.map(value => value?.trim()).filter((value): value is string => Boolean(value))

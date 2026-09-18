@@ -12,6 +12,7 @@ import { PeriodTabs } from '../components/PeriodTabs'
 import { useColumnDrag } from '../hooks/useColumnDrag'
 import { ColumnHideMenu } from '../components/ColumnHideMenu'
 import { ColumnFreezeField } from '../components/ColumnFreezeField'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 type Customer = { id:string; customer_number?:string; name:string; display_name:string; contact_person?:string; job_title?:string; company_name?:string; email?:string; primary_phone?:string; customer_type?:string; segment?:string; status:string; created_at:string; total_orders:number; total_spent?:number; last_order_date?:string; last_order_number?:string; outstanding_balance?:number; overdue_balance?:number }
 type ListResponse = { rows: Customer[]; total:number; page:number; limit:number }
@@ -20,7 +21,7 @@ type Filters = { order_type:string; customer_type:string; segment:string; status
 const EMPTY_FILTERS: Filters = { order_type:'', customer_type:'', segment:'', status:'', state:'', country:'', payment_terms:'', min_orders:'', min_spent:'', date_from:'', date_to:'' }
 
 const ORDER_TYPE_LABELS: Record<string,string> = { dtf:'DTF Transfer', apparel:'DTF Apparel', gangsheet:'Gang Sheet' }
-const fmtDate = (v?:string) => v ? new Date(v).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—'
+const fmtDate = (v?:string) => fmtDay(v)
 const money = (v?:number|string|null) => v==null ? '—' : Number(v).toLocaleString('en-US', { style:'currency', currency:'USD' })
 const title = (v?:string) => v ? v.split(/[_\s]+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ').replace('Non Profit','Non-Profit') : '—'
 

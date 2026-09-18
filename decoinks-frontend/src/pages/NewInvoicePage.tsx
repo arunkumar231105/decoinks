@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { DriveArtworkPicker, DRIVE_DRAG_TYPE, type DriveFile } from '../components/DriveArtworkPicker'
 import { MultiPaymentLinker, type LinkerPayment } from '../components/payments/MultiPaymentLinker'
+import { fmtDate as fmtDay } from '../utils/dates'
 
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -1888,7 +1889,7 @@ export function NewInvoicePage() {
                     {paymentOptions.map((p: any) => (
                       <option key={p.id} value={p.id}>
                         {p.id === recommendedId ? '★ Recommended · ' : ''}{p.payment_number} · ${Number(p.amount).toFixed(2)} · {p.payment_method}
-                        {p.payment_date ? ` · ${String(p.payment_date).slice(0, 10)}` : ''}
+                        {p.payment_date ? ` · ${fmtDay(String(p.payment_date).slice(0, 10))}` : ''}
                         {p.unassigned ? ` · no customer on it${p.customer_name ? ` (from ${p.customer_name})` : ''}` : ''}
                       </option>
                     ))}

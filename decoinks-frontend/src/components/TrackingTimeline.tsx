@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle, Clock, Copy, ExternalLink, MapPin, Package,
 import { Drawer } from '@mui/material'
 import toast from '../utils/toast'
 import '../styles/tracking-timeline.css'
+import { fmtWeekdayDate, fmtDateTime } from '../utils/dates'
 
 /**
  * A parcel's journey, scan by scan.
@@ -51,14 +52,13 @@ const notMoving = (status?: string | null) => ['PRE_TRANSIT', 'UNKNOWN'].include
 const place = (l?: TrackingScan['location']) => [l?.city, l?.state, l?.zip].filter(Boolean).join(', ')
 
 const dayKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: SHOP_TZ })
-const dayLabel = (iso: string) => new Date(iso).toLocaleDateString('en-US',
-  { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: SHOP_TZ })
+const dayLabel = (iso: string) => fmtWeekdayDate(iso, iso, SHOP_TZ)
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString('en-US',
   { hour: 'numeric', minute: '2-digit', timeZone: SHOP_TZ })
 const shortDay = (ymd?: string | null) => {
   if (!ymd) return null
   const d = new Date(`${String(ymd).slice(0, 10)}T12:00:00Z`)
-  return Number.isNaN(d.getTime()) ? String(ymd) : d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return Number.isNaN(d.getTime()) ? String(ymd) : fmtWeekdayDate(String(ymd).slice(0, 10))
 }
 
 export function carrierTrackingUrl(carrier?: string | null, number?: string | null) {
@@ -268,7 +268,7 @@ export function TrackingTimelineDrawer({ shipment, onClose, onRefresh, refreshin
               </a>
             )}
             <span className="tt-synced">
-              {sh.tracking_synced_at ? `Updated ${new Date(sh.tracking_synced_at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: SHOP_TZ })}` : 'Never synced'}
+              {sh.tracking_synced_at ? `Updated ${fmtDateTime(sh.tracking_synced_at, '—', SHOP_TZ)}` : 'Never synced'}
             </span>
           </div>
 

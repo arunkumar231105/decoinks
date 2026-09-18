@@ -12,6 +12,7 @@ import { api } from '../services/api'
 import { orderStage, processStatus } from '../utils/orderStatus'
 import { cn } from '../utils/cn'
 import { rate } from '../utils/rate'
+import { fmtDate } from '../utils/dates'
 
 interface Order {
   id: string; order_number: string; status: string; order_type: 'apparel'|'dtf'|'gangsheet'
@@ -38,7 +39,7 @@ interface SupplierUpdate {
 }
 
 const fmt = (value: unknown) => Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const date = (value?: string|null) => value ? new Date(value).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'
+const date = (value?: string|null) => fmtDate(value)
 const orderTypeName = (type: string) => type === 'dtf' ? 'DTF Transfers' : type === 'gangsheet' ? 'DTF Gangsheet' : 'Custom Printed Apparel'
 const dtfDimensions = (item: any) => {
   const legacy = String(item.size ?? '').match(/([\d.]+)\s*(?:"|in)?\s*[x×]\s*([\d.]+)/i)
