@@ -144,3 +144,10 @@
 /* Headers are dragged by the whole cell. */
 .som-table th[draggable="true"] { cursor: grab; }
 .som-table th[data-dragging="true"] { cursor: grabbing; }
+
+/* Tracking Status pills and Tracking Description text, by courier status. */
+.tkp-pre-transit { background: #cffafe; color: #0e7490; }
+.tkp-in-transit { background: #e0f2fe; color: #0369a1; }
+.tk-pre-transit { color: #0e7490; }
+.tk-in-transit { color: #2563eb; }
+.som-table { min-width: 1640px; }

@@ -14,9 +14,9 @@ const db = require('../../config/db')
 const { SHOP_TZ } = require('../../utils/shopTime')
 
 const PROCESS = ['To be Pushed', 'Factory Audit', 'In Production', 'Shipped', 'Rejected', 'Refunding', 'Cancelled']
-const TRACKING = ['Label created', 'Awaiting scan', 'In transit', 'Out for delivery', 'Ready for pickup', 'Delayed', 'Delivered', 'Returned', 'Exception', 'Label void']
+const TRACKING = ['Pre-Transit', 'In Transit', 'Delivered', 'Returned', 'Exception']
 const PENDING = ['To be Pushed', 'Factory Audit', 'In Production']
-const MOVING = ['In transit', 'Out for delivery', 'Ready for pickup', 'Delayed']
+const MOVING = ['In Transit']
 const TROUBLE_PROCESS = ['Rejected', 'Refunding']
 const TROUBLE_TRACKING = ['Returned', 'Exception']
 const DIGI_STATUS = { 1: 'Store Audit', 2: 'Pending Push', 3: 'Rejected', 4: 'Factory Audit', 5: 'In Production', 12: 'Shipped', 13: 'Closed', 14: 'Refunding', 15: 'Refunded' }
@@ -33,23 +33,55 @@ function processOf(r) {
   }
 }
 
+// The courier's status: Pre-Transit (label made, not scanned yet), In Transit,
+// Delivered, Returned, Exception. What exactly happened is the description.
 function trackingOf(r) {
-  const s = Number(r.order_status)
-  if (!r.tracking_number) return null
-  if (s === 13 || s === 15) return 'Label void'
-  const code = String(r.courier_status || '').toUpperCase()
-  const text = String(r.courier_status_text || '').toUpperCase()
-  if (code === 'DELIVERED') return 'Delivered'
-  if (code === 'RETURNED') return 'Returned'
-  if (code === 'FAILURE') return 'Exception'
-  if (code === 'TRANSIT') {
-    if (/OUT FOR DELIVERY/.test(text)) return 'Out for delivery'
-    if (/AVAILABLE FOR PICKUP|READY FOR PICKUP|HELD AT/.test(text)) return 'Ready for pickup'
-    if (/DELAY/.test(text)) return 'Delayed'
-    return 'In transit'
+  const st = Number(r.order_status)
+  if (!r.tracking_number || st === 13 || st === 15) return null
+  switch (String(r.courier_status || '').toUpperCase()) {
+    case 'DELIVERED': return 'Delivered'
+    case 'TRANSIT': return 'In Transit'
+    case 'RETURNED': return 'Returned'
+    case 'FAILURE': return 'Exception'
+    default: return 'Pre-Transit'
   }
-  if (code === 'PRE_TRANSIT') return 'Label created'
-  return s === 12 ? 'Awaiting scan' : 'Label created'
+}
+
+/**
+ * The courier's latest event in a few words (the owner, 18 Sep 2026: Tracking
+ * Status and Tracking Description apart). The courier's own sentence stays in
+ * tracking_detail.
+ */
+function trackingDescOf(r, status) {
+  const st = Number(r.order_status)
+  if (st === 13 || st === 15) return r.tracking_number ? 'Label not used' : null
+  if (!r.tracking_number) return null
+  const t = String(r.courier_status_text || '').toUpperCase()
+  if (!t) return status === 'Pre-Transit' ? (st === 12 ? 'Awaiting pickup' : 'Label created') : null
+  const rules = [
+    [/OUT FOR DELIVERY/, 'Out for delivery'],
+    [/AVAILABLE FOR PICK ?UP|READY FOR PICK ?UP|HELD AT/, 'Ready for pickup'],
+    [/PARCEL LOCKER/, 'Delivered – parcel locker'],
+    [/FRONT DOOR|PORCH/, 'Delivered – front door'],
+    [/MAILBOX/, 'Delivered – mailbox'],
+    [/FRONT DESK|RECEPTION|MAIL ROOM/, 'Delivered – front desk'],
+    [/LEFT WITH AN INDIVIDUAL/, 'Delivered – handed over'],
+    [/PICKED UP AT (THE )?(PO|POST OFFICE|POSTAL FACILITY)|PICKED IT UP AT/, 'Picked up at post office'],
+    [/INVESTIGATION CLOSED/, 'Investigation closed'],
+    [/RETURNED/, 'Returned to sender'],
+    [/NOT RECEIVED THE PACKAGE|AWAITING THE ITEM|LABEL CREATED|PRE-SHIPMENT/, 'Label created'],
+    [/ARRIVING LATE|DELAY/, 'Delayed'],
+    [/DEPARTED/, 'Departed facility'],
+    [/ARRIVED/, 'Arrived at facility'],
+    [/PROCESSED/, 'Processed at facility'],
+    [/IN TRANSIT TO NEXT FACILITY/, 'On the way to next facility'],
+    [/PICKED UP|ACCEPTED|ORIGIN SCAN/, 'Picked up'],
+    [/^DELIVERED$|DELIVERED/, 'Delivered'],
+    [/IN TRANSIT/, 'In transit'],
+  ]
+  for (const [re, label] of rules) if (re.test(t)) return label
+  const words = String(r.courier_status_text).replace(/[.]+$/, '').split(/\s+/).slice(0, 4).join(' ')
+  return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase()
 }
 
 const titleCase = s => String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
@@ -127,6 +159,7 @@ async function loadRows() {
 function shape(r) {
   const process = processOf(r)
   const tracking = trackingOf(r)
+  const trackingDesc = trackingDescOf(r, tracking)
   const reason = [r.status_reason, r.line_messages].filter(Boolean).join(' · ') || null
   const items = Array.isArray(r.items) ? r.items : []
   const itemTitles = [...new Set(items.map(i => i.title).filter(Boolean))]
@@ -138,7 +171,7 @@ function shape(r) {
   const shipped = Number(r.order_status) === 12
   const trackingDetail = reason && (TROUBLE_PROCESS.includes(process))
     ? reason
-    : r.courier_status_text || (tracking === 'Awaiting scan' ? 'Shipped by DIGI — no courier scan yet' : null)
+    : r.courier_status_text || (tracking === 'Pre-Transit' && shipped ? 'Shipped by DIGI — no courier scan yet' : null)
   return {
     order_no: r.order_no,
     po_id: r.po_id,
@@ -156,6 +189,7 @@ function shape(r) {
     order_time: r.order_time,
     process_status: process,
     tracking_status: tracking,
+    tracking_desc: trackingDesc,
     tracking_detail: trackingDetail,
     // Kept for the drawer's pill: trouble on either side shows first.
     stage: TROUBLE_PROCESS.includes(process) || TROUBLE_TRACKING.includes(tracking) ? 'Exception'
@@ -198,6 +232,7 @@ const SORTS = {
   courier: r => (r.courier || '').toLowerCase(),
   tracking_number: r => r.tracking_number || '',
   tracking_status: r => (r.tracking_status ? TRACKING.indexOf(r.tracking_status) : 99),
+  tracking_desc: r => (r.tracking_desc || '').toLowerCase(),
   ship_date: r => r.ship_date || '',
   est_delivery: r => r.est_delivery || '',
   delivered_on: r => r.delivered_on || '',
