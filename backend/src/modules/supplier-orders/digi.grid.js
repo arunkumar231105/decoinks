@@ -53,6 +53,23 @@ function trackingOf(r) {
 }
 
 const titleCase = s => String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
+
+/**
+ * An item's name for the grid, without where it is printed: "Custom Tshirt
+ * Front & Back (Both)" → "Custom T-Shirt" (the owner, 18 Sep 2026). The drawer
+ * and search keep the full title.
+ */
+function shortItem(title) {
+  let s = String(title || '')
+  s = s.replace(/\(\s*(both|only|front|back)\s*\)/gi, ' ')
+  s = s.replace(/\b(front|back)\b(\s*(&|and|\+|\/)\s*(front|back)\b)?/gi, ' ')
+  s = s.replace(/\bonly\b/gi, ' ')
+  s = s.replace(/\bt\s*-?\s*(shirt|hsirt|shrit)s?\b/gi, 'T-Shirt')
+  s = s.replace(/\(\s*\)/g, ' ')
+  s = s.replace(/[\s&+,/-]+$/g, '').replace(/^[\s&+,/-]+/g, '').replace(/\s{2,}/g, ' ').trim()
+  s = s.replace(/\b([a-z])([a-z]*)\b/g, (_m, a, b) => a.toUpperCase() + b)
+  return s || String(title || '').trim()
+}
 // The shop's own address on a label it bought is not a factory.
 const SHOP_CITIES = ['CORONA']
 
@@ -162,6 +179,7 @@ function shape(r) {
   const reason = [r.status_reason, r.line_messages].filter(Boolean).join(' · ') || null
   const items = Array.isArray(r.items) ? r.items : []
   const itemTitles = [...new Set(items.map(i => i.title).filter(Boolean))]
+  const shortTitles = [...new Set(itemTitles.map(shortItem).filter(Boolean))]
   const location = [r.receiver_city, r.receiver_province, r.receiver_country].filter(Boolean).join(', ') || null
   // DIGI's warehouse where it names one; otherwise the sender printed on the label.
   const labelFactory = r.label_from_city && r.label_from_state && !SHOP_CITIES.includes(String(r.label_from_city).toUpperCase())
@@ -194,7 +212,8 @@ function shape(r) {
       : tracking === 'Delivered' ? 'Delivered' : MOVING.includes(tracking) ? 'In Transit' : process,
     digi_status: r.order_status,
     digi_status_label: DIGI_STATUS[r.order_status] || null,
-    items: itemTitles.join(', ') || null,
+    items: shortTitles.join(', ') || null,
+    items_full: itemTitles.join(', ') || null,
     item_lines: items,
     qty: r.goods_total_qty,
     shipped_by: r.shipped_by || null,
@@ -267,7 +286,7 @@ async function getGrid(query = {}) {
   let rows = all
   if (search) {
     rows = rows.filter(r => [r.order_no, ...r.po_numbers, r.sales_order_number, r.customer_name, r.customer_location,
-      r.tracking_number, r.factory, r.items].some(v => String(v || '').toLowerCase().includes(search)))
+      r.tracking_number, r.factory, r.items, r.items_full].some(v => String(v || '').toLowerCase().includes(search)))
   }
   rows = rows.filter(statusFilter(status))
   if (factory === 'none') rows = rows.filter(r => !r.factory)

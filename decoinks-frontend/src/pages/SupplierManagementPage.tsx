@@ -44,6 +44,7 @@ interface Row {
   delivered_on: string | null
   digi_status_label: string | null
   items: string | null
+  items_full?: string | null
   item_lines: { title: string | null; color: string | null; size: string | null; qty: number }[]
   qty: number | null
   courier: string | null
@@ -261,7 +262,7 @@ export function SupplierManagementPage() {
       case 'factory': return r.factory ? <span className="som-wrap">{r.factory}</span> : dash
       case 'push_date': return r.push_date ? <span className="som-nw">{r.push_date}</span> : dash
       case 'process_status': return <span className={`som-pill st-${slug(r.process_status)}`}>{r.process_status}</span>
-      case 'items': return r.items ? <span className="som-wrap">{r.items}</span> : dash
+      case 'items': return r.items ? <span className="som-wrap" title={r.items_full ?? undefined}>{r.items}</span> : dash
       case 'qty': return r.qty != null ? num(r.qty) : dash
       case 'courier': return r.courier ? String(r.courier).toUpperCase() : dash
       case 'tracking_number': {
