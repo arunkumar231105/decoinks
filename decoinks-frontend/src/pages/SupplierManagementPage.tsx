@@ -27,50 +27,59 @@ interface Row {
   push_date: string | null
   order_time: string | null
   stage: string
+  process_status: string
+  tracking_status: string | null
+  tracking_detail: string | null
+  factory_source: 'digi' | 'label' | 'first_scan' | null
+  factory_detail: string | null
+  shipped_by: 'Factory' | 'Self' | null
+  ship_date: string | null
+  est_delivery: string | null
+  delivered_on: string | null
   digi_status_label: string | null
   items: string | null
   item_lines: { title: string | null; color: string | null; size: string | null; qty: number }[]
   qty: number | null
   courier: string | null
   tracking_number: string | null
-  tracking_text: string | null
-  courier_eta: string | null
-  delivered_date: string | null
   shipping_time: string | null
   label_url: string | null
-  label_tracking_number: string | null
-  label_courier: string | null
   reason: string | null
   synced_at: string | null
 }
 interface GridResponse {
   rows: Row[]
   total: number
-  summary: { total: number; issued: number; pending: number; stages: Record<string, number> }
-  filters: { stages: string[]; factories: string[]; couriers: string[] }
+  summary: {
+    total: number; issued: number; pending: number; exceptions: number; moving: number
+    process: Record<string, number>; tracking: Record<string, number>
+  }
+  filters: { process: string[]; tracking: string[]; factories: string[]; couriers: string[] }
   synced_at: string | null
 }
 
 const PAGE_SIZE = 8
 const COLUMNS_KEY = 'som-hidden-columns'
-const STAGES = ['To be Pushed', 'Factory Audit', 'In Production', 'Exception', 'Shipped', 'Pre-Transit', 'In Transit', 'Delivered', 'Cancelled']
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z]+/g, '-')
 
 const CARDS: { label: string; filter: string; icon: LucideIcon; bg: string; fg: string; solid?: boolean; value: (g: GridResponse) => number }[] = [
   { label: 'Total PO', filter: '', icon: FileText, bg: '#eff6ff', fg: '#2563eb', value: g => g.summary.total },
   { label: 'Issued', filter: 'Issued', icon: CheckCircle2, bg: '#f0fdf4', fg: '#16a34a', value: g => g.summary.issued },
   { label: 'Pending', filter: 'Pending', icon: Clock, bg: '#fff7ed', fg: '#f97316', value: g => g.summary.pending },
-  { label: 'To be Pushed', filter: 'To be Pushed', icon: Send, bg: '#eff6ff', fg: '#2563eb', value: g => g.summary.stages['To be Pushed'] ?? 0 },
-  { label: 'Factory Audit', filter: 'Factory Audit', icon: Search, bg: '#faf5ff', fg: '#9333ea', value: g => g.summary.stages['Factory Audit'] ?? 0 },
-  { label: 'In Production', filter: 'In Production', icon: Settings, bg: '#eff6ff', fg: '#2563eb', value: g => g.summary.stages['In Production'] ?? 0 },
-  { label: 'Exceptions', filter: 'Exception', icon: AlertTriangle, bg: '#fef2f2', fg: '#dc2626', value: g => g.summary.stages.Exception ?? 0 },
-  { label: 'Shipped', filter: 'Shipped', icon: Truck, bg: '#f0fdfa', fg: '#0d9488', value: g => g.summary.stages.Shipped ?? 0 },
-  { label: 'Pre-Transit', filter: 'Pre-Transit', icon: Box, bg: '#ecfeff', fg: '#0e7490', value: g => g.summary.stages['Pre-Transit'] ?? 0 },
-  { label: 'Transit', filter: 'In Transit', icon: Plane, bg: '#eef2ff', fg: '#4f46e5', value: g => g.summary.stages['In Transit'] ?? 0 },
-  { label: 'Delivered', filter: 'Delivered', icon: CheckCircle2, bg: '#f0fdf4', fg: '#16a34a', solid: true, value: g => g.summary.stages.Delivered ?? 0 },
+  // Order status (DIGI) cards…
+  { label: 'To be Pushed', filter: 'p:To be Pushed', icon: Send, bg: '#eff6ff', fg: '#2563eb', value: g => g.summary.process['To be Pushed'] ?? 0 },
+  { label: 'Factory Audit', filter: 'p:Factory Audit', icon: Search, bg: '#faf5ff', fg: '#9333ea', value: g => g.summary.process['Factory Audit'] ?? 0 },
+  { label: 'In Production', filter: 'p:In Production', icon: Settings, bg: '#eff6ff', fg: '#2563eb', value: g => g.summary.process['In Production'] ?? 0 },
+  { label: 'Exceptions', filter: 'Exception', icon: AlertTriangle, bg: '#fef2f2', fg: '#dc2626', value: g => g.summary.exceptions },
+  { label: 'Shipped', filter: 'p:Shipped', icon: Truck, bg: '#f0fdfa', fg: '#0d9488', value: g => g.summary.process.Shipped ?? 0 },
+  // …and tracking (courier) cards.
+  { label: 'Pre-Transit', filter: 't:Label created', icon: Box, bg: '#ecfeff', fg: '#0e7490', value: g => g.summary.tracking['Label created'] ?? 0 },
+  { label: 'Transit', filter: 't:moving', icon: Plane, bg: '#eef2ff', fg: '#4f46e5', value: g => g.summary.moving },
+  { label: 'Delivered', filter: 't:Delivered', icon: CheckCircle2, bg: '#f0fdf4', fg: '#16a34a', solid: true, value: g => g.summary.tracking.Delivered ?? 0 },
 ]
 
-type ColumnKey = 'sno' | 'po_number' | 'customer' | 'order_no' | 'factory' | 'push_date' | 'stage' | 'items' | 'qty' | 'courier' | 'tracking_number' | 'tracking_text'
+type ColumnKey = 'sno' | 'po_number' | 'customer' | 'order_no' | 'factory' | 'push_date' | 'process_status' | 'items' | 'qty'
+  | 'shipped_by' | 'courier' | 'tracking_number' | 'tracking_status' | 'ship_date' | 'est_delivery' | 'delivered_on'
 const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean }[] = [
   { key: 'sno', label: 'S.No', sort: 'push_date' },
   { key: 'po_number', label: 'PO#', sort: 'po_number' },
@@ -78,12 +87,16 @@ const COLUMNS: { key: ColumnKey; label: string; sort: string; required?: boolean
   { key: 'order_no', label: 'Order No', sort: 'order_no', required: true },
   { key: 'factory', label: 'Factory', sort: 'factory' },
   { key: 'push_date', label: 'Push Date', sort: 'push_date' },
-  { key: 'stage', label: 'Status', sort: 'stage', required: true },
+  { key: 'process_status', label: 'Status', sort: 'process_status', required: true },
   { key: 'items', label: 'Items', sort: 'items' },
   { key: 'qty', label: 'Qty', sort: 'qty' },
+  { key: 'shipped_by', label: 'Shipped By', sort: 'shipped_by' },
   { key: 'courier', label: 'Courier Service', sort: 'courier' },
   { key: 'tracking_number', label: 'Tracking ID', sort: 'tracking_number' },
-  { key: 'tracking_text', label: 'Tracking Status', sort: 'tracking_text' },
+  { key: 'tracking_status', label: 'Tracking Status', sort: 'tracking_status' },
+  { key: 'ship_date', label: 'Ship Date', sort: 'ship_date' },
+  { key: 'est_delivery', label: 'Est. Delivery', sort: 'est_delivery' },
+  { key: 'delivered_on', label: 'Delivered On', sort: 'delivered_on' },
 ]
 
 const num = (n?: number | null) => Number(n ?? 0).toLocaleString('en-US')
@@ -209,7 +222,7 @@ export function SupplierManagementPage() {
       case 'order_no': return <span className="som-nw">{r.order_no}</span>
       case 'factory': return r.factory ? <span className="som-wrap">{r.factory}</span> : dash
       case 'push_date': return r.push_date ? <span className="som-nw">{r.push_date}</span> : dash
-      case 'stage': return <span className={`som-pill st-${slug(r.stage)}`}>{r.stage}</span>
+      case 'process_status': return <span className={`som-pill st-${slug(r.process_status)}`}>{r.process_status}</span>
       case 'items': return r.items ? <span className="som-wrap">{r.items}</span> : dash
       case 'qty': return r.qty != null ? num(r.qty) : dash
       case 'courier': return r.courier ? String(r.courier).toUpperCase() : dash
@@ -220,7 +233,15 @@ export function SupplierManagementPage() {
           ? <a href={url} target="_blank" rel="noopener noreferrer" className="som-nw" style={{ color: 'inherit' }} onClick={e => e.stopPropagation()}>{r.tracking_number}</a>
           : <span className="som-nw">{r.tracking_number}</span>
       }
-      case 'tracking_text': return r.tracking_text ? <span className={`som-wrap tx-${slug(r.stage)}`}>{r.tracking_text}</span> : dash
+      case 'tracking_status': return r.tracking_status
+        ? <span className={`som-nw tk-${slug(r.tracking_status)}`} title={r.tracking_detail ?? undefined}>{r.tracking_status}</span>
+        : dash
+      case 'shipped_by': return r.shipped_by
+        ? <span className={`som-pill ${r.shipped_by === 'Self' ? 'sb-self' : 'sb-factory'}`} title={r.shipped_by === 'Self' ? 'Label bought by us and handed to DIGI' : "DIGI's own label"}>{r.shipped_by}</span>
+        : dash
+      case 'ship_date': return r.ship_date ? <span className="som-nw">{r.ship_date}</span> : dash
+      case 'est_delivery': return r.est_delivery ? <span className="som-nw">{r.est_delivery}</span> : dash
+      case 'delivered_on': return r.delivered_on ? <span className="som-nw" style={{ color: '#15803d' }}>{r.delivered_on}</span> : dash
     }
   }
 
@@ -278,7 +299,13 @@ export function SupplierManagementPage() {
           <select value={stage} onChange={e => update({ stage: e.target.value || null })} aria-label="Status">
             <option value="">Status: All</option>
             <option value="Pending">Status: Pending</option>
-            {STAGES.map(s => <option key={s} value={s}>Status: {s}</option>)}
+            <option value="Exception">Status: Exceptions</option>
+            <optgroup label="Order status (DIGI)">
+              {(data?.filters.process ?? []).map(s => <option key={s} value={`p:${s}`}>Status: {s}</option>)}
+            </optgroup>
+            <optgroup label="Tracking status (courier)">
+              {(data?.filters.tracking ?? []).map(s => <option key={s} value={`t:${s}`}>Tracking: {s}</option>)}
+            </optgroup>
           </select>
           <Chevron />
         </label>
@@ -404,7 +431,10 @@ export function SupplierManagementPage() {
               <div>
                 <small>DIGI order</small>
                 <h3>{open.order_no}</h3>
-                <span className={`som-pill st-${slug(open.stage)}`} style={{ marginTop: 6 }}>{open.stage}</span>
+                <span style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  <span className={`som-pill st-${slug(open.process_status)}`}>{open.process_status}</span>
+                  {open.tracking_status && <span className={`som-pill tkp-${slug(open.tracking_status)}`}>{open.tracking_status}</span>}
+                </span>
               </div>
               <button className="som-x" onClick={() => setOpen(null)} aria-label="Close"><X size={20} /></button>
             </header>
@@ -414,7 +444,8 @@ export function SupplierManagementPage() {
                 <dt>DIGI status</dt><dd>{open.digi_status_label ?? '—'}</dd>
                 {open.reason && <><dt>Reason</dt><dd style={{ color: '#dc2626' }}>{open.reason}</dd></>}
                 <dt>Pushed</dt><dd>{when(open.order_time)}</dd>
-                <dt>Factory</dt><dd>{open.factory ?? 'Not given by DIGI'}</dd>
+                <dt>Factory</dt><dd>{open.factory ?? '—'}{open.factory_source && open.factory_source !== 'digi' && (
+                  <span className="som-sub">{open.factory_source === 'label' ? `From the shipping label: ${open.factory_detail ?? ''}` : "From the courier's first scan"}</span>)}</dd>
                 <dt>Shipped by DIGI</dt><dd>{when(open.shipping_time)}</dd>
                 <dt>Customer</dt><dd>{open.customer_name ?? '—'}{open.customer_location ? `, ${open.customer_location}` : ''}</dd>
                 <dt>Pieces</dt><dd>{open.qty != null ? num(open.qty) : '—'}</dd>
@@ -423,16 +454,18 @@ export function SupplierManagementPage() {
             <section>
               <h4>Shipping</h4>
               <dl className="som-kv">
-                <dt>Courier</dt><dd>{open.courier ?? open.label_courier ?? '—'}</dd>
+                <dt>Shipped by</dt><dd>{open.shipped_by === 'Self' ? 'Self — our label, handed to DIGI' : open.shipped_by === 'Factory' ? "Factory — DIGI's own label" : '—'}</dd>
+                <dt>Courier</dt><dd>{open.courier ?? '—'}</dd>
                 <dt>Tracking ID</dt>
-                <dd>{(open.tracking_number || open.label_tracking_number)
-                  ? (trackUrl(open.courier ?? open.label_courier, open.tracking_number ?? open.label_tracking_number)
-                    ? <a className="som-link" href={trackUrl(open.courier ?? open.label_courier, open.tracking_number ?? open.label_tracking_number)!} target="_blank" rel="noopener noreferrer">{open.tracking_number ?? open.label_tracking_number}</a>
-                    : (open.tracking_number ?? open.label_tracking_number))
+                <dd>{open.tracking_number
+                  ? (trackUrl(open.courier, open.tracking_number)
+                    ? <a className="som-link" href={trackUrl(open.courier, open.tracking_number)!} target="_blank" rel="noopener noreferrer">{open.tracking_number}</a>
+                    : open.tracking_number)
                   : '—'}</dd>
-                <dt>Tracking status</dt><dd>{open.tracking_text ?? '—'}</dd>
-                {open.courier_eta && <><dt>Expected</dt><dd>{day(open.courier_eta)}</dd></>}
-                {open.delivered_date && <><dt>Delivered</dt><dd>{day(open.delivered_date)}</dd></>}
+                <dt>Tracking status</dt><dd>{open.tracking_status ?? '—'}{open.tracking_detail && <span className="som-sub">{open.tracking_detail}</span>}</dd>
+                <dt>Ship date</dt><dd>{day(open.ship_date)}</dd>
+                <dt>Est. delivery</dt><dd>{day(open.est_delivery)}</dd>
+                <dt>Delivered on</dt><dd>{day(open.delivered_on)}</dd>
                 <dt>Shipping label</dt><dd>{open.label_url ? <a className="som-link" href={open.label_url} target="_blank" rel="noopener noreferrer">Open label PDF</a> : '—'}</dd>
               </dl>
             </section>

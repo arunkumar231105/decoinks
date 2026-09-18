@@ -115,3 +115,21 @@
 
 /* Printshop's table styles set headers in capitals; the design has them as written. */
 .som-table th, .som-table th button { text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 600; }
+
+/* Order status pills beyond the design's set, tracking status text, and who shipped. */
+.st-rejected, .st-refunding { background: #fee2e2; color: #dc2626; }
+.tk-label-created, .tk-awaiting-scan { color: #0e7490; }
+.tk-in-transit, .tk-out-for-delivery, .tk-ready-for-pickup { color: #2563eb; }
+.tk-delayed { color: #c2410c; }
+.tk-delivered { color: #15803d; }
+.tk-returned, .tk-exception { color: #dc2626; }
+.tk-label-void { color: #94a3b8; }
+.tkp-label-created, .tkp-awaiting-scan { background: #cffafe; color: #0e7490; }
+.tkp-in-transit, .tkp-out-for-delivery, .tkp-ready-for-pickup { background: #e0f2fe; color: #0369a1; }
+.tkp-delayed { background: #ffedd5; color: #c2410c; }
+.tkp-delivered { background: #dcfce7; color: #15803d; }
+.tkp-returned, .tkp-exception { background: #fee2e2; color: #dc2626; }
+.tkp-label-void { background: #f1f5f9; color: #64748b; }
+.sb-factory { background: #f3e8ff; color: #7e22ce; }
+.sb-self { background: #fef3c7; color: #b45309; }
+.som-table { min-width: 1500px; }

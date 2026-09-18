@@ -134,7 +134,10 @@ async function loadUniverse() {
   } catch (err) {
     console.error('[digi-sync] digi_order_numbers unavailable:', err.message)
   }
-  const { rows: known } = await db.query(`SELECT order_no, courier_status, courier_synced_at FROM digi_orders`)
+  const { rows: known } = await db.query(
+    `SELECT order_no, courier_status, courier_synced_at, label_parsed_url, label_from_name, label_from_address,
+            label_from_city, label_from_state, label_from_zip, label_created_on, label_text
+       FROM digi_orders`)
   return { blanktex, poRefs, manual, known: new Map(known.map(k => [k.order_no, k])) }
 }
 
@@ -180,6 +183,57 @@ function matchPO(order, pos, claimedOrders) {
   // A sales order split into several DIGI POs: which PO is which DIGI order is
   // not in the data, so the order is tied and the PO only when it is the only one.
   return { order_id: g.order_id, po_id: g.pos.length === 1 ? g.pos[0].id : null }
+}
+
+const LABELS_PER_RUN = 40
+const pdfText = (() => { let parse = null; return async (buf) => { parse = parse || require('pdf-parse/lib/pdf-parse.js'); return (await parse(buf)).text } })()
+
+/**
+ * The sender printed on a shipping label: name, street, "CITY ST 12345", and the
+ * day it was created. USPS labels carry text; some UPS labels are only an image,
+ * and give nothing.
+ */
+function parseLabel(text) {
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean)
+  const c = /Created (\d{2})\/(\d{2})\/(\d{4})/.exec(text || '')
+  const out = { created: c ? `${c[3]}-${c[1]}-${c[2]}` : null }
+  const i = lines.findIndex(l => /^[A-Z][A-Z .'-]* [A-Z]{2} \d{5}(-\d{4})?$/.test(l))
+  if (i < 1) return out
+  const m = /^(.*) ([A-Z]{2}) (\d{5})(?:-\d{4})?$/.exec(lines[i])
+  return { ...out, name: i >= 2 ? lines[i - 2] : null, address: lines[i - 1], city: m[1], state: m[2], zip: m[3] }
+}
+
+/** Read each new label once; a label already read keeps what it said. */
+async function readLabels(rows, known, log) {
+  let read = 0
+  for (const r of rows) {
+    // DIGI buys its own labels through its goodFast service; any other label
+    // was bought by the shop and handed to DIGI.
+    r.shipped_by = r.label_url ? (/\/waybill\/goodFast\//.test(r.label_url) ? 'Factory' : 'Self') : null
+    if (!r.label_url) continue
+    const prev = known.get(r.order_no)
+    if (prev?.label_parsed_url === r.label_url) {
+      Object.assign(r, { label_from_name: prev.label_from_name, label_from_address: prev.label_from_address,
+        label_from_city: prev.label_from_city, label_from_state: prev.label_from_state, label_from_zip: prev.label_from_zip,
+        label_created_on: prev.label_created_on, label_text: prev.label_text, label_parsed_url: prev.label_parsed_url })
+      continue
+    }
+    if (read >= LABELS_PER_RUN) continue
+    read += 1
+    try {
+      const res = await fetch(r.label_url, { signal: AbortSignal.timeout(20000) })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const buf = Buffer.from(await res.arrayBuffer())
+      if (buf.length > 5 * 1024 * 1024) throw new Error('label larger than 5 MB')
+      const text = await pdfText(buf)
+      const l = parseLabel(text)
+      Object.assign(r, { label_from_name: l.name || null, label_from_address: l.address || null, label_from_city: l.city || null,
+        label_from_state: l.state || null, label_from_zip: l.zip || null, label_created_on: l.created || null,
+        label_text: String(text || '').trim().slice(0, 4000) || null, label_parsed_url: r.label_url })
+    } catch (err) {
+      log(`  label ${r.order_no}: ${err.message}`)
+    }
+  }
 }
 
 async function courierStates(rows, known, log) {
@@ -384,6 +438,7 @@ async function runSync({ apply, log }) {
     if (free.length === 1) { r.tracking_number = free[0].tn; r.courier = r.courier || free[0].carrier; taken.add(free[0].tn) }
   }
 
+  await readLabels(rows, known, log)
   await courierStates(rows, known, log)
 
   const counts = { orders: rows.length, on_api: rows.filter(r => !r.api_missing).length, tracked: rows.filter(r => r.tracking_number).length,
@@ -444,13 +499,25 @@ async function runSync({ apply, log }) {
          platform_shop_name = COALESCE($12, platform_shop_name), platform_type = COALESCE($13, platform_type),
          delivery_shipping_time = COALESCE($14, delivery_shipping_time),
          api_info = COALESCE($15::jsonb, api_info), api_status = COALESCE($16::jsonb, api_status),
-         api_delivery = COALESCE($17::jsonb, api_delivery)
+         api_delivery = COALESCE($17::jsonb, api_delivery),
+         shipped_by = COALESCE($18, shipped_by),
+         label_from_name = CASE WHEN $19::text IS NULL THEN label_from_name ELSE $20 END,
+         label_from_address = CASE WHEN $19::text IS NULL THEN label_from_address ELSE $21 END,
+         label_from_city = CASE WHEN $19::text IS NULL THEN label_from_city ELSE $22 END,
+         label_from_state = CASE WHEN $19::text IS NULL THEN label_from_state ELSE $23 END,
+         label_from_zip = CASE WHEN $19::text IS NULL THEN label_from_zip ELSE $24 END,
+         label_created_on = CASE WHEN $19::text IS NULL THEN label_created_on ELSE $25::date END,
+         label_text = CASE WHEN $19::text IS NULL THEN label_text ELSE $26 END,
+         label_parsed_url = COALESCE($19, label_parsed_url)
        WHERE order_no = $1`,
       [r.order_no, r.receiver_phone, r.receiver_address, r.receiver_address2, r.receiver_post_code,
        r.platform_order_status, r.platform_refund_status, r.order_state_text, r.express_code, r.pre_shipping_time,
        r.platform_shop_code, r.platform_shop_name, r.platform_type, r.delivery_shipping_time,
        r.api_info ? JSON.stringify(r.api_info) : null, r.api_status ? JSON.stringify(r.api_status) : null,
-       r.api_delivery ? JSON.stringify(r.api_delivery) : null])
+       r.api_delivery ? JSON.stringify(r.api_delivery) : null,
+       r.shipped_by || null, r.label_parsed_url || null, r.label_from_name || null, r.label_from_address || null,
+       r.label_from_city || null, r.label_from_state || null, r.label_from_zip || null, r.label_created_on || null,
+       r.label_text || null])
 
     for (const l of r.lines) {
       await db.query(
