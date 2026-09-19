@@ -1,4 +1,4 @@
-import { useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useLocation, Link, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
@@ -53,6 +53,12 @@ interface POLineItem {
   artwork_url: string | null
   artwork_size_front: string
   artwork_size_back: string
+  // What the factory prints and the preview it works from, per side (links in
+  // storage). Carried to the supplier order, so it can be filled from the PO.
+  front_image?: string
+  front_mockup?: string
+  back_image?: string
+  back_mockup?: string
   catalog_style_id: string
   catalog_color_id: string
   catalog_size_id: string
@@ -413,6 +419,9 @@ export function NewPurchaseOrderPage() {
   const [newContactMode, setNewContactMode] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  // Apparel lines whose print / mockup images are open under the row.
+  const [imagesOpen, setImagesOpen] = useState<Set<string>>(new Set())
+  const toggleImages = (id: string) => setImagesOpen(cur => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Order to convert can arrive via in-app navigation (location.state) OR as a
@@ -625,6 +634,8 @@ export function NewPurchaseOrderPage() {
           artwork_url: it.artwork_thumbnail_url || it.artwork_file_url || it.front_image || null,
           artwork_size_front: it.artwork_size_front || it.artwork_size || '',
           artwork_size_back: it.artwork_size_back || '',
+          front_image: it.front_image || '', front_mockup: it.front_mockup || '',
+          back_image: it.back_image || '', back_mockup: it.back_mockup || '',
           catalog_style_id: it.catalog_style_id || '',
           catalog_color_id: it.catalog_color_id || '',
           catalog_size_id: it.catalog_size_id || '',
@@ -724,6 +735,8 @@ export function NewPurchaseOrderPage() {
         artwork_url: it.front_image || null,
         artwork_size_front: it.artwork_size || '',
         artwork_size_back: it.artwork_size || '',
+        front_image: it.front_image || '', front_mockup: it.front_mockup || '',
+        back_image: it.back_image || '', back_mockup: it.back_mockup || '',
         sort_order: idx,
         description: it.style_description || '', hsn_code: '', uom: 'pcs',
         catalog_style_id: it.catalog_style_id || '', catalog_color_id: it.catalog_color_id || '',
@@ -808,6 +821,9 @@ export function NewPurchaseOrderPage() {
           catalog_color_id: color?.style_color_id ?? '', color: color?.display_name ?? it.color,
           catalog_size_id: size?.style_size_id ?? '', size: size?.size_name ?? it.size,
           catalog_sku: variant?.sku_code ?? (color || size ? it.catalog_sku : style.sku),
+          // The images an earlier PO of this line carried, when this one has none.
+          front_image: it.front_image || prior?.front_image || '', front_mockup: it.front_mockup || prior?.front_mockup || '',
+          back_image: it.back_image || prior?.back_image || '', back_mockup: it.back_mockup || prior?.back_mockup || '',
         } })
         return { styleId: style.id, colorId: color?.style_color_id ?? '' }
       }
@@ -1078,6 +1094,10 @@ export function NewPurchaseOrderPage() {
             artwork_id: it.artwork_id,
             artwork_size_front: it.artwork_size_front || null,
             artwork_size_back: it.artwork_size_back || null,
+            front_image: it.front_image || null,
+            front_mockup: it.front_mockup || null,
+            back_image: it.back_image || null,
+            back_mockup: it.back_mockup || null,
             artwork_no: it.artwork_no || null,
             catalog_style_id: it.catalog_style_id || null,
             catalog_color_id: it.catalog_color_id || null,
@@ -1724,7 +1744,8 @@ export function NewPurchaseOrderPage() {
                   </td></tr>
                 )}
                 {state.items.map((it, i) => (
-                  <tr key={it.id}>
+                  <Fragment key={it.id}>
+                  <tr>
                     <td className="np-td-num">{i + 1}</td>
                     <td><ApparelStyleSelect value={it.style_code || it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
                     <td><select className="np-table-select" value={it.category} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { category: e.target.value } })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
@@ -1782,6 +1803,13 @@ export function NewPurchaseOrderPage() {
                         : it.artwork_no
                           ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
                           : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}</div>
+                      {(() => {
+                        const n = [it.front_image, it.front_mockup, it.back_image, it.back_mockup].filter(Boolean).length
+                        return <button type="button" className={cn('np-images-btn', n > 0 && 'has')} onClick={() => toggleImages(it.id)}
+                          title="Print and mockup images the factory works from">
+                          Print / Mockup {n}/4 {imagesOpen.has(it.id) ? '▲' : '▼'}
+                        </button>
+                      })()}
                     </td>
                     {/* What the supplier charges for one piece — never the customer's price. */}
                     <td>
@@ -1803,6 +1831,14 @@ export function NewPurchaseOrderPage() {
                       )}
                     </td>
                   </tr>
+                  {imagesOpen.has(it.id) && (
+                    <tr className="np-images-row">
+                      <td colSpan={state.po_scope === 'partial' ? 18 : 14}>
+                        <LineImages item={it} onChange={patch => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch })} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
@@ -2174,6 +2210,56 @@ export function NewPurchaseOrderPage() {
           onPick={(a) => dispatch({ type: 'ADD_ARTWORK', artwork: a })}
         />
       )}
+    </div>
+  )
+}
+
+// ── Print & mockup images of one apparel line ─────────────────────────────────
+// Front print and mockup always; back ones for a two-sided print. They are what
+// the supplier order (Supplier Management → New Order) sends to the factory.
+
+function LineImages({ item, onChange }: { item: POLineItem; onChange: (patch: Partial<POLineItem>) => void }) {
+  const [busy, setBusy] = useState('')
+  const slots: [keyof POLineItem, string, string][] = [
+    ['front_image', 'Front Print', 'PNG, what gets printed'], ['front_mockup', 'Front Mockup', 'preview on the garment'],
+    ['back_image', 'Back Print', 'only for a back print'], ['back_mockup', 'Back Mockup', 'only for a back print'],
+  ]
+  const upload = async (key: keyof POLineItem, file?: File) => {
+    if (!file) return
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) { toast.error('Use a PNG, JPG or WebP image'); return }
+    if (file.size > 10 * 1024 * 1024) { toast.error('Image must be 10 MB or smaller'); return }
+    setBusy(String(key))
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const up = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const url: string | undefined = up.data?.url ?? up.data?.data?.url
+      if (!url) throw new Error('The upload did not return a link')
+      onChange({ [key]: url } as Partial<POLineItem>)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? err?.message ?? 'Upload failed')
+    } finally { setBusy('') }
+  }
+  return (
+    <div className="np-line-images">
+      {slots.map(([key, label, hint]) => {
+        const url = item[key] as string | undefined
+        return (
+          <label key={String(key)} className={cn('np-line-image', url && 'done')}
+            onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); upload(key, e.dataTransfer.files[0]) }}>
+            <input type="file" hidden accept="image/png,image/jpeg,image/webp" disabled={busy === key}
+              onChange={e => { upload(key, e.target.files?.[0]); e.currentTarget.value = '' }} />
+            <span className="np-line-image-label">{label}<small>{hint}</small></span>
+            {busy === key ? <span className="np-line-image-empty">Uploading…</span>
+              : url ? <img src={url} alt={label} />
+              : <span className="np-line-image-empty"><UploadCloud size={16} /> Upload</span>}
+            {url && busy !== key && (
+              <button type="button" className="np-line-image-clear" aria-label={`Remove ${label}`}
+                onClick={e => { e.preventDefault(); onChange({ [key]: '' } as Partial<POLineItem>) }}><X size={12} /></button>
+            )}
+          </label>
+        )
+      })}
     </div>
   )
 }

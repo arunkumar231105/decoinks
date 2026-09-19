@@ -21,3 +21,20 @@
 
 .np-sub-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #475569; margin: 4px 0 8px; }
 .np-empty-cell { text-align: center; padding: 22px !important; color: #9ca3af; font-size: 13px; }
+
+/* Print / mockup images of an apparel line, opened under its row. */
+.np-images-btn { margin-top: 4px; font: inherit; font-size: 11px; color: #6b7280; background: #f9fafb; border: 1px solid #e5e7eb;
+  border-radius: 6px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
+.np-images-btn.has { color: #0f766e; border-color: #99f6e4; background: #f0fdfa; font-weight: 600; }
+.np-images-row > td { background: #fcfcfd; }
+.np-line-images { display: grid; grid-template-columns: repeat(4, minmax(140px, 200px)); gap: 10px; padding: 4px 0; }
+.np-line-image { position: relative; display: flex; flex-direction: column; gap: 6px; border: 1.5px dashed #d1d5db; border-radius: 8px;
+  padding: 8px; background: #fff; cursor: pointer; min-height: 118px; }
+.np-line-image.done { border-style: solid; border-color: #99f6e4; }
+.np-line-image-label { font-size: 12px; font-weight: 700; color: #374151; display: flex; flex-direction: column; }
+.np-line-image-label small { font-weight: 400; color: #9ca3af; font-size: 10.5px; }
+.np-line-image img { max-height: 70px; max-width: 100%; object-fit: contain; align-self: center; }
+.np-line-image-empty { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; color: #9ca3af; font-size: 12px; }
+.np-line-image-clear { position: absolute; top: 6px; right: 6px; border: 0; background: #fee2e2; color: #b91c1c; border-radius: 50%;
+  width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+@media (max-width: 760px) { .np-line-images { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

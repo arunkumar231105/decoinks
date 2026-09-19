@@ -679,7 +679,34 @@ async function runSync({ apply, log }) {
       [String(a.id), a.addressId, a.addressAlias || null, a.country || null, a.province || null, a.city || null,
        a.address || null, a.enabled ?? null, JSON.stringify(a)])
   }
+  counts.factory_status = await writeFactoryStatus(rows)
   return counts
+}
+
+// The PO's Factory Status (purchase_orders.factory_status, the column the
+// Purchase Orders list reads as "the factory's feed") follows its DIGI order
+// (owner, 19 Sep 2026: "status change hojay po ma ... push hogiya ha"):
+//   Store Audit / Pending Push → To be Pushed    Rejected → Anti Review
+//   Factory Audit → Factory Audit                In Production / Shipped → Pushed
+// A PO with several DIGI orders takes the furthest along; cancelled and
+// refunding DIGI orders say nothing, and a status is only written when it moves.
+const FACTORY_STATUS = { 1: 'To be Pushed', 2: 'To be Pushed', 3: 'Anti Review', 4: 'Factory Audit', 5: 'Pushed', 12: 'Pushed' }
+const FACTORY_RANK = { 'To be Pushed': 1, 'Anti Review': 2, 'Factory Audit': 3, Pushed: 4 }
+async function writeFactoryStatus(rows) {
+  const best = new Map()
+  for (const r of rows) {
+    const status = r.po_id && FACTORY_STATUS[r.order_status]
+    if (!status) continue
+    if ((FACTORY_RANK[status] || 0) > (FACTORY_RANK[best.get(r.po_id)] || 0)) best.set(r.po_id, status)
+  }
+  let changed = 0
+  for (const [poId, status] of best) {
+    const { rowCount } = await db.query(
+      `UPDATE purchase_orders SET factory_status = $2, updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL AND factory_status IS DISTINCT FROM $2`, [poId, status])
+    changed += rowCount
+  }
+  return changed
 }
 
 module.exports = { syncDigiOrders, matchPO }

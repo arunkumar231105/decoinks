@@ -60,3 +60,6 @@
 .sno-totals b { font-size: 15px; }
 .sno-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin: 4px 0 24px; }
 .sno-preview { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px; font-size: 12px; overflow: auto; max-height: 420px; }
+.sno-lock { display: flex; align-items: center; gap: 8px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+  border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; font-size: 12.5px; }
+.sno-item-head .sno-muted { font-size: 11.5px; }

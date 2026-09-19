@@ -28,28 +28,32 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 router.get('/new-order/catalog', async (req, res) => {
   try { res.json(await newOrder.catalog()) } catch (err) { fail(res, err) }
 })
+// Every picker below is for one supplier (?supplier=DIGI, BlankTex's supplier code).
+const SUPPLIER_CODE = /^[A-Za-z0-9_-]{2,20}$/
+const supplierOf = (req, res) => {
+  const code = String(req.query.supplier || '')
+  if (!SUPPLIER_CODE.test(code)) { res.status(400).json({ error: 'Select a fulfillment supplier first' }); return null }
+  return code
+}
 router.get('/new-order/sales-orders', async (req, res) => {
-  try { res.json({ data: await newOrder.salesOrders() }) } catch (err) { fail(res, err) }
-})
-router.get('/new-order/sales-orders/:id', async (req, res) => {
   try {
-    if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Sales order id is invalid' })
-    const order = await newOrder.salesOrder(req.params.id)
-    if (!order) return res.status(404).json({ error: 'Apparel sales order not found' })
-    res.json({ data: order })
+    const code = supplierOf(req, res); if (!code) return
+    res.json({ data: await newOrder.salesOrders(code) })
   } catch (err) { fail(res, err) }
 })
 router.get('/new-order/sales-orders/:id/purchase-orders', async (req, res) => {
   try {
+    const code = supplierOf(req, res); if (!code) return
     if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Sales order id is invalid' })
-    res.json({ data: await newOrder.orderPurchaseOrders(req.params.id) })
+    res.json({ data: await newOrder.orderPurchaseOrders(req.params.id, code) })
   } catch (err) { fail(res, err) }
 })
 router.get('/new-order/sales-orders/:id/purchase-orders/:poId', async (req, res) => {
   try {
+    const code = supplierOf(req, res); if (!code) return
     if (!UUID.test(req.params.id) || !UUID.test(req.params.poId)) return res.status(400).json({ error: 'Purchase order id is invalid' })
-    const po = await newOrder.purchaseOrder(req.params.id, req.params.poId)
-    if (!po) return res.status(404).json({ error: 'That purchase order does not belong to the selected sales order' })
+    const po = await newOrder.purchaseOrder(req.params.id, req.params.poId, code)
+    if (!po) return res.status(404).json({ error: 'That purchase order is not open for this sales order and supplier — it may already be on the supplier' })
     res.json({ data: po })
   } catch (err) { fail(res, err) }
 })

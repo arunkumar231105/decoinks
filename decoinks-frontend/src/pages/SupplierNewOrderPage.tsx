@@ -12,6 +12,14 @@ import '../styles/supplier-new-order.css'
  * Printshop (owner, 19 Sep 2026) — the same four sections, fields and rules as
  * /root/BlankTex/frontend/src/pages/Purchase.jsx, in Printshop's look.
  *
+ * Nothing is typed from scratch here (owner, 19 Sep 2026): pick the supplier,
+ * then a sales order that still has an open PO for that supplier, then the PO —
+ * and the whole order fills from it (items, style/colour/size, pieces, print and
+ * mockup images, recipient, carrier). Everything stays locked until a PO is
+ * loaded; after that it can be corrected, but no line can be added and no line
+ * can ask for more pieces than the PO has. A PO already placed on the supplier
+ * is not offered again.
+ *
  * For now the screen fills and checks the order but does not send it: placing
  * with DIGI still happens in BlankTex, and sending from here is the next step.
  * BlankTex is not called or changed; the catalogue and the sales-order / PO
@@ -31,14 +39,16 @@ interface Item {
   product_title: string; style_id: string; style_color_id: string; style_size_id: string; craft_type: string
   quantity: string | number; print_position: string; specification: string; remark: string
   images: Partial<Record<'front_print' | 'front_mockup' | 'back_print' | 'back_mockup', Image>>
+  // Pieces the PO line holds — this order can send fewer, never more.
+  max_qty?: number
 }
 interface Form {
   supplier_id: string; order_no: string; carrier: string; order_time: string; recipient_name: string; phone: string
   address_line_1: string; address_line_2: string; city: string; state_province: string; postal_code: string; country: string
 }
 
-const FORM_KEY = 'printshop:supplier-new-order:form'
-const ITEMS_KEY = 'printshop:supplier-new-order:items'
+// Drafts of the first version of this screen; nothing is kept in the browser now.
+const OLD_DRAFT_KEYS = ['printshop:supplier-new-order:form', 'printshop:supplier-new-order:items']
 const BLANKTEX_NEW_ORDER = 'https://blanktex.decoinkssuite.com/purchase'
 
 const emptyItem = (): Item => ({
@@ -60,16 +70,6 @@ const newForm = (): Form => ({
   supplier_id: '', order_no: generateOrderId(), carrier: '', order_time: localDateTime(), recipient_name: '', phone: '',
   address_line_1: '', address_line_2: '', city: '', state_province: '', postal_code: '', country: 'US',
 })
-
-// A draft survives a refresh, as in BlankTex. Storage can be blocked; the page works without it.
-function loadDraft<T>(key: string, fallback: T): T {
-  try { const raw = localStorage.getItem(key); return raw ? { ...(fallback as object), ...JSON.parse(raw) } as T : fallback } catch { return fallback }
-}
-function loadItems(): Item[] {
-  try { const raw = localStorage.getItem(ITEMS_KEY); return raw ? JSON.parse(raw) : [] } catch { return [] }
-}
-function saveDraft(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage blocked */ } }
-function clearDraft() { try { localStorage.removeItem(FORM_KEY); localStorage.removeItem(ITEMS_KEY) } catch { /* storage blocked */ } }
 
 // Auto-fill matches only exactly (normalised): a wrong guess would send the wrong
 // garment, so anything uncertain is left for the agent to pick — as in BlankTex.
@@ -188,9 +188,9 @@ function UploadZone({ label, hint, image, uploading, onFile, onClear }: {
 
 // ── One item ─────────────────────────────────────────────────────────────────
 
-function ItemCard({ item, index, catalog, onChange, onRemove, onUpload, uploading }: {
+function ItemCard({ item, index, catalog, onChange, onUpload, uploading }: {
   item: Item; index: number; catalog: Catalog
-  onChange: (field: keyof Item, value: any) => void; onRemove: () => void
+  onChange: (field: keyof Item, value: any) => void
   onUpload: (role: keyof Item['images'], file: File) => void; uploading: string | null
 }) {
   const style = catalog.styles.find(s => s.style_id === item.style_id)
@@ -217,7 +217,7 @@ function ItemCard({ item, index, catalog, onChange, onRemove, onUpload, uploadin
   return (
     <div className="sno-item">
       <div className="sno-item-head"><b>Item #{index + 1}</b>
-        <button type="button" className="np-del-btn" aria-label={`Remove item ${index + 1}`} onClick={onRemove}><Trash2 size={14} /></button>
+        <span className="sno-muted">{item.remark}</span>
       </div>
       <div className="sno-grid one">
         <Field label="Product Title *"><input className="np-input" value={item.product_title} placeholder="e.g. Custom Print T-Shirt"
@@ -254,7 +254,8 @@ function ItemCard({ item, index, catalog, onChange, onRemove, onUpload, uploadin
           <option value="1" disabled={!crafts.includes('1')}>Heat Transfer (烫画)</option>
           <option value="2" disabled={!crafts.includes('2')}>DTG Direct-to-Garment (直喷)</option>
         </select></Field>
-        <Field label="Quantity *"><input className="np-input" type="number" min={1} value={item.quantity} onChange={e => onChange('quantity', e.target.value)} /></Field>
+        <Field label="Quantity *" hint={item.max_qty ? `(PO line: ${item.max_qty} — up to that)` : undefined}>
+          <input className="np-input" type="number" min={1} max={item.max_qty || undefined} value={item.quantity} onChange={e => onChange('quantity', e.target.value)} /></Field>
       </div>
       <div className="sno-grid three">
         <Field label="Print Position"><select className="np-select" value={item.print_position} onChange={e => onChange('print_position', e.target.value)}>
@@ -281,8 +282,10 @@ function ItemCard({ item, index, catalog, onChange, onRemove, onUpload, uploadin
 
 export function SupplierNewOrderPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState<Form>(() => loadDraft(FORM_KEY, newForm()))
-  const [items, setItems] = useState<Item[]>(loadItems)
+  const [form, setForm] = useState<Form>(newForm)
+  const [items, setItems] = useState<Item[]>([])
+  // The PO this order was filled from; until there is one, nothing can be entered.
+  const [loadedPo, setLoadedPo] = useState<{ id: string; po_number: string } | null>(null)
   const [uploading, setUploading] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState(false)
   const [salesOrderId, setSalesOrderId] = useState('')
@@ -291,20 +294,22 @@ export function SupplierNewOrderPage() {
   const [importing, setImporting] = useState(false)
   const [importNote, setImportNote] = useState('')
 
-  useEffect(() => { saveDraft(FORM_KEY, form) }, [form])
-  useEffect(() => { saveDraft(ITEMS_KEY, items) }, [items])
+  useEffect(() => { try { OLD_DRAFT_KEYS.forEach(k => localStorage.removeItem(k)) } catch { /* storage blocked */ } }, [])
 
   const { data: catalog, isLoading, error, refetch } = useQuery<Catalog>({
     queryKey: ['supplier-new-order-catalog'],
     queryFn: () => api.get('/supplier-orders/new-order/catalog').then(r => r.data),
     staleTime: 5 * 60 * 1000,
   })
-  const { data: salesOrders = [] } = useQuery<any[]>({
-    queryKey: ['supplier-new-order-sales-orders'],
-    queryFn: () => api.get('/supplier-orders/new-order/sales-orders').then(r => r.data.data ?? []),
-  })
-
   const supplier = catalog?.suppliers.find(s => s.supplier_id === form.supplier_id)
+  const supplierCode = supplier?.can_place_order ? supplier.supplier_code : ''
+  // Sales orders with a PO for this supplier that is not on the supplier yet.
+  const { data: salesOrders = [], isFetching: loadingOrders } = useQuery<any[]>({
+    queryKey: ['supplier-new-order-sales-orders', supplierCode],
+    queryFn: () => api.get('/supplier-orders/new-order/sales-orders', { params: { supplier: supplierCode } }).then(r => r.data.data ?? []),
+    enabled: Boolean(supplierCode),
+    staleTime: 0,
+  })
   const supplierCatalog: Catalog = useMemo(() => ({
     suppliers: catalog?.suppliers ?? [],
     styles: (catalog?.styles ?? []).filter(s => s.supplier_id === form.supplier_id),
@@ -312,22 +317,15 @@ export function SupplierNewOrderPage() {
     sizes: (catalog?.sizes ?? []).filter(z => z.supplier_id === form.supplier_id),
   }), [catalog, form.supplier_id])
 
-  // A restored draft can hold a colour/size the style no longer offers — drop it.
-  useEffect(() => {
-    if (!catalog?.styles.length) return
-    setItems(cur => cur.map(it => {
-      const st = catalog.styles.find(s => s.style_id === it.style_id)
-      if (!st) return it
-      const colorOk = !st.color_ids?.length || !it.style_color_id || st.color_ids.includes(it.style_color_id)
-      const sizeOk = !st.size_ids?.length || !it.style_size_id || st.size_ids.includes(it.style_size_id)
-      return colorOk && sizeOk ? it : { ...it, style_color_id: colorOk ? it.style_color_id : '', style_size_id: sizeOk ? it.style_size_id : '' }
-    }))
-  }, [catalog])
-
+  // Back to nothing chosen: no sales order, no PO, no lines, a fresh order id.
+  const resetOrder = () => {
+    setItems([]); setSalesOrderId(''); setImportNote(''); setOrderPos([]); setPoId(''); setLoadedPo(null)
+    setForm(cur => ({ ...newForm(), supplier_id: cur.supplier_id }))
+  }
   const setField = (field: keyof Form, value: string) => {
     setForm(cur => ({ ...cur, [field]: value }))
     // Another supplier's catalogue: the matched lines and the order link no longer hold.
-    if (field === 'supplier_id') { setItems([]); setSalesOrderId(''); setImportNote(''); setOrderPos([]); setPoId('') }
+    if (field === 'supplier_id') resetOrder()
   }
   const changeItem = (index: number, field: keyof Item, value: any) => setItems(cur => cur.map((it, i) => {
     if (i !== index) return it
@@ -367,6 +365,7 @@ export function SupplierNewOrderPage() {
         specification: [it.color, it.size].filter(Boolean).join(' / '),
         remark: remark(it),
         images,
+        max_qty: Number(it.qty) || 1,
       }
     })
     return { mapped, unmatched }
@@ -387,33 +386,23 @@ export function SupplierNewOrderPage() {
     ? `${n} item${n === 1 ? '' : 's'} need Style/Color/Size confirmed below before placing.`
     : 'All items matched the supplier catalog — review recipient & artwork, then place.'
 
-  const importSalesOrder = async (id: string) => {
-    setImporting(true)
-    try {
-      const order = (await api.get(`/supplier-orders/new-order/sales-orders/${id}`)).data.data
-      fillRecipient(order, order.ship_to)
-      const { mapped, unmatched } = mapLines(order.items || [], it => (it.catalog_sku ? `Printshop SKU ${it.catalog_sku}` : ''))
-      setItems(mapped)
-      setImportNote(`Imported ${order.order_number} — ${mapped.length} item${mapped.length === 1 ? '' : 's'}. ${matchedNote(unmatched)}`)
-      toast.success(`Loaded sales order ${order.order_number}`)
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? 'Could not load the sales order'); setSalesOrderId('')
-    } finally { setImporting(false) }
-  }
-
   const importPurchaseOrder = async (id: string, orderId = salesOrderId, pos = orderPos) => {
-    setPoId(id)
+    setPoId(id); setLoadedPo(null); setItems([])
+    setForm(cur => ({ ...newForm(), supplier_id: cur.supplier_id }))
     if (!id) { setImportNote(''); return }
-    const picked = pos.find(p => p.id === id)
-    if (picked?.used_by) { toast.error(`${picked.po_number} was already ordered as ${picked.used_by}`); setPoId(''); return }
+    if (!pos.some(p => p.id === id)) return
     setImporting(true)
     try {
-      const po = (await api.get(`/supplier-orders/new-order/sales-orders/${orderId}/purchase-orders/${id}`)).data.data
-      fillRecipient(po.order, po.ship_to, po.carrier)
+      const po = (await api.get(`/supplier-orders/new-order/sales-orders/${orderId}/purchase-orders/${id}`, { params: { supplier: supplierCode } })).data.data
       if (po.items_source === 'none') {
-        setItems([])
-        setImportNote(`Imported ${po.po_number} recipient. This partial PO has no line items saved in Printshop — add the items it covers below.`)
-      } else {
+        // A partial PO without lines does not say which pieces it covers.
+        setImportNote(`${po.po_number} is a partial PO with no items saved — open it in Purchase Orders, add its items and artwork, then pick it here.`)
+        toast.error(`${po.po_number} has no items to order`)
+        return
+      }
+      fillRecipient(po.order, po.ship_to, po.carrier)
+      setLoadedPo({ id: po.id, po_number: po.po_number })
+      {
         const { mapped, unmatched } = mapLines(po.items || [], it => `Printshop ${po.po_number}${it.catalog_sku ? ` · SKU ${it.catalog_sku}` : ''}`)
         setItems(mapped)
         setImportNote(`Imported ${po.po_number}${po.order?.order_number ? ` (sales order ${po.order.order_number})` : ''} — ${mapped.length} item${mapped.length === 1 ? '' : 's'}` +
@@ -425,24 +414,22 @@ export function SupplierNewOrderPage() {
     } finally { setImporting(false) }
   }
 
-  // The sales order first; one with POs then asks which PO (a lone free PO is taken).
+  // The sales order first, then its open PO (a lone one is taken at once).
   const selectSalesOrder = async (id: string) => {
-    setOrderPos([]); setPoId(''); setImportNote('')
-    if (!id) { setSalesOrderId(''); return }
-    if (!form.supplier_id) { toast.error('Select a fulfillment supplier first, then import'); return }
+    resetOrder()
+    if (!id) return
     setSalesOrderId(id)
     const order = salesOrders.find(o => o.id === id)
-    if (!order?.po_count) return importSalesOrder(id)
     setImporting(true)
     let pos: any[] | null = null
-    try { pos = (await api.get(`/supplier-orders/new-order/sales-orders/${id}/purchase-orders`)).data.data ?? [] }
+    try { pos = (await api.get(`/supplier-orders/new-order/sales-orders/${id}/purchase-orders`, { params: { supplier: supplierCode } })).data.data ?? [] }
     catch (err: any) { toast.error(err?.response?.data?.error ?? 'Could not load its purchase orders'); setSalesOrderId('') }
     finally { setImporting(false) }
     if (!pos) return
-    if (!pos.length) return importSalesOrder(id)
+    if (!pos.length) { setImportNote(`${order?.order_number ?? 'This order'} has no open ${supplierCode} PO left.`); return }
     setOrderPos(pos)
-    if (pos.length === 1 && !pos[0].used_by) return importPurchaseOrder(pos[0].id, id, pos)
-    setImportNote(`${order.order_number} has ${pos.length} purchase order${pos.length === 1 ? '' : 's'} — pick the one to fill this order from.`)
+    if (pos.length === 1) return importPurchaseOrder(pos[0].id, id, pos)
+    setImportNote(`${order?.order_number} has ${pos.length} open purchase orders — pick the one this order is for.`)
   }
 
   const uploadImage = async (index: number, role: keyof Item['images'], file: File) => {
@@ -468,13 +455,18 @@ export function SupplierNewOrderPage() {
   // The same checks BlankTex runs before it places an order.
   const validate = () => {
     if (!form.supplier_id) return 'Select a supplier first'
-    if (!items.length) return 'Add at least one item'
+    if (!salesOrderId) return 'Select the sales order'
+    if (!loadedPo || loadedPo.id !== poId) return 'Select the purchase order — the order is filled from it'
+    if (!items.length) return `${loadedPo.po_number} has no items to order`
     for (let i = 0; i < items.length; i += 1) {
       const it = items[i]
       if (!it.product_title.trim()) return `Item #${i + 1}: title is required`
       if (!it.style_id) return `Item #${i + 1}: style is required`
       if (!it.style_color_id) return `Item #${i + 1}: color is required`
       if (!it.style_size_id) return `Item #${i + 1}: size is required`
+      const qty = Number.parseInt(String(it.quantity), 10)
+      if (!Number.isInteger(qty) || qty < 1) return `Item #${i + 1}: quantity must be at least 1`
+      if (it.max_qty && qty > it.max_qty) return `Item #${i + 1}: ${qty} is more than the ${it.max_qty} on ${loadedPo.po_number}`
       if (!it.images.front_print) return `Item #${i + 1}: print image is required`
       if (!it.images.front_mockup) return `Item #${i + 1}: mockup image is required`
       if (it.print_position === '1,2' && !it.images.back_print) return `Item #${i + 1}: back print image is required for Both position`
@@ -494,14 +486,13 @@ export function SupplierNewOrderPage() {
     return ''
   }
   const checkOrder = () => {
-    if (salesOrderId && orderPos.length && !poId) return toast.error('Pick the purchase order of the selected sales order')
     const problem = validate()
     if (problem) return toast.error(problem)
     toast.success('Order is complete — placing it from Printshop is the next step; place it in BlankTex for now.')
   }
   const startOver = () => {
     if (!window.confirm('Clear this order and start a new one?')) return
-    clearDraft(); setForm(newForm()); setItems([]); setSalesOrderId(''); setOrderPos([]); setPoId(''); setImportNote('')
+    setForm(newForm()); setItems([]); setSalesOrderId(''); setOrderPos([]); setPoId(''); setImportNote(''); setLoadedPo(null)
   }
 
   const totals = items.reduce((sum, it) => {
@@ -510,6 +501,7 @@ export function SupplierNewOrderPage() {
     return { pieces: sum.pieces + pcs, grams: sum.grams + (unit == null ? 0 : unit * pcs), unweighed: sum.unweighed + (it.style_size_id && unit == null ? 1 : 0) }
   }, { pieces: 0, grams: 0, unweighed: 0 })
   const ready = Boolean(supplier?.can_place_order)
+  const filled = ready && Boolean(loadedPo)
   const busy = Object.keys(uploading).length > 0
 
   return (
@@ -559,27 +551,31 @@ export function SupplierNewOrderPage() {
             )}
             {ready && (
               <div className="sno-grid one" style={{ marginTop: 12 }}>
-                <Field label="Import from Sales Order" hint="(optional — pick the apparel order, then its Printshop PO)">
+                <Field label="Sales Order *" hint={`(apparel orders with a ${supplierCode} PO not yet on ${supplier!.supplier_name})`}>
                   <SearchSelect value={salesOrderId}
-                    placeholder={importing ? 'Loading order…' : (salesOrders.length ? '— Pick a sales order to auto-fill —' : '— No apparel sales orders —')}
+                    placeholder={importing ? 'Loading order…' : loadingOrders ? 'Loading sales orders…'
+                      : (salesOrders.length ? '— Pick the sales order —' : `— No sales order has an open ${supplierCode} PO —`)}
+                    disabled={!salesOrders.length}
                     options={salesOrders.map(o => ({ value: o.id, label: `${o.order_number} — ${o.customer_name || 'No customer'}`,
-                      hint: `${o.total_qty} pc · ${o.po_count ? `${o.po_count} PO${o.po_count === 1 ? '' : 's'}` : 'no PO yet'}${o.sales_channel ? ` · ${o.sales_channel}` : ''}` }))}
+                      hint: `${o.total_qty} pc · ${o.open_po_count} open PO${o.open_po_count === 1 ? '' : 's'}${o.sales_channel ? ` · ${o.sales_channel}` : ''}` }))}
                     onChange={selectSalesOrder} />
                 </Field>
                 {salesOrderId && orderPos.length > 0 && (
-                  <Field label="Purchase Order *" hint={`(Printshop — this sales order has ${orderPos.length})`}>
-                    <SearchSelect value={poId} placeholder={importing ? 'Loading purchase order…' : '— Pick the purchase order to auto-fill —'}
-                      options={orderPos.map(p => ({ value: p.id, label: `${p.po_number} — ${p.status}${p.used_by ? ` · already ordered (${p.used_by})` : ''}`,
-                        hint: `${p.total_qty} pc · ${p.item_count} line${p.item_count === 1 ? '' : 's'}${p.supplier_name ? ` · ${p.supplier_name}` : ''}` }))}
+                  <Field label="Purchase Order *" hint={`(${orderPos.length} open for this sales order)`}>
+                    <SearchSelect value={poId} placeholder={importing ? 'Loading purchase order…' : '— Pick the purchase order —'}
+                      options={orderPos.map(p => ({ value: p.id, label: `${p.po_number} — ${p.po_scope === 'partial' ? 'Partial' : 'Full'} PO`,
+                        hint: `${p.item_count ? `${p.total_qty} pc · ${p.item_count} line${p.item_count === 1 ? '' : 's'}` : 'no lines of its own'}${p.supplier_name ? ` · ${p.supplier_name}` : ''}` }))}
                       onChange={v => importPurchaseOrder(v)} />
                   </Field>
                 )}
-                {importNote && <div className="sno-choice ready"><span>↧</span><div><b>Sales order imported</b><small>{importNote}</small></div></div>}
+                {importNote && <div className={`sno-choice ${loadedPo ? 'ready' : 'blocked'}`}><span>{loadedPo ? '↧' : '!'}</span>
+                  <div><b>{loadedPo ? `Filled from ${loadedPo.po_number}` : 'Purchase order'}</b><small>{importNote}</small></div></div>}
               </div>
             )}
           </Section>
 
-          <fieldset className="sno-workflow" disabled={!ready}>
+          {ready && !loadedPo && <div className="sno-lock"><Info size={15} /> Pick the sales order and its purchase order above — the order fills from the PO. Nothing is entered by hand.</div>}
+          <fieldset className="sno-workflow" disabled={!filled}>
             <Section number="2" title="Order Info">
               <div className="sno-grid two">
                 <Field label="Order ID *" hint="(must be unique)"><input className="np-input" value={form.order_no} onChange={e => setField('order_no', e.target.value)} /></Field>
@@ -607,14 +603,12 @@ export function SupplierNewOrderPage() {
               </div>
             </Section>
 
-            <Section number="4" title="Items" action={
-              <button type="button" className="lb-action-btn" onClick={() => setItems(cur => [...cur, emptyItem()])}><Plus size={13} /> Add Item</button>}>
+            <Section number="4" title="Items" action={loadedPo ? <span className="sno-muted">From {loadedPo.po_number} — items come only from the PO</span> : undefined}>
               {!items.length
-                ? <div className="sno-empty">No items yet — click <b>Add Item</b> to start</div>
+                ? <div className="sno-empty">The items of the purchase order appear here</div>
                 : items.map((it, i) => (
                   <ItemCard key={i} item={it} index={i} catalog={supplierCatalog}
                     onChange={(f, v) => changeItem(i, f, v)}
-                    onRemove={() => setItems(cur => cur.filter((_, x) => x !== i))}
                     onUpload={(role, file) => uploadImage(i, role, file)}
                     uploading={Object.entries(uploading).find(([k]) => k.startsWith(`${i}:`))?.[1] ?? null} />
                 ))}
@@ -629,16 +623,16 @@ export function SupplierNewOrderPage() {
             </Section>
           </fieldset>
 
-          {!form.supplier_id && <div className="sno-muted" style={{ textAlign: 'center', margin: '4px 0 12px' }}>Select an API-connected supplier above to unlock the purchase-order form.</div>}
+          {!form.supplier_id && <div className="sno-muted" style={{ textAlign: 'center', margin: '4px 0 12px' }}>Select an API-connected supplier above, then the sales order and its purchase order.</div>}
 
           <div className="sno-actions">
             <button type="button" className="lb-action-btn" onClick={() => navigate('/supplier-management')}>Cancel</button>
-            <button type="button" className="lb-action-btn" onClick={() => setPreview(v => !v)} disabled={!ready}>Preview JSON</button>
-            <button type="button" className="lb-action-btn" onClick={checkOrder} disabled={!ready || busy}>Check Order</button>
+            <button type="button" className="lb-action-btn" onClick={() => setPreview(v => !v)} disabled={!filled}>Preview JSON</button>
+            <button type="button" className="lb-action-btn" onClick={checkOrder} disabled={!filled || busy}>Check Order</button>
             <button type="button" className="lb-action-btn lb-action-primary" disabled
               title="Sending to the supplier from Printshop is the next step — place it in BlankTex for now">→ Place Order</button>
           </div>
-          {preview && <pre className="sno-preview">{JSON.stringify({ ...form, items }, null, 2)}</pre>}
+          {preview && filled && <pre className="sno-preview">{JSON.stringify({ ...form, items }, null, 2)}</pre>}
         </>}
     </div>
   )
