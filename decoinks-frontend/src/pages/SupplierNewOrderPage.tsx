@@ -29,7 +29,7 @@ import '../styles/supplier-new-order.css'
 interface CatalogColor { style_color_id: string; supplier_id?: string; color_code?: string; color_name?: string; display_name?: string }
 interface CatalogSize { style_size_id: string; supplier_id: string; size_code: string; size_name: string }
 interface CatalogStyle {
-  style_id: string; supplier_id: string; style_no: string; style_name: string; craft_types: string | null
+  style_id: string; supplier_id: string; style_no: string; style_name: string; english_name?: string | null; craft_types: string | null
   images: string[] | null; color_ids: string[]; colors: CatalogColor[]; size_ids: string[]; size_weights: Record<string, number>
 }
 interface Supplier { supplier_id: string; supplier_code: string; supplier_name: string; api_provider: string | null; can_place_order: boolean }
@@ -44,6 +44,9 @@ interface Item {
   // Where the line came from ("PO-2026-0178 · SKU DG001-BL01-L"), shown on the
   // card only. Remark stays empty for the agent (owner, 19 Sep 2026).
   origin?: string
+  // The Printshop line it was filled from — an image added here is kept there.
+  line_id?: string
+  line_source?: 'purchase_order' | 'sales_order'
 }
 interface Form {
   supplier_id: string; order_no: string; carrier: string; order_time: string; recipient_name: string; phone: string
@@ -97,12 +100,16 @@ function unitWeight(item: Item, styles: CatalogStyle[]) {
   return g == null ? null : Number(g)
 }
 
+// Our own catalogue's English name where there is one; DIGI's name otherwise.
+const styleLabel = (s: CatalogStyle) => s.english_name || s.style_name
+const styleHint = (s: CatalogStyle) => s.english_name && s.english_name !== s.style_name ? `${s.style_no} · ${s.style_name}` : s.style_no
+
 const US_STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR'.split(' ')
 const COUNTRIES = ['US', 'CA', 'MX', 'GB', 'AU']
 
 // ── Small pieces ─────────────────────────────────────────────────────────────
 
-interface Option { value: string; label: string; hint?: string }
+interface Option { value: string; label: string; hint?: string; disabled?: boolean }
 function SearchSelect({ value, options, placeholder, disabled, onChange }: {
   value: string; options: Option[]; placeholder: string; disabled?: boolean; onChange: (v: string) => void
 }) {
@@ -131,7 +138,8 @@ function SearchSelect({ value, options, placeholder, disabled, onChange }: {
           <input className="np-input sno-select-search" autoFocus placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} />
           {shown.length === 0 && <div className="np-dropdown-empty">Nothing matches</div>}
           {shown.map(o => (
-            <button type="button" key={o.value} className="np-dropdown-item" onMouseDown={() => { onChange(o.value); setOpen(false) }}>
+            <button type="button" key={o.value} className="np-dropdown-item" disabled={o.disabled} style={o.disabled ? { opacity: .5, cursor: 'not-allowed' } : undefined}
+              onMouseDown={() => { if (o.disabled) return; onChange(o.value); setOpen(false) }}>
               <span className="np-dropdown-name">{o.label}</span>
               {o.hint && <span className="np-dropdown-sub">{o.hint}</span>}
             </button>
@@ -228,7 +236,7 @@ function ItemCard({ item, index, catalog, onChange, onUpload, uploading }: {
       </div>
       <div className="sno-grid three">
         <Field label="Style *"><SearchSelect value={item.style_id} placeholder="— Search style name or number —"
-          options={catalog.styles.map(s => ({ value: s.style_id, label: s.style_name, hint: s.style_no }))}
+          options={catalog.styles.map(s => ({ value: s.style_id, label: styleLabel(s), hint: styleHint(s) }))}
           onChange={v => onChange('style_id', v)} /></Field>
         <Field label="Color *"><SearchSelect value={item.style_color_id} disabled={!item.style_id}
           placeholder={item.style_id ? '— Select Color —' : '— Select a style first —'}
@@ -247,8 +255,8 @@ function ItemCard({ item, index, catalog, onChange, onUpload, uploading }: {
       )}
       {style && (
         <div className="sno-style">
-          {style.images?.[0] ? <img src={style.images[0]} alt={style.style_name} /> : <div className="sno-style-ph"><Package size={22} /></div>}
-          <div><b>{style.style_name}</b><span>Supplier style: {style.style_no}</span>
+          {style.images?.[0] ? <img src={style.images[0]} alt={styleLabel(style)} /> : <div className="sno-style-ph"><Package size={22} /></div>}
+          <div><b>{styleLabel(style)}</b><span>Supplier style: {style.style_no}{style.english_name && style.english_name !== style.style_name ? ` · DIGI name: ${style.style_name}` : ''}</span>
             <small>{colors.length} colours · {sizes.length} sizes{style.color_ids?.length ? '' : ' (supplier-wide palette)'} · SKU: {style.style_no}-COLOR-SIZE</small></div>
         </div>
       )}
@@ -288,7 +296,8 @@ export function SupplierNewOrderPage() {
   const [form, setForm] = useState<Form>(newForm)
   const [items, setItems] = useState<Item[]>([])
   // The PO this order was filled from; until there is one, nothing can be entered.
-  const [loadedPo, setLoadedPo] = useState<{ id: string; po_number: string } | null>(null)
+  const [loadedPo, setLoadedPo] = useState<{ id: string; po_number: string; claim_minutes: number } | null>(null)
+  const [zipInfo, setZipInfo] = useState<{ zip: string; city: string; state: string; cities: string[] } | 'not_found' | null>(null)
   const [uploading, setUploading] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState(false)
   const [salesOrderId, setSalesOrderId] = useState('')
@@ -298,6 +307,40 @@ export function SupplierNewOrderPage() {
   const [importNote, setImportNote] = useState('')
 
   useEffect(() => { try { OLD_DRAFT_KEYS.forEach(k => localStorage.removeItem(k)) } catch { /* storage blocked */ } }, [])
+
+  // The PO stays held for this agent while the page has it open: renewed every
+  // few minutes, let go when another PO is picked or the page is left. Losing
+  // the hold (someone took it after it lapsed) empties the form.
+  useEffect(() => {
+    if (!loadedPo) return
+    const poId = loadedPo.id
+    const every = Math.max(1, Math.floor((loadedPo.claim_minutes || 15) / 3)) * 60 * 1000
+    const timer = window.setInterval(() => {
+      api.post(`/supplier-orders/new-order/claims/${poId}`).catch((err: any) => {
+        if (err?.response?.status !== 409) return
+        toast.error(err.response.data?.error ?? 'Someone else is ordering this PO now')
+        setLoadedPo(null); setItems([]); setPoId('')
+      })
+    }, every)
+    return () => {
+      window.clearInterval(timer)
+      api.delete(`/supplier-orders/new-order/claims/${poId}`).catch(() => { /* lapses on its own */ })
+    }
+  }, [loadedPo?.id])
+
+  // A US ZIP says which city and state it belongs to; checked as it is typed.
+  useEffect(() => {
+    setZipInfo(null)
+    const zip = form.postal_code.trim().slice(0, 5)
+    if (form.country !== 'US' || !/^\d{5}$/.test(zip)) return
+    let live = true
+    const t = window.setTimeout(() => {
+      api.get(`/customers/zip-lookup/${zip}`)
+        .then(r => { if (live) setZipInfo(r.data.data) })
+        .catch((err: any) => { if (live && err?.response?.status === 404) setZipInfo('not_found') })
+    }, 400)
+    return () => { live = false; window.clearTimeout(t) }
+  }, [form.postal_code, form.country])
 
   const { data: catalog, isLoading, error, refetch } = useQuery<Catalog>({
     queryKey: ['supplier-new-order-catalog'],
@@ -346,7 +389,7 @@ export function SupplierNewOrderPage() {
     let unmatched = 0
     const mapped = lines.map((it: any): Item => {
       const st = matchCatalog(supplierCatalog.styles, ['style_no'], it.style_no)
-        || matchCatalog(supplierCatalog.styles, ['style_name', 'style_no'], it.item, it.model)
+        || matchCatalog(supplierCatalog.styles, ['english_name', 'style_name', 'style_no'], it.item, it.model)
       const palette = st?.color_ids?.length ? supplierCatalog.colors.filter(c => st.color_ids.includes(c.style_color_id)) : supplierCatalog.colors
       const range = st?.size_ids?.length ? supplierCatalog.sizes.filter(z => st.size_ids.includes(z.style_size_id)) : supplierCatalog.sizes
       const color = matchCatalog(palette, ['color_code'], it.color_code) || matchCatalog(palette, ['color_code', 'color_name', 'display_name'], it.color)
@@ -368,6 +411,7 @@ export function SupplierNewOrderPage() {
         specification: [it.color, it.size].filter(Boolean).join(' / '),
         remark: '',
         origin: origin(it),
+        line_id: it.id, line_source: it.line_source,
         images,
         max_qty: Number(it.qty) || 1,
       }
@@ -405,7 +449,7 @@ export function SupplierNewOrderPage() {
         return
       }
       fillRecipient(po.order, po.ship_to, po.carrier)
-      setLoadedPo({ id: po.id, po_number: po.po_number })
+      setLoadedPo({ id: po.id, po_number: po.po_number, claim_minutes: po.claim_minutes })
       {
         const { mapped, unmatched } = mapLines(po.items || [], it => `From ${po.po_number}${it.catalog_sku ? ` · SKU ${it.catalog_sku}` : ''}`)
         setItems(mapped)
@@ -432,7 +476,8 @@ export function SupplierNewOrderPage() {
     if (!pos) return
     if (!pos.length) { setImportNote(`${order?.order_number ?? 'This order'} has no open ${supplierCode} PO left.`); return }
     setOrderPos(pos)
-    if (pos.length === 1) return importPurchaseOrder(pos[0].id, id, pos)
+    if (pos.length === 1 && !pos[0].claimed_by) return importPurchaseOrder(pos[0].id, id, pos)
+    if (pos.every(p => p.claimed_by)) { setImportNote(`${order?.order_number}'s PO is being ordered by ${pos[0].claimed_by} right now.`); return }
     setImportNote(`${order?.order_number} has ${pos.length} open purchase orders — pick the one this order is for.`)
   }
 
@@ -448,7 +493,18 @@ export function SupplierNewOrderPage() {
       const url: string | undefined = up.data?.url ?? up.data?.data?.url
       if (!url) throw new Error('The upload did not return a link')
       setItems(cur => cur.map((it, i) => i === index ? { ...it, images: { ...it.images, [role]: { url, original_name: file.name } } } : it))
-      toast.success('Image uploaded ✓')
+      // Kept on the PO line (or sales-order line) too, so it is not uploaded twice.
+      const line = items[index]
+      if (loadedPo && line?.line_id && line.line_source) {
+        try {
+          const saved = (await api.put(
+            `/supplier-orders/new-order/sales-orders/${salesOrderId}/purchase-orders/${loadedPo.id}/lines/${line.line_id}/image`,
+            { role, url, line_source: line.line_source }, { params: { supplier: supplierCode } })).data
+          toast.success(saved.saved_to === 'sales_order' ? 'Image uploaded ✓ — saved on the sales order too' : `Image uploaded ✓ — saved on ${loadedPo.po_number} too`)
+        } catch (err: any) {
+          toast.error(`Image uploaded, but not saved on the PO: ${err?.response?.data?.error ?? 'try again'}`)
+        }
+      } else toast.success('Image uploaded ✓')
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? err?.message ?? 'Upload failed')
     } finally {
@@ -506,6 +562,37 @@ export function SupplierNewOrderPage() {
   }, { pieces: 0, grams: 0, unweighed: 0 })
   const ready = Boolean(supplier?.can_place_order)
   const filled = ready && Boolean(loadedPo)
+
+  // ZIP against the city and state typed.
+  const addressCheck = (() => {
+    if (form.country !== 'US') return { ok: true, text: 'Not a US address — not checked' }
+    if (!/^\d{5}(-\d{4})?$/.test(form.postal_code.trim())) return { ok: false, text: 'ZIP is missing or not a US ZIP' }
+    if (zipInfo === 'not_found') return { ok: false, text: `ZIP ${form.postal_code.trim().slice(0, 5)} does not exist` }
+    if (!zipInfo) return { ok: true, text: 'Checking ZIP…', pending: true }
+    const stateOk = form.state_province.trim().toUpperCase() === zipInfo.state
+    const cityOk = zipInfo.cities.some(c => c.toLowerCase() === form.city.trim().toLowerCase())
+    if (stateOk && cityOk) return { ok: true, text: `ZIP ${zipInfo.zip} is ${zipInfo.city}, ${zipInfo.state}` }
+    return { ok: false, fix: true, text: `ZIP ${zipInfo.zip} is ${zipInfo.cities.join(' / ')}, ${zipInfo.state} — not ${[form.city.trim(), form.state_province.trim()].filter(Boolean).join(', ') || 'what is typed'}` }
+  })()
+  const recipientMissing = ([['Full name', form.recipient_name], ['Phone', form.phone], ['Address line 1', form.address_line_1],
+    ['City', form.city], ['State', form.state_province], ['ZIP', form.postal_code]] as const)
+    .filter(([, v]) => !String(v).trim()).map(([k]): string => k)
+  if (form.phone.trim() && form.phone.replace(/\D/g, '').length < 7 && !recipientMissing.includes('Phone')) recipientMissing.push('Phone (too short)')
+  const unmatched = items.filter(it => !it.style_id || !it.style_color_id || !it.style_size_id).length
+  const overQty = items.filter(it => it.max_qty && (Number.parseInt(String(it.quantity), 10) || 0) > it.max_qty).length
+  const needBack = (it: Item) => it.print_position === '1,2'
+  const missingPrint = items.reduce((n, it) => n + (it.images.front_print ? 0 : 1) + (needBack(it) && !it.images.back_print ? 1 : 0), 0)
+  const missingMockup = items.reduce((n, it) => n + (it.images.front_mockup ? 0 : 1) + (needBack(it) && !it.images.back_mockup ? 1 : 0), 0)
+  const checklist = !filled || !loadedPo ? [] : [
+    { ok: true, label: 'Purchase order', text: `${loadedPo.po_number} — held for you while this page is open` },
+    { ok: unmatched === 0, label: 'Style, colour & size', text: unmatched ? `${unmatched} of ${items.length} item${items.length === 1 ? '' : 's'} still to pick` : `All ${items.length} item${items.length === 1 ? '' : 's'} matched` },
+    { ok: overQty === 0, label: 'Quantities', text: overQty ? `${overQty} item${overQty === 1 ? '' : 's'} more than the PO` : `${totals.pieces} pc — within ${loadedPo.po_number}` },
+    { ok: missingPrint === 0, label: 'Print images', text: missingPrint ? `${missingPrint} missing` : 'All uploaded' },
+    { ok: missingMockup === 0, label: 'Mockups', text: missingMockup ? `${missingMockup} missing` : 'All uploaded' },
+    { ok: recipientMissing.length === 0, label: 'Recipient', text: recipientMissing.length ? `Missing: ${recipientMissing.join(', ')}` : 'Complete' },
+    { ok: addressCheck.ok, label: 'Address check', text: addressCheck.text },
+  ]
+  const toFix = checklist.filter(c => !c.ok).length
   const busy = Object.keys(uploading).length > 0
 
   return (
@@ -567,7 +654,8 @@ export function SupplierNewOrderPage() {
                 {salesOrderId && orderPos.length > 0 && (
                   <Field label="Purchase Order *" hint={`(${orderPos.length} open for this sales order)`}>
                     <SearchSelect value={poId} placeholder={importing ? 'Loading purchase order…' : '— Pick the purchase order —'}
-                      options={orderPos.map(p => ({ value: p.id, label: `${p.po_number} — ${p.po_scope === 'partial' ? 'Partial' : 'Full'} PO`,
+                      options={orderPos.map(p => ({ value: p.id, disabled: Boolean(p.claimed_by),
+                        label: `${p.po_number} — ${p.po_scope === 'partial' ? 'Partial' : 'Full'} PO${p.claimed_by ? ` · being ordered by ${p.claimed_by}` : ''}`,
                         hint: `${p.item_count ? `${p.total_qty} pc · ${p.item_count} line${p.item_count === 1 ? '' : 's'}` : 'no lines of its own'}${p.supplier_name ? ` · ${p.supplier_name}` : ''}` }))}
                       onChange={v => importPurchaseOrder(v)} />
                   </Field>
@@ -579,6 +667,17 @@ export function SupplierNewOrderPage() {
           </Section>
 
           {ready && !loadedPo && <div className="sno-lock"><Info size={15} /> Pick the sales order and its purchase order above — the order fills from the PO. Nothing is entered by hand.</div>}
+          {checklist.length > 0 && (
+            <div className={`sno-check ${toFix ? 'todo' : 'done'}`}>
+              <div className="sno-check-head">
+                <b>{toFix ? `${toFix} thing${toFix === 1 ? '' : 's'} to fix before placing` : 'Ready to place'}</b>
+                <span className="sno-muted">{loadedPo?.po_number} · {items.length} item{items.length === 1 ? '' : 's'} · {totals.pieces} pc</span>
+              </div>
+              <ul>
+                {checklist.map(c => <li key={c.label} className={c.ok ? 'ok' : 'bad'}><span>{c.ok ? '✓' : '!'}</span><b>{c.label}</b><small>{c.text}</small></li>)}
+              </ul>
+            </div>
+          )}
           <fieldset className="sno-workflow" disabled={!filled}>
             <Section number="2" title="Order Info">
               <div className="sno-grid two">
@@ -605,6 +704,20 @@ export function SupplierNewOrderPage() {
                   onChange={e => setForm(cur => ({ ...cur, country: e.target.value, state_province: '' }))}>
                   {COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
               </div>
+              {filled && (recipientMissing.length > 0 || !addressCheck.ok) && (
+                <div className="sno-address-warn">
+                  <Info size={14} />
+                  <div>
+                    {recipientMissing.length > 0 && <div>Not on the sales order: <b>{recipientMissing.join(', ')}</b> — fill before placing.</div>}
+                    {!addressCheck.ok && <div>{addressCheck.text}.</div>}
+                  </div>
+                  {'fix' in addressCheck && addressCheck.fix && zipInfo && zipInfo !== 'not_found' && (
+                    <button type="button" className="lb-action-btn" onClick={() => setForm(cur => ({ ...cur, city: zipInfo.city, state_province: zipInfo.state }))}>
+                      Use {zipInfo.city}, {zipInfo.state}
+                    </button>
+                  )}
+                </div>
+              )}
             </Section>
 
             <Section number="4" title="Items" action={loadedPo ? <span className="sno-muted">From {loadedPo.po_number} — items come only from the PO</span> : undefined}>

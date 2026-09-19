@@ -419,9 +419,10 @@ export function NewPurchaseOrderPage() {
   const [newContactMode, setNewContactMode] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  // Apparel lines whose print / mockup images are open under the row.
-  const [imagesOpen, setImagesOpen] = useState<Set<string>>(new Set())
-  const toggleImages = (id: string) => setImagesOpen(cur => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  // Apparel lines whose print / mockup slots were folded away; open by default,
+  // so after Generate PO it is plain where the mockups go.
+  const [imagesClosed, setImagesClosed] = useState<Set<string>>(new Set())
+  const toggleImages = (id: string) => setImagesClosed(cur => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Order to convert can arrive via in-app navigation (location.state) OR as a
@@ -1730,7 +1731,7 @@ export function NewPurchaseOrderPage() {
                     <th style={{ width: 86 }}>Remaining</th>
                     <th style={{ width: 96 }}>Balance (Cost)</th>
                   </>}
-                  <th style={{ width: 150 }}>Artwork</th>
+                  <th style={{ width: 170 }}>Print / Mockup</th>
                   <th style={{ width: 104 }}>Unit Cost (USD)</th>
                   <th style={{ width: 96 }}>Line Cost (USD)</th>
                   <th style={{ width: 80 }}>Weight</th>
@@ -1791,23 +1792,20 @@ export function NewPurchaseOrderPage() {
                         : '—'}</td>
                     </>}
                     <td>
-                      <div className="np-inline-artwork"><ArtworkCellPicker
-                        value={it.artwork_no}
-                        attached={state.artworks}
-                        onPick={(a) => dispatch({
-                          type: 'UPDATE_ITEM', id: it.id,
-                          patch: { artwork_id: a?.id ?? null, artwork_no: a?.artwork_no ?? '', artwork_url: a?.thumbnail_url ?? a?.file_url ?? null },
-                        })} />
-                      {it.artwork_url && it.artwork_url.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i) !== null
-                        ? <img src={it.artwork_url} alt="" style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
-                        : it.artwork_no
-                          ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
-                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}</div>
+                      {/* The Artwork No. picker was dropped here (owner, 19 Sep 2026): a
+                          custom apparel line is described by its print and mockup
+                          images, which travel on to the supplier order. */}
+                      <div className="np-line-thumbs">
+                        {([['front_image', 'Front print'], ['front_mockup', 'Front mockup'], ['back_image', 'Back print'], ['back_mockup', 'Back mockup']] as const)
+                          .map(([key, label]) => it[key]
+                            ? <img key={key} src={it[key]} alt={label} title={label} />
+                            : <span key={key} title={`${label} — not uploaded`} />)}
+                      </div>
                       {(() => {
                         const n = [it.front_image, it.front_mockup, it.back_image, it.back_mockup].filter(Boolean).length
                         return <button type="button" className={cn('np-images-btn', n > 0 && 'has')} onClick={() => toggleImages(it.id)}
                           title="Print and mockup images the factory works from">
-                          Print / Mockup {n}/4 {imagesOpen.has(it.id) ? '▲' : '▼'}
+                          {n}/4 uploaded {imagesClosed.has(it.id) ? '▼' : '▲'}
                         </button>
                       })()}
                     </td>
@@ -1831,7 +1829,7 @@ export function NewPurchaseOrderPage() {
                       )}
                     </td>
                   </tr>
-                  {imagesOpen.has(it.id) && (
+                  {!imagesClosed.has(it.id) && (
                     <tr className="np-images-row">
                       <td colSpan={state.po_scope === 'partial' ? 18 : 14}>
                         <LineImages item={it} onChange={patch => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch })} />
@@ -1846,7 +1844,7 @@ export function NewPurchaseOrderPage() {
                 <td><div className="live-summary-stat"><span>{coveredKey ? 'Order Qty' : 'Total Qty'}</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).total : item.qty_ordered), 0)}</strong></div></td>
                 <td><div className="live-summary-stat"><span>This PO</span><strong>{state.items.reduce((sum, item) => sum + issuingQty(item), 0)}</strong></div></td>
                 {state.po_scope === 'partial' && <><td /><td /><td><div className="live-summary-stat"><span>Remaining</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).available - issuingQty(item) : 0), 0)}</strong></div></td><td><div className="live-summary-stat"><span>Balance (Cost)</span><strong>${fmt(state.items.reduce((sum, item) => sum + (item.source_line_id ? (figuresOf(item).available - issuingQty(item)) * (moneyOf(item.supplier_unit_cost) ?? 0) : 0), 0))}</strong></div></td></>}
-                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Mockups</span><strong>{state.items.filter(item => item.front_mockup).length} / {state.items.length}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Weight</span><strong>{poWeightLbs ? `${poWeightLbs} lbs` : '—'}</strong></div></td>
                 <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Supplier Goods Cost</span><strong>{supplierCost.goods !== null ? `$${fmt(supplierCost.goods)}` : '—'}</strong></div></td>
@@ -2341,47 +2339,6 @@ function ArtworkPickerModal({ onPick, onClose }: {
         ))}
       </div>
     </ModalShell>
-  )
-}
-
-// ── Inline artwork cell picker (apparel items table) ───────────────────────────
-
-function ArtworkCellPicker({ value, attached, onPick }: {
-  value: string
-  attached: AttachedArtwork[]
-  onPick: (a: AttachedArtwork | null) => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" className="np-table-input"
-        style={{ width: '100%', textAlign: 'left', color: value ? '#0d9488' : '#9ca3af', fontWeight: value ? 600 : 400, cursor: 'pointer' }}
-        onClick={() => setOpen(o => !o)}>
-        {value || 'Select…'}
-      </button>
-      {open && (
-        <div className="np-dropdown" style={{ minWidth: 200 }}>
-          {attached.length === 0 && (
-            <div style={{ padding: 10, fontSize: 12, color: '#9ca3af' }}>
-              Attach artworks below first
-            </div>
-          )}
-          {attached.map(a => (
-            <button key={a.id} className="np-dropdown-item"
-              onMouseDown={() => { onPick(a); setOpen(false) }}>
-              <span className="np-dropdown-name">{a.artwork_no}</span>
-              <span className="np-dropdown-sub">{a.name}</span>
-            </button>
-          ))}
-          {value && (
-            <button className="np-dropdown-item" style={{ color: '#ef4444' }}
-              onMouseDown={() => { onPick(null); setOpen(false) }}>
-              Clear selection
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 

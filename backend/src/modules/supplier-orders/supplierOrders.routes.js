@@ -45,7 +45,7 @@ router.get('/new-order/sales-orders/:id/purchase-orders', async (req, res) => {
   try {
     const code = supplierOf(req, res); if (!code) return
     if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Sales order id is invalid' })
-    res.json({ data: await newOrder.orderPurchaseOrders(req.params.id, code) })
+    res.json({ data: await newOrder.orderPurchaseOrders(req.params.id, code, req.user.id) })
   } catch (err) { fail(res, err) }
 })
 router.get('/new-order/sales-orders/:id/purchase-orders/:poId', async (req, res) => {
@@ -54,7 +54,40 @@ router.get('/new-order/sales-orders/:id/purchase-orders/:poId', async (req, res)
     if (!UUID.test(req.params.id) || !UUID.test(req.params.poId)) return res.status(400).json({ error: 'Purchase order id is invalid' })
     const po = await newOrder.purchaseOrder(req.params.id, req.params.poId, code)
     if (!po) return res.status(404).json({ error: 'That purchase order is not open for this sales order and supplier — it may already be on the supplier' })
-    res.json({ data: po })
+    // Opening it holds it for this agent, so nobody else orders it meanwhile.
+    const holder = await newOrder.claim(po.id, req.user.id)
+    if (holder) return res.status(409).json({ error: `${po.po_number} is being ordered by ${holder.name} — pick it again once they are done` })
+    res.json({ data: { ...po, claim_minutes: newOrder.CLAIM_MINUTES } })
+  } catch (err) { fail(res, err) }
+})
+
+// Renew / let go of the hold on a PO (the page renews it while it is open).
+router.post('/new-order/claims/:poId', async (req, res) => {
+  try {
+    if (!UUID.test(req.params.poId)) return res.status(400).json({ error: 'Purchase order id is invalid' })
+    const holder = await newOrder.claim(req.params.poId, req.user.id)
+    if (holder) return res.status(409).json({ error: `${holder.name} is ordering this PO now` })
+    res.json({ ok: true })
+  } catch (err) { fail(res, err) }
+})
+router.delete('/new-order/claims/:poId', async (req, res) => {
+  try {
+    if (!UUID.test(req.params.poId)) return res.status(400).json({ error: 'Purchase order id is invalid' })
+    await newOrder.release(req.params.poId, req.user.id)
+    res.json({ ok: true })
+  } catch (err) { fail(res, err) }
+})
+// An image added on New Order, kept on the PO line (or sales-order line) it belongs to.
+router.put('/new-order/sales-orders/:id/purchase-orders/:poId/lines/:lineId/image', express.json(), async (req, res) => {
+  try {
+    const code = supplierOf(req, res); if (!code) return
+    const { id, poId, lineId } = req.params
+    if (![id, poId, lineId].every(v => UUID.test(v))) return res.status(400).json({ error: 'Line id is invalid' })
+    const out = await newOrder.saveLineImage({
+      orderId: id, poId, lineId, lineSource: req.body?.line_source, role: req.body?.role, url: req.body?.url,
+      supplierCode: code, userId: req.user.id,
+    })
+    res.json(out)
   } catch (err) { fail(res, err) }
 })
 

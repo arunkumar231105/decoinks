@@ -78,6 +78,10 @@ async function catalog() {
                      (api_available=TRUE AND UPPER(COALESCE(api_provider,''))='RIIN') can_place_order
                 FROM blanktex.suppliers WHERE default_status='Active' ORDER BY supplier_name`),
     db.query(`SELECT s.supplier_style_id style_id,s.supplier_id,s.style_code style_no,s.display_name style_name,
+                     -- The English name our own catalogue gives the same style,
+                     -- where there is one (DIGI's own names are often Chinese).
+                     (SELECT ms.style_name FROM blanktex.styles ms
+                       WHERE UPPER(ms.style_no)=UPPER(s.style_code) ORDER BY ms.active DESC LIMIT 1) english_name,
                      s.craft_types,s.images,
                      COALESCE(cids.ids,'{}') color_ids,COALESCE(cols.colors,'[]'::jsonb) colors,
                      COALESCE(zids.ids,'{}') size_ids,
@@ -133,9 +137,39 @@ async function salesOrders(supplierCode) {
   return rows
 }
 
-async function orderPurchaseOrders(orderId, supplierCode) {
+// ── One agent per PO (migration 153) ────────────────────────────────────────
+// Opening a PO on New Order holds it for that agent; the page renews the hold
+// every few minutes and lets go when it moves on. A hold not renewed for
+// CLAIM_MINUTES lapses, so a closed tab never locks a PO for good.
+const CLAIM_MINUTES = 15
+const LIVE_CLAIM = `c.seen_at > NOW() - INTERVAL '${CLAIM_MINUTES} minutes'`
+
+// Takes or renews the hold. Returns null when it is ours, else who holds it.
+async function claim(poId, userId) {
+  const { rows } = await db.query(
+    `INSERT INTO supplier_order_claims AS c (po_id, user_id) VALUES ($1, $2)
+     ON CONFLICT (po_id) DO UPDATE
+        SET user_id = EXCLUDED.user_id, seen_at = NOW(),
+            claimed_at = CASE WHEN c.user_id = EXCLUDED.user_id THEN c.claimed_at ELSE NOW() END
+      WHERE c.user_id = EXCLUDED.user_id OR NOT (${LIVE_CLAIM})
+     RETURNING po_id`, [poId, userId])
+  if (rows[0]) return null
+  const { rows: holder } = await db.query(
+    `SELECT COALESCE(u.name, u.email) AS name, c.claimed_at
+       FROM supplier_order_claims c LEFT JOIN users u ON u.id = c.user_id WHERE c.po_id = $1`, [poId])
+  return holder[0] || { name: 'another agent', claimed_at: null }
+}
+
+async function release(poId, userId) {
+  await db.query(`DELETE FROM supplier_order_claims WHERE po_id = $1 AND user_id = $2`, [poId, userId])
+}
+
+async function orderPurchaseOrders(orderId, supplierCode, userId = null) {
   const { rows } = await db.query(
     `SELECT po.id, po.po_number, po.status, po.po_scope, po.order_date, po.created_at,
+            -- Someone else is filling a DIGI order from this PO right now.
+            (SELECT COALESCE(u.name, u.email) FROM supplier_order_claims c LEFT JOIN users u ON u.id = c.user_id
+              WHERE c.po_id = po.id AND ${LIVE_CLAIM} AND c.user_id IS DISTINCT FROM $3::uuid) AS claimed_by,
             COALESCE(s.name, po.vendor_name) AS supplier_name,
             COALESCE(it.item_count, 0)::int AS item_count,
             COALESCE(it.total_qty, 0)::int AS total_qty
@@ -146,7 +180,7 @@ async function orderPurchaseOrders(orderId, supplierCode) {
            FROM purchase_order_items WHERE po_id = po.id
        ) it ON TRUE
       WHERE ${OPEN_PO} AND ${OF_SUPPLIER('$2')} AND ${PO_OF_ORDER}
-      ORDER BY po.created_at, po.po_number`, [orderId, supplierCode])
+      ORDER BY po.created_at, po.po_number`, [orderId, supplierCode, userId])
   return rows
 }
 
@@ -196,7 +230,7 @@ async function purchaseOrder(orderId, poId, supplierCode) {
        FROM orders WHERE id = $1 AND deleted_at IS NULL`, [orderId])
   const order = orderRows[0] || null
   const { rows: items } = await db.query(
-    `SELECT poi.id, poi.item_name AS item, poi.qty_ordered AS qty, poi.color, poi.size,
+    `SELECT poi.id, 'purchase_order' AS line_source, poi.item_name AS item, poi.qty_ordered AS qty, poi.color, poi.size,
             poi.brand, poi.catalog_sku, poi.style_description,
             st.style_no AS model, st.style_no,
             COALESCE(NULLIF(sc.supplier_color_code, ''), sc.internal_color_code) AS color_code,
@@ -218,7 +252,7 @@ async function purchaseOrder(orderId, poId, supplierCode) {
   let lines = items
   if (!items.length && po.po_scope !== 'partial') {
     const { rows: soLines } = await db.query(
-      `SELECT oi.id, oi.item, oi.qty, oi.color, oi.size, oi.brand, oi.catalog_sku, oi.style_description,
+      `SELECT oi.id, 'sales_order' AS line_source, oi.item, oi.qty, oi.color, oi.size, oi.brand, oi.catalog_sku, oi.style_description,
               COALESCE(st.style_no, oi.model) AS model, st.style_no,
               COALESCE(NULLIF(sc.supplier_color_code, ''), sc.internal_color_code) AS color_code,
               COALESCE(NULLIF(sz.supplier_size_code, ''), sz.size_code) AS size_code,
@@ -236,4 +270,28 @@ async function purchaseOrder(orderId, poId, supplierCode) {
   return { ...po, order, items: lines, items_source, ship_to }
 }
 
-module.exports = { catalog, salesOrders, orderPurchaseOrders, purchaseOrder }
+// ── An image added on New Order is kept where the order came from ──────────
+// On the PO line when the order was filled from PO lines; on the sales-order
+// line when a full PO without lines was filled from its sales order. So the next
+// PO or reorder has it already. Only while the PO is open and held by this agent.
+const IMAGE_COLUMN = { front_print: 'front_image', front_mockup: 'front_mockup', back_print: 'back_image', back_mockup: 'back_mockup' }
+
+async function saveLineImage({ orderId, poId, lineId, lineSource, role, url, supplierCode, userId }) {
+  const column = IMAGE_COLUMN[role]
+  if (!column) throw Object.assign(new Error('Unknown image'), { status: 400 })
+  const link = url == null ? null : String(url).trim()
+  if (link && (link.length > 1000 || !/^(https?:\/\/|\/storage\/)/i.test(link))) throw Object.assign(new Error('The image link is not one Printshop stored'), { status: 400 })
+  const { rows: open } = await db.query(
+    `SELECT po.id FROM purchase_orders po WHERE po.id = $2 AND ${OPEN_PO} AND ${OF_SUPPLIER('$3')} AND ${PO_OF_ORDER}`,
+    [orderId, poId, supplierCode])
+  if (!open[0]) throw Object.assign(new Error('That purchase order is no longer open'), { status: 409 })
+  const holder = await claim(poId, userId)
+  if (holder) throw Object.assign(new Error(`${holder.name} is placing an order from this PO`), { status: 409 })
+  const { rowCount } = lineSource === 'sales_order'
+    ? await db.query(`UPDATE order_items_apparel SET ${column} = $3 WHERE id = $1 AND order_id = $2`, [lineId, orderId, link])
+    : await db.query(`UPDATE purchase_order_items SET ${column} = $3 WHERE id = $1 AND po_id = $2`, [lineId, poId, link])
+  if (!rowCount) throw Object.assign(new Error('That line is not on this order'), { status: 404 })
+  return { saved_to: lineSource === 'sales_order' ? 'sales_order' : 'purchase_order' }
+}
+
+module.exports = { catalog, salesOrders, orderPurchaseOrders, purchaseOrder, claim, release, saveLineImage, CLAIM_MINUTES }
