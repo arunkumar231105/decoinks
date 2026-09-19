@@ -41,6 +41,9 @@ interface Item {
   images: Partial<Record<'front_print' | 'front_mockup' | 'back_print' | 'back_mockup', Image>>
   // Pieces the PO line holds — this order can send fewer, never more.
   max_qty?: number
+  // Where the line came from ("PO-2026-0178 · SKU DG001-BL01-L"), shown on the
+  // card only. Remark stays empty for the agent (owner, 19 Sep 2026).
+  origin?: string
 }
 interface Form {
   supplier_id: string; order_no: string; carrier: string; order_time: string; recipient_name: string; phone: string
@@ -217,7 +220,7 @@ function ItemCard({ item, index, catalog, onChange, onUpload, uploading }: {
   return (
     <div className="sno-item">
       <div className="sno-item-head"><b>Item #{index + 1}</b>
-        <span className="sno-muted">{item.remark}</span>
+        {item.origin && <span className="sno-muted">{item.origin}</span>}
       </div>
       <div className="sno-grid one">
         <Field label="Product Title *"><input className="np-input" value={item.product_title} placeholder="e.g. Custom Print T-Shirt"
@@ -339,7 +342,7 @@ export function SupplierNewOrderPage() {
 
   // Lines from Printshop mapped onto this supplier's catalogue — by the codes the
   // line was picked with first, then by name. Unmatched stays blank on purpose.
-  const mapLines = (lines: any[], remark: (it: any) => string) => {
+  const mapLines = (lines: any[], origin: (it: any) => string) => {
     let unmatched = 0
     const mapped = lines.map((it: any): Item => {
       const st = matchCatalog(supplierCatalog.styles, ['style_no'], it.style_no)
@@ -363,7 +366,8 @@ export function SupplierNewOrderPage() {
         quantity: Number(it.qty) || 1,
         print_position: both ? '1,2' : (it.front_image ? '1' : ''),
         specification: [it.color, it.size].filter(Boolean).join(' / '),
-        remark: remark(it),
+        remark: '',
+        origin: origin(it),
         images,
         max_qty: Number(it.qty) || 1,
       }
@@ -403,7 +407,7 @@ export function SupplierNewOrderPage() {
       fillRecipient(po.order, po.ship_to, po.carrier)
       setLoadedPo({ id: po.id, po_number: po.po_number })
       {
-        const { mapped, unmatched } = mapLines(po.items || [], it => `Printshop ${po.po_number}${it.catalog_sku ? ` · SKU ${it.catalog_sku}` : ''}`)
+        const { mapped, unmatched } = mapLines(po.items || [], it => `From ${po.po_number}${it.catalog_sku ? ` · SKU ${it.catalog_sku}` : ''}`)
         setItems(mapped)
         setImportNote(`Imported ${po.po_number}${po.order?.order_number ? ` (sales order ${po.order.order_number})` : ''} — ${mapped.length} item${mapped.length === 1 ? '' : 's'}` +
           `${po.items_source === 'sales_order' ? ' from the sales order (this full PO has no lines of its own)' : ''}. ${matchedNote(unmatched)}`)
