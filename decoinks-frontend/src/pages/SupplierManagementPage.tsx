@@ -319,7 +319,7 @@ export function SupplierManagementPage() {
           <button className="som-btn" onClick={exportCsv} disabled={exporting} title="Every order these filters leave, with the columns on show">
             <Download size={16} /> {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
-          <Link to="/purchase-orders/new" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
+          <Link to="/supplier-management/new-order" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
         </div>
       </div>
 
@@ -422,7 +422,7 @@ export function SupplierManagementPage() {
               )}
               {!query.isLoading && !query.isError && rows.map((r, i) => (
                 <tr key={r.order_no} onClick={() => setOpen(r)} title={`Open ${r.order_no}`}>
-                  {visible.map((c, ci) => <td key={c.key} {...columnDrag.cellProps(c.key, ci)}>{cell(r, c.key, i)}</td>)}
+                  {visible.map((c, ci) => <td key={c.key} {...columnDrag.cellProps(c.key, ci)} data-label={c.label}>{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>

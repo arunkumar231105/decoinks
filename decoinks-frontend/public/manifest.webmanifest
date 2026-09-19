@@ -1,0 +1,26 @@
+{
+  "id": "/dashboard",
+  "name": "Decoinks Printshop",
+  "short_name": "Printshop",
+  "description": "Decoinks Printshop OS — leads, quotes, orders, purchase orders, suppliers and shipments.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/pwa/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Orders", "url": "/orders", "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Purchase Orders", "url": "/purchase-orders", "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Shipments", "url": "/shipments", "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Supplier Management", "url": "/supplier-management", "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

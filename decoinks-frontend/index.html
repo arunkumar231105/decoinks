@@ -3,9 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="application-name" content="Printshop" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Printshop" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+    <!-- The site sits behind the suite's sign-in, so the manifest is fetched with
+         the session cookie; without it the browser gets the sign-in page instead. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Decoinks</title>
+    <script>
+      /* Dark / light before the first paint (utils/themeMode.ts), so a dark
+         screen never flashes white. */
+      (function () {
+        try {
+          var m = localStorage.getItem('printshop:theme');
+          var dark = m === 'dark' || (m === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1a1d21');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

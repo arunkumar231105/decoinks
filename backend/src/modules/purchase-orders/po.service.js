@@ -472,7 +472,12 @@ async function getById(id) {
        SELECT SUM(no_artworks) AS no_artworks,
               SUM(qty)         AS qty,
               STRING_AGG(DISTINCT size, ', ') AS sizes
-       FROM order_items_gangsheet g WHERE g.order_id = o.id
+       FROM (
+         SELECT g.no_artworks, g.qty, g.size FROM order_items_gangsheet g WHERE g.order_id = o.id
+         -- A DTF order's lines are its designs: one design each, its pieces as qty.
+         UNION ALL
+         SELECT 1, d.qty, NULL FROM order_items_dtf d WHERE d.order_id = o.id
+       ) lines
      ) gs ON TRUE
      WHERE poo.po_id = $1
      ORDER BY poo.sort_order, poo.created_at`,
@@ -551,12 +556,37 @@ async function getById(id) {
     [id]
   )
 
-  const allArtworks = [...inlineArtworks.rows, ...legacyInlineArtworks.rows, ...artworks.rows].filter((art, index, rows) =>
+  // A DTF order's designs are its lines (order_items_dtf): name, image, size and
+  // pieces, read live the same way.
+  const dtfArtworks = await query(
+    `SELECT
+       ('order-' || o.id::text || '-' || d.id::text) AS id,
+       COALESCE(NULLIF(d.artwork_no, ''), 'AW-DTF-' || LPAD((ROW_NUMBER() OVER (PARTITION BY o.id ORDER BY d.sort_order, d.id))::text, 3, '0')) AS artwork_no,
+       COALESCE(NULLIF(d.artwork_name, ''), 'DTF Transfer') AS name,
+       COALESCE(NULLIF(d.front_image, ''), NULLIF(d.artwork_image, '')) AS file_url,
+       COALESCE(NULLIF(d.front_image, ''), NULLIF(d.artwork_image, '')) AS thumbnail_url,
+       NULL::text AS file_type,
+       d.width_inches,
+       d.height_inches,
+       GREATEST(COALESCE(d.qty, 1), 1) AS qty,
+       NULLIF(d.size, '') AS artwork_size,
+       o.id::text AS source_order_id
+     FROM po_orders poo
+     JOIN orders o ON o.id = poo.order_id
+     JOIN order_items_dtf d ON d.order_id = o.id
+     WHERE poo.po_id = $1
+     ORDER BY poo.sort_order, d.sort_order, d.id`,
+    [id]
+  )
+
+  // Each DTF line stays its own row — one design can be ordered at two sizes
+  // with the same image, which the de-duplication below would fold together.
+  const allArtworks = [...dtfArtworks.rows, ...[...inlineArtworks.rows, ...legacyInlineArtworks.rows, ...artworks.rows].filter((art, index, rows) =>
     rows.findIndex(candidate =>
       (candidate.artwork_no && candidate.artwork_no === art.artwork_no) ||
       (candidate.file_url && candidate.file_url === art.file_url)
     ) === index
-  )
+  )]
 
   const order_total_artworks = orders.rows.reduce((sum, r) => sum + (r.no_artworks || 0), 0)
   let qaNotes = []
@@ -743,8 +773,10 @@ async function create(data) {
         po_type,
         supplier_contact_id,
         communication_method,
-        // payment_status: the customer's, so never written on a new PO.
-        null,
+        // payment_status: the customer's, so never set from the sales order. The
+        // column is NOT NULL, so a new PO takes the column's own default; sending
+        // null here failed every save with a payment_status error (18 Sep 2026).
+        'Unpaid',
         ship_source || null,
         ship_date || null,
         estimated_delivery || null,

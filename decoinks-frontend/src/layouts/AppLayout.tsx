@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Avatar,
   Badge,
@@ -37,6 +37,13 @@ import {
   Users,
   KeyRound,
   ShieldAlert,
+  Search,
+  Download,
+  WifiOff,
+  LayoutGrid,
+  Sun,
+  Moon,
+  MonitorSmartphone,
 } from 'lucide-react'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useAuthStore } from '../store/authStore'
@@ -45,6 +52,8 @@ import { cn } from '../utils/cn'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { GlobalImportModal } from '../components/GlobalImportModal'
+import { NotificationBell } from '../components/NotificationBell'
+import { getThemeMode, setThemeMode, type ThemeMode } from '../utils/themeMode'
 
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
@@ -73,6 +82,24 @@ const systemNav = [
   { label: 'Portal Access', path: '/settings/portal-access', icon: KeyRound },
   { label: 'Settings', path: '/settings/general', icon: Settings },
 ]
+
+// The phone's tab bar: the four places an agent goes most, and More for the
+// rest (it opens the full menu). Hidden on form screens (new / edit), which
+// have their own save bar at the bottom.
+const tabNav = [
+  { label: 'Home', path: '/dashboard', icon: Home },
+  { label: 'Orders', path: '/orders', icon: Package },
+  { label: 'POs', path: '/purchase-orders', icon: ShoppingCart },
+  { label: 'Shipments', path: '/shipments', icon: Truck },
+]
+const FORM_SCREEN = /\/(new|edit|new-order|link|artwork)$/
+
+// "Add to Home Screen": Chrome/Edge/Android hand over an install prompt; iPhone
+// and iPad have none, so the menu says how to do it from Safari's Share button.
+type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
+const isStandalone = () =>
+  window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone === true
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
 function NavGroup({
   title,
@@ -110,17 +137,22 @@ function NavGroup({
         {items.map((item) => {
           const Icon = item.icon
           return (
+            // The tooltip wraps a plain box, not the link: MUI's Tooltip clones its
+            // child and merges className with clsx, which drops NavLink's function
+            // className — every link lost .sidebar-link and the sidebar fell apart.
             <Tooltip key={item.label} title={collapsed ? item.label : ''} placement="right">
-              <NavLink
-                to={item.path}
-                onClick={onNavigate}
-                className={({ isActive }) =>
-                  cn('sidebar-link', isActive && 'sidebar-link-active')
-                }
-              >
-                <Icon size={19} strokeWidth={2} />
-                {!collapsed && <span>{item.label}</span>}
-              </NavLink>
+              <div className="sidebar-link-slot">
+                <NavLink
+                  to={item.path}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    cn('sidebar-link', isActive && 'sidebar-link-active')
+                  }
+                >
+                  <Icon size={19} strokeWidth={2} />
+                  {!collapsed && <span>{item.label}</span>}
+                </NavLink>
+              </div>
             </Tooltip>
           )
         })}
@@ -142,6 +174,50 @@ export function AppLayout() {
   const { title, subtitle } = usePageMeta()
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null)
+  const [installed, setInstalled] = useState(isStandalone)
+  const [online, setOnline] = useState(() => navigator.onLine)
+  const [theme, setTheme] = useState<ThemeMode>(getThemeMode)
+  const chooseTheme = (mode: ThemeMode) => { setThemeMode(mode); setTheme(mode) }
+  const onFormScreen = FORM_SCREEN.test(location.pathname)
+
+  useEffect(() => {
+    const onPrompt = (e: Event) => { e.preventDefault(); setInstallPrompt(e as InstallPrompt) }
+    const onInstalled = () => { setInstalled(true); setInstallPrompt(null) }
+    const up = () => setOnline(true)
+    const down = () => setOnline(false)
+    window.addEventListener('beforeinstallprompt', onPrompt)
+    window.addEventListener('appinstalled', onInstalled)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt)
+      window.removeEventListener('appinstalled', onInstalled)
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  }, [])
+  // Opening the phone search puts the cursor straight in the box.
+  useEffect(() => {
+    if (searchOpen) window.setTimeout(() => document.querySelector<HTMLInputElement>('.topbar .global-search input')?.focus(), 30)
+  }, [searchOpen])
+  // A new screen starts with the menu and the phone search closed.
+  useEffect(() => { setMobileOpen(false); setSearchOpen(false) }, [location.pathname])
+
+  const installApp = async () => {
+    setUserAnchor(null)
+    if (installPrompt) {
+      await installPrompt.prompt()
+      await installPrompt.userChoice.catch(() => null)
+      setInstallPrompt(null)
+      return
+    }
+    window.alert(isIos()
+      ? 'To install Printshop: open it in Safari, tap the Share button, then "Add to Home Screen".'
+      : 'To install Printshop: open the browser menu (⋮) and choose "Install app" or "Add to Home screen".')
+  }
 
   const initials = useMemo(
     () =>
@@ -165,7 +241,10 @@ export function AppLayout() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={cn('app-shell', onFormScreen && 'app-shell-form', installed && 'app-shell-standalone')}>
+      {!online && (
+        <div className="app-offline" role="status"><WifiOff size={14} /> You are offline — changes will not save until the connection is back.</div>
+      )}
       <aside
         className={cn(
           'sidebar',
@@ -243,7 +322,7 @@ export function AppLayout() {
       {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} />}
 
       <div className="main-column">
-        <header className="topbar">
+        <header className={cn('topbar', searchOpen && 'topbar-search-open')}>
           <IconButton className="mobile-menu" onClick={() => setMobileOpen((value) => !value)}>
             <MenuIcon size={22} />
           </IconButton>
@@ -253,6 +332,11 @@ export function AppLayout() {
           </div>
 
           <div className="topbar-actions">
+            {/* On a phone the search is a button; it opens a full-width row. */}
+            <button type="button" className="topbar-search-toggle" aria-label={searchOpen ? 'Close search' : 'Search'}
+              aria-expanded={searchOpen} onClick={() => setSearchOpen(v => !v)}>
+              <Search size={20} />
+            </button>
             <GlobalSearch />
             {!['Leads', 'Quotations', 'Invoices', 'Sales Orders', 'Purchase Orders'].includes(title) && (
               <button
@@ -264,13 +348,7 @@ export function AppLayout() {
                 <Sparkles size={15} /> Import CSV
               </button>
             )}
-            <Tooltip title="Notifications (Coming Soon)">
-              <span>
-                <IconButton disabled sx={{ opacity: 0.4 }}>
-                  <Bell size={21} />
-                </IconButton>
-              </span>
-            </Tooltip>
+            <NotificationBell />
             <button className="topbar-user" onClick={(event) => setUserAnchor(event.currentTarget)}>
               <Avatar className="topbar-avatar">
                 {initials}
@@ -287,6 +365,22 @@ export function AppLayout() {
           </ErrorBoundary>
         </Box>
       </div>
+
+      {!onFormScreen && (
+        <nav className="app-tabbar" aria-label="Main">
+          {tabNav.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path} className={({ isActive }) => cn('app-tab', isActive && 'app-tab-active')}>
+              <Icon size={21} strokeWidth={2} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+          <button type="button" className={cn('app-tab', mobileOpen && 'app-tab-active')} onClick={() => setMobileOpen(v => !v)}
+            aria-label="More" aria-expanded={mobileOpen}>
+            <LayoutGrid size={21} strokeWidth={2} />
+            <span>More</span>
+          </button>
+        </nav>
+      )}
 
       {importOpen && <GlobalImportModal onClose={() => setImportOpen(false)} />}
 
@@ -314,6 +408,23 @@ export function AppLayout() {
           <MenuItem onClick={() => { navigate('/settings/users'); setUserAnchor(null) }} sx={{ gap: 1.5 }}>
             <Users size={16} />
             Users &amp; Roles
+          </MenuItem>
+        )}
+        {/* Light / Dark / Auto — this browser's own choice. */}
+        <Box sx={{ px: 2, pt: 1, pb: 0.5 }}>
+          <div className="theme-pick" role="radiogroup" aria-label="Appearance">
+            {([['light', 'Light', Sun], ['dark', 'Dark', Moon], ['system', 'Auto', MonitorSmartphone]] as const).map(([mode, label, Icon]) => (
+              <button key={mode} type="button" role="radio" aria-checked={theme === mode}
+                className={cn('theme-pick-opt', theme === mode && 'on')} onClick={() => chooseTheme(mode)}>
+                <Icon size={15} /> {label}
+              </button>
+            ))}
+          </div>
+        </Box>
+        {!installed && (
+          <MenuItem onClick={installApp} sx={{ gap: 1.5 }}>
+            <Download size={16} />
+            Install app
           </MenuItem>
         )}
         <Divider />

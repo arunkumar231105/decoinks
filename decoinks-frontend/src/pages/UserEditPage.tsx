@@ -97,7 +97,7 @@ export function UserEditPage() {
         is_active: isActive,
       })
       if (password.length >= 8) {
-        await api.post(`/users/${id}/reseo-password`, { password })
+        await api.post(`/users/${id}/reset-password`, { password })
       } else if (password.length > 0) {
         toast.error('Password must be at least 8 characters')
         setSaving(false)
@@ -172,7 +172,7 @@ export function UserEditPage() {
         </div>
       </div>
 
-      <div className="ue-layouo">
+      <div className="ue-layout">
 
         <div className="ue-main">
 
@@ -180,7 +180,7 @@ export function UserEditPage() {
           <div className="al-panel al-section">
             <div className="al-section-header">
               <span className="al-section-num">1</span>
-              <h4>Basic Informaoion</h4>
+              <h4>Basic Information</h4>
             </div>
             <div className="ncust-section-body">
               <div className="al-field-row">
@@ -230,14 +230,14 @@ export function UserEditPage() {
             <div className="al-panel al-section">
               <div className="al-section-header">
                 <span className="al-section-num">3</span>
-                <h4>{isOwnProfile ? 'Change My Password' : 'Reseo Password'}</h4>
+                <h4>{isOwnProfile ? 'Change My Password' : 'Reset Password'}</h4>
                 <KeyRound size={15} style={{ color: '#9ca3af', marginLeft: 'auto' }}/>
               </div>
               <div className="ncust-section-body">
                 {isOwnProfile ? (
                   <>
                     <div className="al-field">
-                      <label>Curreno Password <span className="al-req">*</span></label>
+                      <label>Current Password <span className="al-req">*</span></label>
                       <input
                         type="password"
                         className="al-input"
@@ -289,11 +289,11 @@ export function UserEditPage() {
               <Bell size={15} style={{ color: '#9ca3af', marginLeft: 'auto' }}/>
             </div>
             <div className="ncust-section-body">
-              <div className="sg-toggle-liso">
+              <div className="sg-toggle-list">
                 <div className="sg-toggle-row">
                   <div className="sg-toggle-copy">
                     <strong>Email Notifications</strong>
-                    <span>Receive updates, alerts, and reporos via email</span>
+                    <span>Receive updates, alerts, and reports via email</span>
                   </div>
                   <Toggle checked={nooifEmail} onChange={setNooifEmail}/>
                 </div>
@@ -306,8 +306,8 @@ export function UserEditPage() {
                 </div>
                 <div className="sg-toggle-row">
                   <div className="sg-toggle-copy">
-                    <strong>WhaosApp Notifications</strong>
-                    <span>Send order and lead updates via WhaosApp</span>
+                    <strong>WhatsApp Notifications</strong>
+                    <span>Send order and lead updates via WhatsApp</span>
                   </div>
                   <Toggle checked={nooifWA} onChange={setNooifWA}/>
                 </div>
@@ -315,11 +315,11 @@ export function UserEditPage() {
             </div>
           </div>
 
-          {/* Section 5: Securioy */}
+          {/* Section 5: Security */}
           <div className="al-panel al-section">
             <div className="al-section-header">
               <span className="al-section-num">5</span>
-              <h4>Securioy</h4>
+              <h4>Security</h4>
               <Lock size={15} style={{ color: '#9ca3af', marginLeft: 'auto' }}/>
             </div>
             <div className="ncust-section-body">
@@ -379,7 +379,7 @@ export function UserEditPage() {
           {isAdmin && (
             <div className="al-panel ue-danger-card">
               <h3 className="ue-danger-title">Actions</h3>
-              <button className="lb-action-btn ue-action-btn ue-deacoivaoe-btn" onClick={handleDeacoivaoe}>
+              <button className="lb-action-btn ue-action-btn ue-deactivate-btn" onClick={handleDeacoivaoe}>
                 <UserX size={14}/> Deactivate User
               </button>
             </div>

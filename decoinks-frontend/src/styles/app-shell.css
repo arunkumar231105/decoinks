@@ -1,0 +1,280 @@
+/* Printshop as a phone app (owner, 19 Sep 2026): a tab bar at the bottom, a
+ * compact header whose search opens on demand, room for the notch and home bar
+ * when it runs from the home screen, and an offline notice. Loaded after
+ * mobile.css; everything phone-only sits inside the media query.
+ */
+
+.app-tabbar, .topbar-search-toggle { display: none; }
+
+.app-offline {
+  position: sticky; top: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 12px; padding-top: max(6px, env(safe-area-inset-top));
+  background: #fef3c7; color: #92400e; font-size: 12.5px; font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { -webkit-text-size-adjust: 100%; }
+
+  /* Layers: the menu drawer over everything, its scrim, the tab bar, the header. */
+  .sidebar { z-index: 60 !important; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .sidebar-scrim { z-index: 55 !important; }
+
+  /* ── Header ── */
+  .topbar {
+    padding-top: max(8px, env(safe-area-inset-top)) !important;
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+    min-height: 56px; box-shadow: 0 1px 0 #e6eaf1;
+  }
+  /* The tab bar's More opens the menu, so the header needs no hamburger —
+     except on a form screen, where the tab bar is out of the way. */
+  .app-shell:not(.app-shell-form) .mobile-menu { display: none !important; }
+  .topbar-search-toggle {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: 40px; height: 40px; border: 0; border-radius: 12px;
+    background: #f1f5f9; color: #0f172a; cursor: pointer;
+  }
+  .topbar-search-open .topbar-search-toggle { background: #ccfbf1; color: #0f766e; }
+  .topbar .global-search { display: none !important; }
+  .topbar.topbar-search-open .global-search {
+    display: flex !important; order: 10; flex: 1 1 100%; width: 100% !important; margin-top: 4px;
+    animation: app-drop .14s ease-out;
+  }
+  @keyframes app-drop { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
+
+  /* ── Tab bar ── */
+  .app-tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    padding: 4px max(6px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    background: rgba(255, 255, 255, .97); border-top: 1px solid #e6eaf1;
+    box-shadow: 0 -4px 18px rgba(15, 23, 42, .06);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  .app-tab {
+    flex: 1 1 0; min-width: 0; min-height: 52px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 0; border-radius: 12px; background: none; cursor: pointer;
+    color: #64748b; font-size: 11px; font-weight: 600; line-height: 1.1; text-decoration: none;
+    transition: color .15s, background .15s;
+  }
+  .app-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-tab:active { background: #f1f5f9; }
+  .app-tab-active { color: #0d9488; }
+  .app-tab-active svg { stroke-width: 2.4; }
+
+  /* Room under the content for the tab bar (a form screen has none). */
+  .content-area { padding-bottom: calc(84px + env(safe-area-inset-bottom)) !important; }
+  .app-shell-form .content-area { padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important; }
+  .content-area { padding-left: max(12px, env(safe-area-inset-left)) !important; padding-right: max(12px, env(safe-area-inset-right)) !important; }
+
+  /* Toasts sit above the tab bar, not under it. */
+  .app-shell:not(.app-shell-form) ~ div [data-rht-toaster], [data-rht-toaster] { bottom: calc(72px + env(safe-area-inset-bottom)) !important; }
+}
+
+/* ── Page fixes found by opening every page at 390px (19 Sep 2026) ──────────── */
+@media (max-width: 640px) {
+  /* Many screens lay themselves out with inline styles. A multi-column inline
+     grid is one column on a phone (grids that size themselves — auto-fill /
+     auto-fit — are left alone); a title-and-buttons row may wrap; a page's own
+     side padding gives way to the content gutter. */
+  .content-area [style*="grid-template-columns"]:not([style*="auto-fill"]):not([style*="auto-fit"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .content-area [style*="justify-content: space-between"] { flex-wrap: wrap; row-gap: 10px; }
+  .content-area > [style*="padding"], .content-area > * > [style*="padding: 24px 32px"] { padding-left: 0 !important; padding-right: 0 !important; }
+  .content-area [style*="max-width: 1100px"], .content-area [style*="max-width: 1200px"] { max-width: 100% !important; }
+
+  /* Dashboard cards: one to a row (two left the second column cut off). */
+  .dsb-grid.cols-9, .dsb-grid.cols-7, .dsb-grid.cols-5 { grid-template-columns: minmax(0, 1fr) !important; }
+  .dsb-grid > * { min-width: 0; }
+  /* The dashboard page is itself a grid whose one column grew to its widest
+     content (692px on a 390px phone); it is the screen's width instead. */
+  .dsb-page { grid-template-columns: minmax(0, 1fr) !important; }
+
+  /* New Order's "Send to Customer ▾" is one control: the main half takes the
+     row, the arrow stays a finger wide. */
+  .no-split-wrap { display: flex !important; flex: 1 1 100% !important; min-width: 0; }
+  .no-split-wrap .no-topbar-send:not(.no-split-chevron) { flex: 1 1 auto !important; min-width: 0 !important; }
+  .no-split-wrap .no-split-chevron { flex: 0 0 48px !important; min-width: 48px !important; }
+
+  /* Pagination rows wrap instead of pushing the last button off the screen. */
+  .sh-pagination, .cust-pagination, .cust-pag-controls { flex-wrap: wrap !important; justify-content: center; max-width: 100%; }
+
+  /* Finger-sized icon buttons. */
+  .lb-icon-btn, .cf-step, .lb-info-btn, .nq-icon-btn { min-width: 36px !important; min-height: 36px !important; }
+  .np-images-btn { min-height: 34px; padding: 4px 10px; }
+  .sg-toggle { min-height: 28px; }
+}
+
+/* Sign-in on a phone: the brand is a slim strip and the form comes first —
+   the desktop's full-height welcome panel pushed the form off the screen. */
+@media (max-width: 640px) {
+  .auth-shell { display: flex !important; flex-direction: column; min-height: 100dvh; }
+  .auth-left-panel {
+    flex: 0 0 auto; min-height: 0 !important; height: auto !important;
+    padding: max(16px, env(safe-area-inset-top)) 20px 16px !important;
+  }
+  .auth-left-panel .auth-hero-copy, .auth-left-panel .auth-copyright, .auth-left-panel .auth-illustration,
+  .auth-left-panel::after, .auth-left-panel::before { display: none !important; }
+  .auth-right-panel {
+    flex: 1 1 auto; min-height: 0 !important; justify-content: flex-start !important; align-items: stretch !important;
+    padding: 24px 18px calc(24px + env(safe-area-inset-bottom)) !important;
+  }
+  .auth-card { width: 100% !important; max-width: none !important; }
+}
+
+/* The sidebar is dark; an older light-theme rule still painted "Collapse" navy. */
+.sidebar .collapse-button { color: #94a3b8; }
+.sidebar .collapse-button::after { color: #cbd5e1; }
+.sidebar .collapse-button:hover { background: #1e293b; color: #e2e8f0; }
+
+/* Header on a wide screen: the search shrinks to fit, so the account button is
+   never pushed past the right edge (at 1440px it ran 69px off the screen). */
+@media (min-width: 641px) {
+  .topbar-actions { min-width: min-content; flex: 1 1 auto; justify-content: flex-end; }
+  .topbar .global-search { flex: 0 1 520px; width: auto !important; min-width: 180px; }
+  .topbar .page-heading { flex: 0 1 auto; min-width: 140px; overflow: hidden; }
+  .topbar .page-heading h1, .topbar .page-heading p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .global-search input { min-width: 0; width: 100%; }
+}
+/* Mid-size screens: header buttons show their icon only (the name is their tooltip). */
+@media (min-width: 641px) and (max-width: 1200px) {
+  .topbar-actions > .lb-action-btn { font-size: 0 !important; gap: 0 !important; padding: 0 11px; min-width: 40px; }
+  .topbar .global-search kbd { display: none; }
+}
+
+/* Leads on a phone: one card per lead, like the other lists. The list's box had
+   stopped scrolling (mobile.css) but the 1680px table was never made into cards,
+   so every column past the screen edge could not be reached. */
+@media (max-width: 640px) {
+  .leads-table { min-width: 0 !important; width: 100% !important; display: block; font-size: 13px; }
+  .leads-table thead { display: none; }
+  .leads-table tbody { display: block; }
+  .leads-table tbody tr {
+    display: block; margin: 0 0 10px; padding: 6px 12px;
+    border: 1px solid #dce4ed; border-radius: 10px; background: #fff !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
+  }
+  .leads-table tbody td {
+    display: flex !important; align-items: center; justify-content: space-between; gap: 14px;
+    position: static !important; left: auto !important; box-shadow: none !important;
+    width: auto !important; min-width: 0 !important; max-width: none !important; height: auto !important;
+    min-height: 36px; padding: 5px 0 !important; border-bottom: 1px solid #f1f5f9;
+    white-space: normal !important; text-align: right !important; overflow-wrap: anywhere;
+    background: transparent !important;
+  }
+  .leads-table tbody td::before {
+    content: attr(data-label); flex: 0 0 auto; max-width: 45%;
+    color: #64748b; font-size: 11px; font-weight: 800; text-align: left;
+  }
+  .leads-table tbody td:first-child { min-height: 0; padding: 2px 0 6px !important; border-bottom: 0; justify-content: flex-start; }
+  .leads-table tbody td:first-child::before, .leads-table tbody td:last-child::before, .leads-table tbody td[colspan]::before { content: none; }
+  .leads-table tbody td:last-child { border-bottom: 0; justify-content: flex-end; }
+  .leads-table tbody td[colspan] { display: block !important; text-align: center !important; }
+  /* The first eight columns — whichever the user has dragged to the front;
+     tapping the card opens the lead with everything. */
+  .leads-table tbody td:nth-child(n + 10):not(:last-child) { display: none !important; }
+  .leads-table td::after { display: none !important; }
+}
+
+/* Grids whose single column grew to their widest content instead of the screen. */
+@media (max-width: 640px) {
+  .pm-workspace, .pm-right, .pm-body { grid-template-columns: minmax(0, 1fr) !important; }
+  .pm-body > *, .pm-right > * { min-width: 0; }
+  .pm-area { width: 100% !important; max-width: 100%; box-sizing: border-box; }
+  .pm-tabs, .pm-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 640px) {
+  /* Twenty page numbers are a row that slides, like the period tabs. */
+  .sh-pag-controls, .cust-pag-controls, .ew-pages {
+    max-width: 100%; flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sh-pag-controls::-webkit-scrollbar, .cust-pag-controls::-webkit-scrollbar { display: none; }
+  .sh-pag-controls > *, .cust-pag-controls > * { flex: 0 0 auto; }
+  /* The bulk bar ("n selected · Update status · Export selected") wraps. */
+  .ew-bulk { flex-wrap: wrap !important; overflow: visible !important; row-gap: 8px; }
+  .ew-bulk > * { flex: 1 1 auto; min-width: 0; }
+}
+
+@media (max-width: 640px) {
+  /* Invoice details: the summary goes under the invoice, full width. */
+  .invd-layout { flex-direction: column !important; align-items: stretch !important; }
+  .invd-layout > * { min-width: 0; }
+  .invd-side { width: 100% !important; }
+  .invd-side .np-card { position: static !important; }
+  /* Section headers wrap their buttons under the title. */
+  .np-card-header { flex-wrap: wrap; row-gap: 8px; }
+  /* Artwork Vault metrics: two columns that fit. */
+  .av-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+@media (max-width: 640px) {
+  .leads-filters:not(.leads-filters-open) { display: none !important; }
+}
+
+@media (max-width: 640px) {
+  /* New Order toolbar: the desktop minimum widths and gap no longer apply. */
+  .no-topbar-btn { min-width: 0 !important; margin-left: 0 !important; }
+}
+
+@media (max-width: 640px) {
+  /* Dashboard: the period tabs slide sideways like the other screens' tabs;
+     the recent-activity tables scroll inside their own panel. */
+  .dsb-controls { max-width: 100%; }
+  .dsb-tabs {
+    display: flex !important; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; scroll-snap-type: x proximity;
+  }
+  .dsb-tabs::-webkit-scrollbar { display: none; }
+  .dsb-tabs > * { flex: 0 0 auto; scroll-snap-align: start; }
+  .dsb-tabs button { min-height: 38px; }
+  .dsb-tables, .dsb-charts { grid-template-columns: minmax(0, 1fr) !important; }
+  .dsb-panel { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dsb-panel table { min-width: 100%; }
+}
+
+/* The bottom save bar reached for a 28px page padding with negative margins
+   and stuck out past the real gutter (8px on a desktop, 12px on a tablet),
+   so the whole form scrolled sideways. It sits inside the gutter instead. */
+.al-bottom-bar { margin-left: 0 !important; margin-right: 0 !important; border-radius: 10px; }
+/* Tablets: the Leads / Customers filter row wraps instead of sliding sideways. */
+@media (min-width: 641px) and (max-width: 1100px) {
+  .leads-filter-row { flex-wrap: wrap !important; overflow: visible !important; }
+}
+
+/* Any touch screen (phone or tablet): icon buttons a finger can hit. */
+@media (pointer: coarse) {
+  .lb-icon-btn, .cf-step, .lb-info-btn, .nq-icon-btn, .ew-icon-btn { min-width: 36px; min-height: 36px; }
+}
+
+@media (max-width: 640px) {
+  /* The bulk bar's fixed height let its wrapped second row spill over the list. */
+  .ew-bulk { height: auto !important; padding: 8px !important; }
+}
+
+/* Appearance switch in the profile menu (Light / Dark / Auto). */
+.theme-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 10px; background: #f1f5f9; }
+.theme-pick-opt {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px;
+  border: 0; border-radius: 8px; background: transparent; color: #475569; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.theme-pick-opt.on { background: #fff; color: #0f766e; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+
+@media (max-width: 640px) {
+  /* Room for the bell: CSV import is a desk job, reachable from each list. */
+  .topbar-actions > .lb-action-btn { display: none !important; }
+}
+
+/* The New Order / Invoice / Quote save bars reach for a 28px page padding with
+   negative margins; on a phone or tablet the gutter is smaller and they ran off
+   the screen (New Order's Save sat at -4px…394px on a 390px phone). */
+@media (max-width: 980px) {
+  .no-bottom-bar, .ni-bottom-bar, .nq-bottom-bar {
+    margin-left: 0 !important; margin-right: 0 !important;
+    padding-left: 12px !important; padding-right: 12px !important; border-radius: 10px;
+  }
+}

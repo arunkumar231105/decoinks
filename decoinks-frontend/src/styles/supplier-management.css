@@ -154,3 +154,43 @@
 
 /* The time beneath a date: small, there when you look for it. */
 .som-time { display: block; margin-top: 1px; font-size: 11px; line-height: 1.2; color: #94a3b8; }
+
+/* Phones: the card names wrap rather than read "To be Pus…"; smaller icons. */
+@media (max-width: 640px) {
+  .som-card { gap: 10px; padding: 12px; }
+  .som-card-icon { width: 36px; height: 36px; }
+  .som-card-label { white-space: normal; font-size: 13px; line-height: 1.25; }
+  .som-card-value { font-size: 21px; }
+}
+
+/* Phones: one card per DIGI order, each value beside its column's name — the
+   first nine columns, whichever the user dragged to the front. Tapping a card
+   opens the order with everything. */
+@media (max-width: 640px) {
+  .som-table-card { border: 0; background: transparent; overflow: visible; }
+  .som-table-card > div { overflow: visible !important; }
+  .som-table { min-width: 0 !important; width: 100%; display: block; }
+  .som-table thead { display: none; }
+  .som-table tbody { display: block; }
+  .som-table tbody tr {
+    display: block; margin: 0 0 10px; padding: 6px 12px; cursor: pointer;
+    border: 1px solid #dce4ed; border-radius: 12px; background: #fff !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
+  }
+  .som-table tbody td {
+    display: flex !important; align-items: center; justify-content: space-between; gap: 14px;
+    position: static !important; left: auto !important; box-shadow: none !important; background: transparent !important;
+    width: auto !important; min-width: 0 !important; max-width: none !important; height: auto !important;
+    min-height: 34px; padding: 5px 0 !important; border-bottom: 1px solid #f1f5f9 !important;
+    white-space: normal !important; text-align: right !important; overflow-wrap: anywhere;
+  }
+  .som-table tbody td::before {
+    content: attr(data-label); flex: 0 0 auto; max-width: 45%;
+    color: #64748b; font-size: 11px; font-weight: 800; text-align: left;
+  }
+  .som-table tbody td[colspan] { display: block !important; text-align: center !important; }
+  .som-table tbody td[colspan]::before { content: none; }
+  .som-table tbody td:nth-child(n + 10) { display: none !important; }
+  .som-table tbody td:last-child { border-bottom: 0 !important; }
+  .som-table td::after { display: none !important; }
+}

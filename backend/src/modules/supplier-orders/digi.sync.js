@@ -147,7 +147,10 @@ async function loadDigiPOs() {
     `SELECT p.id, p.po_number, p.order_id, NULLIF(BTRIM(p.supplier_reference), '') AS supplier_reference,
             p.created_at, o.order_date, NULLIF(BTRIM(c.name), '') AS customer_name,
             NULLIF(BTRIM(o.shipping_name), '') AS shipping_name, o.contact_name,
-            ARRAY(SELECT COALESCE(i.qty, 0) FROM order_items_apparel i WHERE i.order_id = p.order_id) AS line_qtys
+            ARRAY(SELECT COALESCE(i.qty, 0) FROM order_items_apparel i WHERE i.order_id = p.order_id) AS line_qtys,
+            -- The PO's own lines, "size:pieces", to tell a sales order's partial POs apart.
+            ARRAY(SELECT COALESCE(NULLIF(BTRIM(i.size), ''), '?') || ':' || COALESCE(i.qty_ordered, 0)
+                    FROM purchase_order_items i WHERE i.po_id = p.id) AS po_lines
        FROM purchase_orders p
        JOIN suppliers s ON s.id = p.supplier_id AND s.name ~* '^digi'
        LEFT JOIN orders o ON o.id = p.order_id
@@ -251,8 +254,29 @@ function linkSplitOrders(rows, pos) {
     if (!open.length) continue
     const orderPos = livePos.filter(p => p.order_id === orderId)
     const free = orderPos.filter(p => !taken.has(p.id)).sort((a, b) => a.po_number.localeCompare(b.po_number, 'en', { numeric: true }))
-    if (free.length && free.length === open.length) {
-      open.forEach((r, i) => { r.po_id = free[i].id; r.po_match = 'split_in_turn'; taken.add(free[i].id) })
+    // Partial POs carry their own lines: a DIGI order takes the PO with its
+    // pieces — and, when two POs have as many, its sizes too (owner, 18 Sep 2026:
+    // Dennis's 7 / 20 / 32 went to the wrong POs when paired by time).
+    const poPieces = p => (p.po_lines || []).reduce((a, l) => a + (Number(String(l).split(':').pop()) || 0), 0)
+    const sizeKey = v => String(v || '?').toLowerCase().replace(/[^a-z0-9?]/g, '')
+    const poSig = p => (p.po_lines || []).map(l => { const i = String(l).lastIndexOf(':'); return `${sizeKey(String(l).slice(0, i))}:${String(l).slice(i + 1)}` }).sort().join(',')
+    const rowSig = r => (r.lines || []).map(l => `${sizeKey(l.size_name || l.size_code)}:${l.qty}`).sort().join(',')
+    const pool = [...free]
+    const unpaired = []
+    for (const r of open) {
+      const qty = Number(r.goods_total_qty) || 0
+      let hits = qty ? pool.filter(p => poPieces(p) === qty) : []
+      if (hits.length > 1) hits = hits.filter(p => poSig(p) === rowSig(r))
+      if (hits.length === 1) {
+        r.po_id = hits[0].id; r.po_match = 'split_by_pieces'; taken.add(hits[0].id)
+        pool.splice(pool.indexOf(hits[0]), 1)
+      } else unpaired.push(r)
+    }
+    if (!unpaired.length) continue
+    // POs without lines (identical copies) pair in turn: the earliest DIGI
+    // order takes the lowest PO number; which is which is not in the data.
+    if (pool.length && pool.length === unpaired.length && pool.every(p => !(p.po_lines || []).length)) {
+      unpaired.forEach((r, i) => { r.po_id = pool[i].id; r.po_match = 'split_in_turn'; taken.add(pool[i].id) })
       continue
     }
     if (orderPos.length === 1) {
@@ -260,7 +284,7 @@ function linkSplitOrders(rows, pos) {
       const total = lines.reduce((a, b) => a + b, 0)
       const pieces = digiRows.reduce((a, r) => a + (Number(r.goods_total_qty) || 0), 0)
       if (total && pieces <= total) {
-        for (const r of open) { r.po_id = orderPos[0].id; r.po_match = 'same_sales_order' }
+        for (const r of unpaired) { r.po_id = orderPos[0].id; r.po_match = 'same_sales_order' }
         taken.add(orderPos[0].id)
       }
     }
@@ -655,7 +679,34 @@ async function runSync({ apply, log }) {
       [String(a.id), a.addressId, a.addressAlias || null, a.country || null, a.province || null, a.city || null,
        a.address || null, a.enabled ?? null, JSON.stringify(a)])
   }
+  counts.factory_status = await writeFactoryStatus(rows)
   return counts
+}
+
+// The PO's Factory Status (purchase_orders.factory_status, the column the
+// Purchase Orders list reads as "the factory's feed") follows its DIGI order
+// (owner, 19 Sep 2026: "status change hojay po ma ... push hogiya ha"):
+//   Store Audit / Pending Push → To be Pushed    Rejected → Anti Review
+//   Factory Audit → Factory Audit                In Production / Shipped → Pushed
+// A PO with several DIGI orders takes the furthest along; cancelled and
+// refunding DIGI orders say nothing, and a status is only written when it moves.
+const FACTORY_STATUS = { 1: 'To be Pushed', 2: 'To be Pushed', 3: 'Anti Review', 4: 'Factory Audit', 5: 'Pushed', 12: 'Pushed' }
+const FACTORY_RANK = { 'To be Pushed': 1, 'Anti Review': 2, 'Factory Audit': 3, Pushed: 4 }
+async function writeFactoryStatus(rows) {
+  const best = new Map()
+  for (const r of rows) {
+    const status = r.po_id && FACTORY_STATUS[r.order_status]
+    if (!status) continue
+    if ((FACTORY_RANK[status] || 0) > (FACTORY_RANK[best.get(r.po_id)] || 0)) best.set(r.po_id, status)
+  }
+  let changed = 0
+  for (const [poId, status] of best) {
+    const { rowCount } = await db.query(
+      `UPDATE purchase_orders SET factory_status = $2, updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL AND factory_status IS DISTINCT FROM $2`, [poId, status])
+    changed += rowCount
+  }
+  return changed
 }
 
 module.exports = { syncDigiOrders, matchPO }

@@ -82,6 +82,7 @@ const NewQuotationPage       = page(() => import('../pages/NewQuotationPage'), '
 const ShipmentsPage          = page(() => import('../pages/ShipmentsPage'), 'ShipmentsPage')
 const ClaimsListPage         = page(() => import('../pages/ClaimsListPage'), 'ClaimsListPage')
 const SupplierManagementPage = page(() => import('../pages/SupplierManagementPage'), 'SupplierManagementPage')
+const SupplierNewOrderPage = page(() => import('../pages/SupplierNewOrderPage'), 'SupplierNewOrderPage')
 const PromptsWorkspacePage   = page(() => import('../pages/PromptsWorkspacePage'), 'PromptsWorkspacePage')
 const NewClaimPage           = page(() => import('../pages/NewClaimPage'), 'NewClaimPage')
 const ArtworkLibraryPage     = page(() => import('../pages/ArtworkLibraryPage'), 'ArtworkLibraryPage')
@@ -271,6 +272,11 @@ export const router = createBrowserRouter([
                 path: '/supplier-management',
                 element: <SupplierManagementPage />,
                 handle: { title: 'Supplier Order Management', subtitle: 'DIGI orders: factory progress and courier tracking.' },
+              },
+              {
+                path: '/supplier-management/new-order',
+                element: <SupplierNewOrderPage />,
+                handle: { title: 'New Order', subtitle: 'Place a new supplier purchase order.' },
               },
               {
                 path: '/shipments',

@@ -162,6 +162,19 @@ const originalEtaOf = (s: Shipment) => (notMovingYet(s) ? null : s.original_eta)
 const lastScanCityOf = (s: Shipment) => (notMovingYet(s) ? null : s.last_scan_city)
 const lastScanStateOf = (s: Shipment) => (notMovingYet(s) ? null : s.last_scan_state)
 
+// When the courier really had the parcel: its first scan past the label (owner,
+// 19 Sep 2026). Ship Date is the day the label was made, which is often days
+// earlier; a parcel not scanned yet has no Shipped On.
+const MOVED = new Set(['TRANSIT', 'DELIVERED', 'RETURNED', 'FAILURE'])
+function shippedOnOf(s: Shipment): string | null {
+  let first: string | null = null
+  for (const e of Array.isArray(s.tracking_history) ? s.tracking_history : []) {
+    if (!e?.status_date || !MOVED.has(String(e.status || '').toUpperCase())) continue
+    if (!first || new Date(e.status_date).getTime() < new Date(first).getTime()) first = e.status_date
+  }
+  return first
+}
+
 const NO_FILTERS = { stage: 'All', timing: 'All', carrier: 'All', service: 'All', customer: 'All', state: 'All' }
 type Filters = typeof NO_FILTERS
 
@@ -169,6 +182,7 @@ type Filters = typeof NO_FILTERS
 // used, taken from the rows the filters leave.
 const EXPORT_COLUMNS: ReadonlyArray<readonly [string, (s: Shipment) => unknown]> = [
   ['Shipment No', s => s.shipment_number], ['Ship Date', s => s.ship_date],
+  ['Shipped On', s => shippedOnOf(s)?.slice(0, 10) ?? ''],
   ['Stage', s => stageOf(s)], ['Status', s => effectiveStatus(s)], ['Tracking Status', s => s.tracking_status],
   ['Details', s => s.status_details], ['Carrier', s => s.carrier], ['Service Type', s => s.service_type],
   ['Tracking No', s => s.tracking_number],
@@ -220,7 +234,8 @@ export function ShipmentsPage() {
   // Header label -> the value that column shows, so a click sorts by what is
   // on screen. Status is derived, not stored.
   const SORT_COLUMNS: ReadonlyArray<readonly [string, (s: Shipment) => any]> = [
-    ['Ship Date', s => s.ship_date], ['Customer Name', s => s.customer_name],
+    ['Ship Date', s => s.ship_date], ['Shipped On', s => shippedOnOf(s)],
+    ['Customer Name', s => s.customer_name],
     ['PO #', s => s.po_number], ['Carrier', s => s.carrier],
     ['Service Type', s => s.service_type], ['Ship-To Address', s => s.address],
     ['City', s => s.ship_to_city], ['State', s => s.ship_to_state],
@@ -238,6 +253,8 @@ export function ShipmentsPage() {
   // another order by their headers (hooks/useColumnDrag).
   const CELLS: Record<string, { className?: string; style?: CSSProperties; title?: (s: Shipment) => string | undefined; render: (s: Shipment) => ReactNode }> = {
     'Ship Date': { className: 'sh-muted', render: s => fmtDateFull(s.ship_date, '-') },
+    'Shipped On': { className: 'sh-muted', title: () => 'The courier\u2019s first scan of the parcel',
+      render: s => fmtDateFull(shippedOnOf(s), '-') },
     'Customer Name': { className: 'sh-customer', render: s => s.customer_name ?? '-' },
     'PO #': { className: 'sh-muted', render: s => s.po_number ?? '-' },
     'Carrier': { className: 'sh-muted', render: s => s.carrier ?? '-' },

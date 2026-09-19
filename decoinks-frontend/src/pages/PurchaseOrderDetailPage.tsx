@@ -783,7 +783,7 @@ export function PurchaseOrderDetailPage() {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
                 <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
                 <span style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
-                  You are overriding normal role resoricoions as Admin. This action will be logged.
+                  You are overriding normal role restrictions as Admin. This action will be logged.
                 </span>
               </div>
             )}

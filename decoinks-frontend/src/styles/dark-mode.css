@@ -1,0 +1,32 @@
+/* Dark mode (owner, 19 Sep 2026).
+ *
+ * Printshop has 45 screens, 16,000 lines of styles and hundreds of inline
+ * colours; painting each dark by hand would leave white patches behind. So the
+ * whole page is turned: lightness inverted, hue kept (invert + a half-turn of
+ * hue), which makes every screen — inline styles included — dark at once, with
+ * teal still teal and red still red. What must look as it is — photos, logos,
+ * artwork, mockups, and the sidebar, which is dark already — is turned back.
+ * Set by utils/themeMode.ts as <html data-theme="dark">.
+ */
+html[data-theme="dark"] {
+  filter: invert(0.9) hue-rotate(180deg);
+  background: #fff;            /* becomes the dark page behind everything */
+  color-scheme: light;         /* the invert already darkens native controls */
+}
+
+/* Turned back: pictures and the already-dark parts. The page's filter is
+   invert(0.9) then hue-rotate(180deg); its exact reverse is hue-rotate(180deg),
+   invert(1), contrast(1.25) — so photos, artwork and the sidebar come back in
+   their true colours, not merely close. */
+html[data-theme="dark"] :is(.sidebar, .auth-left-panel, .sno-preview, .no-dark-invert),
+html[data-theme="dark"] :is(img, video, picture, canvas, iframe, [style*="background-image"]):not(:is(.sidebar, .auth-left-panel, .no-dark-invert) *) {
+  filter: hue-rotate(180deg) invert(1) contrast(1.25);
+}
+
+/* Softer shadows: inverted, they would glow white. */
+html[data-theme="dark"] :is(.np-card, .al-panel, .som-card, .dsb-card, .dsb-panel, .ew-kpi, .nb-panel, .MuiPaper-root, .sno-item) {
+  box-shadow: none !important;
+}
+
+/* Colour swatches (a garment colour) keep their true colour. */
+html[data-theme="dark"] :is([class*="swatch"], [class*="color-dot"]) { filter: hue-rotate(180deg) invert(1) contrast(1.25); }

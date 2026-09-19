@@ -1,4 +1,4 @@
-import { useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useReducer, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useLocation, Link, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from '../utils/toast'
@@ -11,6 +11,7 @@ import { api } from '../services/api'
 import { APPAREL_CATEGORIES, type ApparelCatalogStyle, type CatalogColor, type CatalogSize, type CatalogVariant } from '../components/ApparelCatalogPicker'
 import { ApparelStyleSelect } from '../components/ApparelStyleSelect'
 import { fmtDate as fmtDay } from '../utils/dates'
+import '../styles/purchase-order-form.css'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,10 +53,18 @@ interface POLineItem {
   artwork_url: string | null
   artwork_size_front: string
   artwork_size_back: string
+  // What the factory prints and the preview it works from, per side (links in
+  // storage). Carried to the supplier order, so it can be filled from the PO.
+  front_image?: string
+  front_mockup?: string
+  back_image?: string
+  back_mockup?: string
   catalog_style_id: string
   catalog_color_id: string
   catalog_size_id: string
   catalog_sku: string
+  // The style's own code (DG001, 5000B) — catalog_sku holds the colour/size SKU.
+  style_code?: string
   product_image: string | null
   style_description: string
   availableColors?: CatalogColor[]
@@ -305,14 +314,14 @@ function reducer(state: POFormState, action: Action): POFormState {
     case 'ADD_CATALOG_ITEM': {
       const item = newItem(state.items.length)
       const style = action.style
-      return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
+      return { ...state, items: [...state.items, { ...item, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, style_code: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [] }] }
     }
     // A style chosen on a line that already exists. Colour, size and SKU are
     // cleared, because the ones held belong to the style being replaced.
     case 'LINK_STYLE': {
       const style = action.style
       return { ...state, items: state.items.map(it => it.id !== action.id ? it : {
-        ...it, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [],
+        ...it, item_name: style.name, brand: style.brand, catalog_style_id: style.id, catalog_sku: style.sku, style_code: style.sku, product_image: style.images?.[0]?.image_url ?? style.image_url, style_description: style.description ?? '', availableColors: style.colors ?? [], availableSizes: style.sizes ?? [], availableVariants: style.variants ?? [],
         catalog_color_id: '', catalog_size_id: '', color: '', size: '', catalog_variant_sku: '',
       }) }
     }
@@ -338,8 +347,12 @@ function reducer(state: POFormState, action: Action): POFormState {
         fragments: state.fragments.filter(f => f.order_id !== action.order_id),
         artworks: state.artworks.filter(a => a.source_order_id !== action.order_id),
       }
-    case 'ADD_FRAGMENT':
-      return { ...state, fragments: [...state.fragments, newFragment()] }
+    case 'ADD_FRAGMENT': {
+      const order = state.orders[0]
+      const sheet = { ...newFragment(), width: '22', qty: 1, order_id: order?.order_id ?? '',
+        fragment_no: order ? `${order.order_number}-${String(state.fragments.length + 1).padStart(2, '0')}` : '' }
+      return { ...state, fragments: [...state.fragments, sheet] }
+    }
     case 'UPDATE_FRAGMENT':
       return {
         ...state,
@@ -406,6 +419,10 @@ export function NewPurchaseOrderPage() {
   const [newContactMode, setNewContactMode] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  // Apparel lines whose print / mockup slots were folded away; open by default,
+  // so after Generate PO it is plain where the mockups go.
+  const [imagesClosed, setImagesClosed] = useState<Set<string>>(new Set())
+  const toggleImages = (id: string) => setImagesClosed(cur => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Order to convert can arrive via in-app navigation (location.state) OR as a
@@ -505,7 +522,8 @@ export function NewPurchaseOrderPage() {
     queryKey: ['suppliers-for-po'],
     queryFn: () => api.get('/suppliers', { params: { limit: 200 } }).then(r => r.data.data?.rows ?? []),
   })
-  const suppliers: { id: string; name: string; email: string }[] = suppliersData ?? []
+  const suppliers: { id: string; name: string; email: string }[] = [...(suppliersData ?? [])]
+    .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))
 
   const { data: usersData } = useQuery({
     queryKey: ['users-for-po'],
@@ -617,6 +635,8 @@ export function NewPurchaseOrderPage() {
           artwork_url: it.artwork_thumbnail_url || it.artwork_file_url || it.front_image || null,
           artwork_size_front: it.artwork_size_front || it.artwork_size || '',
           artwork_size_back: it.artwork_size_back || '',
+          front_image: it.front_image || '', front_mockup: it.front_mockup || '',
+          back_image: it.back_image || '', back_mockup: it.back_mockup || '',
           catalog_style_id: it.catalog_style_id || '',
           catalog_color_id: it.catalog_color_id || '',
           catalog_size_id: it.catalog_size_id || '',
@@ -675,7 +695,9 @@ export function NewPurchaseOrderPage() {
 
   useEffect(() => {
     if (!sourceOrder) return
-    const poType: POType = sourceOrder.order_type === 'gangsheet' ? 'gangsheet' : 'apparel'
+    // A DTF or gangsheet sales order is bought as a gangsheet PO; only a custom
+    // printed apparel order becomes an apparel PO.
+    const poType: POType = sourceOrder.order_type === 'apparel' ? 'apparel' : 'gangsheet'
     if (sourceOrder.supplier_name) setSupplierSearch(sourceOrder.supplier_name)
 
     const payload: Partial<POFormState> = {
@@ -705,13 +727,17 @@ export function NewPurchaseOrderPage() {
         issued: 0,
         available: Number(it.qty) || 0,
         current_touched: false,
-        unit_price: Number(it.unit_price) || 0,
-        line_total: lineTotal(Number(it.qty) || 1, Number(it.unit_price) || 0),
+        // Only what the item is travels to the PO — never the customer's price
+        // or payment. What the supplier charges is typed as Unit Cost.
+        unit_price: 0,
+        line_total: 0,
         artwork_id: null,
         artwork_no: it.artwork_no || '',
         artwork_url: it.front_image || null,
         artwork_size_front: it.artwork_size || '',
         artwork_size_back: it.artwork_size || '',
+        front_image: it.front_image || '', front_mockup: it.front_mockup || '',
+        back_image: it.back_image || '', back_mockup: it.back_mockup || '',
         sort_order: idx,
         description: it.style_description || '', hsn_code: '', uom: 'pcs',
         catalog_style_id: it.catalog_style_id || '', catalog_color_id: it.catalog_color_id || '',
@@ -727,9 +753,119 @@ export function NewPurchaseOrderPage() {
     dispatch({ type: 'INIT', payload })
   }, [sourceOrder])
 
+  // A DTF order's lines (order_items_dtf) are its designs: name, size, pieces.
+  const dtfLinesOf = (o: any): any[] => (o.order_type === 'dtf' ? (o.items ?? []) : [])
+
+  // ── Style, colour and size on every apparel line ──────────────────────────
+  // A line only shows its colour and size pickers once its style's lists are
+  // loaded, so a converted (or reopened) PO read as blank and every line had
+  // to be picked again (owner, 18 Sep 2026). Each line is filled from, in turn:
+  //   1. its own catalogue link (the sales order line, or this PO's line);
+  //   2. what an earlier PO of the same sales order chose for that line — a
+  //      second, partial PO repeats the first one's choice;
+  //   3. a style whose name is exactly the line's text, when only one is.
+  // Colour and size are then matched by id, else by name. Nothing is guessed
+  // beyond that; an unmatched line keeps its text and is picked by hand.
+  const filledLines = useRef('')
+  const lineKey = state.po_type === 'apparel' ? state.items.map(it => it.id).join(',') : ''
+  useEffect(() => {
+    if (!lineKey || filledLines.current === lineKey) return
+    if (fromOrderId && !isEdit && !sourceOrder) return          // the order's lines are not in yet
+    filledLines.current = lineKey
+    const items = state.items
+    ;(async () => {
+      const norm = (v?: string | null) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const styleOf = new Map<string, Promise<ApparelCatalogStyle | null>>()
+      const detail = (id: string) => {
+        if (!styleOf.has(id)) styleOf.set(id, api.get(`/products/${id}`).then(r => r.data.data as ApparelCatalogStyle).catch(() => null))
+        return styleOf.get(id)!
+      }
+      // What earlier POs of this sales order chose, the latest per order line.
+      const earlier = new Map<string, any>()
+      const poIds = [...new Set(((sourceOrder?.purchase_orders ?? []) as any[]).map(p => p.id))].filter(id => id !== editId)
+      if (poIds.length && items.some(it => it.source_line_id && !it.catalog_style_id)) {
+        const pos = (await Promise.all(poIds.map(id =>
+          api.get(`/purchase-orders/${id}`).then(r => r.data.data ?? r.data).catch(() => null)))).filter(Boolean)
+        pos.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)))
+        for (const po of pos) for (const line of po.items ?? []) {
+          if (line.source_line_id && line.catalog_style_id) earlier.set(line.source_line_id, line)
+        }
+      }
+      // "Adult XL" is XL, "2X" is XXL, "Youth Large" is L — how sizes get typed.
+      const WORD: Record<string, string> = { small: 's', medium: 'm', large: 'l', xlarge: 'xl', extralarge: 'xl',
+        '2x': 'xxl', '2xl': 'xxl', xxlarge: 'xxl', '3x': 'xxxl', '3xl': 'xxxl', '4x': '4xl', '5x': '5xl' }
+      const sizeKey = (v?: string | null) => {
+        const k = norm(String(v ?? '').replace(/\b(adult|adults|youth|kids?|men'?s|women'?s|unisex|size)\b/gi, ''))
+        return WORD[k] ?? k
+      }
+      // Youth and adult lines of one product text are different styles.
+      const groupOf = (it: POLineItem) => (/\b(youth|kids?|toddler|baby)\b/i.test(`${it.size} ${it.item_name}`) ? 'young' : '')
+      const siblingKey = (it: POLineItem) => `${norm(it.item_name)}|${norm(it.color)}|${groupOf(it)}`
+
+      let catalogue: ApparelCatalogStyle[] | null = null
+      const fill = async (it: POLineItem, styleId: string, colorId: string, sizeId: string, prior?: any) => {
+        const style = await detail(styleId)
+        if (!style) return null
+        const colors = style.colors ?? [], sizes = style.sizes ?? [], variants = style.variants ?? []
+        const color = colors.find(c => c.style_color_id === colorId)
+          ?? colors.find(c => [it.color, prior?.color].some(n => n && (norm(c.display_name) === norm(n) || norm(c.color_name) === norm(n))))
+        const size = sizes.find(z => z.style_size_id === sizeId)
+          ?? sizes.find(z => [it.size, prior?.size].some(n => n && (norm(z.size_name) === norm(n) || norm(z.size_code) === norm(n))))
+          ?? sizes.find(z => [it.size, prior?.size].some(n => n && (sizeKey(z.size_name) === sizeKey(n) || sizeKey(z.size_code) === sizeKey(n))))
+        const variant = variants.find(v => v.style_color_id === color?.style_color_id && v.style_size_id === size?.style_size_id)
+        dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: {
+          item_name: style.name || it.item_name, brand: style.brand || it.brand,
+          catalog_style_id: style.id, style_code: style.sku,
+          product_image: it.product_image || style.images?.[0]?.image_url || style.image_url || null,
+          style_description: it.style_description || style.description || '',
+          availableColors: colors, availableSizes: sizes, availableVariants: variants,
+          catalog_color_id: color?.style_color_id ?? '', color: color?.display_name ?? it.color,
+          catalog_size_id: size?.style_size_id ?? '', size: size?.size_name ?? it.size,
+          catalog_sku: variant?.sku_code ?? (color || size ? it.catalog_sku : style.sku),
+          // The images an earlier PO of this line carried, when this one has none.
+          front_image: it.front_image || prior?.front_image || '', front_mockup: it.front_mockup || prior?.front_mockup || '',
+          back_image: it.back_image || prior?.back_image || '', back_mockup: it.back_mockup || prior?.back_mockup || '',
+        } })
+        return { styleId: style.id, colorId: color?.style_color_id ?? '' }
+      }
+
+      // Pass 1: the line's own link, an earlier PO's choice, or an exact name.
+      const chosen = new Map<string, Set<string>>()      // sibling key → "style|colour" picked
+      const left: POLineItem[] = []
+      for (const it of items) {
+        if (it.availableColors?.length) continue
+        const prior = it.source_line_id ? earlier.get(it.source_line_id) : undefined
+        let styleId = it.catalog_style_id || prior?.catalog_style_id || ''
+        if (!styleId && it.item_name) {
+          catalogue ??= await api.get('/products', { params: { page: 1, limit: 500, product_type: 'Apparel' } })
+            .then(r => r.data.data?.rows ?? []).catch(() => [])
+          const named = (catalogue ?? []).filter(st => norm(st.name) === norm(it.item_name))
+          if (named.length === 1) styleId = named[0].id
+        }
+        if (!styleId) { left.push(it); continue }
+        const own = it.catalog_style_id === styleId
+        const got = await fill(it, styleId, own ? it.catalog_color_id : prior?.catalog_color_id ?? '', own ? it.catalog_size_id : prior?.catalog_size_id ?? '', prior)
+        if (got && !own && prior) {
+          const key = siblingKey(it)
+          chosen.set(key, (chosen.get(key) ?? new Set()).add(`${got.styleId}|${got.colorId}`))
+        } else if (!got) left.push(it)
+      }
+      // Pass 2: a line never picked takes what its twins on this order took —
+      // same product text, colour and adult/youth — when they all took one style.
+      for (const it of left) {
+        const picks = chosen.get(siblingKey(it))
+        if (!picks || picks.size !== 1) continue
+        const [styleId, colorId] = [...picks][0].split('|')
+        await fill(it, styleId, colorId, '')
+      }
+    })()
+    // Not cancelled when the order arrives mid-way: the lines are the same, and
+    // a cancelled fill would never be run again.
+  }, [lineKey, sourceOrder])
+
   function orderToCovered(o: any): CoveredOrder {
     const gsItems: any[] = (o.items ?? []).filter((it: any) => it.no_artworks != null || it.price_per_sheet != null)
-    const noArtworks = gsItems.reduce((s, it) => s + (Number(it.no_artworks) || 0), 0)
+    const noArtworks = gsItems.reduce((s, it) => s + (Number(it.no_artworks) || 0), 0) + dtfLinesOf(o).length
     const qty = (o.items ?? []).reduce((s: number, it: any) => s + (Number(it.qty) || 0), 0)
     const sz = parseSheetSize(gsItems[0]?.size)
     return {
@@ -792,12 +928,33 @@ export function NewPurchaseOrderPage() {
       qty: Math.max(1, Number(art.qty) || 1),
       source_order_id: o.id,
     }))
-    const artworks = [...inlineArtworks, ...storedArtworks].filter((art, index, all) =>
+    // DTF: every line is one design, kept as its own row (the same image can be
+    // ordered at two sizes). Its gang sheets are not laid out yet, so one 22"
+    // sheet is started for the order; its length is typed once it is built.
+    const dtf = dtfLinesOf(o)
+    const dtfArtworks: AttachedArtwork[] = dtf.map((it: any, index: number) => ({
+      id: `order-${o.id}-${it.id ?? index}`,
+      artwork_no: it.artwork_no || `AW-DTF-${String(index + 1).padStart(3, '0')}`,
+      name: it.artwork_name || 'DTF Transfer',
+      file_url: it.front_image || it.artwork_image || null,
+      thumbnail_url: it.front_image || it.artwork_image || null,
+      file_type: null,
+      artwork_size: it.size || (it.width_inches && it.height_inches ? `${it.width_inches} x ${it.height_inches} in` : null),
+      qty: Math.max(1, Number(it.qty) || 1),
+      source_order_id: o.id,
+    }))
+    if (dtf.length && !fragments.length) {
+      fragments.push({
+        id: `order-${o.id}-sheet-1`, fragment_no: `${o.order_number}-01`, order_id: o.id,
+        width: '22', length: '', artworks_count: dtf.length, qty: 1, file_url: '',
+      })
+    }
+    const artworks = [...dtfArtworks, ...[...inlineArtworks, ...storedArtworks].filter((art, index, all) =>
       all.findIndex(candidate =>
         (candidate.artwork_no && candidate.artwork_no === art.artwork_no) ||
         (candidate.file_url && candidate.file_url === art.file_url)
       ) === index
-    )
+    )]
     return { fragments, artworks }
   }
 
@@ -913,7 +1070,7 @@ export function NewPurchaseOrderPage() {
         ? state.fragments.map((f, i) => ({
             fragment_no: f.fragment_no || null,
             order_id: f.order_id || null,
-            width_inches: 22,
+            width_inches: f.width ? parseFloat(f.width) || 22 : 22,
             length_inches: f.length ? parseFloat(f.length) : null,
             artworks_count: Number(f.artworks_count) || 0,
             qty: Number(f.qty) || 0,
@@ -938,6 +1095,10 @@ export function NewPurchaseOrderPage() {
             artwork_id: it.artwork_id,
             artwork_size_front: it.artwork_size_front || null,
             artwork_size_back: it.artwork_size_back || null,
+            front_image: it.front_image || null,
+            front_mockup: it.front_mockup || null,
+            back_image: it.back_image || null,
+            back_mockup: it.back_mockup || null,
             artwork_no: it.artwork_no || null,
             catalog_style_id: it.catalog_style_id || null,
             catalog_color_id: it.catalog_color_id || null,
@@ -1106,6 +1267,9 @@ export function NewPurchaseOrderPage() {
     qty: state.orders.reduce((s, o) => s + o.qty, 0),
   }), [state.orders])
 
+  // Inches of film across every sheet copy — what the factory prints.
+  const sheetLength = +state.fragments.reduce((s, f) => s + (parseFloat(f.length) || 0) * (Number(f.qty) || 1), 0).toFixed(2)
+
   const fragTotals = useMemo(() => ({
     artworks: state.fragments.reduce((s, f) => s + (Number(f.artworks_count) || 0), 0),
     qty: state.fragments.reduce((s, f) => s + (Number(f.qty) || 0), 0),
@@ -1253,9 +1417,10 @@ export function NewPurchaseOrderPage() {
                 }
               }}
               onBlur={() => setTimeout(() => setSupplierOpen(false), 150)} />
-            {supplierOpen && filteredSuppliers.length > 0 && (
-              <div className="np-dropdown">
-                {filteredSuppliers.slice(0, 8).map(s => (
+            {supplierOpen && (
+              <div className="np-dropdown" role="listbox">
+                {filteredSuppliers.length === 0 && <div className="np-dropdown-empty">No supplier matches “{supplierSearch}”</div>}
+                {filteredSuppliers.map(s => (
                   <button key={s.id} className="np-dropdown-item"
                     onMouseDown={() => {
                       dispatch({ type: 'INIT', payload: { supplier_id: s.id, supplier_name: s.name, supplier_contact_id: '', contact_name: '', contact_email: '', contact_phone: '' } })
@@ -1383,6 +1548,9 @@ export function NewPurchaseOrderPage() {
       </div>
 
       {/* ═══ GANGSHEET MODE ═══ */}
+      {/* DTF and gangsheet orders: which orders the PO covers, then the gang
+          sheets the factory prints (width × length, copies, file). The designs
+          on them are listed in section 2. */}
       {state.po_type === 'gangsheet' && (
         <div className="np-card">
           <div className="np-card-header" style={{ justifyContent: 'space-between' }}>
@@ -1394,50 +1562,103 @@ export function NewPurchaseOrderPage() {
               <Plus size={13} /> Select Order
             </button>
           </div>
+
+          <div className="np-sub-title">Orders on this PO</div>
           <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
-            <table className="np-table" style={{ minWidth: 780 }}>
+            <table className="np-table" style={{ minWidth: 720 }}>
               <thead><tr>
                 <th style={{ width: 40 }}>#</th>
-                <th style={{ minWidth: 150 }}>Order No</th>
+                <th style={{ minWidth: 140 }}>Order No</th>
+                <th style={{ width: 120 }}>Order Date</th>
+                <th style={{ width: 120 }}>Due Date</th>
+                <th style={{ width: 90 }}>Designs</th>
+                <th style={{ width: 90 }}>Pieces</th>
+                <th style={{ width: 120 }}>Status</th>
+                <th style={{ width: 50 }}></th>
+              </tr></thead>
+              <tbody>
+                {state.orders.length === 0 && (
+                  <tr><td colSpan={8} className="np-empty-cell">
+                    Select a DTF or Gangsheet order — its designs, sizes and quantities load automatically.
+                  </td></tr>
+                )}
+                {state.orders.map((order, index) => (
+                  <tr key={order.order_id}>
+                    <td className="np-td-num">{index + 1}</td>
+                    <td><Link to={`/orders/${order.order_id}`} style={{ color: '#0d9488', fontWeight: 700 }}>{order.order_number}</Link></td>
+                    <td>{fmtDate(order.order_date)}</td>
+                    <td>{fmtDate(order.due_date)}</td>
+                    <td className="np-td-num">{order.no_artworks}</td>
+                    <td className="np-td-num">{order.qty}</td>
+                    <td><span className={cn('np-badge', STATUS_BADGE[order.status || 'Draft'] ?? 'np-badge-yellow')}>{order.status || 'Draft'}</span></td>
+                    <td><button className="np-del-btn" aria-label={`Remove ${order.order_number}`}
+                      onClick={() => dispatch({ type: 'REMOVE_ORDER', order_id: order.order_id })}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="np-sub-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+            <span>Gang Sheets</span>
+            <button className="lb-action-btn" disabled={!state.orders.length}
+              title={state.orders.length ? 'Add another sheet' : 'Select an order first'}
+              onClick={() => {
+                dispatch({ type: 'ADD_FRAGMENT' })
+              }}>
+              <Plus size={13} /> Add Sheet
+            </button>
+          </div>
+          <div className="np-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="np-table" style={{ minWidth: 820 }}>
+              <thead><tr>
+                <th style={{ width: 40 }}>#</th>
+                <th style={{ minWidth: 150 }}>Sheet No</th>
+                <th style={{ minWidth: 140 }}>Order</th>
                 <th style={{ width: 110 }}>Width (in)</th>
-                <th style={{ width: 120 }}>Height (in)</th>
-                <th style={{ width: 110 }}>Artworks</th>
-                <th style={{ width: 100 }}>Sheets</th>
-                <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 50 }}>Action</th>
+                <th style={{ width: 120 }}>Length (in)</th>
+                <th style={{ width: 100 }}>Copies</th>
+                <th style={{ minWidth: 200 }}>Sheet File (link)</th>
+                <th style={{ width: 50 }}></th>
               </tr></thead>
               <tbody>
                 {state.fragments.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 26, color: '#9ca3af', fontSize: 13 }}>
-                    Select a Gangsheet Order to load its complete specifications and artworks.
+                  <tr><td colSpan={8} className="np-empty-cell">
+                    {state.orders.length ? 'No sheets yet — press Add Sheet.' : 'Sheets appear once an order is selected.'}
                   </td></tr>
                 )}
-                {state.fragments.map((fragment, index) => {
-                  const order = state.orders.find(row => row.order_id === fragment.order_id)
-                  return <tr key={fragment.id}>
+                {state.fragments.map((fragment, index) => (
+                  <tr key={fragment.id}>
                     <td className="np-td-num">{index + 1}</td>
+                    <td><input className="np-table-input" value={fragment.fragment_no} placeholder={`Sheet ${index + 1}`}
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { fragment_no: event.target.value } })} /></td>
                     <td>
-                      {order ? <Link to={`/orders/${order.order_id}`} style={{ color: '#0d9488', fontWeight: 700 }}>{order.order_number}</Link> : '—'}
+                      <select className="np-table-select" value={fragment.order_id}
+                        onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { order_id: event.target.value } })}>
+                        <option value="">—</option>
+                        {state.orders.map(order => <option key={order.order_id} value={order.order_id}>{order.order_number}</option>)}
+                      </select>
                     </td>
-                    <td><div className="np-table-input" style={{ textAlign: 'center', background: '#f8fafc', fontWeight: 700 }}>22 in</div></td>
-                    <td><input type="number" min={0} step={0.1} className="np-table-input np-num-input" value={fragment.length}
+                    <td><input type="number" min={1} step={0.1} className="np-table-input np-num-input" value={fragment.width} placeholder="22"
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { width: event.target.value } })} /></td>
+                    <td><input type="number" min={0} step={0.1} className="np-table-input np-num-input" value={fragment.length} placeholder="Length"
                       onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { length: event.target.value } })} /></td>
-                    <td><input type="number" min={0} className="np-table-input np-num-input" value={fragment.artworks_count}
-                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { artworks_count: Number(event.target.value) || 0 } })} /></td>
                     <td><input type="number" min={1} className="np-table-input np-num-input" value={fragment.qty}
-                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { qty: Number(event.target.value) || 1 } })} /></td>
-                    <td><span className={cn('np-badge', STATUS_BADGE[order?.status || 'Draft'] ?? 'np-badge-yellow')}>{order?.status || 'Draft'}</span></td>
-                    <td><button className="np-del-btn" aria-label="Remove selected order"
-                      onClick={() => order && dispatch({ type: 'REMOVE_ORDER', order_id: order.order_id })}><Trash2 size={14} /></button></td>
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { qty: Math.max(1, Number(event.target.value) || 1) } })} /></td>
+                    <td><input className="np-table-input" value={fragment.file_url} placeholder="Nextcloud / Drive link"
+                      onChange={event => dispatch({ type: 'UPDATE_FRAGMENT', id: fragment.id, patch: { file_url: event.target.value } })} /></td>
+                    <td><button className="np-del-btn" aria-label="Remove sheet"
+                      onClick={() => dispatch({ type: 'REMOVE_FRAGMENT', id: fragment.id })}><Trash2 size={14} /></button></td>
                   </tr>
-                })}
+                ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
-                <td colSpan={2}><span className="live-summary-title">Gangsheet Summary</span></td>
-                <td colSpan={2}></td>
-                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{fragTotals.artworks}</strong></div></td>
-                <td><div className="live-summary-stat"><span>Total Sheets</span><strong>{fragTotals.qty}</strong></div></td>
-                <td colSpan={2}></td>
+                <td colSpan={3}><span className="live-summary-title">Gangsheet Summary</span></td>
+                <td><div className="live-summary-stat"><span>Sheets</span><strong>{state.fragments.length}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Length</span><strong>{sheetLength ? `${sheetLength} in` : '—'}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Copies</span><strong>{fragTotals.qty}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Designs</span><strong>{state.artworks.length}</strong></div></td>
+                <td></td>
               </tr></tfoot>
             </table>
           </div>
@@ -1510,7 +1731,7 @@ export function NewPurchaseOrderPage() {
                     <th style={{ width: 86 }}>Remaining</th>
                     <th style={{ width: 96 }}>Balance (Cost)</th>
                   </>}
-                  <th style={{ width: 150 }}>Artwork</th>
+                  <th style={{ width: 170 }}>Print / Mockup</th>
                   <th style={{ width: 104 }}>Unit Cost (USD)</th>
                   <th style={{ width: 96 }}>Line Cost (USD)</th>
                   <th style={{ width: 80 }}>Weight</th>
@@ -1524,9 +1745,10 @@ export function NewPurchaseOrderPage() {
                   </td></tr>
                 )}
                 {state.items.map((it, i) => (
-                  <tr key={it.id}>
+                  <Fragment key={it.id}>
+                  <tr>
                     <td className="np-td-num">{i + 1}</td>
-                    <td><ApparelStyleSelect value={it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
+                    <td><ApparelStyleSelect value={it.style_code || it.catalog_sku} onSelect={style => dispatch({ type: 'LINK_STYLE', id: it.id, style })} /></td>
                     <td><select className="np-table-select" value={it.category} onChange={e => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch: { category: e.target.value } })}>{APPAREL_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></td>
                     <td>
                       <div className="nq-quote-product"><div className="nq-quote-product-image">{it.product_image ? <img src={it.product_image} alt={it.item_name} /> : <Package size={20} />}</div><div><strong>{it.item_name}</strong><span>Brand: {it.brand || '—'}</span></div></div>
@@ -1570,18 +1792,22 @@ export function NewPurchaseOrderPage() {
                         : '—'}</td>
                     </>}
                     <td>
-                      <div className="np-inline-artwork"><ArtworkCellPicker
-                        value={it.artwork_no}
-                        attached={state.artworks}
-                        onPick={(a) => dispatch({
-                          type: 'UPDATE_ITEM', id: it.id,
-                          patch: { artwork_id: a?.id ?? null, artwork_no: a?.artwork_no ?? '', artwork_url: a?.thumbnail_url ?? a?.file_url ?? null },
-                        })} />
-                      {it.artwork_url && it.artwork_url.match(/\.(png|jpe?g|webp|svg|gif)(\?|$)/i) !== null
-                        ? <img src={it.artwork_url} alt="" style={{ width: 38, height: 38, objectFit: 'contain', borderRadius: 3, border: '1px solid #e5e7eb' }} />
-                        : it.artwork_no
-                          ? <span style={{ fontSize: 11, color: '#6b7280' }}>{it.artwork_no}</span>
-                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}</div>
+                      {/* The Artwork No. picker was dropped here (owner, 19 Sep 2026): a
+                          custom apparel line is described by its print and mockup
+                          images, which travel on to the supplier order. */}
+                      <div className="np-line-thumbs">
+                        {([['front_image', 'Front print'], ['front_mockup', 'Front mockup'], ['back_image', 'Back print'], ['back_mockup', 'Back mockup']] as const)
+                          .map(([key, label]) => it[key]
+                            ? <img key={key} src={it[key]} alt={label} title={label} />
+                            : <span key={key} title={`${label} — not uploaded`} />)}
+                      </div>
+                      {(() => {
+                        const n = [it.front_image, it.front_mockup, it.back_image, it.back_mockup].filter(Boolean).length
+                        return <button type="button" className={cn('np-images-btn', n > 0 && 'has')} onClick={() => toggleImages(it.id)}
+                          title="Print and mockup images the factory works from">
+                          {n}/4 uploaded {imagesClosed.has(it.id) ? '▼' : '▲'}
+                        </button>
+                      })()}
                     </td>
                     {/* What the supplier charges for one piece — never the customer's price. */}
                     <td>
@@ -1603,6 +1829,14 @@ export function NewPurchaseOrderPage() {
                       )}
                     </td>
                   </tr>
+                  {!imagesClosed.has(it.id) && (
+                    <tr className="np-images-row">
+                      <td colSpan={state.po_scope === 'partial' ? 18 : 14}>
+                        <LineImages item={it} onChange={patch => dispatch({ type: 'UPDATE_ITEM', id: it.id, patch })} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
@@ -1610,7 +1844,7 @@ export function NewPurchaseOrderPage() {
                 <td><div className="live-summary-stat"><span>{coveredKey ? 'Order Qty' : 'Total Qty'}</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).total : item.qty_ordered), 0)}</strong></div></td>
                 <td><div className="live-summary-stat"><span>This PO</span><strong>{state.items.reduce((sum, item) => sum + issuingQty(item), 0)}</strong></div></td>
                 {state.po_scope === 'partial' && <><td /><td /><td><div className="live-summary-stat"><span>Remaining</span><strong>{state.items.reduce((sum, item) => sum + (item.source_line_id ? figuresOf(item).available - issuingQty(item) : 0), 0)}</strong></div></td><td><div className="live-summary-stat"><span>Balance (Cost)</span><strong>${fmt(state.items.reduce((sum, item) => sum + (item.source_line_id ? (figuresOf(item).available - issuingQty(item)) * (moneyOf(item.supplier_unit_cost) ?? 0) : 0), 0))}</strong></div></td></>}
-                <td><div className="live-summary-stat"><span>Total Artworks</span><strong>{new Set(state.items.map(item => item.artwork_no).filter(Boolean)).size}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Mockups</span><strong>{state.items.filter(item => item.front_mockup).length} / {state.items.length}</strong></div></td>
                 <td><div className="live-summary-stat"><span>Total Weight</span><strong>{poWeightLbs ? `${poWeightLbs} lbs` : '—'}</strong></div></td>
                 <td></td>
                 <td><div className="live-summary-stat live-summary-total"><span>Supplier Goods Cost</span><strong>{supplierCost.goods !== null ? `$${fmt(supplierCost.goods)}` : '—'}</strong></div></td>
@@ -1641,13 +1875,14 @@ export function NewPurchaseOrderPage() {
               <thead><tr>
                 <th style={{ width: 55 }}>S.No</th>
                 <th style={{ minWidth: 150 }}>Artwork No.</th>
-                <th style={{ width: 150 }}>Artwork</th>
-                <th style={{ minWidth: 150 }}>Artwork Size</th>
+                <th style={{ width: 110 }}>Artwork</th>
+                <th style={{ minWidth: 160 }}>Name</th>
+                <th style={{ minWidth: 130 }}>Artwork Size</th>
                 <th style={{ width: 100 }}>Qty</th>
                 <th style={{ width: 70 }}>Action</th>
               </tr></thead>
               <tbody>
-                {state.artworks.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: '#9ca3af' }}>
+                {state.artworks.length === 0 && <tr><td colSpan={7} className="np-empty-cell">
                   Artworks from the selected Order will appear here automatically.
                 </td></tr>}
                 {state.artworks.map((artwork, index) => (
@@ -1660,6 +1895,7 @@ export function NewPurchaseOrderPage() {
                             style={{ width: 58, height: 58, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff' }} />
                         : <span style={{ color: '#94a3b8' }}>No preview</span>}
                     </td>
+                    <td>{artwork.name || '—'}</td>
                     <td>{artwork.artwork_size || '—'}</td>
                     <td style={{ fontWeight: 700 }}>{artwork.qty || 1}</td>
                     <td><button className="np-del-btn" aria-label="Remove artwork"
@@ -1668,9 +1904,9 @@ export function NewPurchaseOrderPage() {
                 ))}
               </tbody>
               <tfoot><tr className="live-summary-row">
-                <td colSpan={3}><span className="live-summary-title">Artwork Summary</span></td>
+                <td colSpan={4}><span className="live-summary-title">Artwork Summary</span></td>
                 <td><div className="live-summary-stat"><span>Designs</span><strong>{state.artworks.length}</strong></div></td>
-                <td><div className="live-summary-stat"><span>Total Qty</span><strong>{state.artworks.reduce((sum, artwork) => sum + (artwork.qty || 1), 0)}</strong></div></td>
+                <td><div className="live-summary-stat"><span>Total Pieces</span><strong>{state.artworks.reduce((sum, artwork) => sum + (artwork.qty || 1), 0)}</strong></div></td>
                 <td></td>
               </tr></tfoot>
             </table>
@@ -1976,6 +2212,56 @@ export function NewPurchaseOrderPage() {
   )
 }
 
+// ── Print & mockup images of one apparel line ─────────────────────────────────
+// Front print and mockup always; back ones for a two-sided print. They are what
+// the supplier order (Supplier Management → New Order) sends to the factory.
+
+function LineImages({ item, onChange }: { item: POLineItem; onChange: (patch: Partial<POLineItem>) => void }) {
+  const [busy, setBusy] = useState('')
+  const slots: [keyof POLineItem, string, string][] = [
+    ['front_image', 'Front Print', 'PNG, what gets printed'], ['front_mockup', 'Front Mockup', 'preview on the garment'],
+    ['back_image', 'Back Print', 'only for a back print'], ['back_mockup', 'Back Mockup', 'only for a back print'],
+  ]
+  const upload = async (key: keyof POLineItem, file?: File) => {
+    if (!file) return
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) { toast.error('Use a PNG, JPG or WebP image'); return }
+    if (file.size > 10 * 1024 * 1024) { toast.error('Image must be 10 MB or smaller'); return }
+    setBusy(String(key))
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const up = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const url: string | undefined = up.data?.url ?? up.data?.data?.url
+      if (!url) throw new Error('The upload did not return a link')
+      onChange({ [key]: url } as Partial<POLineItem>)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? err?.message ?? 'Upload failed')
+    } finally { setBusy('') }
+  }
+  return (
+    <div className="np-line-images">
+      {slots.map(([key, label, hint]) => {
+        const url = item[key] as string | undefined
+        return (
+          <label key={String(key)} className={cn('np-line-image', url && 'done')}
+            onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); upload(key, e.dataTransfer.files[0]) }}>
+            <input type="file" hidden accept="image/png,image/jpeg,image/webp" disabled={busy === key}
+              onChange={e => { upload(key, e.target.files?.[0]); e.currentTarget.value = '' }} />
+            <span className="np-line-image-label">{label}<small>{hint}</small></span>
+            {busy === key ? <span className="np-line-image-empty">Uploading…</span>
+              : url ? <img src={url} alt={label} />
+              : <span className="np-line-image-empty"><UploadCloud size={16} /> Upload</span>}
+            {url && busy !== key && (
+              <button type="button" className="np-line-image-clear" aria-label={`Remove ${label}`}
+                onClick={e => { e.preventDefault(); onChange({ [key]: '' } as Partial<POLineItem>) }}><X size={12} /></button>
+            )}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Order picker modal ─────────────────────────────────────────────────────────
 
 function OrderPickerModal({ existing, onPick, onClose }: {
@@ -1986,25 +2272,28 @@ function OrderPickerModal({ existing, onPick, onClose }: {
   const [search, setSearch] = useState('')
   const { data } = useQuery({
     queryKey: ['gangsheet-orders-picker'],
-    queryFn: () => api.get('/orders', { params: { order_type: 'gangsheet', limit: 100 } })
-      .then(r => r.data.data?.rows ?? []),
+    // DTF orders are bought on gangsheet POs too.
+    queryFn: () => Promise.all(['dtf', 'gangsheet'].map(order_type =>
+      api.get('/orders', { params: { order_type, limit: 100 } }).then(r => r.data.data?.rows ?? [])))
+      .then(([dtf, gangsheet]) => [...dtf, ...gangsheet]
+        .sort((a: any, b: any) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))),
   })
   const orders: any[] = (data ?? []).filter((o: any) =>
     !existing.includes(o.id) &&
     (o.order_number ?? '').toLowerCase().includes(search.toLowerCase())
   )
   return (
-    <ModalShell title="Add Gangsheet Order" onClose={onClose}>
+    <ModalShell title="Add DTF / Gangsheet Order" onClose={onClose}>
       <input className="np-input" placeholder="Search order number..." autoFocus
         value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        {orders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No gangsheet orders found</div>}
+        {orders.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No DTF or gangsheet orders found</div>}
         {orders.map((o: any) => (
           <button key={o.id} className="np-dropdown-item" style={{ width: '100%' }}
             onClick={() => { onPick(o.id); onClose() }}>
             <span className="np-dropdown-name">{o.order_number}</span>
             <span className="np-dropdown-sub">
-              {o.status} · {o.supplier_name ?? o.contact_name ?? '—'} · {o.order_date ? fmtDay(o.order_date) : ''}
+              {o.order_type === 'dtf' ? 'DTF' : 'Gangsheet'} · {o.status} · {o.customer_name ?? o.contact_name ?? '—'} · {o.order_date ? fmtDay(o.order_date) : ''}
             </span>
           </button>
         ))}
@@ -2050,47 +2339,6 @@ function ArtworkPickerModal({ onPick, onClose }: {
         ))}
       </div>
     </ModalShell>
-  )
-}
-
-// ── Inline artwork cell picker (apparel items table) ───────────────────────────
-
-function ArtworkCellPicker({ value, attached, onPick }: {
-  value: string
-  attached: AttachedArtwork[]
-  onPick: (a: AttachedArtwork | null) => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" className="np-table-input"
-        style={{ width: '100%', textAlign: 'left', color: value ? '#0d9488' : '#9ca3af', fontWeight: value ? 600 : 400, cursor: 'pointer' }}
-        onClick={() => setOpen(o => !o)}>
-        {value || 'Select…'}
-      </button>
-      {open && (
-        <div className="np-dropdown" style={{ minWidth: 200 }}>
-          {attached.length === 0 && (
-            <div style={{ padding: 10, fontSize: 12, color: '#9ca3af' }}>
-              Attach artworks below first
-            </div>
-          )}
-          {attached.map(a => (
-            <button key={a.id} className="np-dropdown-item"
-              onMouseDown={() => { onPick(a); setOpen(false) }}>
-              <span className="np-dropdown-name">{a.artwork_no}</span>
-              <span className="np-dropdown-sub">{a.name}</span>
-            </button>
-          ))}
-          {value && (
-            <button className="np-dropdown-item" style={{ color: '#ef4444' }}
-              onMouseDown={() => { onPick(null); setOpen(false) }}>
-              Clear selection
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 

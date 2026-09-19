@@ -353,7 +353,7 @@ export function InvoiceDetailPage() {
       </div>
 
       {/* ── TWO-COLUMN LAYOUT ── */}
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+      <div className="invd-layout" style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
 
         {/* ── MAIN CONTENT ── */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -487,7 +487,7 @@ export function InvoiceDetailPage() {
         </div>
 
         {/* ── SIDEBAR: Financial Summary ── */}
-        <div style={{ width: '240px', flexShrink: 0 }}>
+        <div className="invd-side" style={{ width: '240px', flexShrink: 0 }}>
           <div className="np-card" style={{ position: 'sticky', top: '80px' }}>
             <div className="np-card-header">
               <h3>Financial Summary</h3>

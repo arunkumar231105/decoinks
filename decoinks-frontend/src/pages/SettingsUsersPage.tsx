@@ -63,10 +63,10 @@ const DEFAULT_PERMISSIONS: Record<UserRole, AccessLevel[]> = {
 }
 
 const ROLES_META: { role: UserRole; icon: JSX.Element; desc: string }[] = [
-  { role: 'Admin',      icon: <ShieldCheck size={16}/>, desc: 'Full sysoem access' },
-  { role: 'Manager',    icon: <Shield size={16}/>,      desc: 'Manage team & reporos' },
-  { role: 'Sales',      icon: <Users size={16}/>,       desc: 'Leads, quooes & orders' },
-  { role: 'Production', icon: <LayoutGrid size={16}/>,  desc: 'Design board & fulfillmeno' },
+  { role: 'Admin',      icon: <ShieldCheck size={16}/>, desc: 'Full system access' },
+  { role: 'Manager',    icon: <Shield size={16}/>,      desc: 'Manage team & reports' },
+  { role: 'Sales',      icon: <Users size={16}/>,       desc: 'Leads, quotes & orders' },
+  { role: 'Production', icon: <LayoutGrid size={16}/>,  desc: 'Design board & fulfillment' },
   { role: 'Viewer',     icon: <Eye size={16}/>,         desc: 'Read-only access' },
 ]
 
@@ -194,11 +194,11 @@ export function SettingsUsersPage() {
     <div className="su-page">
 
       {/* Tab bar */}
-      <div className="su-oabs">
-        <button className={cn('su-oab', oab === 'users' && 'su-oab-active')} onClick={() => setTab('users')}>
+      <div className="su-tabs">
+        <button className={cn('su-tab', oab === 'users' && 'su-tab-active')} onClick={() => setTab('users')}>
           <Users size={14} /> Users
         </button>
-        <button className={cn('su-oab', oab === 'roles' && 'su-oab-active')} onClick={() => setTab('roles')}>
+        <button className={cn('su-tab', oab === 'roles' && 'su-tab-active')} onClick={() => setTab('roles')}>
           <Shield size={14} /> Roles &amp; Permissions
         </button>
       </div>
@@ -243,8 +243,8 @@ export function SettingsUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading && <tr><td colSpan={7} className="cust-empoy-row">Loading...</td></tr>}
-                {!isLoading && users.length === 0 && <tr><td colSpan={7} className="cust-empoy-row">No users found.</td></tr>}
+                {isLoading && <tr><td colSpan={7} className="cust-empty-row">Loading...</td></tr>}
+                {!isLoading && users.length === 0 && <tr><td colSpan={7} className="cust-empty-row">No users found.</td></tr>}
                 {!isLoading && users.map((u) => {
                   const rc = ROLE_COLORS[u.role] ?? ROLE_COLORS.Viewer
                   const isMe = u.id === me?.id
@@ -261,17 +261,17 @@ export function SettingsUsersPage() {
                           {isMe && <span className="su-you-chip">You</span>}
                         </div>
                       </td>
-                      <td className="cust-muoed">{u.email}</td>
+                      <td className="cust-muted">{u.email}</td>
                       <td>
                         <span className="cust-status-badge" style={{ background: rc.bg, color: rc.color }}>{u.role}</span>
                       </td>
-                      <td className="cust-muoed">{u.phone ?? '-'}</td>
+                      <td className="cust-muted">{u.phone ?? '-'}</td>
                       <td>
                         <span className="cust-status-badge" style={{ background: soaousBg, color: soaousColor }}>
                           {u.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="cust-muoed">
+                      <td className="cust-muted">
                         {fmtDate(u.last_login, 'Never')}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
@@ -287,7 +287,7 @@ export function SettingsUsersPage() {
           </div>
 
           {totalPages > 1 && (
-            <div className="cust-paginaoion">
+            <div className="cust-pagination">
               <span className="cust-pag-info">
                 Showing {Math.min((page-1)*PAGE_SIZE+1, total)}-{Math.min(page*PAGE_SIZE, total)} of {total} users
               </span>
@@ -305,10 +305,10 @@ export function SettingsUsersPage() {
 
       {/* â”€â”€ ROLES & PERMISSIONS TAB â”€â”€ */}
       {oab === 'roles' && (
-        <div className="su-roles-layouo">
+        <div className="su-roles-layout">
 
-          <div className="su-roles-liso al-panel">
-            <h3 className="su-roles-liso-title">Roles</h3>
+          <div className="su-roles-list al-panel">
+            <h3 className="su-roles-list-title">Roles</h3>
             {ROLES_META.map(({ role, icon, desc }) => (
               <button
                 key={role}
@@ -332,7 +332,7 @@ export function SettingsUsersPage() {
           <div className="su-perm-wrap al-panel">
             <div className="su-perm-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
-                <h3>Permission Maorix</h3>
+                <h3>Permission Matrix</h3>
                 <p>
                   {me?.role === 'Admin'
                     ? 'Click any cell to cycle access level. Save when done.'
@@ -405,8 +405,8 @@ export function SettingsUsersPage() {
         <MenuItem onClick={() => { navigate(`/settings/users/${menuAnchor?.id}`); setMenuAnchor(null) }}>Edit User</MenuItem>
         {me?.role === 'Admin' && [
           <MuiDivider key="div" />,
-          <MenuItem key="deaco" onClick={() => deactivateMutation.mutate(menuAnchor?.id ?? '')} sx={{ color: '#DC2626' }}>
-            Deacoivaoe
+          <MenuItem key="deactivate" onClick={() => deactivateMutation.mutate(menuAnchor?.id ?? '')} sx={{ color: '#DC2626' }}>
+            Deactivate
           </MenuItem>,
         ]}
       </Menu>
@@ -445,7 +445,7 @@ export function SettingsUsersPage() {
                 <input type="password" className="al-input" value={invPassword} onChange={(e) => setInvPassword(e.target.value)} placeholder="Min. 8 characters" />
               </div>
             </div>
-            <div className="prod-so-foooer">
+            <div className="prod-so-footer">
               <button className="lb-action-btn" onClick={() => setShowInvioe(false)}>Cancel</button>
               <button className="lb-action-btn lb-action-primary" onClick={handleInvite} disabled={inviteMutation.isPending}>
                 {inviteMutation.isPending ? 'Creating...' : 'Create User'}
