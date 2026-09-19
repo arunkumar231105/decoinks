@@ -1,7 +1,9 @@
 /* Supplier Management → New Order (BlankTex's New Order screen in Printshop's look). */
 .sno-page .np-card { margin-bottom: 14px; }
 .sno-grid { display: grid; gap: 12px 16px; margin-bottom: 12px; }
-.sno-grid.one { grid-template-columns: 1fr; }
+.sno-grid.one { grid-template-columns: minmax(0, 1fr); }
+.sno-grid > * { min-width: 0; }
+.sno-page .np-select, .sno-page .np-input { max-width: 100%; }
 .sno-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sno-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sno-full { grid-column: 1 / -1; }

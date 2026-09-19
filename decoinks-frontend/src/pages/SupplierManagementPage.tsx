@@ -422,7 +422,7 @@ export function SupplierManagementPage() {
               )}
               {!query.isLoading && !query.isError && rows.map((r, i) => (
                 <tr key={r.order_no} onClick={() => setOpen(r)} title={`Open ${r.order_no}`}>
-                  {visible.map((c, ci) => <td key={c.key} {...columnDrag.cellProps(c.key, ci)}>{cell(r, c.key, i)}</td>)}
+                  {visible.map((c, ci) => <td key={c.key} {...columnDrag.cellProps(c.key, ci)} data-label={c.label}>{cell(r, c.key, i)}</td>)}
                 </tr>
               ))}
             </tbody>

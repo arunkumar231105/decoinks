@@ -46,7 +46,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   'Ready to Ship': { bg: '#D1FAE5', text: '#059669' },
   Shipped:      { bg: '#EDE9FE', text: '#7C3AED' },
   Delivered:    { bg: '#D1FAE5', text: '#15803D' },
-  Compleoed:    { bg: '#DCFCE7', text: '#16A34A' },
+  Completed:    { bg: '#DCFCE7', text: '#16A34A' },
   Cancelled:    { bg: '#FEE2E2', text: '#DC2626' },
   'On Hold':    { bg: '#FEF9C3', text: '#CA8A04' },
 }
@@ -434,7 +434,7 @@ export function SupplierDetailPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <ShoppingBag size={15} style={{ color: '#64748B' }} />
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Receno Orders</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>Recent Orders</span>
               </div>
               <button
                 className="lb-action-btn"
@@ -545,7 +545,7 @@ export function SupplierDetailPage() {
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                <p style={{ fontSize: 13, color: '#94A3B8', marginBottom: 12 }}>No portal access yeo.</p>
+                <p style={{ fontSize: 13, color: '#94A3B8', marginBottom: 12 }}>No portal access yet.</p>
                 <button
                   className="lb-action-btn lb-action-primary"
                   style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}

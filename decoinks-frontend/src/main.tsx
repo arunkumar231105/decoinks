@@ -12,6 +12,8 @@ import './index.css'
 import './styles/theme.css'
 // Phone layer — every rule inside a media query, so a desktop is untouched.
 import './styles/mobile.css'
+// Phone app shell — tab bar, compact header, home-screen (standalone) spacing.
+import './styles/app-shell.css'
 import { installInspectDeterrent } from './utils/deterInspect'
 
 installInspectDeterrent()
@@ -20,6 +22,15 @@ installInspectDeterrent()
 // files this tab was built against. Reload once to pick up the new build
 // instead of showing an error screen. Unsaved form data survives: drafts are
 // kept in localStorage.
+// Installable app (public/manifest.webmanifest): the service worker makes
+// "Add to Home Screen" open Printshop as an app and the shell load fast. It
+// never caches /api or /storage (public/sw.js). Production builds only.
+if ('serviceWorker' in navigator && (import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => { /* the app works without it */ })
+  })
+}
+
 window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault()
   recoverFromStaleChunk()

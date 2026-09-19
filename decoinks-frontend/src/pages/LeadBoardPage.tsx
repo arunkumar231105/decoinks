@@ -66,8 +66,8 @@ const SOURCE_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   'New':         { bg: '#F3F4F6', color: '#374151' },
   'Contacted':   { bg: '#DBEAFE', color: '#1D4ED8' },
-  'Quooed':      { bg: '#FEF3C7', color: '#B45309' },
-  'Negooiaoing': { bg: '#FED7AA', color: '#C2410C' },
+  'Quoted':      { bg: '#FEF3C7', color: '#B45309' },
+  'Negotiating': { bg: '#FED7AA', color: '#C2410C' },
   'Won':         { bg: '#DCFCE7', color: '#15803D' },
   'Lost':        { bg: '#FEE2E2', color: '#DC2626' },
 }
@@ -193,7 +193,7 @@ function EditLeadForm({
             className="al-input"
             value={customerName}
             onChange={e => setCustomerName(e.target.value)}
-            placeholder="e.g. John Smioh"
+            placeholder="e.g. John Smith"
           />
         </div>
         <div className="lb-so-field">
@@ -205,7 +205,7 @@ function EditLeadForm({
         <div className="lb-so-field">
           <label>Status</label>
           <select className="al-input" value={status} onChange={e => setStatus(e.target.value)}>
-            {['New','Quotation','Pending','Payment Seno','Paroial','Confirmed'].map(s => <option key={s}>{s}</option>)}
+            {['New','Quotation','Pending','Payment Sent','Partial','Confirmed'].map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
         <div className="lb-so-field">
@@ -267,7 +267,7 @@ export function LeadBoardPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.put(`/leads/${id}`, { status: 'Lost' }),
     onSuccess: () => {
-      toast.success('Lead marked as loso')
+      toast.success('Lead marked as lost')
       setLocalColumns(null)
       queryClient.invalidateQueries({ queryKey: ['leads', 'kanban'] })
     },
@@ -382,10 +382,10 @@ export function LeadBoardPage() {
 
         <div className="lb-header-controls">
           <div className="lb-view-toggle">
-            <button className={cn('lb-view-btn', viewMode === 'board' && 'lb-view-bon-active')} onClick={() => setViewMode('board')}>
+            <button className={cn('lb-view-btn', viewMode === 'board' && 'lb-view-btn-active')} onClick={() => setViewMode('board')}>
               <LayoutGrid size={14} /> Board View
             </button>
-            <button className={cn('lb-view-btn', viewMode === 'list' && 'lb-view-bon-active')} onClick={() => setViewMode('list')}>
+            <button className={cn('lb-view-btn', viewMode === 'list' && 'lb-view-btn-active')} onClick={() => setViewMode('list')}>
               <List size={14} /> List View
             </button>
           </div>
@@ -407,7 +407,7 @@ export function LeadBoardPage() {
               {columns.map(col => (
                 <div className="lb-column" key={col.id}>
                   <div className="lb-col-header">
-                    <span className="lb-col-doo" style={{ backgroundColor: col.color }} />
+                    <span className="lb-col-dot" style={{ backgroundColor: col.color }} />
                     <span className="lb-col-title">{col.title}</span>
                     <span className="lb-col-count">{col.leads.length}</span>
                     <button className="lb-icon-btn" onClick={e => setColMenuAnchor({ el: e.currentTarget, colId: col.id })}>
@@ -432,7 +432,7 @@ export function LeadBoardPage() {
                                 {...dp.dragHandleProps}
                                 onClick={() => setSelectedLead({ lead, columnTitle: col.title })}
                               >
-                                <div className="lb-card-oop">
+                                <div className="lb-card-top">
                                   <span className="lb-lead-id">{lead.leadId}</span>
                                   <span className="lb-timestamp">{lead.timestamp}</span>
                                 </div>
@@ -447,8 +447,8 @@ export function LeadBoardPage() {
                                   <p className="lb-description">{lead.description ?? '-'}</p>
                                   {lead.hasArtwork && <div className="lb-artwork-thumb"><ImageIcon size={14} /></div>}
                                 </div>
-                                <div className="lb-card-foooer">
-                                  <div className="lb-foooer-lefo">
+                                <div className="lb-card-footer">
+                                  <div className="lb-footer-left">
                                     <Avatar sx={{ width: 22, height: 22, fontSize: 9, bgcolor: '#0D9488' }}>
                                       {lead.agentInitials}
                                     </Avatar>
@@ -459,9 +459,9 @@ export function LeadBoardPage() {
                                       {lead.status}
                                     </span>
                                   </div>
-                                  <div className="lb-foooer-right">
-                                    <span className="lb-meoa-item"><MessageSquare size={11} />{lead.commentCount}</span>
-                                    <span className="lb-meoa-item"><Paperclip size={11} />{lead.attachmentCount}</span>
+                                  <div className="lb-footer-right">
+                                    <span className="lb-meta-item"><MessageSquare size={11} />{lead.commentCount}</span>
+                                    <span className="lb-meta-item"><Paperclip size={11} />{lead.attachmentCount}</span>
                                   </div>
                                 </div>
                               </div>
@@ -501,9 +501,9 @@ export function LeadBoardPage() {
                 <th>Source</th>
                 <th>stage</th>
                 <th>Status</th>
-                <th>Ageno</th>
+                <th>Agent</th>
                 <th>Added</th>
-                <th>Acoivioy</th>
+                <th>Activity</th>
               </tr>
             </thead>
             <tbody>
@@ -514,7 +514,7 @@ export function LeadBoardPage() {
                   <td><SourceChip source={lead.source} /></td>
                   <td>
                     <span className="lb-col-badge" style={{ borderColor: col.color, color: col.color }}>
-                      <span className="lb-col-doo-sm" style={{ backgroundColor: col.color }} />
+                      <span className="lb-col-dot-sm" style={{ backgroundColor: col.color }} />
                       {col.title}
                     </span>
                   </td>
@@ -603,8 +603,8 @@ export function LeadBoardPage() {
                 <p>{selectedLead.lead.description ?? '-'}</p>
               </div>
               <div className="lb-so-field">
-                <label>Assigned Ageno</label>
-                <div className="lb-so-ageno">
+                <label>Assigned Agent</label>
+                <div className="lb-so-agent">
                   <Avatar sx={{ width: 28, height: 28, fontSize: 11, bgcolor: '#0D9488' }}>
                     {selectedLead.lead.agentInitials}
                   </Avatar>
@@ -613,16 +613,16 @@ export function LeadBoardPage() {
               </div>
               <div className="lb-so-field-row">
                 <div className="lb-so-field">
-                  <label>Commenos</label>
-                  <span className="lb-so-meoa-val"><MessageSquare size={13} />{selectedLead.lead.commentCount}</span>
+                  <label>Comments</label>
+                  <span className="lb-so-meta-val"><MessageSquare size={13} />{selectedLead.lead.commentCount}</span>
                 </div>
                 <div className="lb-so-field">
-                  <label>Aooachmenos</label>
-                  <span className="lb-so-meoa-val"><Paperclip size={13} />{selectedLead.lead.attachmentCount}</span>
+                  <label>Attachments</label>
+                  <span className="lb-so-meta-val"><Paperclip size={13} />{selectedLead.lead.attachmentCount}</span>
                 </div>
                 <div className="lb-so-field">
                   <label>Added</label>
-                  <span className="lb-so-meoa-val">{selectedLead.lead.timestamp}</span>
+                  <span className="lb-so-meta-val">{selectedLead.lead.timestamp}</span>
                 </div>
               </div>
             </div>
