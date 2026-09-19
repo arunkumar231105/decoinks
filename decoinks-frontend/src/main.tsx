@@ -14,9 +14,14 @@ import './styles/theme.css'
 import './styles/mobile.css'
 // Phone app shell — tab bar, compact header, home-screen (standalone) spacing.
 import './styles/app-shell.css'
+// Dark mode (html[data-theme="dark"], utils/themeMode.ts).
+import './styles/dark-mode.css'
 import { installInspectDeterrent } from './utils/deterInspect'
+import { applyThemeMode } from './utils/themeMode'
 
 installInspectDeterrent()
+// The viewer's light / dark choice (also set before first paint by index.html).
+applyThemeMode()
 
 // Vite fires this when a preloaded chunk 404s — i.e. a new deploy replaced the
 // files this tab was built against. Reload once to pick up the new build

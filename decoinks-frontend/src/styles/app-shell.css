@@ -255,3 +255,26 @@
   /* The bulk bar's fixed height let its wrapped second row spill over the list. */
   .ew-bulk { height: auto !important; padding: 8px !important; }
 }
+
+/* Appearance switch in the profile menu (Light / Dark / Auto). */
+.theme-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 10px; background: #f1f5f9; }
+.theme-pick-opt {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px;
+  border: 0; border-radius: 8px; background: transparent; color: #475569; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.theme-pick-opt.on { background: #fff; color: #0f766e; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+
+@media (max-width: 640px) {
+  /* Room for the bell: CSV import is a desk job, reachable from each list. */
+  .topbar-actions > .lb-action-btn { display: none !important; }
+}
+
+/* The New Order / Invoice / Quote save bars reach for a 28px page padding with
+   negative margins; on a phone or tablet the gutter is smaller and they ran off
+   the screen (New Order's Save sat at -4px…394px on a 390px phone). */
+@media (max-width: 980px) {
+  .no-bottom-bar, .ni-bottom-bar, .nq-bottom-bar {
+    margin-left: 0 !important; margin-right: 0 !important;
+    padding-left: 12px !important; padding-right: 12px !important; border-radius: 10px;
+  }
+}

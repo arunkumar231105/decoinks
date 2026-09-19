@@ -7,9 +7,11 @@
  *   - Pages (navigations) always go to the network, so a deploy shows at once;
  *     only when there is no network at all is the last app shell shown, with an
  *     offline note from the app itself.
+ * It also shows Printshop's notifications on the phone (Web Push, migration
+ * 154) and opens the right screen when one is tapped.
  * Bump VERSION to drop everything kept by an older worker.
  */
-const VERSION = 'printshop-v1'
+const VERSION = 'printshop-v2'
 const SHELL = '/index.html'
 
 self.addEventListener('install', (event) => {
@@ -54,4 +56,39 @@ self.addEventListener('fetch', (event) => {
       })),
     )
   }
+})
+
+// ── Notifications ────────────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch { data = { body: event.data ? event.data.text() : '' } }
+  const title = data.title || 'Printshop'
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: '/pwa/icon-192.png',
+      badge: '/pwa/badge-96.png',
+      tag: data.tag || undefined,
+      data: { url: data.url || '/dashboard' },
+      vibrate: [120, 60, 120],
+    })
+    // An open Printshop refreshes its bell and plays its sound.
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    open.forEach((c) => c.postMessage({ type: 'printshop:notification', payload: data }))
+  })())
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = new URL((event.notification.data && event.notification.data.url) || '/dashboard', self.location.origin).href
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const c of open) {
+      if (new URL(c.url).origin !== self.location.origin) continue
+      await c.focus()
+      if ('navigate' in c) { try { await c.navigate(url) } catch { /* same page */ } }
+      return
+    }
+    await self.clients.openWindow(url)
+  })())
 })

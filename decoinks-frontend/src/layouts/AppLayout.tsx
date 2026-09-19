@@ -41,6 +41,9 @@ import {
   Download,
   WifiOff,
   LayoutGrid,
+  Sun,
+  Moon,
+  MonitorSmartphone,
 } from 'lucide-react'
 import { usePageMeta } from '../hooks/usePageMeta'
 import { useAuthStore } from '../store/authStore'
@@ -49,6 +52,8 @@ import { cn } from '../utils/cn'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { GlobalImportModal } from '../components/GlobalImportModal'
+import { NotificationBell } from '../components/NotificationBell'
+import { getThemeMode, setThemeMode, type ThemeMode } from '../utils/themeMode'
 
 const mainNav = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
@@ -174,6 +179,8 @@ export function AppLayout() {
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null)
   const [installed, setInstalled] = useState(isStandalone)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const [theme, setTheme] = useState<ThemeMode>(getThemeMode)
+  const chooseTheme = (mode: ThemeMode) => { setThemeMode(mode); setTheme(mode) }
   const onFormScreen = FORM_SCREEN.test(location.pathname)
 
   useEffect(() => {
@@ -341,13 +348,7 @@ export function AppLayout() {
                 <Sparkles size={15} /> Import CSV
               </button>
             )}
-            <Tooltip title="Notifications (Coming Soon)">
-              <span>
-                <IconButton disabled sx={{ opacity: 0.4 }}>
-                  <Bell size={21} />
-                </IconButton>
-              </span>
-            </Tooltip>
+            <NotificationBell />
             <button className="topbar-user" onClick={(event) => setUserAnchor(event.currentTarget)}>
               <Avatar className="topbar-avatar">
                 {initials}
@@ -409,6 +410,17 @@ export function AppLayout() {
             Users &amp; Roles
           </MenuItem>
         )}
+        {/* Light / Dark / Auto — this browser's own choice. */}
+        <Box sx={{ px: 2, pt: 1, pb: 0.5 }}>
+          <div className="theme-pick" role="radiogroup" aria-label="Appearance">
+            {([['light', 'Light', Sun], ['dark', 'Dark', Moon], ['system', 'Auto', MonitorSmartphone]] as const).map(([mode, label, Icon]) => (
+              <button key={mode} type="button" role="radio" aria-checked={theme === mode}
+                className={cn('theme-pick-opt', theme === mode && 'on')} onClick={() => chooseTheme(mode)}>
+                <Icon size={15} /> {label}
+              </button>
+            ))}
+          </div>
+        </Box>
         {!installed && (
           <MenuItem onClick={installApp} sx={{ gap: 1.5 }}>
             <Download size={16} />
