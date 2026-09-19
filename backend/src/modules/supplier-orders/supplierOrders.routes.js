@@ -21,6 +21,39 @@ const fail = (res, err) => {
   res.status(code).json({ error: code === 500 ? 'Something went wrong' : err.message })
 }
 
+// ── New Order (BlankTex's screen, in Printshop) — read-only for now ─────────
+const newOrder = require('./digi.newOrder')
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+router.get('/new-order/catalog', async (req, res) => {
+  try { res.json(await newOrder.catalog()) } catch (err) { fail(res, err) }
+})
+router.get('/new-order/sales-orders', async (req, res) => {
+  try { res.json({ data: await newOrder.salesOrders() }) } catch (err) { fail(res, err) }
+})
+router.get('/new-order/sales-orders/:id', async (req, res) => {
+  try {
+    if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Sales order id is invalid' })
+    const order = await newOrder.salesOrder(req.params.id)
+    if (!order) return res.status(404).json({ error: 'Apparel sales order not found' })
+    res.json({ data: order })
+  } catch (err) { fail(res, err) }
+})
+router.get('/new-order/sales-orders/:id/purchase-orders', async (req, res) => {
+  try {
+    if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Sales order id is invalid' })
+    res.json({ data: await newOrder.orderPurchaseOrders(req.params.id) })
+  } catch (err) { fail(res, err) }
+})
+router.get('/new-order/sales-orders/:id/purchase-orders/:poId', async (req, res) => {
+  try {
+    if (!UUID.test(req.params.id) || !UUID.test(req.params.poId)) return res.status(400).json({ error: 'Purchase order id is invalid' })
+    const po = await newOrder.purchaseOrder(req.params.id, req.params.poId)
+    if (!po) return res.status(404).json({ error: 'That purchase order does not belong to the selected sales order' })
+    res.json({ data: po })
+  } catch (err) { fail(res, err) }
+})
+
 router.get('/digi', async (req, res) => {
   try { res.json(await grid.getGrid(req.query)) } catch (err) { fail(res, err) }
 })

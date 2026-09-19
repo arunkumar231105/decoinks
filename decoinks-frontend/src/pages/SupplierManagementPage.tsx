@@ -319,7 +319,7 @@ export function SupplierManagementPage() {
           <button className="som-btn" onClick={exportCsv} disabled={exporting} title="Every order these filters leave, with the columns on show">
             <Download size={16} /> {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
-          <Link to="/purchase-orders/new" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
+          <Link to="/supplier-management/new-order" className="som-issue"><Plus size={20} /> Issue PO to Supplier</Link>
         </div>
       </div>
 
